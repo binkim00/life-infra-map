@@ -1,0 +1,106 @@
+# =========================
+# Python / Django
+# =========================
+
+__pycache__/
+*.py[cod]
+*$py.class
+
+*.so
+
+.Python
+venv/
+env/
+.venv/
+ENV/
+
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Django
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+media/
+
+# Django migrations
+# 필요하면 주석 해제
+# **/migrations/*.py
+# !**/migrations/__init__.py
+
+
+# =========================
+# Environment variables
+# =========================
+
+.env
+.env.local
+.env.*.local
+
+
+# =========================
+# Vue / Node
+# =========================
+
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+dist/
+dist-ssr/
+coverage/
+
+# Vite
+.vite/
+
+
+# =========================
+# IDE / Editor
+# =========================
+
+.vscode/
+.idea/
+
+*.swp
+*.swo
+
+
+# =========================
+# OS files
+# =========================
+
+.DS_Store
+Thumbs.db
+
+
+# =========================
+# Build / Cache
+# =========================
+
+.cache/
+.parcel-cache/
+
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+
+
+# =========================
+# Static files
+# =========================
+
+staticfiles/
+
+
+# =========================
+# Uploaded / Generated files
+# =========================
+
+uploads/
+*.zip
+*.tar
+*.tar.gz
