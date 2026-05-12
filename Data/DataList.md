@@ -54,3 +54,12 @@
     https://www.safetydata.go.kr/disaster-data/view?dataSn=1338
 
 ---
+
+## 넣을지 검토
+https://www.data.go.kr/data/15012893/standard.do?utm_source=chatgpt.com
+
+https://www.data.go.kr/data/15096286/standard.do?utm_source=chatgpt.com
+
+https://data.seoul.go.kr/dataList/OA-22579/S/1/datasetView.do?utm_source=chatgpt.com
+
+https://www.data.go.kr/data/15021141/standard.do?utm_source=chatgpt.com
