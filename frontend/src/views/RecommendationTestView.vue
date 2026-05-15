@@ -19,19 +19,19 @@ const position = ref({
 const scenarios = [
   {
     code: 'work_cafe',
-    label: '작업 카페',
+    label: '조용히 작업할 곳',
   },
   {
     code: 'waiting_place',
-    label: '약속 전 시간 때우기',
+    label: '잠깐 머물 곳',
   },
   {
     code: 'walk_healing',
-    label: '산책/힐링',
+    label: '산책하기 좋은 곳',
   },
   {
     code: 'smoking_area',
-    label: '흡연구역',
+    label: '가까운 흡연구역',
   },
 ]
 
@@ -50,7 +50,7 @@ const fetchRecommendations = async () => {
     keyword.value = data.keyword
     results.value = data.results
   } catch (err) {
-    error.value = '추천 결과를 불러오지 못했습니다.'
+    error.value = '추천 결과를 불러오지 못했습니다. 서버 실행 상태와 API 키 설정을 확인해 주세요.'
     console.error(err)
   } finally {
     loading.value = false
@@ -93,8 +93,12 @@ onMounted(() => {
 <template>
   <main class="page">
     <section class="header">
-      <h1>추천 API 테스트</h1>
-      <p>카카오 장소 검색 결과에 임시 태그와 추천 이유를 붙이는 테스트 화면입니다.</p>
+      <p class="eyebrow">상황 기반 장소 추천</p>
+      <h1>지금 필요한 장소를 추천해드립니다</h1>
+      <p>
+        현재 위치와 선택한 상황을 기준으로 가까운 생활 장소를 추천하고,
+        추천 결과를 지도와 목록에서 함께 확인합니다.
+      </p>
     </section>
 
     <section class="controls">
@@ -106,28 +110,29 @@ onMounted(() => {
       </div>
 
       <button type="button" class="location-button" @click="useCurrentLocation">
-        현재 위치로 테스트
+        현재 위치로 다시 추천받기
       </button>
     </section>
 
     <section class="info">
       <p>위치 기준: {{ position.label }}</p>
-      <p>lat: {{ position.lat }}, lng: {{ position.lng }}</p>
-      <p v-if="scenario">시나리오: {{ scenario }}</p>
-      <p v-if="keyword">검색 키워드: {{ keyword }}</p>
+      <p>좌표: {{ position.lat }}, {{ position.lng }}</p>
+      <p v-if="scenario">선택 상황: {{ scenario }}</p>
+      <p v-if="keyword">검색 기준: {{ keyword }}</p>
     </section>
 
-    <section v-if="loading">
-      추천 결과를 불러오는 중입니다.
+    <section v-if="loading" class="message">
+       현재 위치와 상황에 맞는 장소를 찾는 중입니다.
     </section>
 
-    <section v-else-if="error">
+    <section v-else-if="error" class="message error">
       {{ error }}
     </section>
 
     <section v-else>
       <p v-if="results.length === 0" class="empty">
-        추천 결과가 없습니다. 이 시나리오는 지도 API만으로 결과 확보가 어려울 수 있습니다.
+        현재 위치 주변 1km 이내에서 추천 가능한 장소를 찾지 못했습니다.<br />
+        다른 상황을 선택하거나 위치를 변경해서 다시 확인해 주세요.
       </p>
 
       <KakaoMap :places="results" :center="position" />
@@ -197,5 +202,36 @@ button.active {
   border: 1px dashed #ccc;
   border-radius: 12px;
   color: #666;
+}
+
+.eyebrow {
+  margin-bottom: 8px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #555;
+}
+
+.header h1 {
+  margin: 0 0 12px;
+  font-size: 32px;
+  line-height: 1.25;
+}
+
+.header p {
+  color: #555;
+  line-height: 1.6;
+}
+
+.message,
+.empty {
+  padding: 20px;
+  border-radius: 12px;
+  background: #f8f9fa;
+  color: #555;
+  line-height: 1.6;
+}
+
+.error {
+  color: #c92a2a;
 }
 </style>
