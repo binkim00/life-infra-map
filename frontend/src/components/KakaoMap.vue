@@ -18,6 +18,7 @@ const props = defineProps({
 const mapContainer = ref(null)
 let map = null
 let markers = []
+let activeInfoWindow = null
 
 const loadKakaoMapScript = () => {
   return new Promise((resolve, reject) => {
@@ -61,6 +62,11 @@ const initMap = () => {
 }
 
 const clearMarkers = () => {
+  if (activeInfoWindow) {
+    activeInfoWindow.close()
+    activeInfoWindow = null
+  }
+
   markers.forEach((marker) => marker.setMap(null))
   markers = []
 }
@@ -96,7 +102,12 @@ const renderMarkers = () => {
     })
 
     window.kakao.maps.event.addListener(marker, 'click', () => {
+      if (activeInfoWindow) {
+        activeInfoWindow.close()
+      }
+
       infoWindow.open(map, marker)
+      activeInfoWindow = infoWindow
     })
   })
 
