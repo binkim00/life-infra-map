@@ -13,7 +13,7 @@ const error = ref('')
 const position = ref({
   lat: 37.5665,
   lng: 126.9780,
-  label: '기본 위치: 서울시청',
+  label: '기본 테스트 위치: 서울시청',
 })
 
 const scenarios = [

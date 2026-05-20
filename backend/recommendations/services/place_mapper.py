@@ -28,7 +28,7 @@ def build_runtime_tags(place, scenario):
     return list(dict.fromkeys(tags))
 
 
-def calculate_mock_score(place, tags):
+def calculate_recommendation_score(place, tags):
     score = 50
 
     distance = place.get("distance")
@@ -69,7 +69,7 @@ def build_recommend_reason(place, scenario, tags):
 
 def map_kakao_place_to_recommendation(place, scenario):
     tags = build_runtime_tags(place, scenario)
-    score = calculate_mock_score(place, tags)
+    score = calculate_recommendation_score(place, tags)
 
     return {
         "name": place.get("place_name"),

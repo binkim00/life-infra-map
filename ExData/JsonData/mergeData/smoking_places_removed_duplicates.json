@@ -1,0 +1,1322 @@
+[
+  {
+    "remove_key": {
+      "source": "smokingarea_site_reports",
+      "external_id": "274"
+    },
+    "reason": "safe_duplicate",
+    "candidate": {
+      "distance_m": 0.0,
+      "similarity": {
+        "name": 0.706,
+        "address": 1.0,
+        "detail_location": 0.25
+      },
+      "item1": {
+        "external_id": "008bf11e-fb26-400b-a8f2-7e38a3b40b2e",
+        "name": "고척 돔구장",
+        "address": "서울특별시 구로구 경인로 430",
+        "detail_location": "서울특별시 구로구 경인로 430",
+        "lat": 37.49821257,
+        "lng": 126.8670887,
+        "source": "smokearea_kr_supabase"
+      },
+      "item2": {
+        "external_id": "274",
+        "name": "고척 돔구장 흡연구역",
+        "address": "서울특별시 구로구 경인로 430",
+        "detail_location": "구로구 지역 페이지의 실외 흡연구역 항목.",
+        "lat": 37.49821257,
+        "lng": 126.8670887,
+        "source": "smokingarea_site_reports"
+      }
+    }
+  },
+  {
+    "remove_key": {
+      "source": "smokingarea_site_reports",
+      "external_id": "181"
+    },
+    "reason": "safe_duplicate",
+    "candidate": {
+      "distance_m": 0.0,
+      "similarity": {
+        "name": 1.0,
+        "address": 1.0,
+        "detail_location": 1.0
+      },
+      "item1": {
+        "external_id": "0e3bf0e2-7898-4883-b138-103146b55efe",
+        "name": "서구청 제2청사",
+        "address": "인천광역시 서구 서곶로 299 (심곡동, 서구청 제2청사)",
+        "detail_location": "인천광역시 서구 서곶로 299 (심곡동, 서구청 제2청사)",
+        "lat": 37.544223,
+        "lng": 126.676629,
+        "source": "smokearea_kr_supabase"
+      },
+      "item2": {
+        "external_id": "181",
+        "name": "서구청 제2청사",
+        "address": "인천광역시 서구 서곶로 299 (심곡동, 서구청 제2청사)",
+        "detail_location": "인천광역시 서구 서곶로 299 (심곡동, 서구청 제2청사)",
+        "lat": 37.544223,
+        "lng": 126.676629,
+        "source": "smokingarea_site_reports"
+      }
+    }
+  },
+  {
+    "remove_key": {
+      "source": "smokingarea_site_reports",
+      "external_id": "281"
+    },
+    "reason": "safe_duplicate",
+    "candidate": {
+      "distance_m": 0.0,
+      "similarity": {
+        "name": 0.815,
+        "address": 1.0,
+        "detail_location": 0.279
+      },
+      "item1": {
+        "external_id": "0fef9c22-42e3-41e6-a3c9-de19ecffb50d",
+        "name": "에이스테크노타워 3차",
+        "address": "서울특별시 구로구 디지털로29길 38",
+        "detail_location": "서울특별시 구로구 디지털로29길 38",
+        "lat": 37.48449754,
+        "lng": 126.8933105,
+        "source": "smokearea_kr_supabase"
+      },
+      "item2": {
+        "external_id": "281",
+        "name": "에이스테크노타워 3차 흡연구역",
+        "address": "서울특별시 구로구 디지털로29길 38",
+        "detail_location": "구로구 지역 페이지의 실외 흡연구역 항목.",
+        "lat": 37.48449754,
+        "lng": 126.8933105,
+        "source": "smokingarea_site_reports"
+      }
+    }
+  },
+  {
+    "remove_key": {
+      "source": "smokearea_kr_busan_gangseo",
+      "external_id": "https://smokearea.kr/ko/area/gimhae-intl-1f-gate1"
+    },
+    "reason": "safe_duplicate",
+    "candidate": {
+      "distance_m": 0.0,
+      "similarity": {
+        "name": 1.0,
+        "address": 1.0,
+        "detail_location": 1.0
+      },
+      "item1": {
+        "external_id": "14ad6d15-c9ad-439a-a94e-df6251c45442",
+        "name": "김해공항 국제선 1층 1번 출구 흡연구역",
+        "address": "김해공항 국제선 1층 1번 게이트 외부 좌측 30m",
+        "detail_location": "김해공항 국제선 1층 1번 게이트 외부 좌측 30m",
+        "lat": 35.1796,
+        "lng": 128.9382,
+        "source": "smokearea_kr_supabase"
+      },
+      "item2": {
+        "external_id": "https://smokearea.kr/ko/area/gimhae-intl-1f-gate1",
+        "name": "김해공항 국제선 1층 1번 출구 흡연구역",
+        "address": "김해공항 국제선 1층 1번 게이트 외부 좌측 30m",
+        "detail_location": "김해공항 국제선 1층 1번 게이트 외부 좌측 30m",
+        "lat": 35.1796,
+        "lng": 128.9382,
+        "source": "smokearea_kr_busan_gangseo"
+      }
+    }
+  },
+  {
+    "remove_key": {
+      "source": "smokingarea_site_reports",
+      "external_id": "180"
+    },
+    "reason": "safe_duplicate",
+    "candidate": {
+      "distance_m": 0.0,
+      "similarity": {
+        "name": 1.0,
+        "address": 1.0,
+        "detail_location": 1.0
+      },
+      "item1": {
+        "external_id": "14d9f133-e03e-4ee0-a505-5c0b7285f043",
+        "name": "서구청",
+        "address": "인천광역시 서구 서곶로 307 (심곡동, 서구청)",
+        "detail_location": "인천광역시 서구 서곶로 307 (심곡동, 서구청)",
+        "lat": 37.545091,
+        "lng": 126.67665,
+        "source": "smokearea_kr_supabase"
+      },
+      "item2": {
+        "external_id": "180",
+        "name": "서구청",
+        "address": "인천광역시 서구 서곶로 307 (심곡동, 서구청)",
+        "detail_location": "인천광역시 서구 서곶로 307 (심곡동, 서구청)",
+        "lat": 37.545091,
+        "lng": 126.67665,
+        "source": "smokingarea_site_reports"
+      }
+    }
+  },
+  {
+    "remove_key": {
+      "source": "smokingarea_site_reports",
+      "external_id": "191"
+    },
+    "reason": "safe_duplicate",
+    "candidate": {
+      "distance_m": 0.0,
+      "similarity": {
+        "name": 1.0,
+        "address": 1.0,
+        "detail_location": 1.0
+      },
+      "item1": {
+        "external_id": "18c61d38-b900-4e5e-bd62-937c2d68be92",
+        "name": "아이비스pc방",
+        "address": "인천광역시 옹진군 백령면 북포리 515-6번지 2층",
+        "detail_location": "인천광역시 옹진군 백령면 북포리 515-6번지 2층",
+        "lat": 37.95918,
+        "lng": 124.66657,
+        "source": "smokearea_kr_supabase"
+      },
+      "item2": {
+        "external_id": "191",
+        "name": "아이비스pc방",
+        "address": "인천광역시 옹진군 백령면 북포리 515-6번지 2층",
+        "detail_location": "인천광역시 옹진군 백령면 북포리 515-6번지 2층",
+        "lat": 37.95918,
+        "lng": 124.66657,
+        "source": "smokingarea_site_reports"
+      }
+    }
+  },
+  {
+    "remove_key": {
+      "source": "smokingarea_site_reports",
+      "external_id": "287"
+    },
+    "reason": "safe_duplicate",
+    "candidate": {
+      "distance_m": 0.0,
+      "similarity": {
+        "name": 0.667,
+        "address": 1.0,
+        "detail_location": 0.263
+      },
+      "item1": {
+        "external_id": "1a732ee3-5bc2-431b-b438-c06d26b65690",
+        "name": "광진소방서",
+        "address": "서울 광진구 광나루로 480",
+        "detail_location": "서울 광진구 광나루로 480",
+        "lat": 37.54482602,
+        "lng": 127.08277852,
+        "source": "smokearea_kr_supabase"
+      },
+      "item2": {
+        "external_id": "287",
+        "name": "광진소방서 흡연구역",
+        "address": "서울 광진구 광나루로 480",
+        "detail_location": "광진구 지역 페이지의 실외 흡연구역 항목.",
+        "lat": 37.54482602,
+        "lng": 127.08277852,
+        "source": "smokingarea_site_reports"
+      }
+    }
+  },
+  {
+    "remove_key": {
+      "source": "smokingarea_site_reports",
+      "external_id": "275"
+    },
+    "reason": "safe_duplicate",
+    "candidate": {
+      "distance_m": 0.0,
+      "similarity": {
+        "name": 0.706,
+        "address": 1.0,
+        "detail_location": 0.25
+      },
+      "item1": {
+        "external_id": "1e0f7b5a-1c13-49d2-a2a2-98842d495413",
+        "name": "구로성심병원",
+        "address": "서울특별시 구로구 경인로 427",
+        "detail_location": "서울특별시 구로구 경인로 427",
+        "lat": 37.49964687,
+        "lng": 126.8663582,
+        "source": "smokearea_kr_supabase"
+      },
+      "item2": {
+        "external_id": "275",
+        "name": "구로성심병원 흡연구역",
+        "address": "서울특별시 구로구 경인로 427",
+        "detail_location": "구로구 지역 페이지의 실외 흡연구역 항목.",
+        "lat": 37.49964687,
+        "lng": 126.8663582,
+        "source": "smokingarea_site_reports"
+      }
+    }
+  },
+  {
+    "remove_key": {
+      "source": "smokingarea_site_reports",
+      "external_id": "192"
+    },
+    "reason": "safe_duplicate",
+    "candidate": {
+      "distance_m": 0.0,
+      "similarity": {
+        "name": 1.0,
+        "address": 1.0,
+        "detail_location": 1.0
+      },
+      "item1": {
+        "external_id": "235e5328-d738-4dc0-bfcd-9b2f35e9fa75",
+        "name": "퀸스비치카페",
+        "address": "인천광역시 옹진군 영흥면 선재로306번길 27-114",
+        "detail_location": "인천광역시 옹진군 영흥면 선재로306번길 27-114",
+        "lat": 37.25782,
+        "lng": 126.51845,
+        "source": "smokearea_kr_supabase"
+      },
+      "item2": {
+        "external_id": "192",
+        "name": "퀸스비치카페",
+        "address": "인천광역시 옹진군 영흥면 선재로306번길 27-114",
+        "detail_location": "인천광역시 옹진군 영흥면 선재로306번길 27-114",
+        "lat": 37.25782,
+        "lng": 126.51845,
+        "source": "smokingarea_site_reports"
+      }
+    }
+  },
+  {
+    "remove_key": {
+      "source": "smokingarea_site_reports",
+      "external_id": "187"
+    },
+    "reason": "safe_duplicate",
+    "candidate": {
+      "distance_m": 0.0,
+      "similarity": {
+        "name": 1.0,
+        "address": 1.0,
+        "detail_location": 1.0
+      },
+      "item1": {
+        "external_id": "2b5b12e6-7051-43c6-ad93-597566ce669d",
+        "name": "대청당구장",
+        "address": "인천광역시 옹진군 대청면 대청로 227",
+        "detail_location": "인천광역시 옹진군 대청면 대청로 227",
+        "lat": 37.83306,
+        "lng": 124.70663,
+        "source": "smokearea_kr_supabase"
+      },
+      "item2": {
+        "external_id": "187",
+        "name": "대청당구장",
+        "address": "인천광역시 옹진군 대청면 대청로 227",
+        "detail_location": "인천광역시 옹진군 대청면 대청로 227",
+        "lat": 37.83306,
+        "lng": 124.70663,
+        "source": "smokingarea_site_reports"
+      }
+    }
+  },
+  {
+    "remove_key": {
+      "source": "smokingarea_site_reports",
+      "external_id": "183"
+    },
+    "reason": "safe_duplicate",
+    "candidate": {
+      "distance_m": 0.0,
+      "similarity": {
+        "name": 1.0,
+        "address": 1.0,
+        "detail_location": 1.0
+      },
+      "item1": {
+        "external_id": "2bffa89f-1957-4338-bffd-ba70a3a27e18",
+        "name": "청라국제도시역 광장",
+        "address": "인천광역시 서구 에코로 163 (청라동, 청라국제도시역 광장)",
+        "detail_location": "인천광역시 서구 에코로 163 (청라동, 청라국제도시역 광장)",
+        "lat": 37.556463,
+        "lng": 126.624662,
+        "source": "smokearea_kr_supabase"
+      },
+      "item2": {
+        "external_id": "183",
+        "name": "청라국제도시역 광장",
+        "address": "인천광역시 서구 에코로 163 (청라동, 청라국제도시역 광장)",
+        "detail_location": "인천광역시 서구 에코로 163 (청라동, 청라국제도시역 광장)",
+        "lat": 37.556463,
+        "lng": 126.624662,
+        "source": "smokingarea_site_reports"
+      }
+    }
+  },
+  {
+    "remove_key": {
+      "source": "smokingarea_site_reports",
+      "external_id": "186"
+    },
+    "reason": "safe_duplicate",
+    "candidate": {
+      "distance_m": 0.0,
+      "similarity": {
+        "name": 1.0,
+        "address": 1.0,
+        "detail_location": 1.0
+      },
+      "item1": {
+        "external_id": "34d429c9-bdc9-4078-924e-5bfe449a527b",
+        "name": "자월당구장",
+        "address": "인천광역시 옹진군 자월면 자월서로 68-1",
+        "detail_location": "인천광역시 옹진군 자월면 자월서로 68-1",
+        "lat": 37.24969,
+        "lng": 126.31634,
+        "source": "smokearea_kr_supabase"
+      },
+      "item2": {
+        "external_id": "186",
+        "name": "자월당구장",
+        "address": "인천광역시 옹진군 자월면 자월서로 68-1",
+        "detail_location": "인천광역시 옹진군 자월면 자월서로 68-1",
+        "lat": 37.24969,
+        "lng": 126.31634,
+        "source": "smokingarea_site_reports"
+      }
+    }
+  },
+  {
+    "remove_key": {
+      "source": "smokearea_kr_busan_gangseo",
+      "external_id": "https://smokearea.kr/ko/area/gimhae-intl-2f-gate1"
+    },
+    "reason": "safe_duplicate",
+    "candidate": {
+      "distance_m": 0.0,
+      "similarity": {
+        "name": 1.0,
+        "address": 1.0,
+        "detail_location": 1.0
+      },
+      "item1": {
+        "external_id": "38b1cc52-5f44-4f5b-af22-5eca7a6d26d3",
+        "name": "김해공항 국제선 2층 1번 출구 흡연구역",
+        "address": "김해공항 국제선 2층 출발층 1번 출구 외부 좌측 20m",
+        "detail_location": "김해공항 국제선 2층 출발층 1번 출구 외부 좌측 20m",
+        "lat": 35.1796,
+        "lng": 128.9382,
+        "source": "smokearea_kr_supabase"
+      },
+      "item2": {
+        "external_id": "https://smokearea.kr/ko/area/gimhae-intl-2f-gate1",
+        "name": "김해공항 국제선 2층 1번 출구 흡연구역",
+        "address": "김해공항 국제선 2층 출발층 1번 출구 외부 좌측 20m",
+        "detail_location": "김해공항 국제선 2층 출발층 1번 출구 외부 좌측 20m",
+        "lat": 35.1796,
+        "lng": 128.9382,
+        "source": "smokearea_kr_busan_gangseo"
+      }
+    }
+  },
+  {
+    "remove_key": {
+      "source": "smokingarea_site_reports",
+      "external_id": "297"
+    },
+    "reason": "safe_duplicate",
+    "candidate": {
+      "distance_m": 0.0,
+      "similarity": {
+        "name": 1.0,
+        "address": 1.0,
+        "detail_location": 0.25
+      },
+      "item1": {
+        "external_id": "3d83b840-cfb8-4c57-8765-3c179b6a031b",
+        "name": "건국대 새천년관 대공연장 좌측",
+        "address": "서울특별시 광진구 능동로 120",
+        "detail_location": "서울특별시 광진구 능동로 120",
+        "lat": 37.54317933,
+        "lng": 127.07682,
+        "source": "smokearea_kr_supabase"
+      },
+      "item2": {
+        "external_id": "297",
+        "name": "건국대 새천년관 대공연장 좌측",
+        "address": "서울특별시 광진구 능동로 120",
+        "detail_location": "광진구 지역 페이지의 실외 흡연구역 항목.",
+        "lat": 37.54317933,
+        "lng": 127.07682,
+        "source": "smokingarea_site_reports"
+      }
+    }
+  },
+  {
+    "remove_key": {
+      "source": "smokingarea_site_reports",
+      "external_id": "284"
+    },
+    "reason": "safe_duplicate",
+    "candidate": {
+      "distance_m": 0.0,
+      "similarity": {
+        "name": 0.783,
+        "address": 1.0,
+        "detail_location": 0.279
+      },
+      "item1": {
+        "external_id": "43f4fa5a-61aa-46ea-a999-2315a8cb6f88",
+        "name": "JNK 디지털타워",
+        "address": "서울특별시 구로구 디지털로32길 29",
+        "detail_location": "서울특별시 구로구 디지털로32길 29",
+        "lat": 37.48487797,
+        "lng": 126.8972987,
+        "source": "smokearea_kr_supabase"
+      },
+      "item2": {
+        "external_id": "284",
+        "name": "JNK 디지털타워 흡연구역",
+        "address": "서울특별시 구로구 디지털로32길 29",
+        "detail_location": "구로구 지역 페이지의 실외 흡연구역 항목.",
+        "lat": 37.48487797,
+        "lng": 126.8972987,
+        "source": "smokingarea_site_reports"
+      }
+    }
+  },
+  {
+    "remove_key": {
+      "source": "smokingarea_site_reports",
+      "external_id": "188"
+    },
+    "reason": "safe_duplicate",
+    "candidate": {
+      "distance_m": 0.0,
+      "similarity": {
+        "name": 1.0,
+        "address": 1.0,
+        "detail_location": 1.0
+      },
+      "item1": {
+        "external_id": "45396caa-417b-456e-905b-d0334fe3cf34",
+        "name": "신세계당구장",
+        "address": "인천광역시 옹진군 백령면 백령로278번길 28-1",
+        "detail_location": "인천광역시 옹진군 백령면 백령로278번길 28-1",
+        "lat": 37.97269,
+        "lng": 124.72039,
+        "source": "smokearea_kr_supabase"
+      },
+      "item2": {
+        "external_id": "188",
+        "name": "신세계당구장",
+        "address": "인천광역시 옹진군 백령면 백령로278번길 28-1",
+        "detail_location": "인천광역시 옹진군 백령면 백령로278번길 28-1",
+        "lat": 37.97269,
+        "lng": 124.72039,
+        "source": "smokingarea_site_reports"
+      }
+    }
+  },
+  {
+    "remove_key": {
+      "source": "smokingarea_site_reports",
+      "external_id": "283"
+    },
+    "reason": "safe_duplicate",
+    "candidate": {
+      "distance_m": 0.0,
+      "similarity": {
+        "name": 0.737,
+        "address": 1.0,
+        "detail_location": 0.279
+      },
+      "item1": {
+        "external_id": "4cbc22cb-be22-4d96-9b91-2c5436d45a0c",
+        "name": "삼성아이티밸리",
+        "address": "서울특별시 구로구 디지털로33길 27",
+        "detail_location": "서울특별시 구로구 디지털로33길 27",
+        "lat": 37.4860566,
+        "lng": 126.8946693,
+        "source": "smokearea_kr_supabase"
+      },
+      "item2": {
+        "external_id": "283",
+        "name": "삼성아이티밸리 흡연구역",
+        "address": "서울특별시 구로구 디지털로33길 27",
+        "detail_location": "구로구 지역 페이지의 실외 흡연구역 항목.",
+        "lat": 37.4860566,
+        "lng": 126.8946693,
+        "source": "smokingarea_site_reports"
+      }
+    }
+  },
+  {
+    "remove_key": {
+      "source": "smokingarea_site_reports",
+      "external_id": "269"
+    },
+    "reason": "safe_duplicate",
+    "candidate": {
+      "distance_m": 0.0,
+      "similarity": {
+        "name": 0.737,
+        "address": 1.0,
+        "detail_location": 0.286
+      },
+      "item1": {
+        "external_id": "518b7db9-32ce-44c3-a032-3c328da237a7",
+        "name": "노량진컵밥거리",
+        "address": "서울 동작구 노량진로 196",
+        "detail_location": "서울 동작구 노량진로 196",
+        "lat": 37.51301287,
+        "lng": 126.9475026,
+        "source": "smokearea_kr_supabase"
+      },
+      "item2": {
+        "external_id": "269",
+        "name": "노량진컵밥거리 흡연부스",
+        "address": "서울 동작구 노량진로 196",
+        "detail_location": "동작구 지역 페이지의 흡연부스 항목.",
+        "lat": 37.51301287,
+        "lng": 126.9475026,
+        "source": "smokingarea_site_reports"
+      }
+    }
+  },
+  {
+    "remove_key": {
+      "source": "smokingarea_site_reports",
+      "external_id": "285"
+    },
+    "reason": "safe_duplicate",
+    "candidate": {
+      "distance_m": 0.0,
+      "similarity": {
+        "name": 0.8,
+        "address": 1.0,
+        "detail_location": 0.273
+      },
+      "item1": {
+        "external_id": "57ae85b1-85f2-4399-9a70-4e19540a2e3b",
+        "name": "지플러스(G+)타워",
+        "address": "서울특별시 구로구 디지털로26길 123",
+        "detail_location": "서울특별시 구로구 디지털로26길 123",
+        "lat": 37.48308233,
+        "lng": 126.8976995,
+        "source": "smokearea_kr_supabase"
+      },
+      "item2": {
+        "external_id": "285",
+        "name": "지플러스(G+)타워 흡연구역",
+        "address": "서울특별시 구로구 디지털로26길 123",
+        "detail_location": "구로구 지역 페이지의 실외 흡연구역 항목.",
+        "lat": 37.48308233,
+        "lng": 126.8976995,
+        "source": "smokingarea_site_reports"
+      }
+    }
+  },
+  {
+    "remove_key": {
+      "source": "smokingarea_site_reports",
+      "external_id": "189"
+    },
+    "reason": "safe_duplicate",
+    "candidate": {
+      "distance_m": 0.0,
+      "similarity": {
+        "name": 1.0,
+        "address": 1.0,
+        "detail_location": 1.0
+      },
+      "item1": {
+        "external_id": "5a74c413-0d30-4aca-bd0c-96f5ed8aa1ea",
+        "name": "월드당구장",
+        "address": "인천광역시 옹진군 백령면 북포리 505-1번지 2층",
+        "detail_location": "인천광역시 옹진군 백령면 북포리 505-1번지 2층",
+        "lat": 37.96075,
+        "lng": 124.66802,
+        "source": "smokearea_kr_supabase"
+      },
+      "item2": {
+        "external_id": "189",
+        "name": "월드당구장",
+        "address": "인천광역시 옹진군 백령면 북포리 505-1번지 2층",
+        "detail_location": "인천광역시 옹진군 백령면 북포리 505-1번지 2층",
+        "lat": 37.96075,
+        "lng": 124.66802,
+        "source": "smokingarea_site_reports"
+      }
+    }
+  },
+  {
+    "remove_key": {
+      "source": "smokingarea_site_reports",
+      "external_id": "293"
+    },
+    "reason": "safe_duplicate",
+    "candidate": {
+      "distance_m": 0.0,
+      "similarity": {
+        "name": 0.762,
+        "address": 1.0,
+        "detail_location": 0.294
+      },
+      "item1": {
+        "external_id": "5a7e3cc2-bc64-4c2b-9fd6-bb90598d3ddd",
+        "name": "호텔컬리넌건대2",
+        "address": "서울 광진구 동일로 214",
+        "detail_location": "서울 광진구 동일로 214",
+        "lat": 37.55081398,
+        "lng": 127.06917734,
+        "source": "smokearea_kr_supabase"
+      },
+      "item2": {
+        "external_id": "293",
+        "name": "호텔컬리넌건대2 흡연부스",
+        "address": "서울 광진구 동일로 214",
+        "detail_location": "광진구 지역 페이지의 흡연부스 항목.",
+        "lat": 37.55081398,
+        "lng": 127.06917734,
+        "source": "smokingarea_site_reports"
+      }
+    }
+  },
+  {
+    "remove_key": {
+      "source": "smokingarea_site_reports",
+      "external_id": "190"
+    },
+    "reason": "safe_duplicate",
+    "candidate": {
+      "distance_m": 0.0,
+      "similarity": {
+        "name": 1.0,
+        "address": 1.0,
+        "detail_location": 1.0
+      },
+      "item1": {
+        "external_id": "5c508a6d-8118-487b-9b73-fec34ed1ac43",
+        "name": "우리당구장",
+        "address": "인천광역시 옹진군 백령면 북포리 473-2",
+        "detail_location": "인천광역시 옹진군 백령면 북포리 473-2",
+        "lat": 37.96011,
+        "lng": 124.66657,
+        "source": "smokearea_kr_supabase"
+      },
+      "item2": {
+        "external_id": "190",
+        "name": "우리당구장",
+        "address": "인천광역시 옹진군 백령면 북포리 473-2",
+        "detail_location": "인천광역시 옹진군 백령면 북포리 473-2",
+        "lat": 37.96011,
+        "lng": 124.66657,
+        "source": "smokingarea_site_reports"
+      }
+    }
+  },
+  {
+    "remove_key": {
+      "source": "smokearea_kr_busan_gangseo",
+      "external_id": "https://smokearea.kr/ko/area/gimhae-intl-departure"
+    },
+    "reason": "safe_duplicate",
+    "candidate": {
+      "distance_m": 0.0,
+      "similarity": {
+        "name": 1.0,
+        "address": 1.0,
+        "detail_location": 1.0
+      },
+      "item1": {
+        "external_id": "65439753-b788-464d-9304-410e9da1e0a8",
+        "name": "김해공항 국제선 출국장 흡연실",
+        "address": "김해공항 국제선 출국심사 후 면세구역 내",
+        "detail_location": "김해공항 국제선 출국심사 후 면세구역 내",
+        "lat": 35.1796,
+        "lng": 128.9382,
+        "source": "smokearea_kr_supabase"
+      },
+      "item2": {
+        "external_id": "https://smokearea.kr/ko/area/gimhae-intl-departure",
+        "name": "김해공항 국제선 출국장 흡연실",
+        "address": "김해공항 국제선 출국심사 후 면세구역 내",
+        "detail_location": "김해공항 국제선 출국심사 후 면세구역 내",
+        "lat": 35.1796,
+        "lng": 128.9382,
+        "source": "smokearea_kr_busan_gangseo"
+      }
+    }
+  },
+  {
+    "remove_key": {
+      "source": "smokingarea_site_reports",
+      "external_id": "279"
+    },
+    "reason": "safe_duplicate",
+    "candidate": {
+      "distance_m": 0.0,
+      "similarity": {
+        "name": 0.828,
+        "address": 1.0,
+        "detail_location": 0.286
+      },
+      "item1": {
+        "external_id": "663f4088-8ca0-4d22-8425-0372a9dd4f32",
+        "name": "에이스하이엔드타워 1차",
+        "address": "서울특별시 구로구 디지털로26길 5",
+        "detail_location": "서울특별시 구로구 디지털로26길 5",
+        "lat": 37.48161059,
+        "lng": 126.8934793,
+        "source": "smokearea_kr_supabase"
+      },
+      "item2": {
+        "external_id": "279",
+        "name": "에이스하이엔드타워 1차 흡연구역",
+        "address": "서울특별시 구로구 디지털로26길 5",
+        "detail_location": "구로구 지역 페이지의 실외 흡연구역 항목.",
+        "lat": 37.48161059,
+        "lng": 126.8934793,
+        "source": "smokingarea_site_reports"
+      }
+    }
+  },
+  {
+    "remove_key": {
+      "source": "smokingarea_site_reports",
+      "external_id": "184"
+    },
+    "reason": "safe_duplicate",
+    "candidate": {
+      "distance_m": 0.0,
+      "similarity": {
+        "name": 1.0,
+        "address": 1.0,
+        "detail_location": 1.0
+      },
+      "item1": {
+        "external_id": "6bcce0b9-fc68-4f9e-8797-df6b5e5420a9",
+        "name": "아키볼당구클럽",
+        "address": "인천광역시 옹진군 영흥면 영흥로 158",
+        "detail_location": "인천광역시 옹진군 영흥면 영흥로 158",
+        "lat": 37.25789,
+        "lng": 126.49419,
+        "source": "smokearea_kr_supabase"
+      },
+      "item2": {
+        "external_id": "184",
+        "name": "아키볼당구클럽",
+        "address": "인천광역시 옹진군 영흥면 영흥로 158",
+        "detail_location": "인천광역시 옹진군 영흥면 영흥로 158",
+        "lat": 37.25789,
+        "lng": 126.49419,
+        "source": "smokingarea_site_reports"
+      }
+    }
+  },
+  {
+    "remove_key": {
+      "source": "smokingarea_site_reports",
+      "external_id": "280"
+    },
+    "reason": "safe_duplicate",
+    "candidate": {
+      "distance_m": 0.0,
+      "similarity": {
+        "name": 0.815,
+        "address": 1.0,
+        "detail_location": 0.279
+      },
+      "item1": {
+        "external_id": "7705a6ec-9d47-41d8-a974-cdb8b3e64ded",
+        "name": "에이스테크노타워 2차",
+        "address": "서울특별시 구로구 디지털로31길 19",
+        "detail_location": "서울특별시 구로구 디지털로31길 19",
+        "lat": 37.48487602,
+        "lng": 126.8937672,
+        "source": "smokearea_kr_supabase"
+      },
+      "item2": {
+        "external_id": "280",
+        "name": "에이스테크노타워 2차 흡연구역",
+        "address": "서울특별시 구로구 디지털로31길 19",
+        "detail_location": "구로구 지역 페이지의 실외 흡연구역 항목.",
+        "lat": 37.48487602,
+        "lng": 126.8937672,
+        "source": "smokingarea_site_reports"
+      }
+    }
+  },
+  {
+    "remove_key": {
+      "source": "smokingarea_site_reports",
+      "external_id": "268"
+    },
+    "reason": "safe_duplicate",
+    "candidate": {
+      "distance_m": 0.0,
+      "similarity": {
+        "name": 0.737,
+        "address": 1.0,
+        "detail_location": 0.263
+      },
+      "item1": {
+        "external_id": "782d9469-1a41-4c29-b4e2-ac94deff4549",
+        "name": "노량진컵밥거리",
+        "address": "서울 동작구 노량진로 174",
+        "detail_location": "서울 동작구 노량진로 174",
+        "lat": 37.51350211,
+        "lng": 126.94530668,
+        "source": "smokearea_kr_supabase"
+      },
+      "item2": {
+        "external_id": "268",
+        "name": "노량진컵밥거리 흡연구역",
+        "address": "서울 동작구 노량진로 174",
+        "detail_location": "동작구 지역 페이지의 실외 흡연구역 항목.",
+        "lat": 37.51350211,
+        "lng": 126.94530668,
+        "source": "smokingarea_site_reports"
+      }
+    }
+  },
+  {
+    "remove_key": {
+      "source": "smokingarea_site_reports",
+      "external_id": "289"
+    },
+    "reason": "safe_duplicate",
+    "candidate": {
+      "distance_m": 0.0,
+      "similarity": {
+        "name": 0.762,
+        "address": 1.0,
+        "detail_location": 0.263
+      },
+      "item1": {
+        "external_id": "82a5805a-7ccd-4d33-be02-e1c8d8cb6de1",
+        "name": "국립정신건강센터",
+        "address": "서울 광진구 용마산로 127",
+        "detail_location": "서울 광진구 용마산로 127",
+        "lat": 37.56508623,
+        "lng": 127.08577664,
+        "source": "smokearea_kr_supabase"
+      },
+      "item2": {
+        "external_id": "289",
+        "name": "국립정신건강센터 흡연구역",
+        "address": "서울 광진구 용마산로 127",
+        "detail_location": "광진구 지역 페이지의 실외 흡연구역 항목.",
+        "lat": 37.56508623,
+        "lng": 127.08577664,
+        "source": "smokingarea_site_reports"
+      }
+    }
+  },
+  {
+    "remove_key": {
+      "source": "smokingarea_site_reports",
+      "external_id": "277"
+    },
+    "reason": "safe_duplicate",
+    "candidate": {
+      "distance_m": 0.0,
+      "similarity": {
+        "name": 0.667,
+        "address": 1.0,
+        "detail_location": 0.293
+      },
+      "item1": {
+        "external_id": "851ddac3-fdd7-4cc1-aeed-7d3bd8c586c6",
+        "name": "지하이시티",
+        "address": "서울특별시 구로구 디지털로 243",
+        "detail_location": "서울특별시 구로구 디지털로 243",
+        "lat": 37.48199214,
+        "lng": 126.8923489,
+        "source": "smokearea_kr_supabase"
+      },
+      "item2": {
+        "external_id": "277",
+        "name": "지하이시티 흡연구역",
+        "address": "서울특별시 구로구 디지털로 243",
+        "detail_location": "구로구 지역 페이지의 실외 흡연구역 항목.",
+        "lat": 37.48199214,
+        "lng": 126.8923489,
+        "source": "smokingarea_site_reports"
+      }
+    }
+  },
+  {
+    "remove_key": {
+      "source": "smokingarea_site_reports",
+      "external_id": "295"
+    },
+    "reason": "safe_duplicate",
+    "candidate": {
+      "distance_m": 0.0,
+      "similarity": {
+        "name": 0.667,
+        "address": 1.0,
+        "detail_location": 0.294
+      },
+      "item1": {
+        "external_id": "8712527c-d076-4144-9521-3182961781ef",
+        "name": "광진경찰서",
+        "address": "서울 광진구 자양로 167",
+        "detail_location": "서울 광진구 자양로 167",
+        "lat": 37.54291142,
+        "lng": 127.08390217,
+        "source": "smokearea_kr_supabase"
+      },
+      "item2": {
+        "external_id": "295",
+        "name": "광진경찰서 흡연부스",
+        "address": "서울 광진구 자양로 167",
+        "detail_location": "광진구 지역 페이지의 흡연부스 항목.",
+        "lat": 37.54291142,
+        "lng": 127.08390217,
+        "source": "smokingarea_site_reports"
+      }
+    }
+  },
+  {
+    "remove_key": {
+      "source": "smokearea_kr_busan_gangseo",
+      "external_id": "https://smokearea.kr/ko/area/gimhae-domestic-2f-exit4"
+    },
+    "reason": "safe_duplicate",
+    "candidate": {
+      "distance_m": 0.0,
+      "similarity": {
+        "name": 1.0,
+        "address": 1.0,
+        "detail_location": 1.0
+      },
+      "item1": {
+        "external_id": "9967ed2e-b6ef-4d7d-9c46-e962d8886341",
+        "name": "김해공항 국내선 2층 4번 출구 흡연구역",
+        "address": "김해공항 국내선 2층 출발층 4번 출구(던킨도너츠 옆) 우측",
+        "detail_location": "김해공항 국내선 2층 출발층 4번 출구(던킨도너츠 옆) 우측",
+        "lat": 35.1796,
+        "lng": 128.9382,
+        "source": "smokearea_kr_supabase"
+      },
+      "item2": {
+        "external_id": "https://smokearea.kr/ko/area/gimhae-domestic-2f-exit4",
+        "name": "김해공항 국내선 2층 4번 출구 흡연구역",
+        "address": "김해공항 국내선 2층 출발층 4번 출구(던킨도너츠 옆) 우측",
+        "detail_location": "김해공항 국내선 2층 출발층 4번 출구(던킨도너츠 옆) 우측",
+        "lat": 35.1796,
+        "lng": 128.9382,
+        "source": "smokearea_kr_busan_gangseo"
+      }
+    }
+  },
+  {
+    "remove_key": {
+      "source": "smokingarea_site_reports",
+      "external_id": "185"
+    },
+    "reason": "safe_duplicate",
+    "candidate": {
+      "distance_m": 0.0,
+      "similarity": {
+        "name": 1.0,
+        "address": 1.0,
+        "detail_location": 1.0
+      },
+      "item1": {
+        "external_id": "a873e719-36ac-49e3-ab44-74f454c3f112",
+        "name": "프로당구클럽",
+        "address": "인천광역시 옹진군 영흥면 선재로116번길 6 2층",
+        "detail_location": "인천광역시 옹진군 영흥면 선재로116번길 6 2층",
+        "lat": 37.23913,
+        "lng": 126.53022,
+        "source": "smokearea_kr_supabase"
+      },
+      "item2": {
+        "external_id": "185",
+        "name": "프로당구클럽",
+        "address": "인천광역시 옹진군 영흥면 선재로116번길 6 2층",
+        "detail_location": "인천광역시 옹진군 영흥면 선재로116번길 6 2층",
+        "lat": 37.23913,
+        "lng": 126.53022,
+        "source": "smokingarea_site_reports"
+      }
+    }
+  },
+  {
+    "remove_key": {
+      "source": "smokingarea_site_reports",
+      "external_id": "296"
+    },
+    "reason": "safe_duplicate",
+    "candidate": {
+      "distance_m": 0.0,
+      "similarity": {
+        "name": 0.857,
+        "address": 1.0,
+        "detail_location": 0.294
+      },
+      "item1": {
+        "external_id": "b56037bd-2d34-453c-9fd8-d03b62db47ab",
+        "name": "세종대학교 학생회관 대공연장",
+        "address": "서울 광진구 능동로 209",
+        "detail_location": "서울 광진구 능동로 209",
+        "lat": 37.55160931,
+        "lng": 127.07318364,
+        "source": "smokearea_kr_supabase"
+      },
+      "item2": {
+        "external_id": "296",
+        "name": "세종대학교 학생회관 대공연장 흡연부스",
+        "address": "서울 광진구 능동로 209",
+        "detail_location": "광진구 지역 페이지의 흡연부스 항목.",
+        "lat": 37.55160931,
+        "lng": 127.07318364,
+        "source": "smokingarea_site_reports"
+      }
+    }
+  },
+  {
+    "remove_key": {
+      "source": "smokearea_kr_busan_gangseo",
+      "external_id": "https://smokearea.kr/ko/area/gimhae-intl-2f-gate5"
+    },
+    "reason": "safe_duplicate",
+    "candidate": {
+      "distance_m": 0.0,
+      "similarity": {
+        "name": 1.0,
+        "address": 1.0,
+        "detail_location": 1.0
+      },
+      "item1": {
+        "external_id": "babb21a3-47e7-4442-b4fa-ccceee5ac561",
+        "name": "김해공항 국제선 2층 5번 출구 흡연구역",
+        "address": "김해공항 국제선 2층 출발층 5번 출구 외부 우측 5m",
+        "detail_location": "김해공항 국제선 2층 출발층 5번 출구 외부 우측 5m",
+        "lat": 35.1796,
+        "lng": 128.9382,
+        "source": "smokearea_kr_supabase"
+      },
+      "item2": {
+        "external_id": "https://smokearea.kr/ko/area/gimhae-intl-2f-gate5",
+        "name": "김해공항 국제선 2층 5번 출구 흡연구역",
+        "address": "김해공항 국제선 2층 출발층 5번 출구 외부 우측 5m",
+        "detail_location": "김해공항 국제선 2층 출발층 5번 출구 외부 우측 5m",
+        "lat": 35.1796,
+        "lng": 128.9382,
+        "source": "smokearea_kr_busan_gangseo"
+      }
+    }
+  },
+  {
+    "remove_key": {
+      "source": "smokingarea_site_reports",
+      "external_id": "182"
+    },
+    "reason": "safe_duplicate",
+    "candidate": {
+      "distance_m": 0.0,
+      "similarity": {
+        "name": 1.0,
+        "address": 1.0,
+        "detail_location": 1.0
+      },
+      "item1": {
+        "external_id": "d41a65e9-cba9-4b7e-95d4-72ff52666f04",
+        "name": "검암역 광장",
+        "address": "인천광역시 서구 검바위로 26 (검암동, 검암역 광장)",
+        "detail_location": "인천광역시 서구 검바위로 26 (검암동, 검암역 광장)",
+        "lat": 37.568947,
+        "lng": 126.673705,
+        "source": "smokearea_kr_supabase"
+      },
+      "item2": {
+        "external_id": "182",
+        "name": "검암역 광장",
+        "address": "인천광역시 서구 검바위로 26 (검암동, 검암역 광장)",
+        "detail_location": "인천광역시 서구 검바위로 26 (검암동, 검암역 광장)",
+        "lat": 37.568947,
+        "lng": 126.673705,
+        "source": "smokingarea_site_reports"
+      }
+    }
+  },
+  {
+    "remove_key": {
+      "source": "smokingarea_site_reports",
+      "external_id": "282"
+    },
+    "reason": "safe_duplicate",
+    "candidate": {
+      "distance_m": 0.0,
+      "similarity": {
+        "name": 0.815,
+        "address": 1.0,
+        "detail_location": 0.279
+      },
+      "item1": {
+        "external_id": "d592981b-58f7-43a8-919b-0cdc03b822b4",
+        "name": "코오롱디지털타워빌란트",
+        "address": "서울특별시 구로구 디지털로32길 30",
+        "detail_location": "서울특별시 구로구 디지털로32길 30",
+        "lat": 37.48338954,
+        "lng": 126.8965199,
+        "source": "smokearea_kr_supabase"
+      },
+      "item2": {
+        "external_id": "282",
+        "name": "코오롱디지털타워빌란트 흡연구역",
+        "address": "서울특별시 구로구 디지털로32길 30",
+        "detail_location": "구로구 지역 페이지의 실외 흡연구역 항목.",
+        "lat": 37.48338954,
+        "lng": 126.8965199,
+        "source": "smokingarea_site_reports"
+      }
+    }
+  },
+  {
+    "remove_key": {
+      "source": "smokingarea_site_reports",
+      "external_id": "288"
+    },
+    "reason": "safe_duplicate",
+    "candidate": {
+      "distance_m": 0.0,
+      "similarity": {
+        "name": 0.615,
+        "address": 1.0,
+        "detail_location": 0.25
+      },
+      "item1": {
+        "external_id": "e56ef860-9036-47dc-9653-b90d22f069a5",
+        "name": "중일가든",
+        "address": "서울 광진구 아차산로76가길 4",
+        "detail_location": "서울 광진구 아차산로76가길 4",
+        "lat": 37.5475074,
+        "lng": 127.10748426,
+        "source": "smokearea_kr_supabase"
+      },
+      "item2": {
+        "external_id": "288",
+        "name": "중일가든 흡연구역",
+        "address": "서울 광진구 아차산로76가길 4",
+        "detail_location": "광진구 지역 페이지의 실외 흡연구역 항목.",
+        "lat": 37.5475074,
+        "lng": 127.10748426,
+        "source": "smokingarea_site_reports"
+      }
+    }
+  },
+  {
+    "remove_key": {
+      "source": "smokingarea_site_reports",
+      "external_id": "286"
+    },
+    "reason": "safe_duplicate",
+    "candidate": {
+      "distance_m": 0.0,
+      "similarity": {
+        "name": 0.839,
+        "address": 1.0,
+        "detail_location": 0.238
+      },
+      "item1": {
+        "external_id": "e747c01a-3930-4cc3-a180-70159e56d16b",
+        "name": "구로STX W-TOWER",
+        "address": "서울특별시 구로구 경인로53길 90",
+        "detail_location": "서울특별시 구로구 경인로53길 90",
+        "lat": 37.50472,
+        "lng": 126.8752,
+        "source": "smokearea_kr_supabase"
+      },
+      "item2": {
+        "external_id": "286",
+        "name": "구로STX W-TOWER 흡연구역",
+        "address": "서울특별시 구로구 경인로53길 90",
+        "detail_location": "구로구 지역 페이지의 실외 흡연구역 항목.",
+        "lat": 37.50472,
+        "lng": 126.8752,
+        "source": "smokingarea_site_reports"
+      }
+    }
+  },
+  {
+    "remove_key": {
+      "source": "smokingarea_site_reports",
+      "external_id": "276"
+    },
+    "reason": "safe_duplicate",
+    "candidate": {
+      "distance_m": 0.0,
+      "similarity": {
+        "name": 0.706,
+        "address": 1.0,
+        "detail_location": 0.293
+      },
+      "item1": {
+        "external_id": "f0ab0720-cb31-448b-a24c-a2429d1bfaa9",
+        "name": "고대구로병원",
+        "address": "서울특별시 구로구 구로동로 148",
+        "detail_location": "서울특별시 구로구 구로동로 148",
+        "lat": 37.49117964,
+        "lng": 126.8846377,
+        "source": "smokearea_kr_supabase"
+      },
+      "item2": {
+        "external_id": "276",
+        "name": "고대구로병원 흡연구역",
+        "address": "서울특별시 구로구 구로동로 148",
+        "detail_location": "구로구 지역 페이지의 실외 흡연구역 항목.",
+        "lat": 37.49117964,
+        "lng": 126.8846377,
+        "source": "smokingarea_site_reports"
+      }
+    }
+  },
+  {
+    "remove_key": {
+      "source": "smokearea_kr_busan_gangseo",
+      "external_id": "https://smokearea.kr/ko/area/gimhae-domestic-1f-exit4"
+    },
+    "reason": "safe_duplicate",
+    "candidate": {
+      "distance_m": 0.0,
+      "similarity": {
+        "name": 1.0,
+        "address": 1.0,
+        "detail_location": 1.0
+      },
+      "item1": {
+        "external_id": "fe660de9-f8d4-4be8-8b3f-e0546d8616b1",
+        "name": "김해공항 국내선 1층 4번 출구 흡연구역",
+        "address": "김해공항 국내선 1층 4번 출구 우측 택시승강장 방향",
+        "detail_location": "김해공항 국내선 1층 4번 출구 우측 택시승강장 방향",
+        "lat": 35.1796,
+        "lng": 128.9382,
+        "source": "smokearea_kr_supabase"
+      },
+      "item2": {
+        "external_id": "https://smokearea.kr/ko/area/gimhae-domestic-1f-exit4",
+        "name": "김해공항 국내선 1층 4번 출구 흡연구역",
+        "address": "김해공항 국내선 1층 4번 출구 우측 택시승강장 방향",
+        "detail_location": "김해공항 국내선 1층 4번 출구 우측 택시승강장 방향",
+        "lat": 35.1796,
+        "lng": 128.9382,
+        "source": "smokearea_kr_busan_gangseo"
+      }
+    }
+  }
+]
