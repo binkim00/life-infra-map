@@ -26,6 +26,8 @@ class Place(models.Model):
     )
     data_quality_score = models.IntegerField(default=50)
 
+    raw = models.JSONField(default=dict, blank=True)
+    
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
