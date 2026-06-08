@@ -103,4 +103,7 @@ staticfiles/
 uploads/
 *.zip
 *.tar
-*.tar.gz
+*.tar.gzExData/Cleaned/*.json
+ExData/Cleaned/skipped/*.json
+ExData/Cleaned/*.json
+ExData/Cleaned/skipped/*.json
