@@ -14,20 +14,74 @@ defineProps({
       <strong>{{ place.score }}점</strong>
     </div>
 
-    <p class="meta">{{ place.category }} · {{ place.distance }}m</p>
+    <p class="meta">
+      {{ place.category }} ·
+      <span v-if="place.distance !== null && place.distance !== undefined">
+        {{ place.distance }}m
+      </span>
+      <span v-else>
+        거리 정보 없음
+      </span>
+    </p>
+
     <p class="address">{{ place.address }}</p>
 
-    <div class="tags">
-      <span v-for="tag in place.runtime_tags" :key="tag">
-        #{{ tag }}
-      </span>
+    <div v-if="place.runtime_tags?.length" class="tag-section">
+      <p class="tag-label">실시간 태그</p>
+      <div class="tags runtime">
+        <span v-for="tag in place.runtime_tags" :key="tag">
+          #{{ tag }}
+        </span>
+      </div>
     </div>
 
-    <div v-if="place.verified_tags?.length" class="tags verified">
-      <span v-for="tag in place.verified_tags" :key="tag">
-        #{{ tag }}
-      </span>
+    <div v-if="place.suggested_tags?.length" class="tag-section">
+      <p class="tag-label">추천 태그 후보</p>
+      <div class="tags suggested">
+        <span v-for="tag in place.suggested_tags" :key="tag">
+          #{{ tag }}
+        </span>
+      </div>
     </div>
+
+    <div v-if="place.verified_tags?.length" class="tag-section">
+      <p class="tag-label">검증 태그</p>
+      <div class="tags verified">
+        <span v-for="tag in place.verified_tags" :key="tag">
+          #{{ tag }}
+        </span>
+      </div>
+    </div>
+
+    <div v-if="place.warning_tags?.length" class="tag-section">
+      <p class="tag-label">주의 태그</p>
+      <div class="tags warning">
+        <span v-for="tag in place.warning_tags" :key="tag">
+          #{{ tag }}
+        </span>
+      </div>
+    </div>
+
+    <div v-if="place.data_quality_score || place.raw_scores?.recommendation_ready_score" class="score-detail">
+      <p v-if="place.data_quality_score">
+        데이터 신뢰도: {{ place.data_quality_score }}점
+      </p>
+      <p v-if="place.raw_scores?.recommendation_ready_score">
+        추천 준비도: {{ place.raw_scores.recommendation_ready_score }}점
+      </p>
+    </div>
+
+    <details v-if="place.tag_details?.length" class="tag-details">
+      <summary>태그 근거 보기</summary>
+
+      <ul>
+        <li v-for="tag in place.tag_details" :key="`${tag.name}-${tag.source}`">
+          <strong>#{{ tag.name }}</strong>
+          <span> · 신뢰도 {{ tag.confidence }}점</span>
+          <p>{{ tag.evidence }}</p>
+        </li>
+      </ul>
+    </details>
 
     <p class="reason">{{ place.recommend_reason }}</p>
     <p class="caution">{{ place.caution }}</p>
@@ -57,6 +111,7 @@ defineProps({
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 12px;
 }
 
 .card-header h2 {
@@ -72,22 +127,83 @@ defineProps({
   color: #666;
 }
 
+.tag-section {
+  margin-top: 12px;
+}
+
+.tag-label {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #555;
+}
+
 .tags {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
-  margin: 12px 0;
 }
 
 .tags span {
   padding: 4px 8px;
   border-radius: 999px;
-  background: #f1f3f5;
   font-size: 14px;
 }
 
+.runtime span {
+  background: #f1f3f5;
+}
+
+.suggested span {
+  background: #fff3bf;
+}
+
 .verified span {
-  background: #e7f5ff;
+  background: #d3f9d8;
+}
+
+.warning span {
+  background: #ffe3e3;
+}
+
+.score-detail {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #f8f9fa;
+  font-size: 13px;
+  color: #555;
+}
+
+.score-detail p {
+  margin: 2px 0;
+}
+
+.tag-details {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #f8f9fa;
+  font-size: 13px;
+}
+
+.tag-details summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.tag-details ul {
+  margin: 8px 0 0;
+  padding-left: 18px;
+}
+
+.tag-details li {
+  margin-bottom: 8px;
+}
+
+.tag-details p {
+  margin: 4px 0 0;
+  color: #666;
 }
 
 .reason {

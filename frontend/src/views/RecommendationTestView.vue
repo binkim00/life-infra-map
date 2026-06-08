@@ -11,11 +11,10 @@ const results = ref([])
 const loading = ref(false)
 const error = ref('')
 const position = ref({
-  lat: 37.5665,
-  lng: 126.9780,
-  label: '기본 테스트 위치: 서울시청',
+  lat: 35.1556,
+  lng: 129.0641,
+  label: '기본 테스트 위치: 서면/전포',
 })
-
 const scenarios = [
   {
     code: 'work_cafe',
