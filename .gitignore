@@ -99,11 +99,3 @@ staticfiles/
 # =========================
 # Uploaded / Generated files
 # =========================
-
-# uploads/
-# *.zip
-# *.tar
-# *.tar.gzExData/Cleaned/*.json
-# ExData/Cleaned/skipped/*.json
-# ExData/Cleaned/*.json
-# ExData/Cleaned/skipped/*.json

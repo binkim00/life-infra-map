@@ -5,7 +5,7 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parents[4]
 
-INPUT_PATH = BASE_DIR / "ExData" / "CsvData" / "citypark" / "전국도시공원정보표준데이터.csv"
+INPUT_PATH = BASE_DIR / "ExData" / "CSVData" / "citypark" / "전국도시공원정보표준데이터.csv"
 OUTPUT_PATH = Path(__file__).resolve().parent / "park_original_tag_results.json"
 SKIPPED_PATH = Path(__file__).resolve().parent / "park_original_tag_skipped_results.json"
 
