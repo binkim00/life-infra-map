@@ -1,0 +1,168 @@
+{
+  "input": {
+    "input_path": "C:\\Users\\k0b03\\Desktop\\영빈\\SSAFY\\life-infra-map\\Test\\apiTest\\tag\\beachTag\\beach_tag_results.json",
+    "skipped_input_path": "C:\\Users\\k0b03\\Desktop\\영빈\\SSAFY\\life-infra-map\\Test\\apiTest\\tag\\beachTag\\beach_tag_skipped_results.json",
+    "input_beach_count": 282,
+    "input_skipped_count": 0
+  },
+  "output": {
+    "place_tag_seed_place_count": 281,
+    "place_tag_seed_row_count": 2455,
+    "skipped_count": 1,
+    "place_tag_seed_path": "C:\\Users\\k0b03\\Desktop\\영빈\\SSAFY\\life-infra-map\\Test\\apiTest\\tag\\beachTag\\beach_place_tag_seed.json",
+    "summary_path": "C:\\Users\\k0b03\\Desktop\\영빈\\SSAFY\\life-infra-map\\Test\\apiTest\\tag\\beachTag\\beach_place_tag_seed_summary.json"
+  },
+  "tag_counts": {
+    "물놀이": 432,
+    "해수욕장": 281,
+    "바다": 281,
+    "사진찍기좋음": 207,
+    "모래해변": 191,
+    "가족방문좋음": 181,
+    "캠핑": 162,
+    "산책좋음": 134,
+    "힐링": 128,
+    "드라이브목적지": 105,
+    "넓은해변": 91,
+    "야경": 73,
+    "긴해변": 72,
+    "반려동물동반": 49,
+    "서핑": 30,
+    "데이트좋음": 27,
+    "몽돌해변": 7,
+    "자갈해변": 4
+  },
+  "source_counts": {
+    "blog_search": 1247,
+    "category_rule": 843,
+    "field_rule": 365
+  },
+  "status_counts": {
+    "candidate": 1612,
+    "confirmed": 843
+  },
+  "region_counts": {
+    "충남 태안군": 30,
+    "강원 고성군": 26,
+    "강원 강릉시": 20,
+    "강원 양양군": 19,
+    "경남 거제시": 17,
+    "강원 삼척시": 16,
+    "인천 옹진군": 13,
+    "전남 신안군": 13,
+    "전남 고흥군": 11,
+    "전남 완도군": 10,
+    "전남 여수시": 8,
+    "경북 영덕군": 7,
+    "경북 울진군": 7,
+    "제주 제주시": 7,
+    "강원 동해시": 6,
+    "경북 포항시": 6,
+    "인천 중구": 5,
+    "전북 부안군": 5,
+    "경북 경주시": 5,
+    "인천 강화군": 4,
+    "전남 진도군": 4,
+    "경남 남해군": 4,
+    "제주 서귀포시": 4,
+    "강원 속초시": 3,
+    "전남 해남군": 3,
+    "경남 통영시": 3,
+    "부산 기장군": 2,
+    "부산 해운대구": 2,
+    "충남 당진시": 2,
+    "충남 보령시": 2,
+    "전북 고창군": 2,
+    "전남 무안군": 2,
+    "전남 영광군": 2,
+    "울산 동구": 1,
+    "울산 울주군": 1,
+    "부산 사하구": 1,
+    "부산 서구": 1,
+    "부산 수영구": 1,
+    "충남 서천군": 1,
+    "전북 군산시": 1,
+    "전남 목포시": 1,
+    "전남 보성군": 1,
+    "전남 장흥군": 1,
+    "전남 함평군": 1,
+    "경남 사천시": 1
+  },
+  "skipped": [
+    {
+      "reason": "place_external_id_or_name_or_coordinate_missing",
+      "place_external_id": "beach_부산_사하구_다대포서측",
+      "place_name": "다대포서측",
+      "lat": null,
+      "lng": null,
+      "raw": {
+        "num": 3,
+        "sido_nm": "부산",
+        "gugun_nm": "사하구",
+        "sta_nm": "다대포서측",
+        "lat": null,
+        "lon": null,
+        "beach_knd": "모래",
+        "beach_len": 1020.0,
+        "beach_wid": 350.0,
+        "tags": [
+          "가족방문",
+          "긴해변",
+          "넓은해변",
+          "데이트",
+          "모래해변",
+          "물놀이",
+          "바다",
+          "사진명소",
+          "산책",
+          "야경",
+          "해수욕장"
+        ],
+        "default_tags": [
+          "해수욕장",
+          "바다",
+          "물놀이"
+        ],
+        "blog_tags": [
+          "가족방문",
+          "데이트",
+          "물놀이",
+          "사진명소",
+          "산책",
+          "야경"
+        ],
+        "original_tags": [
+          "긴해변",
+          "넓은해변",
+          "모래해변"
+        ],
+        "matched_keywords": {
+          "산책": [
+            "산책"
+          ],
+          "사진명소": [
+            "뷰",
+            "사진",
+            "오션뷰"
+          ],
+          "데이트": [
+            "데이트"
+          ],
+          "가족방문": [
+            "가족",
+            "아이"
+          ],
+          "야경": [
+            "노을"
+          ],
+          "물놀이": [
+            "물놀이"
+          ]
+        },
+        "blog_count": 10,
+        "search_query": "부산 사하구 다대포서측 해수욕장"
+      }
+    }
+  ],
+  "data_note": "이 파일은 해수욕장 Place에 붙일 PlaceTag seed입니다. category_rule은 기본 카테고리 태그, field_rule은 원본 필드 기반 후보 태그, blog_search는 블로그 검색 기반 후보 태그입니다."
+}
