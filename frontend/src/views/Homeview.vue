@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import KakaoMap from '@/components/KakaoMap.vue'
 
 const activeTab = ref('search')
@@ -38,6 +38,40 @@ const mapPlaces = computed(() => {
     ...searchedPlaces.value,
   ]
 })
+
+const placeListItemRefs = ref({})
+
+const setPlaceListItemRef = (el, placeId) => {
+  if (el) {
+    placeListItemRefs.value[placeId] = el
+  }
+}
+
+const scrollSelectedPlaceIntoView = async () => {
+  await nextTick()
+
+  if (!selectedPlace.value?.id) {
+    return
+  }
+
+  const targetElement = placeListItemRefs.value[selectedPlace.value.id]
+
+  if (!targetElement) {
+    return
+  }
+
+  targetElement.scrollIntoView({
+    behavior: 'smooth',
+    block: 'nearest',
+  })
+}
+
+watch(
+  () => selectedPlace.value?.id,
+  () => {
+    scrollSelectedPlaceIntoView()
+  },
+)
 
 const handleSearch = () => {
   if (!searchKeyword.value.trim()) {
@@ -79,7 +113,7 @@ const openMapWithCurrentLocation = () => {
           lng,
           address: '',
           distance: null,
-          tags: ['현재위치'],
+          tags: [makeTag('현재위치', 'category_rule')],
         },
       ]
 
@@ -188,15 +222,35 @@ const runKakaoKeywordSearchLimited = async (
   return allResults.slice(0, MAX_SEARCH_RESULT_COUNT)
 }
 
+const makeTag = (name, source) => {
+  return {
+    name,
+    source,
+  }
+}
+
 const makeTemporaryTags = (place, keyword) => {
-  const tags = ['카카오검색결과']
+  const tags = []
 
   const category = place.category_name || ''
   const searchText = `${keyword} ${category} ${place.place_name}`
 
+  // 기본 태그: 검정
+  tags.push(makeTag('카카오검색결과', 'category_rule'))
+
   if (searchText.includes('카페')) {
-    tags.push('카페')
-    tags.push('실내후보')
+    tags.push(makeTag('카페', 'category_rule'))
+    tags.push(makeTag('실내후보', 'category_rule'))
+
+    // 블로그 검색 태그: 초록
+    // 현재는 화면 확인용 임시 태그입니다.
+    // 추후 백엔드에서 blog_search source를 내려주면 이 부분을 교체하면 됩니다.
+    tags.push(makeTag('조용함후보', 'blog_search'))
+    tags.push(makeTag('노트북작업후보', 'blog_search'))
+
+    // 사용자 검증 태그: 빨강
+    // 현재는 화면 확인용 임시 태그입니다.
+    tags.push(makeTag('콘센트있음', 'user_verified'))
   }
 
   if (
@@ -207,26 +261,104 @@ const makeTemporaryTags = (place, keyword) => {
     searchText.includes('중식') ||
     searchText.includes('양식')
   ) {
-    tags.push('식당')
+    tags.push(makeTag('식당', 'category_rule'))
+    tags.push(makeTag('맛집후보', 'blog_search'))
+    tags.push(makeTag('재방문후보', 'user_verified'))
   }
 
   if (searchText.includes('편의점')) {
-    tags.push('편의점')
+    tags.push(makeTag('편의점', 'category_rule'))
   }
 
   if (searchText.includes('주차')) {
-    tags.push('주차가능확인필요')
+    tags.push(makeTag('주차가능확인필요', 'category_rule'))
   }
 
   if (place.distance) {
-    tags.push('검색기준위치기준')
+    tags.push(makeTag('검색기준위치기준', 'category_rule'))
   }
 
-  return [...new Set(tags)]
+  const uniqueTags = []
+  const seen = new Set()
+
+  tags.forEach((tag) => {
+    const key = `${tag.name}-${tag.source}`
+
+    if (!seen.has(key)) {
+      seen.add(key)
+      uniqueTags.push(tag)
+    }
+  })
+
+  return uniqueTags
+}
+
+const getTagName = (tag) => {
+  if (typeof tag === 'string') {
+    return tag
+  }
+
+  return tag.name
+}
+
+const getTagClass = (tag) => {
+  const source = typeof tag === 'string' ? 'category_rule' : tag.source
+
+  if (source === 'blog_search') {
+    return 'tag-blog'
+  }
+
+  if (source === 'user_verified') {
+    return 'tag-user'
+  }
+
+  return 'tag-default'
+}
+
+const getTagSourceText = (tag) => {
+  const source = typeof tag === 'string' ? 'category_rule' : tag.source
+
+  if (source === 'blog_search') {
+    return '블로그'
+  }
+
+  if (source === 'user_verified') {
+    return '사용자검증'
+  }
+
+  return '기본'
+}
+
+const getTagSortOrder = (tag) => {
+  const source = typeof tag === 'string' ? 'category_rule' : tag.source
+
+  if (source === 'category_rule') {
+    return 1
+  }
+
+  if (source === 'blog_search') {
+    return 2
+  }
+
+  if (source === 'user_verified') {
+    return 3
+  }
+
+  return 99
+}
+
+const getSortedTags = (tags = []) => {
+  return [...tags].sort((a, b) => {
+    return getTagSortOrder(a) - getTagSortOrder(b)
+  })
+}
+
+const getMarkerLabel = (index) => {
+  return String(index + 1)
 }
 
 const convertKakaoPlaces = (places, targetKeyword) => {
-  return places.map((place) => ({
+  return places.map((place, index) => ({
     id: place.id,
     name: place.place_name,
     category: place.category_name,
@@ -237,6 +369,7 @@ const convertKakaoPlaces = (places, targetKeyword) => {
     phone: place.phone,
     placeUrl: place.place_url,
     markerColor: 'red',
+    markerLabel: getMarkerLabel(index),
     tags: makeTemporaryTags(place, targetKeyword),
     tagSource: '카카오 API 검색 결과 기반 임시 태그',
   }))
@@ -348,7 +481,7 @@ const searchKakaoPlaces = async () => {
         distance: null,
         phone: basePlace.phone,
         placeUrl: basePlace.place_url,
-        tags: ['검색기준위치'],
+        tags: [makeTag('검색기준위치', 'category_rule')],
         tagSource: '카카오 API 장소 검색 결과',
       },
     ]
@@ -371,6 +504,12 @@ const searchKakaoPlaces = async () => {
 }
 
 const selectPlace = (place) => {
+  selectedPlace.value = place
+  showDetailPanel.value = false
+  detailFrameError.value = false
+}
+
+const selectPlaceFromList = (place) => {
   selectedPlace.value = place
   showDetailPanel.value = false
   detailFrameError.value = false
@@ -472,12 +611,48 @@ const handleDetailFrameError = () => {
 
       <div
         class="map-content"
-        :class="{ 'has-selected-place': selectedPlace }"
+        :class="{
+          'has-result-list': searchedPlaces.length,
+          'has-selected-place': selectedPlace,
+        }"
       >
+        <aside
+          v-if="searchedPlaces.length"
+          class="place-list-panel"
+        >
+          <div class="place-list-top">
+            <div>
+              <p class="place-list-label">검색 결과</p>
+              <h2>장소 {{ searchedPlaces.length }}</h2>
+            </div>
+          </div>
+
+          <div class="place-list">
+            <button
+              v-for="place in searchedPlaces"
+              :key="place.id"
+              :ref="(el) => setPlaceListItemRef(el, place.id)"
+              type="button"
+              class="place-list-item"
+              :class="{ active: selectedPlace && selectedPlace.id === place.id }"
+              @click="selectPlaceFromList(place)"
+            >
+              <span class="place-list-marker">
+                {{ place.markerLabel }}
+              </span>
+
+              <span class="place-list-name">
+                {{ place.name }}
+              </span>
+            </button>
+          </div>
+        </aside>
+
         <div class="map-area">
           <KakaoMap
             :center="mapCenter"
             :places="mapPlaces"
+            :selected-place-id="selectedPlace?.id || null"
             @select-place="selectPlace"
           />
         </div>
@@ -510,11 +685,13 @@ const handleDetailFrameError = () => {
               class="tag-list"
             >
               <span
-                v-for="tag in selectedPlace.tags"
-                :key="tag"
+                v-for="tag in getSortedTags(selectedPlace.tags)"
+                :key="`${getTagName(tag)}-${typeof tag === 'string' ? 'category_rule' : tag.source}`"
                 class="tag-chip"
+                :class="getTagClass(tag)"
               >
-                #{{ tag }}
+                #{{ getTagName(tag) }}
+                <small>{{ getTagSourceText(tag) }}</small>
               </span>
             </div>
 
@@ -534,10 +711,6 @@ const handleDetailFrameError = () => {
                 <p>{{ selectedPlace.phone }}</p>
               </div>
 
-              <div v-if="selectedPlace.tagSource" class="info-row">
-                <span>태그 출처</span>
-                <p>{{ selectedPlace.tagSource }}</p>
-              </div>
             </div>
 
             <button
@@ -786,8 +959,97 @@ h1 {
   align-items: stretch;
 }
 
-.map-content.has-selected-place {
+.map-content.has-result-list {
+  grid-template-columns: 280px minmax(0, 1fr);
+}
+
+.map-content.has-result-list.has-selected-place {
+  grid-template-columns: 280px minmax(0, 1fr) 360px;
+}
+
+.map-content.has-selected-place:not(.has-result-list) {
   grid-template-columns: minmax(0, 1fr) 360px;
+}
+
+.place-list-panel {
+  height: calc(100vh - 290px);
+  min-height: 520px;
+  padding: 16px;
+  overflow: hidden;
+  background: #ffffff;
+  border: 1px solid #e5e8f0;
+  border-radius: 22px;
+  box-shadow: 0 18px 48px rgba(20, 35, 70, 0.12);
+}
+
+.place-list-top {
+  padding-bottom: 12px;
+  border-bottom: 1px solid #eef0f4;
+}
+
+.place-list-label {
+  margin: 0 0 4px;
+  color: #2563eb;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.place-list-top h2 {
+  margin: 0;
+  color: #111827;
+  font-size: 18px;
+  letter-spacing: -0.03em;
+}
+
+.place-list {
+  height: calc(100% - 58px);
+  margin-top: 10px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.place-list-item {
+  width: 100%;
+  padding: 12px 8px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  border: 0;
+  border-bottom: 1px solid #eef0f4;
+  background: transparent;
+  color: #111827;
+  text-align: left;
+  cursor: pointer;
+}
+
+.place-list-item:hover,
+.place-list-item.active {
+  background: #eff6ff;
+  border-radius: 12px;
+}
+
+.place-list-marker {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border: 2px solid #ef4444;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #ef4444;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.place-list-name {
+  min-width: 0;
+  overflow: hidden;
+  color: #111827;
+  font-size: 14px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .map-area {
@@ -873,11 +1135,33 @@ h1 {
 
 .tag-chip {
   padding: 7px 10px;
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
   border-radius: 999px;
-  background: #eff6ff;
-  color: #2563eb;
   font-size: 13px;
   font-weight: 800;
+}
+
+.tag-chip small {
+  font-size: 10px;
+  font-weight: 900;
+  opacity: 0.8;
+}
+
+.tag-default {
+  background: #111827;
+  color: #ffffff;
+}
+
+.tag-blog {
+  background: #16a34a;
+  color: #ffffff;
+}
+
+.tag-user {
+  background: #ef4444;
+  color: #ffffff;
 }
 
 .info-list {
@@ -1015,13 +1299,21 @@ h1 {
   background: #ffffff;
 }
 
-@media (max-width: 960px) {
-  .map-content.has-selected-place {
+@media (max-width: 1100px) {
+  .map-content.has-result-list,
+  .map-content.has-result-list.has-selected-place,
+  .map-content.has-selected-place:not(.has-result-list) {
     grid-template-columns: 1fr;
   }
 
+  .place-list-panel,
   .place-detail-panel {
+    height: auto;
     min-height: auto;
+  }
+
+  .place-list {
+    max-height: 240px;
   }
 
   .place-card {
