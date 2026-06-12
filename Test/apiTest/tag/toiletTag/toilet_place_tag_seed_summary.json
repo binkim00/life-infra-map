@@ -1,0 +1,65 @@
+{
+  "input": {
+    "input_path": "C:\\Users\\k0b03\\Desktop\\영빈\\SSAFY\\life-infra-map\\ExData\\Cleaned\\toilet_places.json",
+    "skipped_input_path": "C:\\Users\\k0b03\\Desktop\\영빈\\SSAFY\\life-infra-map\\ExData\\Cleaned\\skipped\\toilet_skipped.json",
+    "input_toilet_count": 29132,
+    "input_skipped_count": 24387
+  },
+  "output": {
+    "place_tag_seed_place_count": 29132,
+    "place_tag_seed_row_count": 112610,
+    "skipped_count": 0,
+    "removed_basic_tag_count": 58264,
+    "place_tag_seed_path": "C:\\Users\\k0b03\\Desktop\\영빈\\SSAFY\\life-infra-map\\Test\\apiTest\\tag\\tolietTag\\toilet_place_tag_seed.json",
+    "summary_path": "C:\\Users\\k0b03\\Desktop\\영빈\\SSAFY\\life-infra-map\\Test\\apiTest\\tag\\tolietTag\\toilet_place_tag_seed_summary.json",
+    "removed_noisy_tag_count": 96026
+  },
+  "tag_counts": {
+    "비상벨확인필요": 17734,
+    "24시간개방후보": 15990,
+    "장애인화장실있음": 13704,
+    "개방화장실": 12845,
+    "비상벨있음": 11398,
+    "규모큰화장실후보": 8318,
+    "CCTV있음": 5780,
+    "기저귀교환대있음": 5112,
+    "아이와가기좋음후보": 5112,
+    "연락처확인필요": 3771,
+    "공원화장실": 3465,
+    "어린이화장실있음": 2759,
+    "공공시설화장실": 1832,
+    "간이화장실": 1322,
+    "관광지화장실": 1142,
+    "교통시설화장실": 1123,
+    "시장화장실": 992,
+    "이동화장실": 210,
+    "화장실구분확인필요": 1
+  },
+  "source_counts": {
+    "field_rule": 112610
+  },
+  "status_counts": {
+    "candidate": 91104,
+    "needs_verification": 21506
+  },
+  "tag_type_counts": {
+    "recommendation": 76937,
+    "warning": 21506,
+    "category": 14167
+  },
+  "removed_basic_tag_counts": {
+    "공중화장실": 29132,
+    "생활편의": 29132
+  },
+  "skipped": [],
+  "data_note": "이 파일은 공중화장실 Place에 붙일 PlaceTag seed입니다. 공중화장실, 화장실, 생활편의처럼 Place.category로 표현 가능한 기본 태그는 제거하고, 개방시간, 장애인화장실, 어린이화장실, 비상벨, CCTV, 기저귀교환대, 확인필요 태그 등 추천/필터에 활용 가능한 세부 속성만 저장합니다.",
+  "cleanup_noisy_tags": {
+    "removed_tag_counts": {
+      "오물처리방식정보있음": 29132,
+      "남녀화장실정보있음": 28391,
+      "연락처있음": 25361,
+      "개방시간정보있음": 13142
+    },
+    "rule": "추천/필터에 직접 활용하기 어려운 정보 존재 여부 태그를 제거했습니다. 오물처리방식정보있음, 남녀화장실정보있음, 연락처있음, 개방시간정보있음은 장소 상세 raw 정보로는 유지하지만 PlaceTag로는 저장하지 않습니다."
+  }
+}
