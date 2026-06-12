@@ -505,19 +505,16 @@ const searchKakaoPlaces = async () => {
 
 const selectPlace = (place) => {
   selectedPlace.value = place
-  showDetailPanel.value = false
   detailFrameError.value = false
 }
 
 const selectPlaceFromList = (place) => {
   selectedPlace.value = place
-  showDetailPanel.value = false
   detailFrameError.value = false
 }
 
 const closePlaceCard = () => {
   selectedPlace.value = null
-  showDetailPanel.value = false
   detailFrameError.value = false
 }
 
@@ -661,9 +658,12 @@ const handleDetailFrameError = () => {
           v-if="selectedPlace"
           class="place-detail-panel"
         >
-          <div class="place-card">
-            <div class="card-top">
-              <p class="card-label">선택한 장소</p>
+          <div class="split-place-card">
+            <div class="split-card-top">
+              <div>
+                <p class="card-label">선택한 장소</p>
+                <h2>{{ selectedPlace.name }}</h2>
+              </div>
 
               <button
                 type="button"
@@ -674,125 +674,79 @@ const handleDetailFrameError = () => {
               </button>
             </div>
 
-            <h2>{{ selectedPlace.name }}</h2>
+            <section class="kakao-frame-section">
+              <div class="iframe-fallback" v-if="!selectedPlace.placeUrl || detailFrameError">
+                <p>카카오맵 상세페이지를 현재 화면에 표시하지 못했습니다.</p>
 
-            <p v-if="selectedPlace.category" class="category">
-              {{ selectedPlace.category }}
-            </p>
+                <a
+                  v-if="selectedPlace.placeUrl"
+                  :href="selectedPlace.placeUrl"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  새창에서 열기
+                </a>
+              </div>
 
-            <div
-              v-if="selectedPlace.tags && selectedPlace.tags.length"
-              class="tag-list"
-            >
-              <span
-                v-for="tag in getSortedTags(selectedPlace.tags)"
-                :key="`${getTagName(tag)}-${typeof tag === 'string' ? 'category_rule' : tag.source}`"
-                class="tag-chip"
-                :class="getTagClass(tag)"
+              <iframe
+                v-else
+                :src="selectedPlace.placeUrl"
+                class="inline-kakao-frame"
+                title="카카오맵 장소 상세페이지"
+                referrerpolicy="no-referrer-when-downgrade"
+                @error="handleDetailFrameError"
+              ></iframe>
+            </section>
+
+            <section class="tag-info-section">
+              <div
+                v-if="selectedPlace.tags && selectedPlace.tags.length"
+                class="tag-list"
               >
-                #{{ getTagName(tag) }}
-                <small>{{ getTagSourceText(tag) }}</small>
-              </span>
-            </div>
-
-            <div class="info-list">
-              <div v-if="selectedPlace.address" class="info-row">
-                <span>주소</span>
-                <p>{{ selectedPlace.address }}</p>
+                <span
+                  v-for="tag in getSortedTags(selectedPlace.tags)"
+                  :key="`${getTagName(tag)}-${typeof tag === 'string' ? 'category_rule' : tag.source}`"
+                  class="tag-chip"
+                  :class="getTagClass(tag)"
+                >
+                  #{{ getTagName(tag) }}
+                  <small>{{ getTagSourceText(tag) }}</small>
+                </span>
               </div>
 
-              <div v-if="selectedPlace.distance" class="info-row">
-                <span>거리</span>
-                <p>검색 기준 위치에서 {{ selectedPlace.distance }}m</p>
+              <div class="info-list compact-info-list">
+                <div v-if="selectedPlace.category" class="info-row">
+                  <span>분류</span>
+                  <p>{{ selectedPlace.category }}</p>
+                </div>
+
+                <div v-if="selectedPlace.address" class="info-row">
+                  <span>주소</span>
+                  <p>{{ selectedPlace.address }}</p>
+                </div>
+
+                <div v-if="selectedPlace.distance" class="info-row">
+                  <span>거리</span>
+                  <p>검색 기준 위치에서 {{ selectedPlace.distance }}m</p>
+                </div>
+
+                <div v-if="selectedPlace.phone" class="info-row">
+                  <span>전화</span>
+                  <p>{{ selectedPlace.phone }}</p>
+                </div>
               </div>
 
-              <div v-if="selectedPlace.phone" class="info-row">
-                <span>전화</span>
-                <p>{{ selectedPlace.phone }}</p>
-              </div>
-
-            </div>
-
-            <button
-              v-if="selectedPlace.placeUrl"
-              type="button"
-              class="detail-button"
-              @click="openDetailPanel"
-            >
-              상세 정보 보기
-            </button>
-
-            <a
-              v-if="selectedPlace.placeUrl"
-              :href="selectedPlace.placeUrl"
-              target="_blank"
-              rel="noopener noreferrer"
-              class="fallback-link"
-            >
-              새창에서 열기
-            </a>
+              <a
+                v-if="selectedPlace.placeUrl"
+                :href="selectedPlace.placeUrl"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="fallback-link"
+              >
+                새창에서 열기
+              </a>
+            </section>
           </div>
-        </aside>
-      </div>
-
-      <div
-        v-if="showDetailPanel && selectedPlace"
-        class="detail-drawer-backdrop"
-        @click.self="closeDetailPanel"
-      >
-        <aside class="kakao-detail-drawer">
-          <div class="drawer-header">
-            <div>
-              <p class="drawer-label">카카오맵 상세 정보</p>
-              <h2>{{ selectedPlace.name }}</h2>
-            </div>
-
-            <button
-              type="button"
-              class="drawer-close-button"
-              @click="closeDetailPanel"
-            >
-              ×
-            </button>
-          </div>
-
-          <div class="drawer-notice">
-            <p>
-              카카오 장소 상세페이지를 iframe으로 표시합니다.
-              브라우저 또는 카카오 측 제한으로 표시되지 않을 경우 아래 링크로 열어주세요.
-            </p>
-
-            <a
-              :href="selectedPlace.placeUrl"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              새창에서 열기
-            </a>
-          </div>
-
-          <div
-            v-if="detailFrameError"
-            class="iframe-fallback"
-          >
-            <p>상세페이지를 현재 화면에 표시하지 못했습니다.</p>
-            <a
-              :href="selectedPlace.placeUrl"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              카카오맵 상세페이지 새창에서 열기
-            </a>
-          </div>
-
-          <iframe
-            v-else
-            :src="selectedPlace.placeUrl"
-            class="kakao-detail-frame"
-            title="카카오맵 장소 상세페이지"
-            referrerpolicy="no-referrer-when-downgrade"
-            @error="handleDetailFrameError"
-          ></iframe>
         </aside>
       </div>
     </section>
@@ -1067,32 +1021,33 @@ h1 {
   min-height: 520px;
 }
 
-.place-card {
+.split-place-card {
   height: 100%;
-  padding: 24px;
+  padding: 18px;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) minmax(220px, 0.85fr);
+  gap: 14px;
   background: #ffffff;
   border: 1px solid #e5e8f0;
   border-radius: 22px;
   box-shadow: 0 18px 48px rgba(20, 35, 70, 0.12);
 }
 
-.card-top {
+.split-card-top {
   display: flex;
   justify-content: space-between;
   gap: 12px;
-  align-items: center;
-  margin-bottom: 10px;
+  align-items: flex-start;
 }
 
 .card-label {
-  margin: 0;
+  margin: 0 0 8px;
   color: #2563eb;
   font-size: 13px;
   font-weight: 800;
 }
 
-.close-card-button,
-.drawer-close-button {
+.close-card-button {
   width: 32px;
   height: 32px;
   border: 0;
@@ -1105,18 +1060,42 @@ h1 {
   cursor: pointer;
 }
 
-.close-card-button:hover,
-.drawer-close-button:hover {
+.close-card-button:hover {
   background: #e5e7eb;
   color: #111827;
 }
 
-.place-card h2 {
+.split-card-top h2 {
   margin: 0;
   color: #111827;
-  font-size: 24px;
+  font-size: 22px;
   line-height: 1.35;
   letter-spacing: -0.03em;
+}
+
+.kakao-frame-section {
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid #e5e8f0;
+  border-radius: 18px;
+  background: #ffffff;
+}
+
+.inline-kakao-frame {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  border: 0;
+  background: #ffffff;
+}
+
+.tag-info-section {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px;
+  border: 1px solid #e5e8f0;
+  border-radius: 18px;
+  background: #ffffff;
 }
 
 .category {
@@ -1127,7 +1106,6 @@ h1 {
 }
 
 .tag-list {
-  margin-top: 18px;
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
@@ -1165,12 +1143,16 @@ h1 {
 }
 
 .info-list {
-  margin-top: 22px;
+  margin-top: 16px;
   border-top: 1px solid #eef0f4;
 }
 
+.compact-info-list {
+  margin-top: 14px;
+}
+
 .info-row {
-  padding: 14px 0;
+  padding: 11px 0;
   border-bottom: 1px solid #eef0f4;
 }
 
@@ -1189,23 +1171,10 @@ h1 {
   line-height: 1.5;
 }
 
-.detail-button {
-  margin-top: 22px;
-  width: 100%;
-  padding: 14px 16px;
-  border: 0;
-  border-radius: 14px;
-  background: #2563eb;
-  color: #ffffff;
-  font-size: 15px;
-  font-weight: 900;
-  cursor: pointer;
-}
-
 .fallback-link {
-  margin-top: 10px;
+  margin-top: 12px;
   width: 100%;
-  padding: 13px 16px;
+  padding: 12px 16px;
   display: block;
   border-radius: 14px;
   background: #fee500;
@@ -1216,58 +1185,18 @@ h1 {
   text-decoration: none;
 }
 
-.detail-drawer-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 50;
-  background: rgba(15, 23, 42, 0.3);
+.iframe-fallback {
+  height: 100%;
+  min-height: 220px;
+  padding: 18px;
   display: flex;
-  justify-content: flex-end;
-}
-
-.kakao-detail-drawer {
-  width: min(560px, 100%);
-  height: 100vh;
-  padding: 20px;
+  flex-direction: column;
+  justify-content: center;
+  gap: 12px;
+  border-radius: 16px;
   background: #ffffff;
-  box-shadow: -16px 0 48px rgba(15, 23, 42, 0.22);
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
 }
 
-.drawer-header {
-  display: flex;
-  justify-content: space-between;
-  gap: 14px;
-  align-items: flex-start;
-}
-
-.drawer-label {
-  margin: 0 0 6px;
-  color: #2563eb;
-  font-size: 13px;
-  font-weight: 900;
-}
-
-.drawer-header h2 {
-  margin: 0;
-  color: #111827;
-  font-size: 22px;
-  line-height: 1.35;
-}
-
-.drawer-notice {
-  padding: 12px 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  background: #f8fafc;
-  border: 1px solid #e5e8f0;
-  border-radius: 14px;
-}
-
-.drawer-notice p,
 .iframe-fallback p {
   margin: 0;
   color: #667085;
@@ -1275,28 +1204,11 @@ h1 {
   line-height: 1.5;
 }
 
-.drawer-notice a,
 .iframe-fallback a {
   color: #2563eb;
   font-size: 13px;
   font-weight: 900;
   text-decoration: none;
-}
-
-.kakao-detail-frame {
-  flex: 1;
-  width: 100%;
-  min-height: 0;
-  border: 1px solid #e5e8f0;
-  border-radius: 16px;
-  background: #ffffff;
-}
-
-.iframe-fallback {
-  padding: 18px;
-  border: 1px solid #e5e8f0;
-  border-radius: 16px;
-  background: #ffffff;
 }
 
 @media (max-width: 1100px) {
@@ -1316,8 +1228,9 @@ h1 {
     max-height: 240px;
   }
 
-  .place-card {
+  .split-place-card {
     height: auto;
+    min-height: 720px;
   }
 }
 
