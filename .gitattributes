@@ -4,3 +4,4 @@ Test/apiTest/tag/parkTag/park_place_tag_seed.json filter=lfs diff=lfs merge=lfs 
 Test/apiTest/tag/beachTag/beach_place_tag_seed.json filter=lfs diff=lfs merge=lfs -text
 Test/apiTest/tag/tourTag/tourist_spot_busan_place_tag_seed.json filter=lfs diff=lfs merge=lfs -text
 Test/apiTest/tag/cafeTag/outputs/cafe_external_place_tags_seed.json filter=lfs diff=lfs merge=lfs -text
+Test/apiTest/tag/parkingTag/parking_place_tag_seed.json filter=lfs diff=lfs merge=lfs -text

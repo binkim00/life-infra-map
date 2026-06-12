@@ -7,19 +7,17 @@
   },
   "output": {
     "place_tag_seed_place_count": 281,
-    "place_tag_seed_row_count": 2455,
+    "place_tag_seed_row_count": 1612,
     "skipped_count": 1,
     "place_tag_seed_path": "C:\\Users\\k0b03\\Desktop\\영빈\\SSAFY\\life-infra-map\\Test\\apiTest\\tag\\beachTag\\beach_place_tag_seed.json",
     "summary_path": "C:\\Users\\k0b03\\Desktop\\영빈\\SSAFY\\life-infra-map\\Test\\apiTest\\tag\\beachTag\\beach_place_tag_seed_summary.json"
   },
   "tag_counts": {
-    "물놀이": 432,
-    "해수욕장": 281,
-    "바다": 281,
     "사진찍기좋음": 207,
     "모래해변": 191,
     "가족방문좋음": 181,
     "캠핑": 162,
+    "물놀이": 151,
     "산책좋음": 134,
     "힐링": 128,
     "드라이브목적지": 105,
@@ -34,12 +32,10 @@
   },
   "source_counts": {
     "blog_search": 1247,
-    "category_rule": 843,
     "field_rule": 365
   },
   "status_counts": {
-    "candidate": 1612,
-    "confirmed": 843
+    "candidate": 1612
   },
   "region_counts": {
     "충남 태안군": 30,
@@ -164,5 +160,22 @@
       }
     }
   ],
-  "data_note": "이 파일은 해수욕장 Place에 붙일 PlaceTag seed입니다. category_rule은 기본 카테고리 태그, field_rule은 원본 필드 기반 후보 태그, blog_search는 블로그 검색 기반 후보 태그입니다."
+  "data_note": "이 파일은 해수욕장 Place에 붙일 PlaceTag seed입니다. category_rule은 기본 카테고리 태그, field_rule은 원본 필드 기반 후보 태그, blog_search는 블로그 검색 기반 후보 태그입니다.",
+  "tag_type_counts": {
+    "recommendation": 1410,
+    "category": 202
+  },
+  "cleanup": {
+    "target_name": "해수욕장",
+    "removed_row_count": 843,
+    "removed_tag_counts": {
+      "해수욕장": 281,
+      "바다": 281,
+      "물놀이": 281
+    },
+    "removed_reason_counts": {
+      "beach_category_rule_basic_tag": 843
+    },
+    "rule": "Place.category로 이미 표현 가능한 너무 기본적인 태그는 PlaceTag에서 제거했습니다. 카테고리명 자체는 저장하지 않고, 추천/필터에 필요한 세부 속성 태그만 유지합니다."
+  }
 }
