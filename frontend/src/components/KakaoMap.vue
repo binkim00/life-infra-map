@@ -15,6 +15,8 @@ const props = defineProps({
   },
 })
 
+const emit = defineEmits(['select-place'])
+
 const mapContainer = ref(null)
 let map = null
 let markers = []
@@ -22,7 +24,7 @@ let activeInfoWindow = null
 
 const loadKakaoMapScript = () => {
   return new Promise((resolve, reject) => {
-    if (window.kakao && window.kakao.maps) {
+    if (window.kakao && window.kakao.maps && window.kakao.maps.services) {
       resolve()
       return
     }
@@ -34,8 +36,18 @@ const loadKakaoMapScript = () => {
       return
     }
 
+    const existingScript = document.querySelector('script[data-kakao-map-sdk="true"]')
+
+    if (existingScript) {
+      existingScript.addEventListener('load', () => {
+        window.kakao.maps.load(() => resolve())
+      })
+      return
+    }
+
     const script = document.createElement('script')
-    script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${kakaoKey}&autoload=false`
+    script.dataset.kakaoMapSdk = 'true'
+    script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${kakaoKey}&autoload=false&libraries=services`
     script.async = true
 
     script.onload = () => {
@@ -71,32 +83,57 @@ const clearMarkers = () => {
   markers = []
 }
 
+const createRedMarkerImage = () => {
+  const svg = `
+    <svg width="34" height="42" viewBox="0 0 34 42" xmlns="http://www.w3.org/2000/svg">
+      <path d="M17 0C7.6 0 0 7.6 0 17c0 12.8 17 25 17 25s17-12.2 17-25C34 7.6 26.4 0 17 0z" fill="#ef4444"/>
+      <circle cx="17" cy="17" r="7" fill="white"/>
+    </svg>
+  `
+
+  const imageSrc = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`
+  const imageSize = new window.kakao.maps.Size(34, 42)
+  const imageOption = {
+    offset: new window.kakao.maps.Point(17, 42),
+  }
+
+  return new window.kakao.maps.MarkerImage(imageSrc, imageSize, imageOption)
+}
+
 const renderMarkers = () => {
-  if (!map || !props.places.length) return
+  if (!map) return
 
   clearMarkers()
 
+  if (!props.places.length) return
+
   const bounds = new window.kakao.maps.LatLngBounds()
+  const redMarkerImage = createRedMarkerImage()
 
   props.places.forEach((place) => {
     if (!place.lat || !place.lng) return
 
     const position = new window.kakao.maps.LatLng(place.lat, place.lng)
 
-    const marker = new window.kakao.maps.Marker({
+    const markerOptions = {
       map,
       position,
       title: place.name,
-    })
+    }
+
+    if (place.markerColor === 'red') {
+      markerOptions.image = redMarkerImage
+    }
+
+    const marker = new window.kakao.maps.Marker(markerOptions)
 
     markers.push(marker)
     bounds.extend(position)
 
     const infoWindow = new window.kakao.maps.InfoWindow({
       content: `
-        <div style="padding:8px;font-size:13px;min-width:150px;">
-          <strong>${place.name}</strong><br />
-          ${place.distance ?? '-'}m · ${place.score ?? '-'}점
+        <div style="padding:10px;font-size:13px;min-width:160px;line-height:1.5;">
+          <strong>${place.name}</strong>
         </div>
       `,
     })
@@ -108,6 +145,8 @@ const renderMarkers = () => {
 
       infoWindow.open(map, marker)
       activeInfoWindow = infoWindow
+
+      emit('select-place', place)
     })
   })
 
@@ -154,7 +193,7 @@ watch(
 
 <style scoped>
 .map-section {
-  margin-bottom: 24px;
+  width: 100%;
 }
 
 .map {
