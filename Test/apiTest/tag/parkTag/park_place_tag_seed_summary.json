@@ -1,0 +1,107 @@
+{
+  "input": {
+    "original_input_path": "C:\\Users\\k0b03\\Desktop\\영빈\\SSAFY\\life-infra-map\\Test\\apiTest\\tag\\parkTag\\park_original_tag_results.json",
+    "blog_input_path": "C:\\Users\\k0b03\\Desktop\\영빈\\SSAFY\\life-infra-map\\Test\\apiTest\\tag\\parkTag\\park_blog_tag_results.json",
+    "original_place_count": 18376,
+    "blog_place_count": 2818
+  },
+  "output": {
+    "place_tag_seed_place_count": 18232,
+    "place_tag_seed_row_count": 130792,
+    "skipped_count": 0,
+    "place_tag_seed_path": "C:\\Users\\k0b03\\Desktop\\영빈\\SSAFY\\life-infra-map\\Test\\apiTest\\tag\\parkTag\\park_place_tag_seed.json",
+    "summary_path": "C:\\Users\\k0b03\\Desktop\\영빈\\SSAFY\\life-infra-map\\Test\\apiTest\\tag\\parkTag\\park_place_tag_seed_summary.json"
+  },
+  "tag_counts": {
+    "가족방문좋음": 11886,
+    "아이와가기좋음": 11738,
+    "중형공원": 9796,
+    "놀이": 9235,
+    "어린이공원": 9235,
+    "잠깐쉬기좋음": 8953,
+    "동네공원": 7094,
+    "산책좋음": 6624,
+    "운동하기좋음": 6559,
+    "놀이시설": 6360,
+    "운동시설": 5335,
+    "편의시설": 5120,
+    "근린공원": 4069,
+    "대형공원": 3871,
+    "작은공원": 3702,
+    "소공원": 3030,
+    "사진찍기좋음": 2158,
+    "힐링": 1662,
+    "문화시설": 1292,
+    "호수": 1109,
+    "농구장": 939,
+    "초대형공원": 917,
+    "음수대": 851,
+    "피크닉": 774,
+    "배드민턴장": 628,
+    "체험": 554,
+    "주차가능": 539,
+    "기타": 535,
+    "데이트좋음": 488,
+    "문화공원": 482,
+    "벚꽃": 472,
+    "수변산책": 445,
+    "단풍": 427,
+    "야경": 411,
+    "수변공원": 411,
+    "반려동물동반": 266,
+    "체육공원": 264,
+    "자전거": 251,
+    "공연장": 248,
+    "자연": 236,
+    "숲": 229,
+    "역사": 218,
+    "역사공원": 205,
+    "분수": 202,
+    "운동장": 193,
+    "축구장": 182,
+    "테니스장": 139,
+    "중심지공원": 131,
+    "대표공원": 50,
+    "매점": 47,
+    "호수공원": 47,
+    "묘지공원": 39,
+    "조용한": 39,
+    "추모": 39,
+    "기타공원": 29,
+    "시민공원": 23,
+    "도시농업공원": 7,
+    "가로공원": 3,
+    "주제공원": 2,
+    "기타(가로공원)": 1,
+    "마을마당": 1
+  },
+  "source_counts": {
+    "field_rule": 119042,
+    "blog_search": 11750
+  },
+  "status_counts": {
+    "candidate": 130792
+  },
+  "skipped": [],
+  "data_note": "이 파일은 도시공원 Place에 붙일 PlaceTag seed입니다. category_rule은 기본 카테고리 태그, field_rule은 원본 필드 기반 후보 태그, blog_search는 블로그 검색 기반 후보 태그입니다.",
+  "tag_type_counts": {
+    "recommendation": 113047,
+    "category": 17745
+  },
+  "cleanup": {
+    "target_name": "도시공원",
+    "removed_row_count": 59526,
+    "removed_tag_counts": {
+      "공원": 18232,
+      "산책좋음": 18232,
+      "잠깐쉬기좋음": 18232,
+      "쉼터": 2635,
+      "화장실": 2195
+    },
+    "removed_reason_counts": {
+      "city_park_category_rule_basic_tag": 54696,
+      "global_basic_tag": 4830
+    },
+    "rule": "Place.category로 이미 표현 가능한 너무 기본적인 태그는 PlaceTag에서 제거했습니다. 카테고리명 자체는 저장하지 않고, 추천/필터에 필요한 세부 속성 태그만 유지합니다."
+  }
+}

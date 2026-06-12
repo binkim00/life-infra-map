@@ -1,8 +1,5 @@
 from django.db import models
 
-# Create your models here.
-from django.db import models
-
 
 class Place(models.Model):
     name = models.CharField(max_length=200)
@@ -27,7 +24,7 @@ class Place(models.Model):
     data_quality_score = models.IntegerField(default=50)
 
     raw = models.JSONField(default=dict, blank=True)
-    
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -64,13 +61,37 @@ class Tag(models.Model):
 
 class PlaceTag(models.Model):
     TAG_SOURCE_CHOICES = [
-        ("category_rule", "카테고리 규칙"),
-        ("runtime_rule", "실시간 추천 규칙"),
-        ("external_data", "외부 데이터"),
-        ("ai_suggested", "AI 후보"),
-        ("team_checked", "팀 확인"),
-        ("admin_checked", "관리자 확인"),
-        ("user_verified", "사용자 검증"),
+        # default_tags 같은 카테고리 기반 기본 태그를 저장해야 할 때 사용합니다.
+        # 너무 기본적인 태그는 저장하지 않고, 추천/필터에 필요한 태그만 저장하는 방향입니다.
+        ("category_rule", "카테고리 기반 기본 태그"),
+
+        # 공공데이터 원본 필드에서 바로 판단 가능한 태그입니다.
+        # 예: 무료 여부, 개방 여부, 시설 구분 등
+        ("field_rule", "원본 필드 기반 태그"),
+
+        # 장소명, 시설명, 주소, 설명 등의 문자열 키워드로 붙인 태그입니다.
+        ("keyword_rule", "키워드 규칙 기반 태그"),
+
+        # 네이버 블로그 검색 결과 등을 바탕으로 만든 후보 태그입니다.
+        ("blog_search", "블로그 검색 기반 후보 태그"),
+
+        # 카카오, 관광공사 등 외부 API 응답을 바탕으로 만든 태그입니다.
+        ("external_api", "외부 API 기반 태그"),
+
+        # 공공데이터, CSV, 지자체 파일 등 외부 원본 데이터 기반 태그입니다.
+        ("external_data", "외부 데이터 기반 태그"),
+
+        # AI가 장소명, 설명, 카테고리 등을 보고 추천한 후보 태그입니다.
+        ("ai_suggested", "AI 추천 후보 태그"),
+
+        # 팀 검수와 관리자 검수를 하나로 합친 값입니다.
+        ("checked", "검수 완료 태그"),
+
+        # 서비스 운영 후 사용자가 맞다고 검증한 태그입니다.
+        ("user_verified", "사용자 검증 태그"),
+
+        # warning_tags처럼 정보 부족 또는 확인 필요 목적으로 저장하는 태그입니다.
+        ("warning_tags", "확인 필요 태그"),
     ]
 
     TAG_STATUS_CHOICES = [
@@ -92,7 +113,7 @@ class PlaceTag(models.Model):
     )
 
     source = models.CharField(
-        max_length=30,
+        max_length=50,
         choices=TAG_SOURCE_CHOICES,
         default="external_data",
     )
@@ -120,3 +141,11 @@ class PlaceTag(models.Model):
 
     def __str__(self):
         return f"{self.place.name} - {self.tag.name}"
+
+    @property
+    def source_label(self):
+        return dict(self.TAG_SOURCE_CHOICES).get(self.source, self.source)
+
+    @property
+    def status_label(self):
+        return dict(self.TAG_STATUS_CHOICES).get(self.status, self.status)

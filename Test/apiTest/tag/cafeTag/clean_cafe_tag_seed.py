@@ -4,8 +4,7 @@
 #   python clean_cafe_tag_seed.py
 
 import json
-import math
-from collections import Counter, defaultdict
+from collections import Counter
 from pathlib import Path
 
 
@@ -15,18 +14,14 @@ INPUT_RESULTS_PATH = BASE_DIR / "results" / "cafe_all_results.json"
 INPUT_SKIPPED_PATH = BASE_DIR / "results" / "cafe_all_skipped_results.json"
 
 OUTPUT_DIR = BASE_DIR / "outputs"
-OUTPUT_SERVICE_SEED_PATH = OUTPUT_DIR / "cafe_tag_service_seed.json"
-OUTPUT_DJANGO_FIXTURE_PATH = OUTPUT_DIR / "cafe_tag_django_fixture.json"
-OUTPUT_SUMMARY_PATH = OUTPUT_DIR / "cafe_tag_seed_summary.json"
+
+# ExternalPlaceTag import용 seed
+OUTPUT_EXTERNAL_TAG_SEED_PATH = OUTPUT_DIR / "cafe_external_place_tags_seed.json"
+
+# 확인용 요약 파일
+OUTPUT_SUMMARY_PATH = OUTPUT_DIR / "cafe_external_place_tags_summary.json"
 
 
-# Django app/model 이름
-PLACE_MODEL = "recommendations.place"
-TAG_MODEL = "recommendations.tag"
-PLACE_TAG_MODEL = "recommendations.placetag"
-
-
-# 실제 추천에서 핵심으로 쓸 태그
 CORE_TAGS = {
     "조용한",
     "노트북작업",
@@ -42,7 +37,6 @@ CORE_TAGS = {
     "드라이브목적지",
 }
 
-# 추천 보조 태그
 SUB_TAGS = {
     "디저트",
     "분위기좋음",
@@ -52,17 +46,11 @@ SUB_TAGS = {
     "사진맛집",
 }
 
-# 추천 태그라기보다는 주의 정보로 볼 태그
 WARNING_TAGS = {
     "웨이팅주의",
 }
 
-# 정의되지 않은 태그도 버리지 않고 보조 태그로 살릴지 여부
 KEEP_UNKNOWN_TAGS = True
-
-# display_tags를 너무 길게 보이고 싶지 않을 때 숫자로 제한
-# None이면 전부 유지
-DISPLAY_TAG_LIMIT = None
 
 
 def read_json(path):
@@ -71,7 +59,13 @@ def read_json(path):
         return []
 
     with path.open("r", encoding="utf-8") as f:
-        return json.load(f)
+        content = f.read().strip()
+
+    if not content:
+        print(f"빈 파일: {path}")
+        return []
+
+    return json.loads(content)
 
 
 def write_json(path, data):
@@ -81,15 +75,17 @@ def write_json(path, data):
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 
-def clamp(value, min_value=0, max_value=100):
-    return max(min_value, min(max_value, value))
+def safe_str(value, default=""):
+    if value is None:
+        return default
+    return str(value).strip()
 
 
 def safe_int(value, default=0):
     try:
-        if value is None:
+        if value is None or value == "":
             return default
-        return int(value)
+        return int(float(value))
     except (ValueError, TypeError):
         return default
 
@@ -103,421 +99,287 @@ def safe_float(value, default=None):
         return default
 
 
+def get_place_external_id(place):
+    """
+    카카오 장소 ID를 ExternalPlaceTag.external_id로 사용합니다.
+    수집 단계 파일마다 키 이름이 다를 수 있어서 후보를 여러 개 봅니다.
+    """
+    candidates = [
+        place.get("external_id"),
+        place.get("place_id"),
+        place.get("kakao_place_id"),
+        place.get("id"),
+    ]
+
+    for value in candidates:
+        text = safe_str(value)
+        if text:
+            return text
+
+    return ""
+
+
+def get_place_name(place):
+    candidates = [
+        place.get("name"),
+        place.get("place_name"),
+    ]
+
+    for value in candidates:
+        text = safe_str(value)
+        if text:
+            return text
+
+    return ""
+
+
+def get_place_address(place):
+    candidates = [
+        place.get("address"),
+        place.get("road_address_name"),
+        place.get("address_name"),
+    ]
+
+    for value in candidates:
+        text = safe_str(value)
+        if text:
+            return text
+
+    return ""
+
+
+def get_place_lat(place):
+    """
+    카카오 API는 y가 위도, x가 경도입니다.
+    기존 정제 파일은 lat/lng일 수도 있습니다.
+    """
+    return safe_float(place.get("lat"), safe_float(place.get("y")))
+
+
+def get_place_lng(place):
+    return safe_float(place.get("lng"), safe_float(place.get("x")))
+
+
 def get_tag_group(tag_name):
     if tag_name in CORE_TAGS:
         return "core"
-    if tag_name in WARNING_TAGS:
-        return "warning"
+
     if tag_name in SUB_TAGS:
         return "sub"
+
+    if tag_name in WARNING_TAGS:
+        return "warning"
+
     return "unknown"
 
 
-def get_django_tag_type(tag_name):
+def get_tag_type(tag_name):
     if tag_name in WARNING_TAGS:
         return "warning"
+
     return "recommendation"
 
 
-def should_keep_tag(tag):
-    name = tag.get("name")
+def get_tag_status(tag_name):
+    if tag_name in WARNING_TAGS:
+        return "needs_verification"
 
-    if not name:
+    return "candidate"
+
+
+def should_keep_tag(tag_name):
+    if not tag_name:
         return False
 
-    if name in CORE_TAGS:
+    if tag_name in CORE_TAGS:
         return True
 
-    if name in SUB_TAGS:
+    if tag_name in SUB_TAGS:
         return True
 
-    if name in WARNING_TAGS:
+    if tag_name in WARNING_TAGS:
         return True
 
     return KEEP_UNKNOWN_TAGS
 
 
-def calculate_tag_strength(tag):
+def normalize_tag(raw_tag):
     """
-    태그 하나의 근거 강도 계산.
-    원본 confidence만 쓰지 않고 evidence_count / required_count도 반영합니다.
+    raw_tag가 문자열일 수도 있고, dict일 수도 있어서 둘 다 처리합니다.
     """
-    confidence = safe_int(tag.get("confidence"), 50)
-    evidence_count = safe_int(tag.get("evidence_count"), 0)
-    required_count = safe_int(tag.get("required_count"), 1)
+    if isinstance(raw_tag, str):
+        name = safe_str(raw_tag)
 
-    if required_count <= 0:
-        required_count = 1
+        return {
+            "name": name,
+            "confidence": 50,
+            "evidence": "",
+            "evidence_count": 0,
+            "required_count": 0,
+            "raw": raw_tag,
+        }
 
-    # required_count보다 얼마나 많이 근거가 나왔는지
-    # 3배 이상이면 evidence 쪽은 만점 처리
-    evidence_ratio = evidence_count / required_count
-    evidence_score = clamp((min(evidence_ratio, 3) / 3) * 100)
+    if isinstance(raw_tag, dict):
+        name = safe_str(raw_tag.get("name"))
 
-    # confidence 비중을 더 크게 둠
-    strength = (confidence * 0.7) + (evidence_score * 0.3)
-
-    return round(clamp(strength), 2)
-
-
-def clean_tag(tag):
-    name = tag.get("name")
-    group = get_tag_group(name)
-
-    cleaned = {
-        "name": name,
-        "tag_group": group,
-        "confidence": safe_int(tag.get("confidence"), 50),
-        "status": tag.get("status", "suggested"),
-        "status_label": tag.get("status_label", "추천 태그 후보"),
-        "evidence_count": safe_int(tag.get("evidence_count"), 0),
-        "required_count": safe_int(tag.get("required_count"), 0),
-        "evidence": tag.get("evidence", ""),
-        "source": tag.get("source", "naver_blog_title_description"),
-        "is_ai_generated": bool(tag.get("is_ai_generated", False)),
-        "is_verified": bool(tag.get("is_verified", False)),
-    }
-
-    cleaned["tag_strength"] = calculate_tag_strength(cleaned)
-
-    return cleaned
-
-
-def tag_sort_key(tag):
-    """
-    화면/추천에서 보기 좋은 순서:
-    core → sub → warning → unknown
-    그 안에서는 tag_strength, evidence_count, confidence 높은 순
-    """
-    group_order = {
-        "core": 0,
-        "sub": 1,
-        "warning": 2,
-        "unknown": 3,
-    }
-
-    return (
-        group_order.get(tag["tag_group"], 9),
-        -tag.get("tag_strength", 0),
-        -tag.get("evidence_count", 0),
-        -tag.get("confidence", 0),
-        tag.get("name", ""),
-    )
-
-
-def calculate_place_scores(place, tag_details):
-    """
-    장소 단위 점수.
-    지금은 머신러닝이 아니라 규칙 기반 점수입니다.
-    """
-    blog_evidence_count = safe_int(place.get("blog_evidence_count"), 0)
-
-    if tag_details:
-        avg_tag_strength = sum(tag["tag_strength"] for tag in tag_details) / len(tag_details)
-        avg_confidence = sum(tag["confidence"] for tag in tag_details) / len(tag_details)
-    else:
-        avg_tag_strength = 0
-        avg_confidence = 0
-
-    core_count = sum(1 for tag in tag_details if tag["tag_group"] == "core")
-    sub_count = sum(1 for tag in tag_details if tag["tag_group"] == "sub")
-    warning_count = sum(1 for tag in tag_details if tag["tag_group"] == "warning")
-
-    # 블로그 근거 수는 50건 이상이면 충분하다고 보고 만점 처리
-    blog_score = clamp((min(blog_evidence_count, 50) / 50) * 100)
-
-    # 핵심 태그가 많을수록 추천 준비도가 올라감
-    core_bonus = min(core_count * 8, 32)
-    sub_bonus = min(sub_count * 3, 12)
-    warning_penalty = min(warning_count * 4, 12)
-
-    tag_score = round(clamp(avg_tag_strength), 2)
-
-    data_confidence_score = round(
-        clamp((blog_score * 0.55) + (avg_confidence * 0.45)),
-        2,
-    )
-
-    recommendation_ready_score = round(
-        clamp(
-            (tag_score * 0.45)
-            + (data_confidence_score * 0.35)
-            + core_bonus
-            + sub_bonus
-            - warning_penalty
-        ),
-        2,
-    )
+        return {
+            "name": name,
+            "confidence": safe_int(raw_tag.get("confidence"), 50),
+            "evidence": safe_str(raw_tag.get("evidence")),
+            "evidence_count": safe_int(raw_tag.get("evidence_count"), 0),
+            "required_count": safe_int(raw_tag.get("required_count"), 0),
+            "raw": raw_tag,
+        }
 
     return {
-        "tag_score": tag_score,
-        "data_confidence_score": data_confidence_score,
-        "recommendation_ready_score": recommendation_ready_score,
-        "blog_evidence_score": round(blog_score, 2),
-        "core_tag_count": core_count,
-        "sub_tag_count": sub_count,
-        "warning_tag_count": warning_count,
+        "name": "",
+        "confidence": 50,
+        "evidence": "",
+        "evidence_count": 0,
+        "required_count": 0,
+        "raw": raw_tag,
     }
 
 
-def clean_place(place):
-    external_id = str(place.get("external_id", "")).strip()
-    name = str(place.get("name", "")).strip()
-    lat = safe_float(place.get("lat"))
-    lng = safe_float(place.get("lng"))
+def build_evidence(place, tag):
+    evidence = tag.get("evidence", "")
 
-    if not external_id or not name:
-        return None, "external_id 또는 name 없음"
+    if evidence:
+        return evidence
 
-    if lat is None or lng is None:
-        return None, "좌표 없음"
+    source_query = safe_str(place.get("source_query"))
+    blog_count = safe_int(place.get("blog_evidence_count"), 0)
+    evidence_count = safe_int(tag.get("evidence_count"), 0)
 
-    raw_tags = place.get("tags", [])
-    tag_details = []
+    parts = []
 
-    for raw_tag in raw_tags:
-        if should_keep_tag(raw_tag):
-            tag_details.append(clean_tag(raw_tag))
+    if source_query:
+        parts.append(f"검색어: {source_query}")
 
-    if not tag_details:
-        return None, "사용 가능한 태그 없음"
+    if blog_count:
+        parts.append(f"블로그 근거 수: {blog_count}")
 
-    tag_details.sort(key=tag_sort_key)
+    if evidence_count:
+        parts.append(f"태그 근거 수: {evidence_count}")
 
-    suggested_tags = [
-        tag["name"]
-        for tag in tag_details
-        if tag["tag_group"] != "warning"
-    ]
+    if not parts:
+        return "네이버 블로그 검색 결과 기반 후보 태그"
 
-    warning_tags = [
-        tag["name"]
-        for tag in tag_details
-        if tag["tag_group"] == "warning"
-    ]
+    return " / ".join(parts)
 
-    display_tags = [tag["name"] for tag in tag_details]
 
-    if DISPLAY_TAG_LIMIT is not None:
-        display_tags = display_tags[:DISPLAY_TAG_LIMIT]
-
-    scores = calculate_place_scores(place, tag_details)
-
-    cleaned = {
-        "source": place.get("source", "kakao_local"),
-        "external_id": external_id,
-        "name": name,
-        "category": "cafe",
+def build_raw(place, tag):
+    """
+    ExternalPlaceTag.raw에 넣을 보조 정보입니다.
+    실제 추천 점수 계산이나 검수 화면에서 참고할 수 있습니다.
+    """
+    return {
         "original_category": place.get("category", ""),
-        "address": place.get("address", ""),
-        "lat": lat,
-        "lng": lng,
         "phone": place.get("phone", ""),
         "place_url": place.get("place_url", ""),
         "area_key": place.get("area_key", ""),
         "area_name": place.get("area_name", ""),
-        "source_query": place.get("source_query", ""),
         "sub_area_key": place.get("sub_area_key", ""),
         "sub_area_name": place.get("sub_area_name", ""),
-        "blog_evidence_count": safe_int(place.get("blog_evidence_count"), 0),
-        "suggested_tags": suggested_tags,
-        "display_tags": display_tags,
-        "warning_tags": warning_tags,
-        "tag_details": tag_details,
-        "scores": scores,
-        "tag_source": "naver_blog_title_description",
-        "data_status": "candidate",
-        "is_verified": False,
-    }
-
-    return cleaned, None
-
-
-def data_quality_status_from_score(score):
-    if score >= 85:
-        return "candidate"
-    if score >= 70:
-        return "candidate"
-    return "needs_review"
-
-
-def build_service_seed(cleaned_places):
-    return cleaned_places
-
-
-def build_django_fixture(cleaned_places):
-    """
-    현재 백엔드 모델 기준:
-    - recommendations.Place
-    - recommendations.Tag
-    - recommendations.PlaceTag
-    """
-    fixture = []
-
-    # 태그 목록 만들기
-    tag_names = set()
-
-    for place in cleaned_places:
-        for tag in place["tag_details"]:
-            tag_names.add(tag["name"])
-
-    sorted_tag_names = sorted(
-        tag_names,
-        key=lambda name: (
-            {"core": 0, "sub": 1, "warning": 2, "unknown": 3}.get(get_tag_group(name), 9),
-            name,
+        "source_query": place.get("source_query", ""),
+        "blog_evidence_count": place.get("blog_evidence_count", 0),
+        "tag_group": get_tag_group(tag["name"]),
+        "tag_type": get_tag_type(tag["name"]),
+        "tag_raw": tag.get("raw", {}),
+        "data_note": (
+            "카카오 로컬 API 장소 후보와 네이버 블로그 검색 결과의 제목/요약 문구를 "
+            "기반으로 생성한 카페 추천 태그 후보입니다. 실제 시설 여부를 확정한 "
+            "검증 데이터가 아니므로 candidate 상태로 사용합니다."
         ),
-    )
-
-    tag_pk_map = {}
-    place_pk_map = {}
-
-    # Tag fixture
-    for idx, tag_name in enumerate(sorted_tag_names, start=1):
-        tag_pk_map[tag_name] = idx
-
-        fixture.append(
-            {
-                "model": TAG_MODEL,
-                "pk": idx,
-                "fields": {
-                    "name": tag_name,
-                    "tag_type": get_django_tag_type(tag_name),
-                    "description": build_tag_description(tag_name),
-                },
-            }
-        )
-
-    # Place fixture
-    for idx, place in enumerate(cleaned_places, start=1):
-        place_pk_map[place["external_id"]] = idx
-
-        scores = place["scores"]
-        data_quality_score = round(scores["data_confidence_score"])
-
-        fixture.append(
-            {
-                "model": PLACE_MODEL,
-                "pk": idx,
-                "fields": {
-                    "name": place["name"],
-                    "category": place["category"],
-                    "address": place["address"],
-                    "lat": place["lat"],
-                    "lng": place["lng"],
-                    "source": place["source"],
-                    "external_id": place["external_id"],
-                    "source_name": "kakao_local + naver_blog_search",
-                    "source_updated_at": None,
-                    "detail_location": place.get("area_name", ""),
-                    "data_quality_status": data_quality_status_from_score(
-                        scores["data_confidence_score"]
-                    ),
-                    "data_quality_score": data_quality_score,
-                    "raw": {
-                        "original_category": place["original_category"],
-                        "phone": place["phone"],
-                        "place_url": place["place_url"],
-                        "area_key": place["area_key"],
-                        "area_name": place["area_name"],
-                        "source_query": place["source_query"],
-                        "sub_area_key": place["sub_area_key"],
-                        "sub_area_name": place["sub_area_name"],
-                        "blog_evidence_count": place["blog_evidence_count"],
-                        "suggested_tags": place["suggested_tags"],
-                        "display_tags": place["display_tags"],
-                        "warning_tags": place["warning_tags"],
-                        "tag_details": place["tag_details"],
-                        "scores": place["scores"],
-                        "data_status": place["data_status"],
-                        "is_verified": place["is_verified"],
-                    },
-                },
-            }
-        )
-
-    # PlaceTag fixture
-    place_tag_pk = 1
-
-    for place in cleaned_places:
-        place_pk = place_pk_map[place["external_id"]]
-
-        for tag in place["tag_details"]:
-            tag_pk = tag_pk_map[tag["name"]]
-
-            fixture.append(
-                {
-                    "model": PLACE_TAG_MODEL,
-                    "pk": place_tag_pk,
-                    "fields": {
-                        "place": place_pk,
-                        "tag": tag_pk,
-                        "source": "external_data",
-                        "status": "candidate",
-                        "confidence": tag["confidence"],
-                        "evidence": tag["evidence"],
-                        "is_verified": False,
-                        "verified_at": None,
-                    },
-                }
-            )
-
-            place_tag_pk += 1
-
-    return fixture
-
-
-def build_tag_description(tag_name):
-    group = get_tag_group(tag_name)
-
-    if group == "core":
-        return "카페 추천에 직접 활용하는 핵심 태그 후보입니다."
-    if group == "sub":
-        return "카페의 분위기나 특징을 보조적으로 설명하는 태그 후보입니다."
-    if group == "warning":
-        return "추천 시 주의 정보로 함께 표시할 태그 후보입니다."
-
-    return "외부 검색 결과에서 추출된 기타 태그 후보입니다."
-
-
-def build_summary(original_places, cleaned_places, skipped_places, exclude_reasons):
-    area_counter = Counter()
-    sub_area_counter = Counter()
-    tag_counter = Counter()
-    tag_group_counter = Counter()
-    source_query_counter = Counter()
-    skipped_reason_counter = Counter()
-
-    score_buckets = {
-        "recommendation_ready_90_100": 0,
-        "recommendation_ready_80_89": 0,
-        "recommendation_ready_70_79": 0,
-        "recommendation_ready_under_70": 0,
     }
 
-    for place in cleaned_places:
-        area_counter[place["area_name"] or place["area_key"] or "미상"] += 1
 
-        if place.get("sub_area_name"):
-            sub_area_counter[place["sub_area_name"]] += 1
+def clean_place_to_external_tag_rows(place):
+    external_id = get_place_external_id(place)
+    place_name = get_place_name(place)
+    address = get_place_address(place)
+    lat = get_place_lat(place)
+    lng = get_place_lng(place)
 
-        if place.get("source_query"):
-            source_query_counter[place["source_query"]] += 1
+    if not external_id:
+        return [], "external_id 없음"
 
-        for tag in place["tag_details"]:
-            tag_counter[tag["name"]] += 1
-            tag_group_counter[tag["tag_group"]] += 1
+    if not place_name:
+        return [], "place_name 없음"
 
-        ready_score = place["scores"]["recommendation_ready_score"]
+    if lat is None or lng is None:
+        return [], "좌표 없음"
 
-        if ready_score >= 90:
-            score_buckets["recommendation_ready_90_100"] += 1
-        elif ready_score >= 80:
-            score_buckets["recommendation_ready_80_89"] += 1
-        elif ready_score >= 70:
-            score_buckets["recommendation_ready_70_79"] += 1
-        else:
-            score_buckets["recommendation_ready_under_70"] += 1
+    raw_tags = place.get("tags", [])
+
+    if not raw_tags:
+        return [], "tags 없음"
+
+    rows = []
+    seen_tag_names = set()
+
+    for raw_tag in raw_tags:
+        tag = normalize_tag(raw_tag)
+        tag_name = tag["name"]
+
+        if not should_keep_tag(tag_name):
+            continue
+
+        if tag_name in seen_tag_names:
+            continue
+
+        seen_tag_names.add(tag_name)
+
+        row = {
+            "external_source": "kakao_local",
+            "external_id": external_id,
+            "place_name": place_name,
+            "category": "cafe",
+            "address": address,
+            "lat": lat,
+            "lng": lng,
+
+            # import_external_place_tags.py에서 Tag get_or_create에 사용
+            "tag_name": tag_name,
+            "tag_type": get_tag_type(tag_name),
+
+            # ExternalPlaceTag 필드
+            "tag_source": "blog_search",
+            "status": get_tag_status(tag_name),
+            "confidence": tag["confidence"],
+            "evidence": build_evidence(place, tag),
+            "raw": build_raw(place, tag),
+        }
+
+        rows.append(row)
+
+    if not rows:
+        return [], "사용 가능한 태그 없음"
+
+    return rows, None
+
+
+def build_summary(original_places, skipped_places, external_tag_rows, exclude_reasons):
+    place_ids = set()
+    place_counter = Counter()
+    tag_counter = Counter()
+    tag_type_counter = Counter()
+    tag_status_counter = Counter()
+    area_counter = Counter()
+
+    for row in external_tag_rows:
+        place_key = (row["external_source"], row["external_id"])
+        place_ids.add(place_key)
+
+        place_counter[row["place_name"]] += 1
+        tag_counter[row["tag_name"]] += 1
+        tag_type_counter[row["tag_type"]] += 1
+        tag_status_counter[row["status"]] += 1
+
+        area_name = row["raw"].get("area_name") or "미상"
+        area_counter[area_name] += 1
+
+    skipped_reason_counter = Counter()
 
     for skipped in skipped_places:
         reason = skipped.get("skip_reason", "미상")
@@ -531,21 +393,20 @@ def build_summary(original_places, cleaned_places, skipped_places, exclude_reaso
             "original_skipped_count": len(skipped_places),
         },
         "output": {
-            "cleaned_place_count": len(cleaned_places),
-            "service_seed_path": str(OUTPUT_SERVICE_SEED_PATH),
-            "django_fixture_path": str(OUTPUT_DJANGO_FIXTURE_PATH),
+            "external_place_count": len(place_ids),
+            "external_tag_row_count": len(external_tag_rows),
+            "external_tag_seed_path": str(OUTPUT_EXTERNAL_TAG_SEED_PATH),
             "summary_path": str(OUTPUT_SUMMARY_PATH),
         },
         "excluded_during_cleaning": {
             "count": sum(exclude_reasons.values()),
-            "reasons": dict(sorted(exclude_reasons.items())),
+            "reasons": dict(exclude_reasons.most_common()),
         },
-        "area_counts": dict(area_counter.most_common()),
-        "sub_area_counts": dict(sub_area_counter.most_common()),
-        "source_query_counts": dict(source_query_counter.most_common()),
         "tag_counts": dict(tag_counter.most_common()),
-        "tag_group_counts": dict(tag_group_counter.most_common()),
-        "score_buckets": score_buckets,
+        "tag_type_counts": dict(tag_type_counter.most_common()),
+        "tag_status_counts": dict(tag_status_counter.most_common()),
+        "area_counts": dict(area_counter.most_common()),
+        "place_tag_row_counts_top_20": dict(place_counter.most_common(20)),
         "skipped_reason_counts_from_original_skipped_file": dict(
             skipped_reason_counter.most_common()
         ),
@@ -554,12 +415,11 @@ def build_summary(original_places, cleaned_places, skipped_places, exclude_reaso
             "sub_tags": sorted(SUB_TAGS),
             "warning_tags": sorted(WARNING_TAGS),
             "keep_unknown_tags": KEEP_UNKNOWN_TAGS,
-            "display_tag_limit": DISPLAY_TAG_LIMIT,
         },
         "data_note": (
-            "이 데이터는 카카오 로컬 API 장소 후보와 네이버 블로그 검색 결과의 "
-            "제목/요약 문구를 기반으로 생성한 카페 추천 태그 후보 데이터입니다. "
-            "시설 여부를 확정한 검증 데이터가 아니라 candidate 상태로 사용합니다."
+            "이 파일은 카페 장소를 Place DB에 저장하기 위한 데이터가 아닙니다. "
+            "카카오 Local API 검색 결과의 place id와 매칭하기 위한 "
+            "ExternalPlaceTag seed 데이터입니다."
         ),
     }
 
@@ -568,59 +428,58 @@ def main():
     original_places = read_json(INPUT_RESULTS_PATH)
     skipped_places = read_json(INPUT_SKIPPED_PATH)
 
-    cleaned_places = []
-    seen_external_ids = set()
+    external_tag_rows = []
     exclude_reasons = Counter()
+    seen_row_keys = set()
 
     for place in original_places:
-        external_id = str(place.get("external_id", "")).strip()
+        rows, reason = clean_place_to_external_tag_rows(place)
 
-        if external_id in seen_external_ids:
-            exclude_reasons["external_id 중복"] += 1
-            continue
-
-        cleaned, reason = clean_place(place)
-
-        if cleaned is None:
+        if reason:
             exclude_reasons[reason] += 1
             continue
 
-        seen_external_ids.add(external_id)
-        cleaned_places.append(cleaned)
+        for row in rows:
+            key = (
+                row["external_source"],
+                row["external_id"],
+                row["tag_name"],
+                row["tag_source"],
+            )
 
-    # 정렬: 지역 → sub_area → 이름 → external_id
-    cleaned_places.sort(
-        key=lambda place: (
-            place.get("area_key", ""),
-            place.get("sub_area_key", ""),
-            place.get("name", ""),
-            place.get("external_id", ""),
+            if key in seen_row_keys:
+                exclude_reasons["external_id_tag 중복"] += 1
+                continue
+
+            seen_row_keys.add(key)
+            external_tag_rows.append(row)
+
+    external_tag_rows.sort(
+        key=lambda row: (
+            row["place_name"],
+            row["external_id"],
+            row["tag_name"],
         )
     )
 
-    service_seed = build_service_seed(cleaned_places)
-    django_fixture = build_django_fixture(cleaned_places)
     summary = build_summary(
         original_places=original_places,
-        cleaned_places=cleaned_places,
         skipped_places=skipped_places,
+        external_tag_rows=external_tag_rows,
         exclude_reasons=exclude_reasons,
     )
 
-    write_json(OUTPUT_SERVICE_SEED_PATH, service_seed)
-    write_json(OUTPUT_DJANGO_FIXTURE_PATH, django_fixture)
+    write_json(OUTPUT_EXTERNAL_TAG_SEED_PATH, external_tag_rows)
     write_json(OUTPUT_SUMMARY_PATH, summary)
 
     print("==============================")
-    print("카페 태그 정제 완료")
+    print("카페 ExternalPlaceTag seed 생성 완료")
     print("==============================")
     print(f"원본 results 장소 수: {len(original_places)}")
-    print(f"정제 후 서비스 장소 수: {len(cleaned_places)}")
+    print(f"ExternalPlaceTag row 수: {len(external_tag_rows)}")
     print(f"정제 중 제외 수: {sum(exclude_reasons.values())}")
-    print(f"Django fixture 객체 수: {len(django_fixture)}")
     print()
-    print(f"서비스 seed: {OUTPUT_SERVICE_SEED_PATH}")
-    print(f"Django fixture: {OUTPUT_DJANGO_FIXTURE_PATH}")
+    print(f"seed 파일: {OUTPUT_EXTERNAL_TAG_SEED_PATH}")
     print(f"요약 파일: {OUTPUT_SUMMARY_PATH}")
 
     if exclude_reasons:

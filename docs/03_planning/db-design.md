@@ -2,274 +2,228 @@
 
 ## 1. 설계 목적
 
-본 문서는 상황 기반 생활 장소 추천 지도 서비스의 데이터베이스 구조를 정의한다.
+본 문서는 상황 기반 생활 장소 추천 지도 서비스의 현재 Django 모델 구조와 향후 확장 방향을 정리합니다.
 
-본 서비스는 외부 데이터 기반 장소 정보를 저장하고, 장소별 카테고리와 태그를 관리하며, 사용자의 현재 위치와 상황에 맞는 장소 추천 결과를 제공하는 것을 목표로 한다.
-
-초기 구현에서는 복잡한 머신러닝 기반 추천보다 규칙 기반 추천을 우선하며, 장소의 카테고리, 태그, 거리, 최신성, 신뢰도 정보를 추천 점수 계산에 활용한다.
+서비스의 핵심은 단순 지도 조회가 아니라, 사용자의 위치와 상황을 기반으로 지금 필요한 생활 장소를 추천하고 추천 결과를 지도에서 확인하는 것입니다. 초기 추천은 머신러닝보다 규칙 기반으로 구현하며, 장소의 카테고리, 태그, 거리, 최신성, 신뢰도, 확인 필요 여부를 조합합니다.
 
 ---
 
-## 2. 주요 엔티티
+## 2. 현재 모델 기준
 
-| 엔티티 | 설명 |
+현재 `kyb` 브랜치의 핵심 모델은 다음과 같습니다.
+
+| 모델 | 상태 | 설명 |
+|---|---|---|
+| `Place` | 구현됨 | 실제 DB에 저장하는 장소 정보 |
+| `Tag` | 구현됨 | 추천/필터에 사용하는 태그 사전 |
+| `PlaceTag` | 구현됨 | Place와 Tag의 연결, 출처, 상태, 신뢰도 관리 |
+| `ExternalPlaceTag` | 아직 없음 | 카페처럼 Place에 저장하지 않는 외부 장소 후보 태그 저장용 예정 모델 |
+| `Category` | 별도 모델 없음 | 현재는 `Place.category` 문자열 필드로 관리 |
+
+현재 구현은 별도 `Category` 테이블을 두지 않고, `Place.category` 문자열로 카테고리를 관리합니다. 문서나 ERD를 작성할 때도 현재 구현 기준을 우선합니다.
+
+---
+
+## 3. Place
+
+`Place`는 실제 추천 대상이 되는 장소 정보를 저장합니다.
+
+### 3.1 주요 필드
+
+| 필드 | 설명 |
 |---|---|
-| User | 서비스 사용자 정보 |
-| Place | 추천 대상 장소 정보 |
-| Category | 장소의 큰 분류 정보 |
-| Tag | 추천 및 필터링에 사용하는 태그 정보 |
-| PlaceTag | 장소와 태그의 연결 정보 및 태그 신뢰도 정보 |
-| Bookmark | 사용자가 저장한 장소 정보 |
-| Review | 사용자가 작성한 장소 후기 또는 메모 |
-| Report | 장소 정보 오류 제보 정보 |
-| Verification | 장소 또는 태그 검증 정보 |
+| `name` | 장소명 |
+| `category` | 장소 카테고리 문자열. 예: `toilet`, `parking`, `free_wifi`, `smoking_area` |
+| `address` | 주소 |
+| `lat` | 위도 |
+| `lng` | 경도 |
+| `source` | 데이터 출처 코드 |
+| `external_id` | 원본 데이터의 외부 식별자 |
+| `source_name` | 데이터 출처명 |
+| `source_updated_at` | 원본 데이터 기준일 또는 갱신일 |
+| `detail_location` | 상세 위치 |
+| `data_quality_status` | 데이터 품질 상태 |
+| `data_quality_score` | 데이터 품질 점수 |
+| `raw` | 원본 행 데이터 |
+| `created_at` | 생성일 |
+| `updated_at` | 수정일 |
+
+### 3.2 unique 기준
+
+같은 외부 데이터를 중복 저장하지 않기 위해 아래 조합을 unique로 관리합니다.
+
+```text
+source + external_id
+```
 
 ---
 
-## 3. 핵심 테이블 설명
+## 4. Tag
 
-### 3.1 User
+`Tag`는 추천과 필터에 사용할 태그 사전입니다.
 
-서비스 사용자의 기본 정보를 저장한다.
+### 4.1 주요 필드
 
-초기 구현에서는 Django 기본 User 모델을 활용하고, 필요 시 프로필 정보를 별도 확장한다.
-
----
-
-### 3.2 Category
-
-장소의 큰 분류를 저장한다.
-
-예시 카테고리는 다음과 같다.
-
-| code | name |
+| 필드 | 설명 |
 |---|---|
-| toilet | 공중화장실 |
-| freewifi | 무료 와이파이 |
-| citypark | 도시공원 |
-| smoking_area | 흡연구역 |
-| parking | 주차장 |
-| shelter | 쉼터 |
+| `name` | 태그명. unique |
+| `tag_type` | 태그 유형 |
+| `description` | 태그 설명 |
 
-초기 구현에서는 데이터 확보가 가능한 카테고리를 우선 사용한다.
+### 4.2 tag_type 기준
 
----
+현재 모델의 `Tag.tag_type` 기준은 다음과 같습니다.
 
-### 3.3 Place
-
-추천 대상이 되는 장소 정보를 저장한다.
-
-공공데이터, CSV, JSON, API 등을 통해 확보한 장소 데이터를 공통 구조로 저장한다.
-
-장소 데이터는 출처마다 컬럼이 다르므로, 지도 표시와 추천에 필요한 공통 필드는 별도 컬럼으로 저장하고 나머지 원본 데이터는 `raw_data`에 보관한다.
-
-PlaceTag는 단순히 장소와 태그를 연결하는 테이블이 아니라, 태그의 출처, 상태, 신뢰도, 검증 여부, 근거 정보를 관리하는 핵심 테이블이다.
-
-지도 API에서 실시간으로 가져온 장소는 기본적으로 Place에 저장하지 않으며, 사용자가 저장하거나 검증 대상이 된 경우에만 Place로 저장한다.
+| tag_type | 설명 | 예시 |
+|---|---|---|
+| `category` | 카테고리 또는 분류 성격의 태그 | 어린이공원, 근린공원 등. 단, 너무 기본적인 태그는 저장하지 않음 |
+| `recommendation` | 추천/필터에 사용할 세부 속성 태그 | 무료주차, 야경, 산책좋음, 냉방시설있음 |
+| `warning` | 확인 필요 또는 주의 태그 | 요금정보확인필요, 운영시간확인필요 |
 
 ---
 
-### 3.4 Tag
+## 5. PlaceTag
 
-추천과 필터링에 사용할 태그 정보를 저장한다.
+`PlaceTag`는 장소와 태그를 연결하는 중간 모델입니다. 단순 ManyToMany가 아니라, 태그가 붙은 출처, 상태, 신뢰도, 근거를 함께 저장합니다.
 
-예시 태그는 다음과 같다.
+### 5.1 주요 필드
 
-| tag_type | 예시 |
+| 필드 | 설명 |
 |---|---|
-| facility | 화장실, 와이파이, 주차가능, 비상벨 |
-| purpose | 산책, 휴식, 작업보조, 흡연 |
-| condition | 무료, 24시간, 야외, 실내 |
-| accessibility | 장애인편의, 어린이이용 |
-| mood | 힐링, 잠깐쉬기 |
+| `place` | 연결된 Place |
+| `tag` | 연결된 Tag |
+| `source` | 태그 생성 출처 |
+| `status` | 태그 상태 |
+| `confidence` | 신뢰도 점수, 0~100 |
+| `evidence` | 태그 부여 근거 |
+| `is_verified` | 검증 여부 |
+| `verified_at` | 검증 시각 |
+| `created_at` | 생성일 |
+| `updated_at` | 수정일 |
 
----
+### 5.2 source 기준
 
-### 3.5 PlaceTag
+현재 모델의 `PlaceTag.source` 기준은 다음과 같습니다.
 
-장소와 태그의 연결 정보를 저장한다.
-
-본 프로젝트에서는 장소와 태그의 관계를 단순 ManyToMany로 처리하지 않고, 중간 테이블인 PlaceTag를 별도로 관리한다.
-
-그 이유는 같은 태그라도 태그가 붙은 근거와 신뢰도가 다를 수 있기 때문이다.
-
-예를 들어 `와이파이` 태그는 아래처럼 서로 다른 출처를 가질 수 있다.
-
-| 장소 | 태그 | 출처 | 신뢰도 |
-|---|---|---|---:|
-| 공공 와이파이 지점 | 와이파이 | category_rule | 100 |
-| 도서관 근처 장소 | 와이파이 | keyword_rule | 60 |
-| 관리자 확인 장소 | 와이파이 | admin_verified | 100 |
-
-따라서 PlaceTag에는 태그 출처, 신뢰도, 검증 여부, 근거를 함께 저장한다.
-
----
-
-## 4. 테이블 명세
-
-## 4.1 Category
-
-| 컬럼명 | 타입 | NULL | 설명 | 비고 |
-|---|---|---|---|---|
-| id | bigint | N | 카테고리 ID | PK |
-| name | varchar(100) | N | 카테고리명 | 예: 공중화장실 |
-| code | varchar(50) | N | 카테고리 코드 | unique |
-| description | text | Y | 카테고리 설명 |  |
-| is_active | boolean | N | 사용 여부 | 기본값 true |
-| created_at | datetime | N | 생성일 |  |
-| updated_at | datetime | N | 수정일 |  |
-
----
-
-## 4.2 Place
-
-| 컬럼명 | 타입 | NULL | 설명 | 비고 |
-|---|---|---|---|---|
-| id | bigint | N | 장소 ID | PK |
-| category_id | bigint | N | 카테고리 ID | FK |
-| name | varchar(255) | N | 장소명 |  |
-| address | varchar(500) | Y | 지번 주소 |  |
-| road_address | varchar(500) | Y | 도로명 주소 |  |
-| latitude | decimal(10,7) | N | 위도 | 지도 표시용 |
-| longitude | decimal(10,7) | N | 경도 | 지도 표시용 |
-| source_name | varchar(255) | Y | 데이터 제공 기관명 |  |
-| source_type | varchar(50) | Y | 데이터 출처 유형 | public_data, api, csv 등 |
-| source_file | varchar(255) | Y | 원본 파일명 |  |
-| source_row_id | varchar(100) | Y | 원본 행 식별값 |  |
-| data_base_date | date | Y | 데이터 기준일 |  |
-| raw_data | json | Y | 원본 행 데이터 | JSONField |
-| is_active | boolean | N | 서비스 노출 여부 | 기본값 true |
-| created_at | datetime | N | 생성일 |  |
-| updated_at | datetime | N | 수정일 |  |
-
----
-
-## 4.3 Tag
-
-| 컬럼명 | 타입 | NULL | 설명 | 비고 |
-|---|---|---|---|---|
-| id | bigint | N | 태그 ID | PK |
-| name | varchar(100) | N | 태그명 | 예: 와이파이 |
-| code | varchar(50) | N | 태그 코드 | unique |
-| tag_type | varchar(30) | N | 태그 유형 | facility, purpose 등 |
-| description | text | Y | 태그 설명 |  |
-| is_active | boolean | N | 사용 여부 | 기본값 true |
-| created_at | datetime | N | 생성일 |  |
-| updated_at | datetime | N | 수정일 |  |
-
----
-
-## 4.4 PlaceTag
-
-| 컬럼명 | 타입 | NULL | 설명 | 비고 |
-|---|---|---|---|---|
-| id | bigint | N | 장소 태그 ID | PK |
-| place_id | bigint | N | 장소 ID | FK |
-| tag_id | bigint | N | 태그 ID | FK |
-| source | varchar(30) | N | 태그 부여 출처 | category_rule, field_rule 등 |
-| confidence | smallint | N | 태그 신뢰도 | 0~100 |
-| is_verified | boolean | N | 검증 여부 | 기본값 false |
-| rule_name | varchar(100) | Y | 적용된 규칙명 |  |
-| evidence | text | Y | 태그 부여 근거 |  |
-| created_at | datetime | N | 생성일 |  |
-| verified_at | datetime | Y | 검증일 |  |
-
----
-
-## 4.5 Bookmark
-
-| 컬럼명 | 타입 | NULL | 설명 | 비고 |
-|---|---|---|---|---|
-| id | bigint | N | 북마크 ID | PK |
-| user_id | bigint | N | 사용자 ID | FK |
-| place_id | bigint | N | 장소 ID | FK |
-| created_at | datetime | N | 저장일 |  |
-
----
-
-## 4.6 Review
-
-| 컬럼명 | 타입 | NULL | 설명 | 비고 |
-|---|---|---|---|---|
-| id | bigint | N | 후기 ID | PK |
-| user_id | bigint | N | 사용자 ID | FK |
-| place_id | bigint | N | 장소 ID | FK |
-| content | text | N | 후기 또는 메모 내용 |  |
-| rating | smallint | Y | 평점 | 선택 기능 |
-| created_at | datetime | N | 작성일 |  |
-| updated_at | datetime | N | 수정일 |  |
-
----
-
-## 4.7 Report
-
-| 컬럼명 | 타입 | NULL | 설명 | 비고 |
-|---|---|---|---|---|
-| id | bigint | N | 오류 제보 ID | PK |
-| user_id | bigint | Y | 사용자 ID | FK, 비회원 제보 가능 시 nullable |
-| place_id | bigint | N | 장소 ID | FK |
-| report_type | varchar(50) | N | 제보 유형 | 위치 오류, 폐쇄, 정보 오류 등 |
-| content | text | Y | 제보 내용 |  |
-| status | varchar(30) | N | 처리 상태 | pending, approved, rejected |
-| created_at | datetime | N | 제보일 |  |
-| updated_at | datetime | N | 수정일 |  |
-
----
-
-## 4.8 Verification
-
-| 컬럼명 | 타입 | NULL | 설명 | 비고 |
-|---|---|---|---|---|
-| id | bigint | N | 검증 ID | PK |
-| user_id | bigint | Y | 검증 사용자 ID | FK |
-| place_id | bigint | N | 장소 ID | FK |
-| place_tag_id | bigint | Y | 장소 태그 ID | FK |
-| verification_type | varchar(50) | N | 검증 유형 | place, tag |
-| result | varchar(30) | N | 검증 결과 | valid, invalid |
-| comment | text | Y | 검증 의견 |  |
-| created_at | datetime | N | 검증일 |  |
-
----
-
-## 5. 주요 관계
-
-| 관계 | 설명 |
+| source | 설명 |
 |---|---|
-| Category 1 : N Place | 하나의 카테고리는 여러 장소를 가진다. |
-| Place 1 : N PlaceTag | 하나의 장소는 여러 태그 연결 정보를 가진다. |
-| Tag 1 : N PlaceTag | 하나의 태그는 여러 장소에 연결될 수 있다. |
-| User 1 : N Bookmark | 하나의 사용자는 여러 장소를 저장할 수 있다. |
-| Place 1 : N Bookmark | 하나의 장소는 여러 사용자에게 저장될 수 있다. |
-| User 1 : N Review | 하나의 사용자는 여러 후기를 작성할 수 있다. |
-| Place 1 : N Review | 하나의 장소에는 여러 후기가 작성될 수 있다. |
-| Place 1 : N Report | 하나의 장소에는 여러 오류 제보가 등록될 수 있다. |
-| Place 1 : N Verification | 하나의 장소에는 여러 검증 기록이 등록될 수 있다. |
+| `category_rule` | 카테고리 기반 규칙 태그. 너무 기본적인 태그는 저장하지 않음 |
+| `field_rule` | 공공데이터 원본 필드 기반 태그 |
+| `keyword_rule` | 장소명, 시설명, 주소, 설명 키워드 기반 태그 |
+| `blog_search` | 블로그 검색 기반 후보 태그 |
+| `external_api` | 카카오, 관광공사 등 외부 API 기반 태그 |
+| `external_data` | CSV, JSON, 지자체 파일 등 외부 원본 데이터 기반 태그 |
+| `ai_suggested` | AI 추천 후보 태그 |
+| `checked` | 팀 또는 관리자 검수 완료 태그 |
+| `user_verified` | 사용자 검증 태그 |
+| `warning_tags` | 확인 필요 태그 |
 
----
+현재 모델은 `team_checked`와 `admin_checked`를 분리하지 않고 `checked`로 관리합니다. 운영 단계에서 관리 주체를 분리할 필요가 있으면 source choices를 확장할 수 있습니다.
 
-## 6. 설계 판단 근거
+### 5.3 status 기준
 
-- 외부 데이터는 출처마다 컬럼 구조가 다르므로, 공통 필드와 원본 데이터를 분리하여 저장한다.
-- 지도 표시와 거리 계산을 위해 위도와 경도는 Place의 필수 필드로 관리한다.
-- 장소와 태그는 다대다 관계이지만, 태그 출처와 신뢰도 관리가 필요하므로 PlaceTag를 별도 엔티티로 설계한다.
-- 초기 추천 로직은 카테고리, 태그, 거리, 최신성, 신뢰도를 활용한 규칙 기반 추천으로 구현한다.
-- 사용자 제보와 검증은 초기 데이터 확보 수단이 아니라, 서비스 운영 중 정보 보완 및 신뢰도 개선 기능으로 사용한다.
-
----
-
-## 7. 초기 구현 범위
-
-초기 구현에서는 다음 테이블을 우선 구현한다.
-
-| 우선순위 | 테이블 |
+| status | 설명 |
 |---|---|
-| 1 | Category |
-| 1 | Place |
-| 1 | Tag |
-| 1 | PlaceTag |
-| 2 | Bookmark |
-| 2 | Report |
-| 3 | Review |
-| 3 | Verification |
+| `confirmed` | 확인된 태그 |
+| `candidate` | 후보 태그 |
+| `needs_verification` | 확인 필요 태그 |
+| `rejected` | 반려 태그 |
 
-초기 핵심 기능은 장소 데이터 표시, 카테고리 필터, 태그 필터, 추천 결과 목록, 지도 마커 표시이다.
+### 5.4 unique 기준
+
+같은 장소에 같은 태그가 같은 출처로 중복 저장되지 않도록 아래 조합을 unique로 관리합니다.
+
+```text
+place + tag + source
+```
+
+---
+
+## 6. ExternalPlaceTag 예정 모델
+
+카페처럼 현재 DB의 `Place`에 직접 저장하지 않는 외부 장소 후보 태그를 관리하기 위해 `ExternalPlaceTag` 모델 추가가 필요합니다.
+
+### 6.1 필요한 이유
+
+카페 태그 seed는 카카오 Local API 검색 결과의 place id와 매칭하기 위한 데이터입니다. 이 카페들을 전부 `Place`로 저장하면 외부 API 저장 정책, 데이터 최신성, 중복 관리 문제가 생길 수 있습니다.
+
+따라서 카페는 다음 구조가 적절합니다.
+
+```text
+카카오 API 검색 결과
+→ external_id 또는 kakao_place_id 매칭
+→ ExternalPlaceTag 후보 태그 조회
+→ 추천 응답에 후보 태그와 추천 이유 표시
+```
+
+### 6.2 후보 필드
+
+| 필드 | 설명 |
+|---|---|
+| `provider` | 외부 API 제공자. 예: `kakao_local` |
+| `external_id` | 외부 장소 ID. 카카오 place id 등 |
+| `place_name` | 외부 장소명 |
+| `category_name` | 외부 API 카테고리명 |
+| `address` | 주소 |
+| `lat` | 위도 |
+| `lng` | 경도 |
+| `tag` | 연결된 Tag |
+| `source` | 태그 출처. 예: `blog_search`, `external_api`, `ai_suggested` |
+| `status` | 후보/확정/확인필요 상태 |
+| `confidence` | 신뢰도 |
+| `evidence` | 태그 근거 |
+| `raw` | 원본 또는 seed 데이터 |
+| `created_at` | 생성일 |
+| `updated_at` | 수정일 |
+
+### 6.3 unique 후보
+
+```text
+provider + external_id + tag + source
+```
+
+---
+
+## 7. 데이터별 저장 구조
+
+| 데이터 | Place 저장 | PlaceTag 저장 | ExternalPlaceTag 저장 |
+|---|---:|---:|---:|
+| 공중화장실 | O | O | X |
+| 주차장 | O | O | X |
+| 도시공원 | O | O | X |
+| 해수욕장 | O | O | X |
+| 쉼터 | O | O | X |
+| 흡연구역 | O | 조건부 | X |
+| 무료와이파이 | O | X | X |
+| 카페 후보 | X | X | O |
+| 관광지 | O | O | X |
+
+---
+
+## 8. 추천과의 연결
+
+초기 추천 점수는 다음 요소를 조합합니다.
+
+```text
+추천 점수 =
+카테고리 일치 점수
++ 태그 일치 점수
++ 거리 점수
++ 태그 신뢰도 점수
++ 최신 확인 점수
+- 확인 필요 태그 감점
+- 오류 제보 감점
+```
+
+생활 인프라 데이터는 DB의 `Place`, `PlaceTag`를 기준으로 추천합니다. 카페 후보는 카카오 API 검색 결과와 `ExternalPlaceTag`를 매칭해 후보 태그를 보여주는 방향입니다.
+
+---
+
+## 9. 다음 모델 작업
+
+1. `ExternalPlaceTag` 모델 추가
+2. 마이그레이션 생성 및 적용
+3. `import_places.py` 작성
+4. `import_place_tags.py` 작성
+5. `import_external_place_tags.py` 작성
+6. serializer에서 source별 `display_group` 계산

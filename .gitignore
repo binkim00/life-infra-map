@@ -99,3 +99,10 @@ staticfiles/
 # =========================
 # Uploaded / Generated files
 # =========================
+
+# # generated tag seed data
+# Test/apiTest/tag/**/**_seed.json
+# Test/apiTest/tag/**/park_place_tag_seed.json
+# Test/apiTest/tag/**/beach_place_tag_seed.json
+# Test/apiTest/tag/**/tourist_spot_busan_place_tag_seed.json
+# Test/apiTest/tag/**/cafe_external_place_tags_seed.json

@@ -1,2 +1,12 @@
 ExData/Cleaned/*.json filter=lfs diff=lfs merge=lfs -text
 ExData/Cleaned/skipped/*.json filter=lfs diff=lfs merge=lfs -text
+Test/apiTest/tag/parkTag/park_place_tag_seed.json filter=lfs diff=lfs merge=lfs -text
+Test/apiTest/tag/beachTag/beach_place_tag_seed.json filter=lfs diff=lfs merge=lfs -text
+Test/apiTest/tag/tourTag/tourist_spot_busan_place_tag_seed.json filter=lfs diff=lfs merge=lfs -text
+Test/apiTest/tag/cafeTag/outputs/cafe_external_place_tags_seed.json filter=lfs diff=lfs merge=lfs -text
+Test/apiTest/tag/parkingTag/parking_place_tag_seed.json filter=lfs diff=lfs merge=lfs -text
+ExData/JsonData/shelter/*.json filter=lfs diff=lfs merge=lfs -text
+ExData/Cleaned/shelter_places.json filter=lfs diff=lfs merge=lfs -text
+Test/apiTest/tag/shelterTag/shelter_place_tag_seed.json filter=lfs diff=lfs merge=lfs -text
+ExData/Cleaned/skipped/shelter_skipped.json filter=lfs diff=lfs merge=lfs -text
+Test/apiTest/tag/toiletTag/toilet_place_tag_seed.json filter=lfs diff=lfs merge=lfs -text

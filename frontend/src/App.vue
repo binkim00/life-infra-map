@@ -1,35 +1,25 @@
-<script setup>
-import { RouterLink, RouterView } from 'vue-router'
-</script>
-
 <template>
-  <header class="app-header">
-    <nav>
-      <RouterLink to="/">Home</RouterLink>
-      <RouterLink to="/recommendation-test">추천 API 테스트</RouterLink>
-    </nav>
-  </header>
-
   <RouterView />
 </template>
 
-<style scoped>
-.app-header {
-  padding: 16px 24px;
-  border-bottom: 1px solid #eee;
+<style>
+* {
+  box-sizing: border-box;
 }
 
-nav {
-  display: flex;
-  gap: 16px;
+body {
+  margin: 0;
+  font-family:
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+  background: #f6f7fb;
+  color: #222;
 }
 
-a {
-  color: #333;
-  text-decoration: none;
-}
-
-.router-link-active {
-  font-weight: 700;
+button,
+input {
+  font-family: inherit;
 }
 </style>
