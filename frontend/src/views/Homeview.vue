@@ -1,5 +1,6 @@
 <script setup>
 import { computed, nextTick, ref, watch } from 'vue'
+import { getKakaoPlaceTags, getSavedPlaces } from '@/api/recommendation'
 import KakaoMap from '@/components/KakaoMap.vue'
 
 const activeTab = ref('search')
@@ -17,10 +18,42 @@ const SEARCH_RADIUS = 5000
 // 15개씩 페이지를 추가 조회한 뒤 최대 50개까지만 사용합니다.
 const SEARCH_SIZE_PER_PAGE = 15
 const MAX_SEARCH_RESULT_COUNT = 50
+const DB_SEARCH_RESULT_COUNT = 50
+const DISPLAY_BATCH_SIZE = 15
+const CAFE_SEARCH_KEYWORDS = ['카페', '커피', 'cafe']
+const INFRA_SEARCH_KEYWORDS = [
+  '화장실',
+  '공중화장실',
+  '와이파이',
+  '무료와이파이',
+  '무료 와이파이',
+  'wifi',
+  'wi-fi',
+  '흡연',
+  '흡연구역',
+  '해수욕장',
+  '주차장',
+  '공원',
+  '관광지',
+]
+const DB_MARKER_ALLOWED_CATEGORIES = [
+  'toilet',
+  'freewifi',
+  'smoking_area',
+  'beach',
+  'parking',
+  'city_park',
+  'tourism',
+]
 
 const mapCenter = ref(DEFAULT_CENTER)
+const mapFitBoundsKey = ref(0)
 const currentLocationPlace = ref([])
-const searchedPlaces = ref([])
+const allSearchResults = ref([])
+const visibleCount = ref(DISPLAY_BATCH_SIZE)
+const sortMode = ref('distance')
+const resultSourceLabel = ref('검색 결과')
+const resultMessageSuffix = ref('')
 const selectedPlace = ref(null)
 
 const isLocating = ref(false)
@@ -32,11 +65,37 @@ const mapSearchKeyword = ref('')
 const showDetailPanel = ref(false)
 const detailFrameError = ref(false)
 
+const sortedSearchResults = computed(() => {
+  return sortSearchResults(allSearchResults.value)
+})
+
+const searchedPlaces = computed(() => {
+  return assignMarkerLabels(
+    sortedSearchResults.value.slice(0, visibleCount.value),
+  )
+})
+
 const mapPlaces = computed(() => {
   return [
     ...currentLocationPlace.value,
     ...searchedPlaces.value,
   ]
+})
+
+const hasMoreResults = computed(() => {
+  return visibleCount.value < allSearchResults.value.length
+})
+
+const resultCountText = computed(() => {
+  if (!allSearchResults.value.length) {
+    return ''
+  }
+
+  const suffix = resultMessageSuffix.value
+    ? ` · ${resultMessageSuffix.value}`
+    : ''
+
+  return `${resultSourceLabel.value} ${allSearchResults.value.length}개 중 ${searchedPlaces.value.length}개 표시${suffix}`
 })
 
 const placeListItemRefs = ref({})
@@ -73,14 +132,48 @@ watch(
   },
 )
 
-const handleSearch = () => {
+const waitForKakaoServices = () => {
+  return new Promise((resolve, reject) => {
+    let retryCount = 0
+
+    const checkLoaded = () => {
+      if (window.kakao && window.kakao.maps && window.kakao.maps.services) {
+        resolve()
+        return
+      }
+
+      retryCount += 1
+
+      if (retryCount >= 20) {
+        reject(new Error('카카오 지도 서비스를 불러오지 못했습니다.'))
+        return
+      }
+
+      window.setTimeout(checkLoaded, 250)
+    }
+
+    checkLoaded()
+  })
+}
+
+const handleSearch = async () => {
   if (!searchKeyword.value.trim()) {
     alert('검색어를 입력해주세요.')
     return
   }
 
-  console.log('검색어:', searchKeyword.value)
-  alert(`검색어: ${searchKeyword.value}`)
+  mapSearchKeyword.value = searchKeyword.value.trim()
+  activeTab.value = 'map'
+
+  await nextTick()
+
+  try {
+    await waitForKakaoServices()
+    await searchKakaoPlaces()
+  } catch (error) {
+    console.error(error)
+    locationMessage.value = '카카오 지도 서비스를 불러오는 중입니다. 잠시 후 지도 검색 버튼을 눌러주세요.'
+  }
 }
 
 const openMapWithCurrentLocation = () => {
@@ -113,6 +206,9 @@ const openMapWithCurrentLocation = () => {
           lng,
           address: '',
           distance: null,
+          markerColor: 'green',
+          searchSource: 'current_location',
+          sourceLabel: '기준',
           tags: [makeTag('현재위치', 'category_rule')],
         },
       ]
@@ -229,54 +325,29 @@ const makeTag = (name, source) => {
   }
 }
 
-const makeTemporaryTags = (place, keyword) => {
+const makeKakaoResultTags = (place, savedTagData = {}) => {
   const tags = []
 
   const category = place.category_name || ''
-  const searchText = `${keyword} ${category} ${place.place_name}`
+  const placeName = place.place_name || ''
 
-  // 기본 태그: 검정
   tags.push(makeTag('카카오검색결과', 'category_rule'))
 
-  if (searchText.includes('카페')) {
+  if (category.includes('카페') || placeName.includes('카페')) {
     tags.push(makeTag('카페', 'category_rule'))
-    tags.push(makeTag('실내후보', 'category_rule'))
-
-    // 블로그 검색 태그: 초록
-    // 현재는 화면 확인용 임시 태그입니다.
-    // 추후 백엔드에서 blog_search source를 내려주면 이 부분을 교체하면 됩니다.
-    tags.push(makeTag('조용함후보', 'blog_search'))
-    tags.push(makeTag('노트북작업후보', 'blog_search'))
-
-    // 사용자 검증 태그: 빨강
-    // 현재는 화면 확인용 임시 태그입니다.
-    tags.push(makeTag('콘센트있음', 'user_verified'))
   }
 
-  if (
-    searchText.includes('식당') ||
-    searchText.includes('음식') ||
-    searchText.includes('한식') ||
-    searchText.includes('일식') ||
-    searchText.includes('중식') ||
-    searchText.includes('양식')
-  ) {
-    tags.push(makeTag('식당', 'category_rule'))
-    tags.push(makeTag('맛집후보', 'blog_search'))
-    tags.push(makeTag('재방문후보', 'user_verified'))
-  }
+  savedTagData.suggested_tags?.forEach((tagName) => {
+    tags.push(makeTag(tagName, 'blog_search'))
+  })
 
-  if (searchText.includes('편의점')) {
-    tags.push(makeTag('편의점', 'category_rule'))
-  }
+  savedTagData.verified_tags?.forEach((tagName) => {
+    tags.push(makeTag(tagName, 'user_verified'))
+  })
 
-  if (searchText.includes('주차')) {
-    tags.push(makeTag('주차가능확인필요', 'category_rule'))
-  }
-
-  if (place.distance) {
-    tags.push(makeTag('검색기준위치기준', 'category_rule'))
-  }
+  savedTagData.warning_tags?.forEach((tagName) => {
+    tags.push(makeTag(tagName, 'warning_tags'))
+  })
 
   const uniqueTags = []
   const seen = new Set()
@@ -312,11 +383,31 @@ const getTagClass = (tag) => {
     return 'tag-user'
   }
 
+  if (source === 'warning_tags') {
+    return 'tag-warning'
+  }
+
   return 'tag-default'
 }
 
 const getTagSourceText = (tag) => {
   const source = typeof tag === 'string' ? 'category_rule' : tag.source
+
+  if (source === 'external_data') {
+    return 'DB'
+  }
+
+  if (source === 'field_rule') {
+    return '필드'
+  }
+
+  if (source === 'keyword_rule') {
+    return '키워드'
+  }
+
+  if (source === 'checked') {
+    return '검수'
+  }
 
   if (source === 'blog_search') {
     return '블로그'
@@ -324,6 +415,10 @@ const getTagSourceText = (tag) => {
 
   if (source === 'user_verified') {
     return '사용자검증'
+  }
+
+  if (source === 'warning_tags') {
+    return '주의'
   }
 
   return '기본'
@@ -344,6 +439,10 @@ const getTagSortOrder = (tag) => {
     return 3
   }
 
+  if (source === 'warning_tags') {
+    return 4
+  }
+
   return 99
 }
 
@@ -353,26 +452,422 @@ const getSortedTags = (tags = []) => {
   })
 }
 
+const normalizeSearchText = (text = '') => {
+  return text.toLowerCase().replace(/\s+/g, '')
+}
+
+const isCafeSearchKeyword = (keyword) => {
+  const normalizedKeyword = normalizeSearchText(keyword)
+
+  return CAFE_SEARCH_KEYWORDS.some((word) => {
+    return normalizedKeyword.includes(normalizeSearchText(word))
+  })
+}
+
+const isInfraSearchKeyword = (keyword) => {
+  const normalizedKeyword = normalizeSearchText(keyword)
+
+  return INFRA_SEARCH_KEYWORDS.some((word) => {
+    return normalizedKeyword.includes(normalizeSearchText(word))
+  })
+}
+
+const shouldAppendDbPlaces = (keyword) => {
+  return !isCafeSearchKeyword(keyword) && isInfraSearchKeyword(keyword)
+}
+
+const normalizePlaceName = (name = '') => {
+  return name
+    .toLowerCase()
+    .replace(/\s+/g, '')
+    .replace(/[^0-9a-z가-힣]/g, '')
+}
+
+const isSimilarPlaceName = (firstName, secondName) => {
+  const first = normalizePlaceName(firstName)
+  const second = normalizePlaceName(secondName)
+
+  if (!first || !second) {
+    return false
+  }
+
+  return first === second || first.includes(second) || second.includes(first)
+}
+
+const getDistanceMetersBetweenPlaces = (firstPlace, secondPlace) => {
+  const lat1 = Number(firstPlace.lat)
+  const lng1 = Number(firstPlace.lng)
+  const lat2 = Number(secondPlace.lat)
+  const lng2 = Number(secondPlace.lng)
+
+  if ([lat1, lng1, lat2, lng2].some((value) => Number.isNaN(value))) {
+    return Number.POSITIVE_INFINITY
+  }
+
+  const radius = 6371000
+  const toRadians = (degree) => degree * (Math.PI / 180)
+  const deltaLat = toRadians(lat2 - lat1)
+  const deltaLng = toRadians(lng2 - lng1)
+
+  const a =
+    Math.sin(deltaLat / 2) ** 2 +
+    Math.cos(toRadians(lat1)) *
+      Math.cos(toRadians(lat2)) *
+      Math.sin(deltaLng / 2) ** 2
+
+  return radius * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+}
+
+const getTagKey = (tag) => {
+  const source = typeof tag === 'string' ? 'category_rule' : tag.source
+  return `${getTagName(tag)}-${source}`
+}
+
+const mergeTags = (firstTags = [], secondTags = []) => {
+  const mergedTags = []
+  const seen = new Set()
+
+  ;[...firstTags, ...secondTags].forEach((tag) => {
+    const key = getTagKey(tag)
+
+    if (seen.has(key)) {
+      return
+    }
+
+    seen.add(key)
+    mergedTags.push(tag)
+  })
+
+  return mergedTags
+}
+
+const isDuplicateDbPlace = (kakaoPlace, dbPlace) => {
+  if (
+    dbPlace.source === 'kakao_local' &&
+    dbPlace.externalId &&
+    String(dbPlace.externalId) === String(kakaoPlace.kakaoPlaceId)
+  ) {
+    return true
+  }
+
+  return (
+    isSimilarPlaceName(kakaoPlace.name, dbPlace.name) &&
+    getDistanceMetersBetweenPlaces(kakaoPlace, dbPlace) <= 30
+  )
+}
+
+const mergeDbDataIntoKakaoPlace = (kakaoPlace, dbPlace) => {
+  return {
+    ...kakaoPlace,
+    savedPlaceId: kakaoPlace.savedPlaceId || dbPlace.savedPlaceId,
+    tags: mergeTags(kakaoPlace.tags, dbPlace.tags),
+    tagSource: `${kakaoPlace.tagSource} + DB 저장 데이터`,
+    dataQualityStatus: kakaoPlace.dataQualityStatus || dbPlace.dataQualityStatus,
+    dataQualityScore: kakaoPlace.dataQualityScore ?? dbPlace.dataQualityScore,
+  }
+}
+
+const dedupeSearchResults = (kakaoResults, dbPlaces) => {
+  const mergedKakaoResults = [...kakaoResults]
+  const additionalDbPlaces = []
+
+  dbPlaces.forEach((dbPlace) => {
+    const duplicateIndex = mergedKakaoResults.findIndex((kakaoPlace) => {
+      return isDuplicateDbPlace(kakaoPlace, dbPlace)
+    })
+
+    if (duplicateIndex === -1) {
+      additionalDbPlaces.push(dbPlace)
+      return
+    }
+
+    mergedKakaoResults[duplicateIndex] = mergeDbDataIntoKakaoPlace(
+      mergedKakaoResults[duplicateIndex],
+      dbPlace,
+    )
+  })
+
+  return [...mergedKakaoResults, ...additionalDbPlaces]
+}
+
+const getPlaceSourceText = (place) => {
+  return place.sourceLabel || '장소'
+}
+
+const getPlaceSourceClass = (place) => {
+  if (place.searchSource === 'local_db') {
+    return 'source-db'
+  }
+
+  if (place.searchSource === 'kakao') {
+    return 'source-kakao'
+  }
+
+  return 'source-base'
+}
+
+const isDbPlace = (place) => {
+  return place?.searchSource === 'local_db'
+}
+
+const getKakaoDetailUrl = (place) => {
+  if (place?.searchSource !== 'kakao') {
+    return ''
+  }
+
+  return place.placeUrl || place.place_url || ''
+}
+
+const getPlaceNavigationUrl = (place) => {
+  return (
+    place?.navigationUrl ||
+    place?.navigation_url ||
+    place?.placeUrl ||
+    place?.place_url ||
+    ''
+  )
+}
+
+const hasKakaoDetail = (place) => {
+  return Boolean(getKakaoDetailUrl(place))
+}
+
 const getMarkerLabel = (index) => {
   return String(index + 1)
 }
 
-const convertKakaoPlaces = (places, targetKeyword) => {
-  return places.map((place, index) => ({
-    id: place.id,
-    name: place.place_name,
-    category: place.category_name,
-    address: place.road_address_name || place.address_name,
-    lat: Number(place.y),
-    lng: Number(place.x),
-    distance: place.distance ? Number(place.distance) : null,
-    phone: place.phone,
-    placeUrl: place.place_url,
-    markerColor: 'red',
-    markerLabel: getMarkerLabel(index),
-    tags: makeTemporaryTags(place, targetKeyword),
-    tagSource: '카카오 API 검색 결과 기반 임시 태그',
+const getDistanceValue = (place) => {
+  const distance = Number(place.distance)
+
+  return Number.isFinite(distance) ? distance : null
+}
+
+const getRecommendScore = (place) => {
+  const score = Number(
+    place.recommendScore ??
+    place.score ??
+    place.dataQualityScore ??
+    0,
+  )
+
+  return Number.isFinite(score) ? score : 0
+}
+
+const compareByDistance = (firstPlace, secondPlace) => {
+  const firstDistance = getDistanceValue(firstPlace)
+  const secondDistance = getDistanceValue(secondPlace)
+
+  if (
+    firstDistance !== null &&
+    secondDistance !== null &&
+    firstDistance !== secondDistance
+  ) {
+    return firstDistance - secondDistance
+  }
+
+  return firstPlace.originalOrder - secondPlace.originalOrder
+}
+
+const compareByRecommendation = (firstPlace, secondPlace) => {
+  const scoreDifference =
+    getRecommendScore(secondPlace) - getRecommendScore(firstPlace)
+
+  if (scoreDifference !== 0) {
+    return scoreDifference
+  }
+
+  return compareByDistance(firstPlace, secondPlace)
+}
+
+const sortSearchResults = (results = []) => {
+  const indexedResults = results.map((place, index) => ({
+    ...place,
+    originalOrder: index,
   }))
+
+  const sortedResults = [...indexedResults].sort((firstPlace, secondPlace) => {
+    if (sortMode.value === 'recommendation') {
+      return compareByRecommendation(firstPlace, secondPlace)
+    }
+
+    return compareByDistance(firstPlace, secondPlace)
+  })
+
+  return sortedResults.map(({ originalOrder, ...place }) => place)
+}
+
+const convertKakaoPlaces = (places, savedTagDataByExternalId = {}) => {
+  return places.map((place) => {
+    const savedTagData = savedTagDataByExternalId[String(place.id)] || {}
+    const rawScores = savedTagData.raw_scores || {}
+
+    return {
+      id: `kakao-${place.id}`,
+      kakaoPlaceId: place.id,
+      savedPlaceId: savedTagData.saved_place_id || null,
+      name: place.place_name,
+      category: place.category_name,
+      address: place.road_address_name || place.address_name,
+      lat: Number(place.y),
+      lng: Number(place.x),
+      distance: place.distance ? Number(place.distance) : null,
+      phone: place.phone,
+      placeUrl: place.place_url,
+      markerColor: 'red',
+      searchSource: 'kakao',
+      sourceLabel: '카카오',
+      tags: makeKakaoResultTags(place, savedTagData),
+      tagSource: savedTagData.saved_place_id
+        ? '카카오 API 검색 결과 + DB 저장 태그'
+        : '카카오 API 검색 결과',
+      suggestedTags: savedTagData.suggested_tags || [],
+      verifiedTags: savedTagData.verified_tags || [],
+      warningTags: savedTagData.warning_tags || [],
+      tagDetails: savedTagData.tag_details || [],
+      dataQualityStatus: savedTagData.data_quality_status || null,
+      dataQualityScore: savedTagData.data_quality_score || null,
+      rawScores,
+      recommendScore:
+        rawScores.recommendation_ready_score ??
+        savedTagData.data_quality_score ??
+        null,
+    }
+  })
+}
+
+const searchKakaoSavedTags = async (places) => {
+  const externalIds = places
+    .map((place) => String(place.id || '').trim())
+    .filter(Boolean)
+
+  if (!externalIds.length) {
+    return {}
+  }
+
+  try {
+    const data = await getKakaoPlaceTags(externalIds)
+    return data.results || {}
+  } catch (error) {
+    console.error(error)
+    return {}
+  }
+}
+
+const getDbCategoryText = (category) => {
+  const categoryMap = {
+    toilet: '화장실',
+    freewifi: '무료 와이파이',
+    smoking_area: '흡연구역',
+    beach: '해수욕장',
+    shelter: '쉼터',
+    parking: '주차장',
+    city_park: '공원',
+    citypark: '공원',
+    tourism: '관광지',
+  }
+
+  return categoryMap[category] || category || ''
+}
+
+const makeDbTags = (place) => {
+  const tags = [
+    makeTag('DB저장데이터', 'external_data'),
+  ]
+
+  const categoryText = getDbCategoryText(place.category)
+
+  if (categoryText) {
+    tags.push(makeTag(categoryText, 'category_rule'))
+  }
+
+  place.tags?.forEach((tag) => {
+    tags.push(makeTag(tag.name, tag.source))
+  })
+
+  return tags
+}
+
+const convertDbPlaces = (places) => {
+  return places.map((place) => ({
+    id: `db-${place.id}`,
+    savedPlaceId: place.id,
+    source: place.source,
+    externalId: place.external_id,
+    rawCategory: place.category,
+    name: place.name,
+    category: getDbCategoryText(place.category),
+    address: place.address,
+    detailLocation: place.detail_location,
+    lat: Number(place.lat),
+    lng: Number(place.lng),
+    distance: place.distance ?? null,
+    phone: '',
+    placeUrl: '',
+    navigationUrl: `https://map.kakao.com/link/to/${encodeURIComponent(place.name)},${place.lat},${place.lng}`,
+    markerColor: 'blue',
+    searchSource: 'local_db',
+    sourceLabel: 'DB',
+    tags: makeDbTags(place),
+    tagSource: 'DB 저장 데이터',
+    dataQualityStatus: place.data_quality_status,
+    dataQualityScore: place.data_quality_score,
+    rawScores: place.raw?.scores || {},
+    recommendScore:
+      place.raw?.scores?.recommendation_ready_score ??
+      place.data_quality_score ??
+      null,
+  }))
+}
+
+const assignMarkerLabels = (places) => {
+  return places.map((place, index) => ({
+    ...place,
+    markerLabel: getMarkerLabel(index),
+  }))
+}
+
+const setSearchResults = ({
+  results,
+  sourceLabel = '검색 결과',
+  messageSuffix = '',
+}) => {
+  allSearchResults.value = results
+  visibleCount.value = DISPLAY_BATCH_SIZE
+  resultSourceLabel.value = sourceLabel
+  resultMessageSuffix.value = messageSuffix
+  placeListItemRefs.value = {}
+  mapFitBoundsKey.value += 1
+}
+
+const clearSearchResults = () => {
+  setSearchResults({
+    results: [],
+    sourceLabel: '검색 결과',
+    messageSuffix: '',
+  })
+}
+
+const showMoreResults = () => {
+  visibleCount.value = Math.min(
+    visibleCount.value + DISPLAY_BATCH_SIZE,
+    allSearchResults.value.length,
+  )
+}
+
+const searchSavedPlaces = async ({ targetKeyword, center }) => {
+  const data = await getSavedPlaces({
+    q: targetKeyword,
+    lat: center.lat,
+    lng: center.lng,
+    radius: SEARCH_RADIUS,
+    limit: DB_SEARCH_RESULT_COUNT,
+  })
+
+  const allowedPlaces = (data.results || []).filter((place) => {
+    return DB_MARKER_ALLOWED_CATEGORIES.includes(place.category)
+  })
+
+  return convertDbPlaces(allowedPlaces)
 }
 
 const searchAroundCenter = async ({
@@ -383,7 +878,7 @@ const searchAroundCenter = async ({
 }) => {
   const centerLatLng = new window.kakao.maps.LatLng(center.lat, center.lng)
 
-  const places = await runKakaoKeywordSearchLimited(
+  const kakaoPlaces = await runKakaoKeywordSearchLimited(
     placesService,
     targetKeyword,
     {
@@ -393,16 +888,63 @@ const searchAroundCenter = async ({
     },
   )
 
-  searchedPlaces.value = convertKakaoPlaces(places, targetKeyword)
+  const shouldUseDbPlaces = shouldAppendDbPlaces(targetKeyword)
+  const [savedTagDataByExternalId, dbPlaces] = await Promise.all([
+    searchKakaoSavedTags(kakaoPlaces),
+    shouldUseDbPlaces
+      ? searchSavedPlaces({
+        targetKeyword,
+        center,
+      })
+      : Promise.resolve([]),
+  ])
+  const kakaoResults = convertKakaoPlaces(
+    kakaoPlaces,
+    savedTagDataByExternalId,
+  )
+  const dedupedResults = shouldUseDbPlaces
+    ? dedupeSearchResults(kakaoResults, dbPlaces)
+    : kakaoResults
 
-  if (!places.length) {
+  if (!dedupedResults.length) {
+    clearSearchResults()
     selectedPlace.value = null
     showDetailPanel.value = false
     locationMessage.value = `${baseLabel} ${SEARCH_RADIUS / 1000}km 이내 "${targetKeyword}" 검색 결과가 없습니다.`
     return
   }
 
-  locationMessage.value = `${baseLabel} ${SEARCH_RADIUS / 1000}km 이내 "${targetKeyword}" 검색 결과 ${places.length}개를 표시했습니다.`
+  const enrichedCount = kakaoResults.filter((place) => place.savedPlaceId).length
+
+  if (isCafeSearchKeyword(targetKeyword)) {
+    setSearchResults({
+      results: dedupedResults,
+      sourceLabel: '카카오 결과',
+      messageSuffix: enrichedCount ? `태그 보강 카페 ${enrichedCount}개` : '',
+    })
+    locationMessage.value = `${baseLabel} ${SEARCH_RADIUS / 1000}km 이내 "${targetKeyword}" 카카오 검색 결과를 표시했습니다.`
+    return
+  }
+
+  if (shouldUseDbPlaces) {
+    const displayedDbCount = dedupedResults.filter((place) => {
+      return place.searchSource === 'local_db'
+    }).length
+
+    setSearchResults({
+      results: dedupedResults,
+      sourceLabel: '검색 결과',
+      messageSuffix: `카카오 ${kakaoResults.length}개, DB ${displayedDbCount}개`,
+    })
+    locationMessage.value = `${baseLabel} ${SEARCH_RADIUS / 1000}km 이내 "${targetKeyword}" 검색 결과를 표시했습니다.`
+    return
+  }
+
+  setSearchResults({
+    results: dedupedResults,
+    sourceLabel: '카카오 결과',
+  })
+  locationMessage.value = `${baseLabel} ${SEARCH_RADIUS / 1000}km 이내 "${targetKeyword}" 카카오 검색 결과를 표시했습니다.`
 }
 
 const searchKakaoPlaces = async () => {
@@ -453,7 +995,7 @@ const searchKakaoPlaces = async () => {
     )
 
     if (!baseLocationResults.length) {
-      searchedPlaces.value = []
+      clearSearchResults()
       currentLocationPlace.value = []
       selectedPlace.value = null
       showDetailPanel.value = false
@@ -481,6 +1023,9 @@ const searchKakaoPlaces = async () => {
         distance: null,
         phone: basePlace.phone,
         placeUrl: basePlace.place_url,
+        markerColor: 'green',
+        searchSource: 'base_location',
+        sourceLabel: '기준',
         tags: [makeTag('검색기준위치', 'category_rule')],
         tagSource: '카카오 API 장소 검색 결과',
       },
@@ -494,10 +1039,10 @@ const searchKakaoPlaces = async () => {
     })
   } catch (error) {
     console.error(error)
-    searchedPlaces.value = []
+    clearSearchResults()
     selectedPlace.value = null
     showDetailPanel.value = false
-    locationMessage.value = '카카오 장소 검색 중 오류가 발생했습니다.'
+    locationMessage.value = '장소 검색 중 오류가 발생했습니다.'
   } finally {
     isSearchingMap.value = false
   }
@@ -519,8 +1064,8 @@ const closePlaceCard = () => {
 }
 
 const openDetailPanel = () => {
-  if (!selectedPlace.value?.placeUrl) {
-    alert('카카오맵 상세 URL이 없는 장소입니다.')
+  if (!getPlaceNavigationUrl(selectedPlace.value)) {
+    alert('열 수 있는 상세 URL이 없는 장소입니다.')
     return
   }
 
@@ -620,7 +1165,7 @@ const handleDetailFrameError = () => {
           <div class="place-list-top">
             <div>
               <p class="place-list-label">검색 결과</p>
-              <h2>장소 {{ searchedPlaces.length }}</h2>
+              <h2>{{ resultCountText }}</h2>
             </div>
           </div>
 
@@ -634,13 +1179,35 @@ const handleDetailFrameError = () => {
               :class="{ active: selectedPlace && selectedPlace.id === place.id }"
               @click="selectPlaceFromList(place)"
             >
-              <span class="place-list-marker">
+              <span class="place-list-marker" :class="getPlaceSourceClass(place)">
                 {{ place.markerLabel }}
               </span>
 
-              <span class="place-list-name">
-                {{ place.name }}
+              <span class="place-list-main">
+                <span class="place-list-name-row">
+                  <span class="place-list-name">
+                    {{ place.name }}
+                  </span>
+
+                  <span class="source-badge" :class="getPlaceSourceClass(place)">
+                    {{ getPlaceSourceText(place) }}
+                  </span>
+                </span>
+
+                <small v-if="place.category">
+                  {{ place.category }}
+                </small>
               </span>
+            </button>
+          </div>
+
+          <div v-if="hasMoreResults" class="show-more-wrap">
+            <button
+              type="button"
+              class="show-more-button"
+              @click="showMoreResults"
+            >
+              더보기
             </button>
           </div>
         </aside>
@@ -649,7 +1216,9 @@ const handleDetailFrameError = () => {
           <KakaoMap
             :center="mapCenter"
             :places="mapPlaces"
+            :fit-bounds-key="mapFitBoundsKey"
             :selected-place-id="selectedPlace?.id || null"
+            :selected-place="selectedPlace"
             @select-place="selectPlace"
           />
         </div>
@@ -657,11 +1226,20 @@ const handleDetailFrameError = () => {
         <aside
           v-if="selectedPlace"
           class="place-detail-panel"
+          :class="{ 'is-compact-detail': !hasKakaoDetail(selectedPlace) }"
         >
-          <div class="split-place-card">
+          <div
+            class="split-place-card"
+            :class="{ 'has-kakao-detail': hasKakaoDetail(selectedPlace) }"
+          >
             <div class="split-card-top">
               <div>
-                <p class="card-label">선택한 장소</p>
+                <p class="card-label">
+                  선택한 장소
+                  <span class="source-badge" :class="getPlaceSourceClass(selectedPlace)">
+                    {{ getPlaceSourceText(selectedPlace) }}
+                  </span>
+                </p>
                 <h2>{{ selectedPlace.name }}</h2>
               </div>
 
@@ -674,13 +1252,15 @@ const handleDetailFrameError = () => {
               </button>
             </div>
 
-            <section class="kakao-frame-section">
-              <div class="iframe-fallback" v-if="!selectedPlace.placeUrl || detailFrameError">
+            <section
+              v-if="hasKakaoDetail(selectedPlace)"
+              class="kakao-frame-section"
+            >
+              <div class="iframe-fallback" v-if="detailFrameError">
                 <p>카카오맵 상세페이지를 현재 화면에 표시하지 못했습니다.</p>
 
                 <a
-                  v-if="selectedPlace.placeUrl"
-                  :href="selectedPlace.placeUrl"
+                  :href="getKakaoDetailUrl(selectedPlace)"
                   target="_blank"
                   rel="noopener noreferrer"
                 >
@@ -690,12 +1270,31 @@ const handleDetailFrameError = () => {
 
               <iframe
                 v-else
-                :src="selectedPlace.placeUrl"
+                :src="getKakaoDetailUrl(selectedPlace)"
                 class="inline-kakao-frame"
                 title="카카오맵 장소 상세페이지"
                 referrerpolicy="no-referrer-when-downgrade"
                 @error="handleDetailFrameError"
               ></iframe>
+            </section>
+
+            <section
+              v-else-if="isDbPlace(selectedPlace)"
+              class="db-summary-card"
+            >
+              <div>
+                <strong>DB에 저장된 장소입니다.</strong>
+                <p>좌표 기준으로 지도에서 위치를 확인할 수 있습니다.</p>
+              </div>
+
+              <a
+                v-if="getPlaceNavigationUrl(selectedPlace)"
+                :href="getPlaceNavigationUrl(selectedPlace)"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                카카오맵에서 위치 보기
+              </a>
             </section>
 
             <section class="tag-info-section">
@@ -725,6 +1324,11 @@ const handleDetailFrameError = () => {
                   <p>{{ selectedPlace.address }}</p>
                 </div>
 
+                <div v-if="selectedPlace.detailLocation" class="info-row">
+                  <span>상세위치</span>
+                  <p>{{ selectedPlace.detailLocation }}</p>
+                </div>
+
                 <div v-if="selectedPlace.distance" class="info-row">
                   <span>거리</span>
                   <p>검색 기준 위치에서 {{ selectedPlace.distance }}m</p>
@@ -734,11 +1338,21 @@ const handleDetailFrameError = () => {
                   <span>전화</span>
                   <p>{{ selectedPlace.phone }}</p>
                 </div>
+
+                <div class="info-row">
+                  <span>출처</span>
+                  <p>{{ getPlaceSourceText(selectedPlace) }}</p>
+                </div>
+
+                <div v-if="selectedPlace.dataQualityStatus" class="info-row">
+                  <span>DB 품질</span>
+                  <p>{{ selectedPlace.dataQualityStatus }} · {{ selectedPlace.dataQualityScore }}점</p>
+                </div>
               </div>
 
               <a
-                v-if="selectedPlace.placeUrl"
-                :href="selectedPlace.placeUrl"
+                v-if="!isDbPlace(selectedPlace) && getPlaceNavigationUrl(selectedPlace)"
+                :href="getPlaceNavigationUrl(selectedPlace)"
                 target="_blank"
                 rel="noopener noreferrer"
                 class="fallback-link"
@@ -929,6 +1543,8 @@ h1 {
   height: calc(100vh - 290px);
   min-height: 520px;
   padding: 16px;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
   background: #ffffff;
   border: 1px solid #e5e8f0;
@@ -956,7 +1572,8 @@ h1 {
 }
 
 .place-list {
-  height: calc(100% - 58px);
+  min-height: 0;
+  flex: 1;
   margin-top: 10px;
   overflow-y: auto;
   padding-right: 4px;
@@ -996,6 +1613,30 @@ h1 {
   font-weight: 900;
 }
 
+.place-list-marker.source-db {
+  border-color: #2563eb;
+  color: #2563eb;
+}
+
+.place-list-marker.source-base {
+  border-color: #16a34a;
+  color: #16a34a;
+}
+
+.place-list-main {
+  min-width: 0;
+  flex: 1;
+  display: grid;
+  gap: 4px;
+}
+
+.place-list-name-row {
+  min-width: 0;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
 .place-list-name {
   min-width: 0;
   overflow: hidden;
@@ -1004,6 +1645,60 @@ h1 {
   font-weight: 800;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.place-list-main small {
+  overflow: hidden;
+  color: #667085;
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.show-more-wrap {
+  padding-top: 12px;
+  border-top: 1px solid #eef0f4;
+}
+
+.show-more-button {
+  width: 100%;
+  padding: 12px 14px;
+  border: 0;
+  border-radius: 12px;
+  background: #111827;
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.show-more-button:hover {
+  background: #374151;
+}
+
+.source-badge {
+  flex-shrink: 0;
+  padding: 3px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1.2;
+}
+
+.source-badge.source-kakao {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.source-badge.source-db {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.source-badge.source-base {
+  background: #dcfce7;
+  color: #166534;
 }
 
 .map-area {
@@ -1021,16 +1716,26 @@ h1 {
   min-height: 520px;
 }
 
+.place-detail-panel.is-compact-detail {
+  min-height: auto;
+}
+
 .split-place-card {
-  height: 100%;
+  height: auto;
   padding: 18px;
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr) minmax(220px, 0.85fr);
+  display: flex;
+  flex-direction: column;
   gap: 14px;
   background: #ffffff;
   border: 1px solid #e5e8f0;
   border-radius: 22px;
   box-shadow: 0 18px 48px rgba(20, 35, 70, 0.12);
+}
+
+.split-place-card.has-kakao-detail {
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) minmax(220px, 0.85fr);
 }
 
 .split-card-top {
@@ -1042,6 +1747,9 @@ h1 {
 
 .card-label {
   margin: 0 0 8px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
   color: #2563eb;
   font-size: 13px;
   font-weight: 800;
@@ -1079,6 +1787,40 @@ h1 {
   border: 1px solid #e5e8f0;
   border-radius: 18px;
   background: #ffffff;
+}
+
+.db-summary-card {
+  padding: 14px;
+  display: grid;
+  gap: 12px;
+  border: 1px solid #e5e8f0;
+  border-radius: 18px;
+  background: #f9fafb;
+}
+
+.db-summary-card strong {
+  display: block;
+  margin-bottom: 5px;
+  color: #111827;
+  font-size: 14px;
+}
+
+.db-summary-card p {
+  margin: 0;
+  color: #667085;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.db-summary-card a {
+  width: fit-content;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #2563eb;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 900;
+  text-decoration: none;
 }
 
 .inline-kakao-frame {
@@ -1140,6 +1882,11 @@ h1 {
 .tag-user {
   background: #ef4444;
   color: #ffffff;
+}
+
+.tag-warning {
+  background: #f59e0b;
+  color: #111827;
 }
 
 .info-list {
@@ -1228,7 +1975,7 @@ h1 {
     max-height: 240px;
   }
 
-  .split-place-card {
+  .split-place-card.has-kakao-detail {
     height: auto;
     min-height: 720px;
   }

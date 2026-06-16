@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, ref, watch } from 'vue'
+import { nextTick, onMounted, ref, watch } from 'vue'
 
 const props = defineProps({
   places: {
@@ -17,6 +17,14 @@ const props = defineProps({
     type: [String, Number, null],
     default: null,
   },
+  selectedPlace: {
+    type: Object,
+    default: null,
+  },
+  fitBoundsKey: {
+    type: [String, Number, null],
+    default: null,
+  },
 })
 
 const emit = defineEmits(['select-place'])
@@ -27,6 +35,7 @@ let map = null
 let markers = []
 let markerRecords = new Map()
 let activeInfoWindow = null
+let lastFitBoundsKey = null
 
 const loadKakaoMapScript = () => {
   return new Promise((resolve, reject) => {
@@ -87,16 +96,28 @@ const clearMarkers = () => {
   markerRecords = new Map()
 }
 
-const createNumberMarkerImage = (label) => {
+const MARKER_COLORS = {
+  red: '#ef4444',
+  blue: '#2563eb',
+  green: '#16a34a',
+  gray: '#6b7280',
+}
+
+const getMarkerColor = (markerColor) => {
+  return MARKER_COLORS[markerColor] || markerColor || MARKER_COLORS.red
+}
+
+const createNumberMarkerImage = (label, markerColor = 'red') => {
   const safeLabel = String(label || '')
   const fontSize = safeLabel.length >= 2 ? 12 : 15
+  const color = getMarkerColor(markerColor)
 
   const svg = `
     <svg xmlns="http://www.w3.org/2000/svg" width="38" height="42" viewBox="0 0 38 42">
       <path
         d="M19 1 C9.6 1 2 8.6 2 18 C2 30.3 19 41 19 41 C19 41 36 30.3 36 18 C36 8.6 28.4 1 19 1 Z"
         fill="#ffffff"
-        stroke="#ef4444"
+        stroke="${color}"
         stroke-width="3"
       />
       <circle cx="19" cy="18" r="12" fill="#ffffff" />
@@ -107,7 +128,7 @@ const createNumberMarkerImage = (label) => {
         font-size="${fontSize}"
         font-weight="900"
         font-family="Arial, sans-serif"
-        fill="#ef4444"
+        fill="${color}"
       >${safeLabel}</text>
     </svg>
   `
@@ -153,7 +174,28 @@ const openMarkerByPlaceId = (placeId, shouldMoveMap = true) => {
   }
 }
 
-const renderMarkers = () => {
+const focusSelectedPlaceOnMap = async (place) => {
+  if (!map || !place?.lat || !place?.lng || !window.kakao?.maps) return
+
+  await nextTick()
+
+  const position = new window.kakao.maps.LatLng(
+    Number(place.lat),
+    Number(place.lng),
+  )
+
+  map.relayout()
+  map.panTo(position)
+
+  setTimeout(() => {
+    if (!map) return
+
+    map.relayout()
+    map.panTo(position)
+  }, 150)
+}
+
+const renderMarkers = ({ fitBounds = false } = {}) => {
   if (!map) return
 
   clearMarkers()
@@ -174,7 +216,10 @@ const renderMarkers = () => {
     }
 
     if (place.markerLabel) {
-      markerOptions.image = createNumberMarkerImage(place.markerLabel)
+      markerOptions.image = createNumberMarkerImage(
+        place.markerLabel,
+        place.markerColor,
+      )
     }
 
     const marker = new window.kakao.maps.Marker(markerOptions)
@@ -196,7 +241,7 @@ const renderMarkers = () => {
     })
   })
 
-  if (markers.length > 0) {
+  if (markers.length > 0 && fitBounds) {
     map.setBounds(bounds)
   }
 
@@ -209,7 +254,8 @@ onMounted(async () => {
   try {
     await loadKakaoMapScript()
     initMap()
-    renderMarkers()
+    lastFitBoundsKey = props.fitBoundsKey
+    renderMarkers({ fitBounds: true })
   } catch (error) {
     console.error(error)
   }
@@ -218,7 +264,13 @@ onMounted(async () => {
 watch(
   () => props.places,
   () => {
-    renderMarkers()
+    const shouldFitBounds = props.fitBoundsKey !== lastFitBoundsKey
+
+    renderMarkers({ fitBounds: shouldFitBounds })
+
+    if (shouldFitBounds) {
+      lastFitBoundsKey = props.fitBoundsKey
+    }
   },
   { deep: true },
 )
@@ -241,6 +293,8 @@ watch(
 watch(
   () => props.selectedPlaceId,
   (placeId) => {
+    if (props.selectedPlace) return
+
     if (!placeId) {
       closeActiveInfoWindow()
       return
@@ -248,6 +302,20 @@ watch(
 
     openMarkerByPlaceId(placeId)
   },
+)
+
+watch(
+  () => props.selectedPlace,
+  (place) => {
+    if (!place) {
+      closeActiveInfoWindow()
+      return
+    }
+
+    openMarkerByPlaceId(place.id, false)
+    focusSelectedPlaceOnMap(place)
+  },
+  { deep: true },
 )
 </script>
 
