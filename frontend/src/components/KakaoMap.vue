@@ -25,9 +25,13 @@ const props = defineProps({
     type: [String, Number, null],
     default: null,
   },
+  layoutKey: {
+    type: [String, Number, null],
+    default: null,
+  },
 })
 
-const emit = defineEmits(['select-place'])
+const emit = defineEmits(['select-place', 'center-change'])
 
 const mapContainer = ref(null)
 
@@ -78,6 +82,31 @@ const initMap = () => {
   map = new window.kakao.maps.Map(mapContainer.value, {
     center: centerLatLng,
     level: 4,
+  })
+
+  window.kakao.maps.event.addListener(map, 'idle', emitMapViewport)
+  emitMapViewport()
+}
+
+const getLatLngPayload = (latLng) => ({
+  lat: latLng.getLat(),
+  lng: latLng.getLng(),
+})
+
+const emitMapViewport = () => {
+  if (!map) return
+
+  const center = map.getCenter()
+  const bounds = map.getBounds()
+  const southWest = bounds.getSouthWest()
+  const northEast = bounds.getNorthEast()
+
+  emit('center-change', {
+    center: getLatLngPayload(center),
+    bounds: {
+      southWest: getLatLngPayload(southWest),
+      northEast: getLatLngPayload(northEast),
+    },
   })
 }
 
@@ -192,6 +221,25 @@ const focusSelectedPlaceOnMap = async (place) => {
 
     map.relayout()
     map.panTo(position)
+  }, 150)
+}
+
+const relayoutMap = async () => {
+  if (!map) return
+
+  const center = map.getCenter()
+
+  await nextTick()
+  map.relayout()
+  map.setCenter(center)
+  emitMapViewport()
+
+  setTimeout(() => {
+    if (!map) return
+
+    map.relayout()
+    map.setCenter(center)
+    emitMapViewport()
   }, 150)
 }
 
@@ -316,6 +364,13 @@ watch(
     focusSelectedPlaceOnMap(place)
   },
   { deep: true },
+)
+
+watch(
+  () => props.layoutKey,
+  () => {
+    relayoutMap()
+  },
 )
 </script>
 

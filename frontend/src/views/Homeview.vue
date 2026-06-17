@@ -13,6 +13,8 @@ const DEFAULT_CENTER = {
 
 // 지도 검색 반경: 5km
 const SEARCH_RADIUS = 5000
+const MIN_VIEWPORT_SEARCH_RADIUS = 500
+const MAX_VIEWPORT_SEARCH_RADIUS = 20000
 
 // 카카오 장소 검색은 한 번에 최대 15개까지 가져오는 구조라서
 // 15개씩 페이지를 추가 조회한 뒤 최대 50개까지만 사용합니다.
@@ -47,6 +49,7 @@ const DB_MARKER_ALLOWED_CATEGORIES = [
 ]
 
 const mapCenter = ref(DEFAULT_CENTER)
+const mapViewportBounds = ref(null)
 const mapFitBoundsKey = ref(0)
 const currentLocationPlace = ref([])
 const allSearchResults = ref([])
@@ -80,6 +83,13 @@ const mapPlaces = computed(() => {
     ...currentLocationPlace.value,
     ...searchedPlaces.value,
   ]
+})
+
+const mapLayoutKey = computed(() => {
+  return [
+    searchedPlaces.value.length > 0 ? 'has-results' : 'no-results',
+    selectedPlace.value ? 'has-detail' : 'no-detail',
+  ].join(':')
 })
 
 const hasMoreResults = computed(() => {
@@ -131,6 +141,114 @@ watch(
     scrollSelectedPlaceIntoView()
   },
 )
+
+const toFiniteCoordinate = (value) => {
+  const numberValue = Number(value)
+  return Number.isFinite(numberValue) ? numberValue : null
+}
+
+const isSameMapCenter = (firstCenter, secondCenter) => {
+  if (!firstCenter || !secondCenter) return false
+
+  return (
+    Math.abs(Number(firstCenter.lat) - Number(secondCenter.lat)) < 0.000001 &&
+    Math.abs(Number(firstCenter.lng) - Number(secondCenter.lng)) < 0.000001
+  )
+}
+
+const handleMapViewportChange = ({ center, bounds } = {}) => {
+  const nextCenter = {
+    lat: toFiniteCoordinate(center?.lat),
+    lng: toFiniteCoordinate(center?.lng),
+  }
+
+  if (nextCenter.lat === null || nextCenter.lng === null) {
+    return
+  }
+
+  if (!isSameMapCenter(mapCenter.value, nextCenter)) {
+    mapCenter.value = nextCenter
+  }
+
+  const southWest = bounds?.southWest
+  const northEast = bounds?.northEast
+
+  if (!southWest || !northEast) {
+    mapViewportBounds.value = null
+    return
+  }
+
+  const nextBounds = {
+    southWest: {
+      lat: toFiniteCoordinate(southWest.lat),
+      lng: toFiniteCoordinate(southWest.lng),
+    },
+    northEast: {
+      lat: toFiniteCoordinate(northEast.lat),
+      lng: toFiniteCoordinate(northEast.lng),
+    },
+  }
+
+  if (
+    nextBounds.southWest.lat === null ||
+    nextBounds.southWest.lng === null ||
+    nextBounds.northEast.lat === null ||
+    nextBounds.northEast.lng === null
+  ) {
+    mapViewportBounds.value = null
+    return
+  }
+
+  mapViewportBounds.value = nextBounds
+}
+
+const getSearchBoundsFromViewport = () => {
+  if (!window.kakao?.maps || !mapViewportBounds.value) {
+    return null
+  }
+
+  const { southWest, northEast } = mapViewportBounds.value
+
+  return new window.kakao.maps.LatLngBounds(
+    new window.kakao.maps.LatLng(southWest.lat, southWest.lng),
+    new window.kakao.maps.LatLng(northEast.lat, northEast.lng),
+  )
+}
+
+const getViewportSearchRadius = (center = mapCenter.value) => {
+  if (!mapViewportBounds.value) {
+    return SEARCH_RADIUS
+  }
+
+  const { southWest, northEast } = mapViewportBounds.value
+  const corners = [
+    southWest,
+    northEast,
+    { lat: southWest.lat, lng: northEast.lng },
+    { lat: northEast.lat, lng: southWest.lng },
+  ]
+
+  const radius = Math.max(
+    ...corners.map((corner) => getDistanceMetersBetweenPlaces(center, corner)),
+  )
+
+  if (!Number.isFinite(radius)) {
+    return SEARCH_RADIUS
+  }
+
+  return Math.min(
+    Math.max(Math.ceil(radius), MIN_VIEWPORT_SEARCH_RADIUS),
+    MAX_VIEWPORT_SEARCH_RADIUS,
+  )
+}
+
+const formatSearchRadius = (radius) => {
+  if (radius >= 1000) {
+    return `${Number((radius / 1000).toFixed(1))}km`
+  }
+
+  return `${radius}m`
+}
 
 const waitForKakaoServices = () => {
   return new Promise((resolve, reject) => {
@@ -331,8 +449,6 @@ const makeKakaoResultTags = (place, savedTagData = {}) => {
   const category = place.category_name || ''
   const placeName = place.place_name || ''
 
-  tags.push(makeTag('카카오검색결과', 'category_rule'))
-
   if (category.includes('카페') || placeName.includes('카페')) {
     tags.push(makeTag('카페', 'category_rule'))
   }
@@ -427,23 +543,23 @@ const getTagSourceText = (tag) => {
 const getTagSortOrder = (tag) => {
   const source = typeof tag === 'string' ? 'category_rule' : tag.source
 
-  if (source === 'category_rule') {
+  if (source === 'blog_search') {
     return 1
   }
 
-  if (source === 'blog_search') {
+  if (source === 'user_verified') {
     return 2
   }
 
-  if (source === 'user_verified') {
+  if (source === 'warning_tags') {
     return 3
   }
 
-  if (source === 'warning_tags') {
-    return 4
+  if (source === 'category_rule') {
+    return 99
   }
 
-  return 99
+  return 50
 }
 
 const getSortedTags = (tags = []) => {
@@ -640,6 +756,24 @@ const getDistanceValue = (place) => {
   const distance = Number(place.distance)
 
   return Number.isFinite(distance) ? distance : null
+}
+
+const getDistanceText = (place) => {
+  const distance = getDistanceValue(place)
+
+  if (distance === null) {
+    return ''
+  }
+
+  if (distance >= 1000) {
+    return `${Number((distance / 1000).toFixed(1))}km`
+  }
+
+  return `${Math.round(distance)}m`
+}
+
+const getPlaceListTags = (place) => {
+  return getSortedTags(place.tags || []).slice(0, 3)
 }
 
 const getRecommendScore = (place) => {
@@ -854,12 +988,16 @@ const showMoreResults = () => {
   )
 }
 
-const searchSavedPlaces = async ({ targetKeyword, center }) => {
+const searchSavedPlaces = async ({
+  targetKeyword,
+  center,
+  radius = SEARCH_RADIUS,
+}) => {
   const data = await getSavedPlaces({
     q: targetKeyword,
     lat: center.lat,
     lng: center.lng,
-    radius: SEARCH_RADIUS,
+    radius,
     limit: DB_SEARCH_RESULT_COUNT,
   })
 
@@ -874,18 +1012,26 @@ const searchAroundCenter = async ({
   placesService,
   targetKeyword,
   center,
+  bounds = null,
+  radius = SEARCH_RADIUS,
   baseLabel,
 }) => {
   const centerLatLng = new window.kakao.maps.LatLng(center.lat, center.lng)
+  const searchOptions = {
+    location: centerLatLng,
+    sort: window.kakao.maps.services.SortBy.DISTANCE,
+  }
+
+  if (bounds) {
+    searchOptions.bounds = bounds
+  } else {
+    searchOptions.radius = radius
+  }
 
   const kakaoPlaces = await runKakaoKeywordSearchLimited(
     placesService,
     targetKeyword,
-    {
-      location: centerLatLng,
-      radius: SEARCH_RADIUS,
-      sort: window.kakao.maps.services.SortBy.DISTANCE,
-    },
+    searchOptions,
   )
 
   const shouldUseDbPlaces = shouldAppendDbPlaces(targetKeyword)
@@ -895,6 +1041,7 @@ const searchAroundCenter = async ({
       ? searchSavedPlaces({
         targetKeyword,
         center,
+        radius,
       })
       : Promise.resolve([]),
   ])
@@ -910,7 +1057,7 @@ const searchAroundCenter = async ({
     clearSearchResults()
     selectedPlace.value = null
     showDetailPanel.value = false
-    locationMessage.value = `${baseLabel} ${SEARCH_RADIUS / 1000}km 이내 "${targetKeyword}" 검색 결과가 없습니다.`
+    locationMessage.value = `${baseLabel} ${formatSearchRadius(radius)} 이내 "${targetKeyword}" 검색 결과가 없습니다.`
     return
   }
 
@@ -922,7 +1069,7 @@ const searchAroundCenter = async ({
       sourceLabel: '카카오 결과',
       messageSuffix: enrichedCount ? `태그 보강 카페 ${enrichedCount}개` : '',
     })
-    locationMessage.value = `${baseLabel} ${SEARCH_RADIUS / 1000}km 이내 "${targetKeyword}" 카카오 검색 결과를 표시했습니다.`
+    locationMessage.value = `${baseLabel} ${formatSearchRadius(radius)} 이내 "${targetKeyword}" 카카오 검색 결과를 표시했습니다.`
     return
   }
 
@@ -936,7 +1083,7 @@ const searchAroundCenter = async ({
       sourceLabel: '검색 결과',
       messageSuffix: `카카오 ${kakaoResults.length}개, DB ${displayedDbCount}개`,
     })
-    locationMessage.value = `${baseLabel} ${SEARCH_RADIUS / 1000}km 이내 "${targetKeyword}" 검색 결과를 표시했습니다.`
+    locationMessage.value = `${baseLabel} ${formatSearchRadius(radius)} 이내 "${targetKeyword}" 검색 결과를 표시했습니다.`
     return
   }
 
@@ -944,10 +1091,10 @@ const searchAroundCenter = async ({
     results: dedupedResults,
     sourceLabel: '카카오 결과',
   })
-  locationMessage.value = `${baseLabel} ${SEARCH_RADIUS / 1000}km 이내 "${targetKeyword}" 카카오 검색 결과를 표시했습니다.`
+  locationMessage.value = `${baseLabel} ${formatSearchRadius(radius)} 이내 "${targetKeyword}" 카카오 검색 결과를 표시했습니다.`
 }
 
-const searchKakaoPlaces = async () => {
+const searchKakaoPlaces = async ({ useMapBounds = false } = {}) => {
   const keyword = mapSearchKeyword.value.trim()
 
   if (!keyword) {
@@ -967,12 +1114,45 @@ const searchKakaoPlaces = async () => {
 
   const placesService = new window.kakao.maps.services.Places()
   const parsedKeyword = parseMapSearchInput(keyword)
+  const targetKeyword = parsedKeyword.targetKeyword
+  const searchBounds = useMapBounds ? getSearchBoundsFromViewport() : null
+  const searchRadius = useMapBounds
+    ? getViewportSearchRadius(mapCenter.value)
+    : SEARCH_RADIUS
 
   try {
+    if (useMapBounds) {
+      currentLocationPlace.value = [
+        {
+          id: 'map-view-center',
+          name: '현재 지도 중심',
+          lat: mapCenter.value.lat,
+          lng: mapCenter.value.lng,
+          address: '',
+          distance: null,
+          markerColor: 'green',
+          searchSource: 'map_view_center',
+          sourceLabel: '기준',
+          tags: [makeTag('지도화면', 'category_rule')],
+        },
+      ]
+
+      await searchAroundCenter({
+        placesService,
+        targetKeyword,
+        center: mapCenter.value,
+        bounds: searchBounds,
+        radius: searchRadius,
+        baseLabel: '현재 지도 화면 기준',
+      })
+
+      return
+    }
+
     if (!parsedKeyword.hasBaseLocation) {
       await searchAroundCenter({
         placesService,
-        targetKeyword: parsedKeyword.targetKeyword,
+        targetKeyword,
         center: mapCenter.value,
         baseLabel: '현재 지도 중심 기준',
       })
@@ -1033,7 +1213,7 @@ const searchKakaoPlaces = async () => {
 
     await searchAroundCenter({
       placesService,
-      targetKeyword: parsedKeyword.targetKeyword,
+      targetKeyword,
       center: baseCenter,
       baseLabel: `${basePlace.place_name} 기준`,
     })
@@ -1046,6 +1226,20 @@ const searchKakaoPlaces = async () => {
   } finally {
     isSearchingMap.value = false
   }
+}
+
+const searchCurrentMapView = () => {
+  searchKakaoPlaces({ useMapBounds: true })
+}
+
+const resetMapSearch = () => {
+  mapSearchKeyword.value = ''
+  currentLocationPlace.value = []
+  selectedPlace.value = null
+  showDetailPanel.value = false
+  detailFrameError.value = false
+  clearSearchResults()
+  locationMessage.value = '검색이 초기화되었습니다. 검색어를 입력하거나 지도를 이동한 뒤 다시 검색해보세요.'
 }
 
 const selectPlace = (place) => {
@@ -1143,12 +1337,37 @@ const handleDetailFrameError = () => {
           v-model="mapSearchKeyword"
           type="text"
           placeholder="예: 카페, 식당, 수영역 주변 카페, 서면역 근처 맛집"
-          @keyup.enter="searchKakaoPlaces"
+          @keyup.enter="searchKakaoPlaces()"
         />
 
-        <button type="button" @click="searchKakaoPlaces">
-          {{ isSearchingMap ? '검색 중...' : '지도 검색' }}
-        </button>
+        <div class="map-search-actions">
+          <button
+            type="button"
+            class="map-search-submit"
+            :disabled="isSearchingMap"
+            @click="searchKakaoPlaces()"
+          >
+            {{ isSearchingMap ? '검색 중...' : '지도 검색' }}
+          </button>
+
+          <button
+            type="button"
+            class="map-research-button"
+            :disabled="isSearchingMap || !mapSearchKeyword.trim()"
+            @click="searchCurrentMapView"
+          >
+            현재 지도에서 재검색
+          </button>
+
+          <button
+            type="button"
+            class="map-reset-button"
+            :disabled="isSearchingMap"
+            @click="resetMapSearch"
+          >
+            검색 초기화
+          </button>
+        </div>
       </div>
 
       <div
@@ -1170,35 +1389,62 @@ const handleDetailFrameError = () => {
           </div>
 
           <div class="place-list">
-            <button
+            <article
               v-for="place in searchedPlaces"
               :key="place.id"
               :ref="(el) => setPlaceListItemRef(el, place.id)"
-              type="button"
               class="place-list-item"
               :class="{ active: selectedPlace && selectedPlace.id === place.id }"
-              @click="selectPlaceFromList(place)"
             >
-              <span class="place-list-marker" :class="getPlaceSourceClass(place)">
-                {{ place.markerLabel }}
-              </span>
-
-              <span class="place-list-main">
-                <span class="place-list-name-row">
-                  <span class="place-list-name">
-                    {{ place.name }}
-                  </span>
-
-                  <span class="source-badge" :class="getPlaceSourceClass(place)">
-                    {{ getPlaceSourceText(place) }}
-                  </span>
+              <button
+                type="button"
+                class="place-list-select-button"
+                @click="selectPlaceFromList(place)"
+              >
+                <span class="place-list-marker" :class="getPlaceSourceClass(place)">
+                  {{ place.markerLabel }}
                 </span>
 
-                <small v-if="place.category">
-                  {{ place.category }}
-                </small>
-              </span>
-            </button>
+                <span class="place-list-main">
+                  <span class="place-list-name-row">
+                    <span class="place-list-name">
+                      {{ place.name }}
+                    </span>
+
+                    <span class="source-badge" :class="getPlaceSourceClass(place)">
+                      {{ getPlaceSourceText(place) }}
+                    </span>
+                  </span>
+
+                  <span class="place-list-meta">
+                    <small v-if="place.category">
+                      {{ place.category }}
+                    </small>
+
+                    <small v-if="getDistanceText(place)">
+                      {{ getDistanceText(place) }}
+                    </small>
+
+                  </span>
+
+                  <span
+                    v-if="place.address || place.detailLocation"
+                    class="place-list-address"
+                    :title="place.address || place.detailLocation"
+                  >
+                    {{ place.address || place.detailLocation }}
+                  </span>
+
+                  <span
+                    v-if="place.phone"
+                    class="place-list-phone"
+                  >
+                    전화 {{ place.phone }}
+                  </span>
+
+                </span>
+              </button>
+            </article>
           </div>
 
           <div v-if="hasMoreResults" class="show-more-wrap">
@@ -1217,87 +1463,42 @@ const handleDetailFrameError = () => {
             :center="mapCenter"
             :places="mapPlaces"
             :fit-bounds-key="mapFitBoundsKey"
+            :layout-key="mapLayoutKey"
             :selected-place-id="selectedPlace?.id || null"
             :selected-place="selectedPlace"
+            @center-change="handleMapViewportChange"
             @select-place="selectPlace"
           />
-        </div>
 
-        <aside
-          v-if="selectedPlace"
-          class="place-detail-panel"
-          :class="{ 'is-compact-detail': !hasKakaoDetail(selectedPlace) }"
-        >
-          <div
-            class="split-place-card"
-            :class="{ 'has-kakao-detail': hasKakaoDetail(selectedPlace) }"
+          <aside
+            v-if="selectedPlace"
+            class="place-detail-panel"
+            :class="{ 'is-compact-detail': !hasKakaoDetail(selectedPlace) }"
           >
-            <div class="split-card-top">
-              <div>
-                <p class="card-label">
-                  선택한 장소
-                  <span class="source-badge" :class="getPlaceSourceClass(selectedPlace)">
-                    {{ getPlaceSourceText(selectedPlace) }}
-                  </span>
-                </p>
-                <h2>{{ selectedPlace.name }}</h2>
-              </div>
-
-              <button
-                type="button"
-                class="close-card-button"
-                @click="closePlaceCard"
-              >
-                ×
-              </button>
-            </div>
-
-            <section
-              v-if="hasKakaoDetail(selectedPlace)"
-              class="kakao-frame-section"
+            <div
+              class="split-place-card"
+              :class="{ 'has-kakao-detail': hasKakaoDetail(selectedPlace) }"
             >
-              <div class="iframe-fallback" v-if="detailFrameError">
-                <p>카카오맵 상세페이지를 현재 화면에 표시하지 못했습니다.</p>
+              <div class="split-card-top">
+                <div>
+                  <p class="card-label">
+                    선택한 장소
+                    <span class="source-badge" :class="getPlaceSourceClass(selectedPlace)">
+                      {{ getPlaceSourceText(selectedPlace) }}
+                    </span>
+                  </p>
+                  <h2>{{ selectedPlace.name }}</h2>
+                </div>
 
-                <a
-                  :href="getKakaoDetailUrl(selectedPlace)"
-                  target="_blank"
-                  rel="noopener noreferrer"
+                <button
+                  type="button"
+                  class="close-card-button"
+                  @click="closePlaceCard"
                 >
-                  새창에서 열기
-                </a>
+                  ×
+                </button>
               </div>
 
-              <iframe
-                v-else
-                :src="getKakaoDetailUrl(selectedPlace)"
-                class="inline-kakao-frame"
-                title="카카오맵 장소 상세페이지"
-                referrerpolicy="no-referrer-when-downgrade"
-                @error="handleDetailFrameError"
-              ></iframe>
-            </section>
-
-            <section
-              v-else-if="isDbPlace(selectedPlace)"
-              class="db-summary-card"
-            >
-              <div>
-                <strong>DB에 저장된 장소입니다.</strong>
-                <p>좌표 기준으로 지도에서 위치를 확인할 수 있습니다.</p>
-              </div>
-
-              <a
-                v-if="getPlaceNavigationUrl(selectedPlace)"
-                :href="getPlaceNavigationUrl(selectedPlace)"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                카카오맵에서 위치 보기
-              </a>
-            </section>
-
-            <section class="tag-info-section">
               <div
                 v-if="selectedPlace.tags && selectedPlace.tags.length"
                 class="tag-list"
@@ -1312,6 +1513,53 @@ const handleDetailFrameError = () => {
                   <small>{{ getTagSourceText(tag) }}</small>
                 </span>
               </div>
+
+              <section
+                v-if="hasKakaoDetail(selectedPlace)"
+                class="kakao-frame-section"
+              >
+                <div class="iframe-fallback" v-if="detailFrameError">
+                  <p>카카오맵 상세페이지를 현재 화면에 표시하지 못했습니다.</p>
+
+                  <a
+                    :href="getKakaoDetailUrl(selectedPlace)"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    새창에서 열기
+                  </a>
+                </div>
+
+                <div v-else class="kakao-frame-scroll">
+                  <iframe
+                    :src="getKakaoDetailUrl(selectedPlace)"
+                    class="inline-kakao-frame"
+                    title="카카오맵 장소 상세페이지"
+                    scrolling="no"
+                    referrerpolicy="no-referrer-when-downgrade"
+                    @error="handleDetailFrameError"
+                  ></iframe>
+                </div>
+              </section>
+
+              <section
+                v-else-if="isDbPlace(selectedPlace)"
+                class="db-summary-card"
+              >
+                <div>
+                  <strong>DB에 저장된 장소입니다.</strong>
+                  <p>좌표 기준으로 지도에서 위치를 확인할 수 있습니다.</p>
+                </div>
+
+                <a
+                  v-if="getPlaceNavigationUrl(selectedPlace)"
+                  :href="getPlaceNavigationUrl(selectedPlace)"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  카카오맵에서 위치 보기
+                </a>
+              </section>
 
               <div class="info-list compact-info-list">
                 <div v-if="selectedPlace.category" class="info-row">
@@ -1359,9 +1607,9 @@ const handleDetailFrameError = () => {
               >
                 새창에서 열기
               </a>
-            </section>
-          </div>
-        </aside>
+            </div>
+          </aside>
+        </div>
       </div>
     </section>
   </main>
@@ -1472,26 +1720,28 @@ h1 {
 }
 
 .map-section-wrap {
-  max-width: 1280px;
-  margin: 48px auto 0;
+  width: 100%;
+  max-width: none;
+  margin: 28px 0 0;
 }
 
 .map-header {
-  margin-bottom: 20px;
+  margin-bottom: 12px;
 }
 
 .map-header h1 {
-  font-size: 30px;
+  font-size: 24px;
 }
 
 .map-header p {
-  margin: 10px 0 0;
+  margin: 6px 0 0;
   color: #667085;
+  font-size: 14px;
 }
 
 .map-search-box {
-  margin-bottom: 16px;
-  padding: 8px;
+  margin-bottom: 12px;
+  padding: 6px;
   display: flex;
   gap: 8px;
   background: #ffffff;
@@ -1503,14 +1753,21 @@ h1 {
 .map-search-box input {
   flex: 1;
   min-width: 0;
-  padding: 15px 16px;
+  padding: 12px 14px;
   border: 0;
   outline: none;
   font-size: 15px;
 }
 
+.map-search-actions {
+  flex-shrink: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .map-search-box button {
-  padding: 0 22px;
+  padding: 0 16px;
   border: 0;
   border-radius: 13px;
   background: #ef4444;
@@ -1520,29 +1777,43 @@ h1 {
   cursor: pointer;
 }
 
+.map-search-box button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.map-research-button {
+  background: #111827 !important;
+}
+
+.map-reset-button {
+  background: #f2f4f7 !important;
+  color: #344054 !important;
+}
+
 .map-content {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 20px;
+  gap: clamp(16px, 1.4vw, 24px);
   align-items: stretch;
 }
 
 .map-content.has-result-list {
-  grid-template-columns: 280px minmax(0, 1fr);
+  grid-template-columns: clamp(300px, 22vw, 380px) minmax(0, 1fr);
 }
 
 .map-content.has-result-list.has-selected-place {
-  grid-template-columns: 280px minmax(0, 1fr) 360px;
+  grid-template-columns: clamp(300px, 22vw, 380px) minmax(0, 1fr);
 }
 
 .map-content.has-selected-place:not(.has-result-list) {
-  grid-template-columns: minmax(0, 1fr) 360px;
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .place-list-panel {
-  height: calc(100vh - 290px);
+  height: calc(100vh - clamp(200px, 20vh, 230px));
   min-height: 520px;
-  padding: 16px;
+  padding: clamp(12px, 1vw, 16px);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -1553,7 +1824,7 @@ h1 {
 }
 
 .place-list-top {
-  padding-bottom: 12px;
+  padding-bottom: 10px;
   border-bottom: 1px solid #eef0f4;
 }
 
@@ -1567,7 +1838,7 @@ h1 {
 .place-list-top h2 {
   margin: 0;
   color: #111827;
-  font-size: 18px;
+  font-size: 16px;
   letter-spacing: -0.03em;
 }
 
@@ -1581,16 +1852,9 @@ h1 {
 
 .place-list-item {
   width: 100%;
-  padding: 12px 8px;
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  border: 0;
   border-bottom: 1px solid #eef0f4;
   background: transparent;
   color: #111827;
-  text-align: left;
-  cursor: pointer;
 }
 
 .place-list-item:hover,
@@ -1599,10 +1863,24 @@ h1 {
   border-radius: 12px;
 }
 
+.place-list-select-button {
+  width: 100%;
+  padding: 11px 8px;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
 .place-list-marker {
   width: 28px;
   height: 28px;
   flex-shrink: 0;
+  margin-top: 2px;
   display: grid;
   place-items: center;
   border: 2px solid #ef4444;
@@ -1627,7 +1905,7 @@ h1 {
   min-width: 0;
   flex: 1;
   display: grid;
-  gap: 4px;
+  gap: 6px;
 }
 
 .place-list-name-row {
@@ -1652,6 +1930,55 @@ h1 {
   color: #667085;
   font-size: 12px;
   font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.place-list-meta {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+}
+
+.place-list-meta small + small::before {
+  content: '·';
+  margin-right: 8px;
+  color: #98a2b3;
+}
+
+.place-list-phone {
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.place-list-address {
+  display: -webkit-box;
+  overflow: hidden;
+  color: #475467;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.place-list-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.place-list-tag {
+  max-width: 100%;
+  padding: 4px 7px;
+  overflow: hidden;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.2;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1703,29 +2030,39 @@ h1 {
 
 .map-area {
   min-width: 0;
+  position: relative;
 }
 
 :deep(.map) {
-  height: calc(100vh - 290px);
+  height: calc(100vh - clamp(200px, 20vh, 230px));
   min-height: 520px;
   border: 0;
   box-shadow: 0 18px 48px rgba(20, 35, 70, 0.12);
 }
 
 .place-detail-panel {
-  min-height: 520px;
+  position: absolute;
+  top: clamp(14px, 1.2vw, 20px);
+  right: clamp(14px, 1.2vw, 20px);
+  bottom: clamp(14px, 1.2vw, 20px);
+  z-index: 5;
+  width: min(clamp(360px, 28vw, 520px), calc(100% - 28px));
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .place-detail-panel.is-compact-detail {
-  min-height: auto;
+  bottom: auto;
+  max-height: calc(100% - 28px);
 }
 
 .split-place-card {
   height: auto;
-  padding: 18px;
+  min-height: 100%;
+  padding: clamp(16px, 1.2vw, 22px);
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: clamp(14px, 1.1vw, 18px);
   background: #ffffff;
   border: 1px solid #e5e8f0;
   border-radius: 22px;
@@ -1733,9 +2070,10 @@ h1 {
 }
 
 .split-place-card.has-kakao-detail {
-  height: 100%;
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr) minmax(220px, 0.85fr);
+  height: auto;
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
 }
 
 .split-card-top {
@@ -1782,16 +2120,31 @@ h1 {
 }
 
 .kakao-frame-section {
+  height: clamp(420px, 56vh, 680px);
   min-height: 0;
+  flex-shrink: 0;
   overflow: hidden;
   border: 1px solid #e5e8f0;
   border-radius: 18px;
   background: #ffffff;
 }
 
+.kakao-frame-scroll {
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  padding-right: 6px;
+  overflow-x: hidden;
+  overflow-y: scroll;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+}
+
 .db-summary-card {
-  padding: 14px;
+  min-height: 180px;
+  padding: 18px;
   display: grid;
+  align-content: center;
   gap: 12px;
   border: 1px solid #e5e8f0;
   border-radius: 18px;
@@ -1825,19 +2178,11 @@ h1 {
 
 .inline-kakao-frame {
   width: 100%;
-  height: 100%;
+  height: clamp(1100px, 145vh, 1800px);
   min-height: 0;
   border: 0;
   background: #ffffff;
-}
-
-.tag-info-section {
-  min-height: 0;
-  overflow-y: auto;
-  padding: 14px;
-  border: 1px solid #e5e8f0;
-  border-radius: 18px;
-  background: #ffffff;
+  display: block;
 }
 
 .category {
@@ -1849,11 +2194,17 @@ h1 {
 
 .tag-list {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #eef0f4;
+  scrollbar-width: thin;
 }
 
 .tag-chip {
+  flex: 0 0 auto;
   padding: 7px 10px;
   display: inline-flex;
   gap: 6px;
@@ -1861,6 +2212,7 @@ h1 {
   border-radius: 999px;
   font-size: 13px;
   font-weight: 800;
+  white-space: nowrap;
 }
 
 .tag-chip small {
@@ -1890,12 +2242,12 @@ h1 {
 }
 
 .info-list {
-  margin-top: 16px;
-  border-top: 1px solid #eef0f4;
+  margin-top: 0;
+  border-top: 0;
 }
 
 .compact-info-list {
-  margin-top: 14px;
+  margin-top: 0;
 }
 
 .info-row {
@@ -1965,8 +2317,7 @@ h1 {
     grid-template-columns: 1fr;
   }
 
-  .place-list-panel,
-  .place-detail-panel {
+  .place-list-panel {
     height: auto;
     min-height: auto;
   }
@@ -1975,10 +2326,6 @@ h1 {
     max-height: 240px;
   }
 
-  .split-place-card.has-kakao-detail {
-    height: auto;
-    min-height: 720px;
-  }
 }
 
 @media (max-width: 640px) {
@@ -2000,14 +2347,55 @@ h1 {
     border-radius: 18px;
   }
 
+  .map-section-wrap {
+    margin-top: 22px;
+  }
+
   .search-box input,
   .map-search-box input {
-    padding: 16px;
+    padding: 13px 14px;
+  }
+
+  .map-search-actions {
+    width: 100%;
+  }
+
+  .map-search-actions button {
+    flex: 1;
+    min-width: 0;
   }
 
   .search-box button,
   .map-search-box button {
-    padding: 15px;
+    padding: 13px;
+  }
+
+  :deep(.map) {
+    height: calc(100vh - 270px);
+    min-height: 440px;
+  }
+
+  .place-detail-panel {
+    top: auto;
+    right: 8px;
+    bottom: 8px;
+    left: 8px;
+    width: auto;
+    max-height: 58%;
+  }
+
+  .place-detail-panel.is-compact-detail {
+    max-height: 58%;
+  }
+
+  .split-place-card,
+  .split-place-card.has-kakao-detail {
+    min-height: 0;
+  }
+
+  .kakao-frame-section {
+    height: 300px;
+    min-height: 260px;
   }
 
   .tab-button {
