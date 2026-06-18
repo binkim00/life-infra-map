@@ -43,6 +43,26 @@ PLACE_FILE_CONFIGS = {
         "default_category": "smoking_area",
         "default_source": "smokearea_kr_supabase",
     },
+
+    # 추가
+    "citypark": {
+        "filename": "citypark_db_ready.json",
+        "kind": "db_ready",
+        "default_category": "city_park",
+        "default_source": "citypark_standard",
+    },
+    "parking": {
+        "filename": "parking_db_ready.json",
+        "kind": "db_ready",
+        "default_category": "parking",
+        "default_source": "parking",
+    },
+    "tourism": {
+        "filename": "tourism_db_ready.json",
+        "kind": "db_ready",
+        "default_category": "tourist_spot",
+        "default_source": "tour_api",
+    },
 }
 
 NAME_KEYS = [
