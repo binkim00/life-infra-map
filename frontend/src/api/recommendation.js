@@ -6,13 +6,35 @@ export const getRecommendations = async ({
   scenario = 'work_cafe',
   lat = 37.5665,
   lng = 126.9780,
+  limit = 10,
+  radius = null,
 }) => {
   const response = await axios.get(`${API_BASE_URL}/recommendations/search/`, {
     params: {
       scenario,
       lat,
       lng,
+      limit,
+      radius,
     },
+  })
+
+  return response.data
+}
+
+export const aiSearchRecommendations = async ({
+  query,
+  lat = 37.5665,
+  lng = 126.9780,
+  limit = 10,
+  radius = null,
+}) => {
+  const response = await axios.post(`${API_BASE_URL}/recommendations/ai-search/`, {
+    query,
+    lat,
+    lng,
+    limit,
+    radius,
   })
 
   return response.data

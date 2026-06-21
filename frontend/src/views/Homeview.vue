@@ -1,10 +1,29 @@
 <script setup>
 import { computed, nextTick, ref, watch } from 'vue'
-import { getKakaoPlaceTags, getSavedPlaces } from '@/api/recommendation'
+import { aiSearchRecommendations, getKakaoPlaceTags, getSavedPlaces } from '@/api/recommendation'
 import KakaoMap from '@/components/KakaoMap.vue'
+import RecommendationTestPanel from '@/components/RecommendationTestPanel.vue'
 
-const activeTab = ref('search')
+const props = defineProps({
+  initialTab: {
+    type: String,
+    default: 'search',
+  },
+})
+
+const normalizeTab = (tab) => {
+  return ['search', 'map', 'recommendation'].includes(tab) ? tab : 'search'
+}
+
+const activeTab = ref(normalizeTab(props.initialTab))
 const searchKeyword = ref('')
+
+watch(
+  () => props.initialTab,
+  (nextTab) => {
+    activeTab.value = normalizeTab(nextTab)
+  },
+)
 
 const DEFAULT_CENTER = {
   lat: 35.1796,
@@ -64,6 +83,7 @@ const isSearchingMap = ref(false)
 
 const locationMessage = ref('지도 버튼을 누르면 현재 위치 기준으로 지도를 표시합니다.')
 const mapSearchKeyword = ref('')
+const mapAiParse = ref(null)
 
 const showDetailPanel = ref(false)
 const detailFrameError = ref(false)
@@ -106,6 +126,26 @@ const resultCountText = computed(() => {
     : ''
 
   return `${resultSourceLabel.value} ${allSearchResults.value.length}개 중 ${searchedPlaces.value.length}개 표시${suffix}`
+})
+
+const mapParserStatus = computed(() => {
+  if (!mapAiParse.value) {
+    return null
+  }
+
+  if (!mapAiParse.value.parser_fallback && mapAiParse.value.parser_provider === 'gms') {
+    return {
+      label: 'AI 사용',
+      detail: 'GMS가 자연어를 추천 조건으로 해석했습니다.',
+      className: 'ai',
+    }
+  }
+
+  return {
+    label: '규칙 기반 파서 사용',
+    detail: 'AI 호출이 없거나 실패해서 키워드 규칙으로 추천 조건을 해석했습니다.',
+    className: 'fallback',
+  }
 })
 
 const placeListItemRefs = ref({})
@@ -953,6 +993,68 @@ const convertDbPlaces = (places) => {
   }))
 }
 
+const makeRecommendationTags = (place) => {
+  const tags = [
+    makeTag('DB추천', 'external_data'),
+  ]
+
+  const categoryText = getDbCategoryText(place.category)
+
+  if (categoryText) {
+    tags.push(makeTag(categoryText, 'category_rule'))
+  }
+
+  ;(place.matched_tags || place.runtime_tags || []).forEach((tagName) => {
+    tags.push(makeTag(tagName, 'checked'))
+  })
+
+  place.suggested_tags?.forEach((tagName) => {
+    tags.push(makeTag(tagName, 'blog_search'))
+  })
+
+  place.verified_tags?.forEach((tagName) => {
+    tags.push(makeTag(tagName, 'user_verified'))
+  })
+
+  place.warning_tags?.forEach((tagName) => {
+    tags.push(makeTag(tagName, 'warning_tags'))
+  })
+
+  return tags
+}
+
+const convertRecommendationPlaces = (places) => {
+  return places.map((place) => ({
+    id: `recommendation-${place.id}`,
+    savedPlaceId: place.id,
+    source: place.source,
+    externalId: place.external_id,
+    rawCategory: place.category,
+    name: place.name,
+    category: getDbCategoryText(place.category),
+    address: place.address,
+    detailLocation: place.detail_location,
+    lat: Number(place.lat),
+    lng: Number(place.lng),
+    distance: place.distance ?? place.distance_m ?? null,
+    phone: '',
+    placeUrl: '',
+    navigationUrl: `https://map.kakao.com/link/to/${encodeURIComponent(place.name)},${place.lat},${place.lng}`,
+    markerColor: '#7c3aed',
+    searchSource: 'local_db',
+    sourceLabel: 'AI 추천',
+    tags: makeRecommendationTags(place),
+    tagSource: 'DB 추천 결과',
+    dataQualityStatus: place.data_quality_status,
+    dataQualityScore: place.data_quality_score,
+    rawScores: place.raw_scores || {},
+    recommendScore: place.score ?? place.data_quality_score ?? null,
+    recommendationReason: place.recommend_reason,
+    matchLevel: place.match_level,
+    recommendationConfidence: place.recommendation_confidence,
+  }))
+}
+
 const assignMarkerLabels = (places) => {
   return places.map((place, index) => ({
     ...place,
@@ -1108,6 +1210,7 @@ const searchKakaoPlaces = async ({ useMapBounds = false } = {}) => {
   }
 
   isSearchingMap.value = true
+  mapAiParse.value = null
   selectedPlace.value = null
   showDetailPanel.value = false
   detailFrameError.value = false
@@ -1228,12 +1331,62 @@ const searchKakaoPlaces = async ({ useMapBounds = false } = {}) => {
   }
 }
 
+const searchAiRecommendationsOnMap = async () => {
+  const query = mapSearchKeyword.value.trim()
+
+  if (!query) {
+    alert('AI 추천에 사용할 자연어를 입력해주세요.')
+    return
+  }
+
+  isSearchingMap.value = true
+  selectedPlace.value = null
+  showDetailPanel.value = false
+  detailFrameError.value = false
+
+  try {
+    const data = await aiSearchRecommendations({
+      query,
+      lat: mapCenter.value.lat,
+      lng: mapCenter.value.lng,
+      limit: DB_SEARCH_RESULT_COUNT,
+    })
+
+    mapAiParse.value = data.ai_parse || null
+    const recommendationResults = convertRecommendationPlaces(data.results || [])
+
+    if (!recommendationResults.length) {
+      clearSearchResults()
+      locationMessage.value = `"${query}" 조건에 맞는 DB 추천 결과가 없습니다.`
+      return
+    }
+
+    setSearchResults({
+      results: recommendationResults,
+      sourceLabel: 'AI 추천 결과',
+      messageSuffix: `${data.scenario} · ${mapAiParse.value?.parser_provider || 'rule'}`,
+    })
+
+    locationMessage.value = `"${query}" 자연어 조건을 DB 추천 결과로 표시했습니다.`
+  } catch (error) {
+    console.error(error)
+    mapAiParse.value = null
+    clearSearchResults()
+    selectedPlace.value = null
+    showDetailPanel.value = false
+    locationMessage.value = 'AI 추천 중 오류가 발생했습니다.'
+  } finally {
+    isSearchingMap.value = false
+  }
+}
+
 const searchCurrentMapView = () => {
   searchKakaoPlaces({ useMapBounds: true })
 }
 
 const resetMapSearch = () => {
   mapSearchKeyword.value = ''
+  mapAiParse.value = null
   currentLocationPlace.value = []
   selectedPlace.value = null
   showDetailPanel.value = false
@@ -1297,6 +1450,15 @@ const handleDetailFrameError = () => {
       >
         지도
       </button>
+
+      <button
+        type="button"
+        class="tab-button"
+        :class="{ active: activeTab === 'recommendation' }"
+        @click="activeTab = 'recommendation'"
+      >
+        추천 테스트
+      </button>
     </header>
 
     <section v-if="activeTab === 'search'" class="search-section">
@@ -1322,7 +1484,7 @@ const handleDetailFrameError = () => {
       </div>
     </section>
 
-    <section v-else class="map-section-wrap">
+    <section v-else-if="activeTab === 'map'" class="map-section-wrap">
       <div class="map-header">
         <div>
           <h1>지도에서 장소 검색하기</h1>
@@ -1330,6 +1492,15 @@ const handleDetailFrameError = () => {
             {{ isLocating ? '현재 위치를 불러오는 중입니다...' : locationMessage }}
           </p>
         </div>
+      </div>
+
+      <div
+        v-if="mapParserStatus"
+        class="map-parser-status"
+        :class="mapParserStatus.className"
+      >
+        <strong>{{ mapParserStatus.label }}</strong>
+        <span>{{ mapParserStatus.detail }}</span>
       </div>
 
       <div class="map-search-box">
@@ -1348,6 +1519,15 @@ const handleDetailFrameError = () => {
             @click="searchKakaoPlaces()"
           >
             {{ isSearchingMap ? '검색 중...' : '지도 검색' }}
+          </button>
+
+          <button
+            type="button"
+            class="map-ai-button"
+            :disabled="isSearchingMap || !mapSearchKeyword.trim()"
+            @click="searchAiRecommendationsOnMap"
+          >
+            AI 추천
           </button>
 
           <button
@@ -1612,6 +1792,10 @@ const handleDetailFrameError = () => {
         </div>
       </div>
     </section>
+
+    <section v-else class="recommendation-lab-section">
+      <RecommendationTestPanel />
+    </section>
   </main>
 </template>
 
@@ -1659,6 +1843,10 @@ const handleDetailFrameError = () => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
+}
+
+.recommendation-lab-section {
+  min-height: calc(100vh - 90px);
 }
 
 .intro {
@@ -1739,6 +1927,32 @@ h1 {
   font-size: 14px;
 }
 
+.map-parser-status {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  display: grid;
+  gap: 3px;
+  border-radius: 8px;
+}
+
+.map-parser-status strong {
+  font-size: 14px;
+}
+
+.map-parser-status span {
+  font-size: 13px;
+}
+
+.map-parser-status.ai {
+  background: #e7f5ff;
+  color: #1864ab;
+}
+
+.map-parser-status.fallback {
+  background: #fff3bf;
+  color: #8d6b00;
+}
+
 .map-search-box {
   margin-bottom: 12px;
   padding: 6px;
@@ -1784,6 +1998,10 @@ h1 {
 
 .map-research-button {
   background: #111827 !important;
+}
+
+.map-ai-button {
+  background: #7c3aed !important;
 }
 
 .map-reset-button {
