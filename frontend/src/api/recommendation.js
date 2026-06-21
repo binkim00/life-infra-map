@@ -17,3 +17,39 @@ export const getRecommendations = async ({
 
   return response.data
 }
+
+export const getSavedPlaces = async ({
+  q = '',
+  category = '',
+  source = '',
+  status = '',
+  lat = null,
+  lng = null,
+  radius = null,
+  limit = 100,
+} = {}) => {
+  const response = await axios.get(`${API_BASE_URL}/recommendations/places/`, {
+    params: {
+      q,
+      category,
+      source,
+      status,
+      lat,
+      lng,
+      radius,
+      limit,
+    },
+  })
+
+  return response.data
+}
+
+export const getKakaoPlaceTags = async (externalIds = []) => {
+  const response = await axios.get(`${API_BASE_URL}/recommendations/kakao-place-tags/`, {
+    params: {
+      external_ids: externalIds.join(','),
+    },
+  })
+
+  return response.data
+}

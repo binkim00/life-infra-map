@@ -10,3 +10,10 @@ ExData/Cleaned/shelter_places.json filter=lfs diff=lfs merge=lfs -text
 Test/apiTest/tag/shelterTag/shelter_place_tag_seed.json filter=lfs diff=lfs merge=lfs -text
 ExData/Cleaned/skipped/shelter_skipped.json filter=lfs diff=lfs merge=lfs -text
 Test/apiTest/tag/toiletTag/toilet_place_tag_seed.json filter=lfs diff=lfs merge=lfs -text
+backend/recommendations/fixtures/tags/parking_place_tag_seed.json filter=lfs diff=lfs merge=lfs -text
+backend/recommendations/fixtures/tags/shelter_place_tag_seed.json filter=lfs diff=lfs merge=lfs -text
+backend/recommendations/fixtures/tags/toilet_place_tag_seed.json filter=lfs diff=lfs merge=lfs -text
+backend/recommendations/fixtures/tags/park_place_tag_seed.json filter=lfs diff=lfs merge=lfs -text
+backend/recommendations/fixtures/**/*.json filter=lfs diff=lfs merge=lfs -text
+ExData/**/*.json filter=lfs diff=lfs merge=lfs -text
+Test/apiTest/**/*.json filter=lfs diff=lfs merge=lfs -text
