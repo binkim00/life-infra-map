@@ -17,7 +17,7 @@ PLACE_FILE_CONFIGS = {
         "filename": "beach_db_ready.json",
         "kind": "db_ready",
         "default_category": "beach",
-        "default_source": "beach",
+        "default_source": "beach_api",
     },
     "freewifi": {
         "filename": "freewifi_db_ready.json",
@@ -29,13 +29,13 @@ PLACE_FILE_CONFIGS = {
         "filename": "shelter_db_ready.json",
         "kind": "db_ready",
         "default_category": "shelter",
-        "default_source": "shelter",
+        "default_source": "heat_shelter_api",
     },
     "toilet": {
         "filename": "toilet_db_ready.json",
         "kind": "db_ready",
         "default_category": "toilet",
-        "default_source": "toilet",
+        "default_source": "public_toilet_standard",
     },
     "smoking": {
         "filename": "smoking_places_merged_deduplicated.json",
@@ -43,8 +43,6 @@ PLACE_FILE_CONFIGS = {
         "default_category": "smoking_area",
         "default_source": "smokearea_kr_supabase",
     },
-
-    # 추가
     "citypark": {
         "filename": "citypark_db_ready.json",
         "kind": "db_ready",
@@ -55,12 +53,12 @@ PLACE_FILE_CONFIGS = {
         "filename": "parking_db_ready.json",
         "kind": "db_ready",
         "default_category": "parking",
-        "default_source": "parking",
+        "default_source": "public_parking_standard",
     },
     "tourism": {
         "filename": "tourism_db_ready.json",
         "kind": "db_ready",
-        "default_category": "tourist_spot",
+        "default_category": "tourism",
         "default_source": "tour_api",
     },
 }
@@ -359,7 +357,10 @@ def build_place_data(item, config):
     lat = to_float(pick_first(item, LAT_KEYS))
     lng = to_float(pick_first(item, LNG_KEYS))
 
-    category = clean_text(item.get("category")) or config["default_category"]
+    category = normalize_category(
+        clean_text(item.get("category")) or config["default_category"],
+        config["default_category"],
+    )
 
     if config["kind"] == "db_ready":
         source = config["default_source"]
@@ -404,6 +405,20 @@ def build_place_data(item, config):
         "raw": raw,
     }
 
+def normalize_category(value, default_category):
+    value = clean_text(value) or default_category
+
+    category_map = {
+        "citypark": "city_park",
+        "park": "city_park",
+        "city_park": "city_park",
+        "tourist_spot": "tourism",
+        "tourism": "tourism",
+        "free_wifi": "freewifi",
+        "freewifi": "freewifi",
+    }
+
+    return category_map.get(value, value)
 
 def save_smoking_detail_tags(place, item):
     created_count = 0
