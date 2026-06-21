@@ -83,6 +83,7 @@ const isSearchingMap = ref(false)
 
 const locationMessage = ref('지도 버튼을 누르면 현재 위치 기준으로 지도를 표시합니다.')
 const mapSearchKeyword = ref('')
+const aiSearchKeyword = ref('')
 const mapAiParse = ref(null)
 
 const showDetailPanel = ref(false)
@@ -1042,7 +1043,7 @@ const convertRecommendationPlaces = (places) => {
     navigationUrl: `https://map.kakao.com/link/to/${encodeURIComponent(place.name)},${place.lat},${place.lng}`,
     markerColor: '#7c3aed',
     searchSource: 'local_db',
-    sourceLabel: 'AI 추천',
+    sourceLabel: 'AI 검색',
     tags: makeRecommendationTags(place),
     tagSource: 'DB 추천 결과',
     dataQualityStatus: place.data_quality_status,
@@ -1332,10 +1333,10 @@ const searchKakaoPlaces = async ({ useMapBounds = false } = {}) => {
 }
 
 const searchAiRecommendationsOnMap = async () => {
-  const query = mapSearchKeyword.value.trim()
+  const query = aiSearchKeyword.value.trim()
 
   if (!query) {
-    alert('AI 추천에 사용할 자연어를 입력해주세요.')
+    alert('AI 검색에 사용할 자연어를 입력해주세요.')
     return
   }
 
@@ -1363,7 +1364,7 @@ const searchAiRecommendationsOnMap = async () => {
 
     setSearchResults({
       results: recommendationResults,
-      sourceLabel: 'AI 추천 결과',
+      sourceLabel: 'AI 검색 결과',
       messageSuffix: `${data.scenario} · ${mapAiParse.value?.parser_provider || 'rule'}`,
     })
 
@@ -1374,7 +1375,7 @@ const searchAiRecommendationsOnMap = async () => {
     clearSearchResults()
     selectedPlace.value = null
     showDetailPanel.value = false
-    locationMessage.value = 'AI 추천 중 오류가 발생했습니다.'
+    locationMessage.value = 'AI 검색 중 오류가 발생했습니다.'
   } finally {
     isSearchingMap.value = false
   }
@@ -1386,6 +1387,7 @@ const searchCurrentMapView = () => {
 
 const resetMapSearch = () => {
   mapSearchKeyword.value = ''
+  aiSearchKeyword.value = ''
   mapAiParse.value = null
   currentLocationPlace.value = []
   selectedPlace.value = null
@@ -1492,6 +1494,15 @@ const handleDetailFrameError = () => {
             {{ isLocating ? '현재 위치를 불러오는 중입니다...' : locationMessage }}
           </p>
         </div>
+
+        <button
+          type="button"
+          class="map-reset-button map-header-reset"
+          :disabled="isSearchingMap"
+          @click="resetMapSearch"
+        >
+          검색 초기화
+        </button>
       </div>
 
       <div
@@ -1504,7 +1515,9 @@ const handleDetailFrameError = () => {
       </div>
 
       <div class="map-search-box">
+        <label for="map-keyword-search">지도 검색</label>
         <input
+          id="map-keyword-search"
           v-model="mapSearchKeyword"
           type="text"
           placeholder="예: 카페, 식당, 수영역 주변 카페, 서면역 근처 맛집"
@@ -1520,35 +1533,26 @@ const handleDetailFrameError = () => {
           >
             {{ isSearchingMap ? '검색 중...' : '지도 검색' }}
           </button>
-
-          <button
-            type="button"
-            class="map-ai-button"
-            :disabled="isSearchingMap || !mapSearchKeyword.trim()"
-            @click="searchAiRecommendationsOnMap"
-          >
-            AI 추천
-          </button>
-
-          <button
-            type="button"
-            class="map-research-button"
-            :disabled="isSearchingMap || !mapSearchKeyword.trim()"
-            @click="searchCurrentMapView"
-          >
-            현재 지도에서 재검색
-          </button>
-
-          <button
-            type="button"
-            class="map-reset-button"
-            :disabled="isSearchingMap"
-            @click="resetMapSearch"
-          >
-            검색 초기화
-          </button>
         </div>
       </div>
+
+      <form class="map-search-box ai-search-box" @submit.prevent="searchAiRecommendationsOnMap">
+        <label for="map-ai-search">AI 검색</label>
+        <input
+          id="map-ai-search"
+          v-model="aiSearchKeyword"
+          type="text"
+          placeholder="예: 비 오는데 잠깐 실내에서 쉴 곳"
+        />
+
+        <button
+          type="submit"
+          class="map-ai-button"
+          :disabled="isSearchingMap || !aiSearchKeyword.trim()"
+        >
+          AI 검색
+        </button>
+      </form>
 
       <div
         class="map-content"
@@ -1639,6 +1643,16 @@ const handleDetailFrameError = () => {
         </aside>
 
         <div class="map-area">
+          <button
+            v-if="mapSearchKeyword.trim()"
+            type="button"
+            class="map-overlay-research-button"
+            :disabled="isSearchingMap"
+            @click="searchCurrentMapView"
+          >
+            현재 지도에서 재검색
+          </button>
+
           <KakaoMap
             :center="mapCenter"
             :places="mapPlaces"
@@ -1914,6 +1928,10 @@ h1 {
 }
 
 .map-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
   margin-bottom: 12px;
 }
 
@@ -1925,6 +1943,16 @@ h1 {
   margin: 6px 0 0;
   color: #667085;
   font-size: 14px;
+}
+
+.map-header-reset {
+  flex-shrink: 0;
+  padding: 10px 14px;
+  border: 0;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
 }
 
 .map-parser-status {
@@ -1955,22 +1983,36 @@ h1 {
 
 .map-search-box {
   margin-bottom: 12px;
-  padding: 6px;
-  display: flex;
+  padding: 8px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
   background: #ffffff;
   border: 1px solid #e5e8f0;
-  border-radius: 18px;
+  border-radius: 14px;
   box-shadow: 0 10px 28px rgba(20, 35, 70, 0.08);
 }
 
+.map-search-box label {
+  grid-column: 1 / -1;
+  padding: 0 6px;
+  color: #344054;
+  font-size: 13px;
+  font-weight: 900;
+}
+
 .map-search-box input {
-  flex: 1;
   min-width: 0;
   padding: 12px 14px;
   border: 0;
+  border-radius: 10px;
+  background: #f8fafc;
   outline: none;
   font-size: 15px;
+}
+
+.ai-search-box {
+  border-color: #ddd6fe;
 }
 
 .map-search-actions {
@@ -1981,9 +2023,10 @@ h1 {
 }
 
 .map-search-box button {
+  min-height: 44px;
   padding: 0 16px;
   border: 0;
-  border-radius: 13px;
+  border-radius: 10px;
   background: #ef4444;
   color: #ffffff;
   font-size: 15px;
@@ -1996,8 +2039,9 @@ h1 {
   opacity: 0.55;
 }
 
-.map-research-button {
-  background: #111827 !important;
+.map-header-reset:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .map-ai-button {
@@ -2249,6 +2293,29 @@ h1 {
 .map-area {
   min-width: 0;
   position: relative;
+}
+
+.map-overlay-research-button {
+  position: absolute;
+  z-index: 6;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  min-height: 42px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 999px;
+  background: #111827;
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 900;
+  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.22);
+  cursor: pointer;
+}
+
+.map-overlay-research-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
 }
 
 :deep(.map) {
@@ -2569,6 +2636,18 @@ h1 {
     margin-top: 22px;
   }
 
+  .map-header {
+    flex-direction: column;
+  }
+
+  .map-header-reset {
+    width: 100%;
+  }
+
+  .map-search-box {
+    grid-template-columns: 1fr;
+  }
+
   .search-box input,
   .map-search-box input {
     padding: 13px 14px;
@@ -2581,6 +2660,12 @@ h1 {
   .map-search-actions button {
     flex: 1;
     min-width: 0;
+  }
+
+  .map-overlay-research-button {
+    top: 12px;
+    max-width: calc(100% - 24px);
+    white-space: nowrap;
   }
 
   .search-box button,
