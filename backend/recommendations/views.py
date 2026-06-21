@@ -8,6 +8,8 @@ from .services.place_mapper import (
     get_saved_tag_data,
     map_kakao_place_to_recommendation,
 )
+from .services.ai_situation_parser import parse_situation
+from .services.db_recommender import search_db_recommendations
 from .services.smoking_area_data import (
     calculate_distance_m,
     search_nearby_smoking_areas,
@@ -285,50 +287,44 @@ def kakao_place_tag_lookup(request):
 @api_view(["GET"])
 def recommendation_search(request):
     scenario = request.GET.get("scenario", "work_cafe")
-    lat = float(request.GET.get("lat", 37.5665))
-    lng = float(request.GET.get("lng", 126.9780))
+    lat = request.GET.get("lat")
+    lng = request.GET.get("lng")
+    limit = request.GET.get("limit", 10)
+    radius = request.GET.get("radius")
 
-    if scenario == "smoking_area":
-        smoking_places = search_nearby_smoking_areas(
-            lat=lat,
-            lng=lng,
-            radius=1000,
-            size=5,
-        )
-
-        results = [
-            map_smoking_area_to_recommendation(place)
-            for place in smoking_places
-        ]
-
-        return Response({
-            "scenario": scenario,
-            "keyword": "흡연구역",
-            "source": "local_smoking_data",
-            "results": results,
-        })
-
-    keyword = SCENARIO_KEYWORDS.get(scenario, "카페")
-
-    kakao_data = search_places_by_keyword(
-        keyword=keyword,
+    data = search_db_recommendations(
+        scenario=scenario,
         lat=lat,
         lng=lng,
-        radius=1000,
-        size=5,
+        limit=limit,
+        radius=radius,
     )
 
-    results = [
-        map_kakao_place_to_recommendation(place, scenario)
-        for place in kakao_data.get("documents", [])
-    ]
+    return Response(data)
 
-    return Response({
-        "scenario": scenario,
-        "keyword": keyword,
-        "source": "kakao_local",
-        "results": results,
-    })
+
+@api_view(["POST"])
+def ai_recommendation_search(request):
+    query = request.data.get("query", "")
+    lat = request.data.get("lat")
+    lng = request.data.get("lng")
+    limit = request.data.get("limit", 10)
+    radius = request.data.get("radius")
+
+    parsed = parse_situation(query)
+    data = search_db_recommendations(
+        scenario=parsed["scenario"],
+        lat=lat,
+        lng=lng,
+        categories=parsed["categories"],
+        tags=parsed["tags"],
+        keyword=parsed["situation_summary"],
+        limit=limit,
+        radius=radius,
+    )
+    data["ai_parse"] = parsed
+
+    return Response(data)
 
 @api_view(["GET"])
 def kakao_search_test(request):

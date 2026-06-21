@@ -26,8 +26,17 @@ defineProps({
 
     <p class="address">{{ place.address }}</p>
 
+    <div v-if="place.match_level || place.recommendation_confidence" class="trust-row">
+      <span v-if="place.match_level">
+        {{ place.match_level }}
+      </span>
+      <span v-if="place.recommendation_confidence">
+        신뢰도 {{ place.recommendation_confidence }}
+      </span>
+    </div>
+
     <div v-if="place.runtime_tags?.length" class="tag-section">
-      <p class="tag-label">실시간 태그</p>
+      <p class="tag-label">매칭 태그</p>
       <div class="tags runtime">
         <span v-for="tag in place.runtime_tags" :key="tag">
           #{{ tag }}
@@ -62,12 +71,22 @@ defineProps({
       </div>
     </div>
 
-    <div v-if="place.data_quality_score || place.raw_scores?.recommendation_ready_score" class="score-detail">
+    <div
+      v-if="place.data_quality_score || place.raw_scores?.recommendation_ready_score || place.score_breakdown"
+      class="score-detail"
+    >
       <p v-if="place.data_quality_score">
         데이터 신뢰도: {{ place.data_quality_score }}점
       </p>
       <p v-if="place.raw_scores?.recommendation_ready_score">
         추천 준비도: {{ place.raw_scores.recommendation_ready_score }}점
+      </p>
+      <p v-if="place.score_breakdown">
+        점수 근거:
+        카테고리 {{ place.score_breakdown.category }},
+        태그 {{ place.score_breakdown.tags }},
+        거리 {{ place.score_breakdown.distance }},
+        품질 {{ place.score_breakdown.data_quality }}
       </p>
     </div>
 
@@ -102,7 +121,7 @@ defineProps({
 .card {
   padding: 20px;
   border: 1px solid #ddd;
-  border-radius: 16px;
+  border-radius: 8px;
   margin-bottom: 16px;
   background: #fff;
 }
@@ -125,6 +144,22 @@ defineProps({
 
 .address {
   color: #666;
+}
+
+.trust-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.trust-row span {
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: #e7f5ff;
+  color: #1864ab;
+  font-size: 13px;
+  font-weight: 800;
 }
 
 .tag-section {
@@ -169,7 +204,7 @@ defineProps({
 .score-detail {
   margin-top: 12px;
   padding: 10px 12px;
-  border-radius: 10px;
+  border-radius: 8px;
   background: #f8f9fa;
   font-size: 13px;
   color: #555;
@@ -182,7 +217,7 @@ defineProps({
 .tag-details {
   margin-top: 12px;
   padding: 10px 12px;
-  border-radius: 10px;
+  border-radius: 8px;
   background: #f8f9fa;
   font-size: 13px;
 }

@@ -19,6 +19,12 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 
 KAKAO_REST_API_KEY = os.getenv("KAKAO_REST_API_KEY")
+AI_PROVIDER = os.getenv("AI_PROVIDER", "gms")
+GMS_MODEL = os.getenv("GMS_MODEL", "gpt-5-mini")
+GMS_API_KEY = os.getenv("GMS_API_KEY", "")
+GMS_API_URL = os.getenv("GMS_API_URL", "")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+AI_REQUEST_TIMEOUT = int(os.getenv("AI_REQUEST_TIMEOUT", "20"))
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
