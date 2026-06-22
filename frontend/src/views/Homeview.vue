@@ -311,7 +311,44 @@ const KAKAO_DETAIL_WIDE_CATEGORIES = new Set([
   '관광지',
   '해수욕장',
 ])
+const KAKAO_DETAIL_WIDE_NAME_KEYWORDS = [
+  '공원',
+  '해수욕장',
+  '관광지',
+  '산책',
+  '광장',
+]
 const KAKAO_DETAIL_NAME_SIMILARITY_MIN = 0.72
+const KAKAO_DETAIL_MAX_QUERY_COUNT = 5
+const KAKAO_DETAIL_GENERIC_NAMES = new Set([
+  '센터',
+  '쉼터',
+  '공원',
+  '화장실',
+  '주차장',
+  '도서관',
+  '카페',
+  '식당',
+  '관광지',
+  '해수욕장',
+  '광장',
+])
+const KAKAO_DETAIL_SUFFIX_BOUNDARY_WORDS = [
+  '센터',
+  '지원센터',
+  '복지관',
+  '도서관',
+  '주차장',
+  '공영주차장',
+  '공중화장실',
+  '화장실',
+  '해수욕장',
+  '쉼터',
+  '공원',
+  '광장',
+  '분관',
+  '지점',
+]
 
 const sortedSearchResults = computed(() => {
   return sortSearchResults(allSearchResults.value)
@@ -2180,6 +2217,14 @@ const getKakaoDetailUrl = (place) => {
   return getDirectKakaoDetailUrl(place) || getResolvedKakaoDetailUrl(place)
 }
 
+const debugKakaoDetailLog = (label, payload = {}) => {
+  if (!import.meta.env.DEV) {
+    return
+  }
+
+  console.debug(label, payload)
+}
+
 const getKakaoDetailPlaceCoordinates = (place) => {
   const lat = Number(place?.lat ?? place?.y)
   const lng = Number(place?.lng ?? place?.x)
@@ -2202,6 +2247,234 @@ const getKakaoDetailCandidateCoordinates = (candidate) => {
   return { lat, lng }
 }
 
+const escapeKakaoDetailRegExp = (value) => {
+  return getTextValue(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+const removeKakaoDetailBracketContent = (name = '') => {
+  return getTextValue(name)
+    .replace(/\([^)]*\)/g, ' ')
+    .replace(/\[[^\]]*\]/g, ' ')
+    .replace(/\{[^}]*\}/g, ' ')
+}
+
+const removeKakaoDetailBracketCharacters = (name = '') => {
+  return getTextValue(name).replace(/[()[\]{}]/g, ' ')
+}
+
+const replaceKakaoDetailSpecialCharacters = (name = '') => {
+  return getTextValue(name).replace(/[^\p{L}\p{N}]+/gu, ' ')
+}
+
+const normalizeKakaoDetailWhitespace = (name = '') => {
+  return getTextValue(name).replace(/\s+/g, ' ').trim()
+}
+
+const insertKakaoDetailNameBoundaries = (name = '') => {
+  let spacedName = normalizeKakaoDetailWhitespace(name)
+
+  KAKAO_DETAIL_SUFFIX_BOUNDARY_WORDS.forEach((word) => {
+    const escapedWord = escapeKakaoDetailRegExp(word)
+
+    if (!escapedWord) {
+      return
+    }
+
+    spacedName = spacedName.replace(new RegExp(`(${escapedWord})(?=\\S)`, 'g'), '$1 ')
+  })
+
+  return normalizeKakaoDetailWhitespace(spacedName)
+}
+
+const normalizeKakaoMatchName = (name = '') => {
+  return replaceKakaoDetailSpecialCharacters(removeKakaoDetailBracketContent(name))
+    .toLowerCase()
+    .replace(/\s+/g, '')
+}
+
+const normalizeKakaoLookupQueryKey = (query = '') => {
+  return replaceKakaoDetailSpecialCharacters(query)
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+const isGenericKakaoMatchName = (name = '') => {
+  const normalizedName = normalizeKakaoMatchName(name)
+
+  return !normalizedName || normalizedName.length <= 2 || KAKAO_DETAIL_GENERIC_NAMES.has(normalizedName)
+}
+
+const getUniqueKakaoDetailValues = (values = [], getKey = normalizeKakaoLookupQueryKey) => {
+  const seen = new Set()
+  const uniqueValues = []
+
+  values.forEach((value) => {
+    const textValue = normalizeKakaoDetailWhitespace(value)
+    const key = getKey(textValue)
+
+    if (!textValue || !key || seen.has(key)) {
+      return
+    }
+
+    seen.add(key)
+    uniqueValues.push(textValue)
+  })
+
+  return uniqueValues
+}
+
+const buildKakaoDetailLookupQueries = (place) => {
+  const placeName = getTextValue(place?.name)
+
+  if (!placeName) {
+    return []
+  }
+
+  const bracketCharactersRemoved = removeKakaoDetailBracketCharacters(placeName)
+  const bracketContentRemoved = removeKakaoDetailBracketContent(placeName)
+  const specialCharactersReplaced = replaceKakaoDetailSpecialCharacters(placeName)
+  const queryCandidates = [
+    placeName,
+    bracketCharactersRemoved,
+    bracketContentRemoved,
+    specialCharactersReplaced,
+    insertKakaoDetailNameBoundaries(placeName),
+    insertKakaoDetailNameBoundaries(bracketCharactersRemoved),
+    insertKakaoDetailNameBoundaries(bracketContentRemoved),
+    insertKakaoDetailNameBoundaries(specialCharactersReplaced),
+  ]
+
+  return getUniqueKakaoDetailValues(queryCandidates)
+    .filter((query) => !isGenericKakaoMatchName(query))
+    .slice(0, KAKAO_DETAIL_MAX_QUERY_COUNT)
+}
+
+const getKakaoMatchNameVariants = (name = '') => {
+  const sourceName = getTextValue(name)
+
+  if (!sourceName) {
+    return []
+  }
+
+  return getUniqueKakaoDetailValues(
+    [
+      sourceName,
+      removeKakaoDetailBracketCharacters(sourceName),
+      removeKakaoDetailBracketContent(sourceName),
+      replaceKakaoDetailSpecialCharacters(sourceName),
+      insertKakaoDetailNameBoundaries(sourceName),
+      insertKakaoDetailNameBoundaries(removeKakaoDetailBracketCharacters(sourceName)),
+      insertKakaoDetailNameBoundaries(removeKakaoDetailBracketContent(sourceName)),
+    ],
+    normalizeKakaoMatchName,
+  )
+    .map(normalizeKakaoMatchName)
+    .filter(Boolean)
+}
+
+const getKakaoNormalizedNameSimilarity = (firstName = '', secondName = '') => {
+  if (!firstName || !secondName) {
+    return 0
+  }
+
+  if (firstName === secondName) {
+    return 1
+  }
+
+  if (firstName.includes(secondName) || secondName.includes(firstName)) {
+    return 0.92
+  }
+
+  const makeBigrams = (text) => {
+    if (text.length <= 1) {
+      return [text]
+    }
+
+    return Array.from({ length: text.length - 1 }, (_, index) => text.slice(index, index + 2))
+  }
+  const firstBigrams = makeBigrams(firstName)
+  const secondBigrams = makeBigrams(secondName)
+  const secondCounts = secondBigrams.reduce((counts, bigram) => {
+    counts[bigram] = (counts[bigram] || 0) + 1
+    return counts
+  }, {})
+  let intersection = 0
+
+  firstBigrams.forEach((bigram) => {
+    if (!secondCounts[bigram]) {
+      return
+    }
+
+    intersection += 1
+    secondCounts[bigram] -= 1
+  })
+
+  return (2 * intersection) / (firstBigrams.length + secondBigrams.length)
+}
+
+const getKakaoDetailNameEvaluation = (placeName, candidateName) => {
+  const placeVariants = getKakaoMatchNameVariants(placeName)
+  const candidateVariants = getKakaoMatchNameVariants(candidateName)
+  const hasGenericName = isGenericKakaoMatchName(placeName) || isGenericKakaoMatchName(candidateName)
+  let exactMatched = false
+  let containmentMatched = false
+  let bestSimilarity = 0
+
+  placeVariants.forEach((placeVariant) => {
+    candidateVariants.forEach((candidateVariant) => {
+      if (placeVariant === candidateVariant && placeVariant.length >= 3) {
+        exactMatched = true
+      }
+
+      const shorterLength = Math.min(placeVariant.length, candidateVariant.length)
+      if (
+        shorterLength >= 4 &&
+        !hasGenericName &&
+        (placeVariant.includes(candidateVariant) || candidateVariant.includes(placeVariant))
+      ) {
+        containmentMatched = true
+      }
+
+      bestSimilarity = Math.max(
+        bestSimilarity,
+        getKakaoNormalizedNameSimilarity(placeVariant, candidateVariant),
+      )
+    })
+  })
+
+  if (!placeVariants.length || !candidateVariants.length) {
+    return {
+      passed: false,
+      reason: 'missing_name',
+      similarity: 0,
+      exactMatched: false,
+      containmentMatched: false,
+    }
+  }
+
+  if (hasGenericName) {
+    return {
+      passed: false,
+      reason: 'generic_name',
+      similarity: bestSimilarity,
+      exactMatched,
+      containmentMatched: false,
+    }
+  }
+
+  const similarityMatched = bestSimilarity >= KAKAO_DETAIL_NAME_SIMILARITY_MIN
+  const passed = exactMatched || containmentMatched || similarityMatched
+
+  return {
+    passed,
+    reason: passed ? 'name_matched' : 'name_mismatch',
+    similarity: bestSimilarity,
+    exactMatched,
+    containmentMatched,
+  }
+}
+
 const getKakaoDetailMaxDistance = (place) => {
   const categoryText = [
     place?.rawCategory,
@@ -2210,40 +2483,20 @@ const getKakaoDetailMaxDistance = (place) => {
     .map((value) => getTextValue(value))
     .filter(Boolean)
 
-  const isWidePlace = categoryText.some((category) => KAKAO_DETAIL_WIDE_CATEGORIES.has(category))
+  const searchText = [
+    ...categoryText,
+    place?.name,
+  ]
+    .map((value) => getTextValue(value))
+    .join(' ')
+  const isWidePlace = (
+    categoryText.some((category) => KAKAO_DETAIL_WIDE_CATEGORIES.has(category)) ||
+    KAKAO_DETAIL_WIDE_NAME_KEYWORDS.some((keyword) => searchText.includes(keyword))
+  )
 
   return isWidePlace
     ? KAKAO_DETAIL_WIDE_MATCH_DISTANCE_M
     : KAKAO_DETAIL_MATCH_DISTANCE_M
-}
-
-const isKakaoDetailNameMatch = (placeName, candidateName) => {
-  const placeText = normalizePlaceName(placeName)
-  const candidateText = normalizePlaceName(candidateName)
-
-  if (!placeText || !candidateText) {
-    return false
-  }
-
-  if (placeText.length < 3 || candidateText.length < 3) {
-    return false
-  }
-
-  if (placeText === candidateText) {
-    return true
-  }
-
-  const shorterLength = Math.min(placeText.length, candidateText.length)
-  const hasContainmentMatch = (
-    shorterLength >= 4 &&
-    (placeText.includes(candidateText) || candidateText.includes(placeText))
-  )
-
-  if (hasContainmentMatch) {
-    return true
-  }
-
-  return getPlaceNameSimilarity(placeName, candidateName) >= KAKAO_DETAIL_NAME_SIMILARITY_MIN
 }
 
 const getKakaoDetailCandidateUrl = (candidate) => {
@@ -2253,44 +2506,99 @@ const getKakaoDetailCandidateUrl = (candidate) => {
     return candidateUrl
   }
 
-  return candidate?.id
-    ? `https://place.map.kakao.com/${candidate.id}`
+  const candidateId = getTextValue(candidate?.id)
+
+  return isKakaoPlaceId(candidateId)
+    ? `https://place.map.kakao.com/${candidateId}`
     : ''
 }
 
-const getBestKakaoDetailCandidate = (place, candidates = []) => {
+const evaluateKakaoDetailCandidate = (place, candidate, query = '') => {
   const placeCoordinates = getKakaoDetailPlaceCoordinates(place)
   const maxDistance = getKakaoDetailMaxDistance(place)
+  const candidateCoordinates = getKakaoDetailCandidateCoordinates(candidate)
+  const url = getKakaoDetailCandidateUrl(candidate)
+  const nameEvaluation = getKakaoDetailNameEvaluation(place?.name, candidate?.place_name)
+  const rejectReasons = []
+  let distance = null
 
   if (!placeCoordinates) {
-    return null
+    rejectReasons.push('missing_db_coordinates')
   }
 
+  if (!candidateCoordinates) {
+    rejectReasons.push('missing_candidate_coordinates')
+  }
+
+  if (placeCoordinates && candidateCoordinates) {
+    distance = getDistanceMetersBetweenPlaces(placeCoordinates, candidateCoordinates)
+
+    if (!Number.isFinite(distance)) {
+      rejectReasons.push('invalid_distance')
+    } else if (distance > maxDistance) {
+      rejectReasons.push('distance_over_limit')
+    }
+  }
+
+  if (!nameEvaluation.passed) {
+    rejectReasons.push(nameEvaluation.reason)
+  }
+
+  if (!url) {
+    rejectReasons.push('missing_url')
+  }
+
+  return {
+    candidate,
+    url,
+    query,
+    distance,
+    maxDistance,
+    nameSimilarity: nameEvaluation.similarity,
+    nameEvaluation,
+    hasUrl: Boolean(url),
+    distanceMatched: Number.isFinite(distance) && distance <= maxDistance,
+    nameMatched: nameEvaluation.passed,
+    passed: rejectReasons.length === 0,
+    rejectReasons,
+  }
+}
+
+const isReliableKakaoDetailMatch = (dbPlace, kakaoCandidate) => {
+  return evaluateKakaoDetailCandidate(dbPlace, kakaoCandidate).passed
+}
+
+const getBestKakaoDetailCandidate = (place, candidates = [], query = '') => {
   return candidates
-    .map((candidate) => {
-      const candidateCoordinates = getKakaoDetailCandidateCoordinates(candidate)
-      const url = getKakaoDetailCandidateUrl(candidate)
+    .map((candidate) => evaluateKakaoDetailCandidate(place, candidate, query))
+    .map((evaluation) => {
+      debugKakaoDetailLog('[카카오 상세 후보 평가]', {
+        query: evaluation.query,
+        dbPlaceName: place?.name,
+        candidateName: evaluation.candidate?.place_name,
+        candidateCoordinates: getKakaoDetailCandidateCoordinates(evaluation.candidate),
+        distance: evaluation.distance,
+        maxDistance: evaluation.maxDistance,
+        nameSimilarity: evaluation.nameSimilarity,
+        nameMatched: evaluation.nameMatched,
+        distanceMatched: evaluation.distanceMatched,
+        hasUrl: evaluation.hasUrl,
+        passed: evaluation.passed,
+        rejectReasons: evaluation.rejectReasons,
+      })
 
-      if (!candidateCoordinates || !url) {
-        return null
-      }
-
-      const distance = getDistanceMetersBetweenPlaces(placeCoordinates, candidateCoordinates)
-      const nameMatched = isKakaoDetailNameMatch(place?.name, candidate.place_name)
-
-      if (!Number.isFinite(distance) || distance > maxDistance || !nameMatched) {
-        return null
-      }
-
-      return {
-        candidate,
-        url,
-        distance,
-        nameSimilarity: getPlaceNameSimilarity(place?.name, candidate.place_name),
-      }
+      return evaluation
     })
-    .filter(Boolean)
+    .filter((evaluation) => evaluation.passed)
     .sort((first, second) => {
+      if (Number(second.nameEvaluation.exactMatched) !== Number(first.nameEvaluation.exactMatched)) {
+        return Number(second.nameEvaluation.exactMatched) - Number(first.nameEvaluation.exactMatched)
+      }
+
+      if (Number(second.nameEvaluation.containmentMatched) !== Number(first.nameEvaluation.containmentMatched)) {
+        return Number(second.nameEvaluation.containmentMatched) - Number(first.nameEvaluation.containmentMatched)
+      }
+
       if (second.nameSimilarity !== first.nameSimilarity) {
         return second.nameSimilarity - first.nameSimilarity
       }
@@ -2314,7 +2622,10 @@ const shouldLookupKakaoDetailUrl = (place) => {
     return false
   }
 
-  return Boolean(getTextValue(place?.name) && getKakaoDetailPlaceCoordinates(place))
+  return Boolean(
+    buildKakaoDetailLookupQueries(place).length &&
+    getKakaoDetailPlaceCoordinates(place),
+  )
 }
 
 const resolveKakaoDetailUrlForPlace = async (place) => {
@@ -2328,6 +2639,7 @@ const resolveKakaoDetailUrlForPlace = async (place) => {
 
   const lookupKey = getKakaoDetailLookupKey(place)
   const placeCoordinates = getKakaoDetailPlaceCoordinates(place)
+  const lookupQueries = buildKakaoDetailLookupQueries(place)
 
   kakaoDetailLookupStatus.value = {
     ...kakaoDetailLookupStatus.value,
@@ -2336,23 +2648,47 @@ const resolveKakaoDetailUrlForPlace = async (place) => {
 
   try {
     const placesService = new window.kakao.maps.services.Places()
-    const results = await runKakaoKeywordSearchLimited(
-      placesService,
-      place.name,
-      {
-        location: new window.kakao.maps.LatLng(placeCoordinates.lat, placeCoordinates.lng),
-        radius: KAKAO_DETAIL_LOOKUP_RADIUS_M,
-        sort: window.kakao.maps.services.SortBy.DISTANCE,
-      },
-      { maxPages: 1 },
-    )
-    const matchedCandidate = getBestKakaoDetailCandidate(place, results)
+    let matchedCandidate = null
+
+    debugKakaoDetailLog('[카카오 상세 매칭 시작]', {
+      dbPlaceName: place?.name,
+      category: place?.rawCategory || place?.category,
+      source: place?.sourceType || place?.source_type || place?.searchSource,
+      coordinates: placeCoordinates,
+      lookupQueries,
+      radius: KAKAO_DETAIL_LOOKUP_RADIUS_M,
+    })
+
+    for (const query of lookupQueries) {
+      const results = await runKakaoKeywordSearchLimited(
+        placesService,
+        query,
+        {
+          location: new window.kakao.maps.LatLng(placeCoordinates.lat, placeCoordinates.lng),
+          radius: KAKAO_DETAIL_LOOKUP_RADIUS_M,
+          sort: window.kakao.maps.services.SortBy.DISTANCE,
+        },
+        { maxPages: 1 },
+      )
+
+      matchedCandidate = getBestKakaoDetailCandidate(place, results, query)
+
+      if (matchedCandidate) {
+        break
+      }
+    }
 
     if (!matchedCandidate) {
       kakaoDetailLookupStatus.value = {
         ...kakaoDetailLookupStatus.value,
         [lookupKey]: 'failed',
       }
+      debugKakaoDetailLog('[카카오 상세 매칭 결과]', {
+        success: false,
+        dbPlaceName: place?.name,
+        lookupQueries,
+        reason: 'no_reliable_candidate',
+      })
       return
     }
 
@@ -2368,11 +2704,27 @@ const resolveKakaoDetailUrlForPlace = async (place) => {
     if (selectedPlace.value && getKakaoDetailLookupKey(selectedPlace.value) === lookupKey) {
       detailFrameError.value = false
     }
+
+    debugKakaoDetailLog('[카카오 상세 매칭 결과]', {
+      success: true,
+      dbPlaceName: place?.name,
+      query: matchedCandidate.query,
+      selectedCandidateName: matchedCandidate.candidate?.place_name,
+      selectedUrl: matchedCandidate.url,
+      distance: matchedCandidate.distance,
+      nameSimilarity: matchedCandidate.nameSimilarity,
+    })
   } catch (error) {
     kakaoDetailLookupStatus.value = {
       ...kakaoDetailLookupStatus.value,
       [lookupKey]: 'failed',
     }
+    debugKakaoDetailLog('[카카오 상세 매칭 결과]', {
+      success: false,
+      dbPlaceName: place?.name,
+      lookupQueries,
+      reason: error?.message || 'lookup_error',
+    })
   }
 }
 
