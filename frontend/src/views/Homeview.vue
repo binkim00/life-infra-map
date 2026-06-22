@@ -679,8 +679,8 @@ const getDistanceMetersBetweenPlaces = (firstPlace, secondPlace) => {
   const a =
     Math.sin(deltaLat / 2) ** 2 +
     Math.cos(toRadians(lat1)) *
-      Math.cos(toRadians(lat2)) *
-      Math.sin(deltaLng / 2) ** 2
+    Math.cos(toRadians(lat2)) *
+    Math.sin(deltaLng / 2) ** 2
 
   return radius * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
 }
@@ -694,16 +694,16 @@ const mergeTags = (firstTags = [], secondTags = []) => {
   const mergedTags = []
   const seen = new Set()
 
-  ;[...firstTags, ...secondTags].forEach((tag) => {
-    const key = getTagKey(tag)
+    ;[...firstTags, ...secondTags].forEach((tag) => {
+      const key = getTagKey(tag)
 
-    if (seen.has(key)) {
-      return
-    }
+      if (seen.has(key)) {
+        return
+      }
 
-    seen.add(key)
-    mergedTags.push(tag)
-  })
+      seen.add(key)
+      mergedTags.push(tag)
+    })
 
   return mergedTags
 }
@@ -1015,7 +1015,7 @@ const makeRecommendationTags = (place) => {
     tags.push(makeTag(categoryText, 'category_rule'))
   }
 
-  ;(place.matched_tags || place.runtime_tags || []).forEach((tagName) => {
+  ; (place.matched_tags || place.runtime_tags || []).forEach((tagName) => {
     tags.push(makeTag(tagName, 'checked'))
   })
 
@@ -1445,51 +1445,43 @@ const handleDetailFrameError = () => {
 <template>
   <main class="home-page">
     <header class="page-header">
-      <div class="top-bar">
-        <button
-          type="button"
-          class="tab-button"
-          :class="{ active: activeTab === 'search' }"
-          @click="activeTab = 'search'"
-        >
-          검색창
-        </button>
-
-        <button
-          type="button"
-          class="tab-button"
-          :class="{ active: activeTab === 'map' }"
-          @click="openMapWithCurrentLocation"
-        >
-          지도
-        </button>
-      </div>
-
-      <div class="auth-menu">
-        <template v-if="authStore.isLoggedIn">
-          <span class="user-name">
-            {{ authStore.user?.username }}님
-          </span>
-
-          <button
-            type="button"
-            class="auth-button logout"
-            @click="handleLogout"
-          >
-            로그아웃
+      <div class="header-main">
+        <div class="top-bar">
+          <button type="button" class="tab-button" :class="{ active: activeTab === 'search' }"
+            @click="activeTab = 'search'">
+            검색창
           </button>
-        </template>
 
-        <template v-else>
-          <RouterLink to="/login" class="auth-button">
-            로그인
-          </RouterLink>
+          <button type="button" class="tab-button" :class="{ active: activeTab === 'map' }"
+            @click="openMapWithCurrentLocation">
+            지도
+          </button>
+        </div>
 
-          <RouterLink to="/signup" class="auth-button signup">
-            회원가입
-          </RouterLink>
-        </template>
+        <div class="auth-menu">
+          <template v-if="authStore.isLoggedIn">
+            <span class="user-name">
+              {{ authStore.user?.username }}님
+            </span>
+
+            <button type="button" class="auth-button logout" @click="handleLogout">
+              로그아웃
+            </button>
+          </template>
+
+          <template v-else>
+            <RouterLink to="/login" class="auth-button">
+              로그인
+            </RouterLink>
+
+            <RouterLink to="/signup" class="auth-button signup">
+              회원가입
+            </RouterLink>
+          </template>
+        </div>
       </div>
+
+      
     </header>
 
     <section v-if="activeTab === 'search'" class="search-section">
@@ -1502,12 +1494,7 @@ const handleDetailFrameError = () => {
       </div>
 
       <div class="search-box">
-        <input
-          v-model="searchKeyword"
-          type="text"
-          placeholder="지금 어떤 장소가 필요하신가요?"
-          @keyup.enter="handleSearch"
-        />
+        <input v-model="searchKeyword" type="text" placeholder="지금 어떤 장소가 필요하신가요?" @keyup.enter="handleSearch" />
 
         <button type="button" @click="handleSearch">
           검색
@@ -1524,42 +1511,24 @@ const handleDetailFrameError = () => {
           </p>
         </div>
 
-        <button
-          type="button"
-          class="map-reset-button map-header-reset"
-          :disabled="isSearchingMap"
-          @click="resetMapSearch"
-        >
+        <button type="button" class="map-reset-button map-header-reset" :disabled="isSearchingMap"
+          @click="resetMapSearch">
           검색 초기화
         </button>
       </div>
 
-      <div
-        v-if="mapParserStatus"
-        class="map-parser-status"
-        :class="mapParserStatus.className"
-      >
+      <div v-if="mapParserStatus" class="map-parser-status" :class="mapParserStatus.className">
         <strong>{{ mapParserStatus.label }}</strong>
         <span>{{ mapParserStatus.detail }}</span>
       </div>
 
       <div class="map-search-box">
         <label for="map-keyword-search">지도 검색</label>
-        <input
-          id="map-keyword-search"
-          v-model="mapSearchKeyword"
-          type="text"
-          placeholder="예: 카페, 식당, 수영역 주변 카페, 서면역 근처 맛집"
-          @keyup.enter="searchKakaoPlaces()"
-        />
+        <input id="map-keyword-search" v-model="mapSearchKeyword" type="text"
+          placeholder="예: 카페, 식당, 수영역 주변 카페, 서면역 근처 맛집" @keyup.enter="searchKakaoPlaces()" />
 
         <div class="map-search-actions">
-          <button
-            type="button"
-            class="map-search-submit"
-            :disabled="isSearchingMap"
-            @click="searchKakaoPlaces()"
-          >
+          <button type="button" class="map-search-submit" :disabled="isSearchingMap" @click="searchKakaoPlaces()">
             {{ isSearchingMap ? '검색 중...' : '지도 검색' }}
           </button>
         </div>
@@ -1567,33 +1536,18 @@ const handleDetailFrameError = () => {
 
       <form class="map-search-box ai-search-box" @submit.prevent="searchAiRecommendationsOnMap">
         <label for="map-ai-search">AI 검색</label>
-        <input
-          id="map-ai-search"
-          v-model="aiSearchKeyword"
-          type="text"
-          placeholder="예: 비 오는데 잠깐 실내에서 쉴 곳"
-        />
+        <input id="map-ai-search" v-model="aiSearchKeyword" type="text" placeholder="예: 비 오는데 잠깐 실내에서 쉴 곳" />
 
-        <button
-          type="submit"
-          class="map-ai-button"
-          :disabled="isSearchingMap || !aiSearchKeyword.trim()"
-        >
+        <button type="submit" class="map-ai-button" :disabled="isSearchingMap || !aiSearchKeyword.trim()">
           AI 검색
         </button>
       </form>
 
-      <div
-        class="map-content"
-        :class="{
-          'has-result-list': searchedPlaces.length,
-          'has-selected-place': selectedPlace,
-        }"
-      >
-        <aside
-          v-if="searchedPlaces.length"
-          class="place-list-panel"
-        >
+      <div class="map-content" :class="{
+        'has-result-list': searchedPlaces.length,
+        'has-selected-place': selectedPlace,
+      }">
+        <aside v-if="searchedPlaces.length" class="place-list-panel">
           <div class="place-list-top">
             <div>
               <p class="place-list-label">검색 결과</p>
@@ -1602,18 +1556,9 @@ const handleDetailFrameError = () => {
           </div>
 
           <div class="place-list">
-            <article
-              v-for="place in searchedPlaces"
-              :key="place.id"
-              :ref="(el) => setPlaceListItemRef(el, place.id)"
-              class="place-list-item"
-              :class="{ active: selectedPlace && selectedPlace.id === place.id }"
-            >
-              <button
-                type="button"
-                class="place-list-select-button"
-                @click="selectPlaceFromList(place)"
-              >
+            <article v-for="place in searchedPlaces" :key="place.id" :ref="(el) => setPlaceListItemRef(el, place.id)"
+              class="place-list-item" :class="{ active: selectedPlace && selectedPlace.id === place.id }">
+              <button type="button" class="place-list-select-button" @click="selectPlaceFromList(place)">
                 <span class="place-list-marker" :class="getPlaceSourceClass(place)">
                   {{ place.markerLabel }}
                 </span>
@@ -1640,18 +1585,12 @@ const handleDetailFrameError = () => {
 
                   </span>
 
-                  <span
-                    v-if="place.address || place.detailLocation"
-                    class="place-list-address"
-                    :title="place.address || place.detailLocation"
-                  >
+                  <span v-if="place.address || place.detailLocation" class="place-list-address"
+                    :title="place.address || place.detailLocation">
                     {{ place.address || place.detailLocation }}
                   </span>
 
-                  <span
-                    v-if="place.phone"
-                    class="place-list-phone"
-                  >
+                  <span v-if="place.phone" class="place-list-phone">
                     전화 {{ place.phone }}
                   </span>
 
@@ -1661,47 +1600,25 @@ const handleDetailFrameError = () => {
           </div>
 
           <div v-if="hasMoreResults" class="show-more-wrap">
-            <button
-              type="button"
-              class="show-more-button"
-              @click="showMoreResults"
-            >
+            <button type="button" class="show-more-button" @click="showMoreResults">
               더보기
             </button>
           </div>
         </aside>
 
         <div class="map-area">
-          <button
-            v-if="mapSearchKeyword.trim()"
-            type="button"
-            class="map-overlay-research-button"
-            :disabled="isSearchingMap"
-            @click="searchCurrentMapView"
-          >
+          <button v-if="mapSearchKeyword.trim()" type="button" class="map-overlay-research-button"
+            :disabled="isSearchingMap" @click="searchCurrentMapView">
             현재 지도에서 재검색
           </button>
 
-          <KakaoMap
-            :center="mapCenter"
-            :places="mapPlaces"
-            :fit-bounds-key="mapFitBoundsKey"
-            :layout-key="mapLayoutKey"
-            :selected-place-id="selectedPlace?.id || null"
-            :selected-place="selectedPlace"
-            @center-change="handleMapViewportChange"
-            @select-place="selectPlace"
-          />
+          <KakaoMap :center="mapCenter" :places="mapPlaces" :fit-bounds-key="mapFitBoundsKey" :layout-key="mapLayoutKey"
+            :selected-place-id="selectedPlace?.id || null" :selected-place="selectedPlace"
+            @center-change="handleMapViewportChange" @select-place="selectPlace" />
 
-          <aside
-            v-if="selectedPlace"
-            class="place-detail-panel"
-            :class="{ 'is-compact-detail': !hasKakaoDetail(selectedPlace) }"
-          >
-            <div
-              class="split-place-card"
-              :class="{ 'has-kakao-detail': hasKakaoDetail(selectedPlace) }"
-            >
+          <aside v-if="selectedPlace" class="place-detail-panel"
+            :class="{ 'is-compact-detail': !hasKakaoDetail(selectedPlace) }">
+            <div class="split-place-card" :class="{ 'has-kakao-detail': hasKakaoDetail(selectedPlace) }">
               <div class="split-card-top">
                 <div>
                   <p class="card-label">
@@ -1713,73 +1630,43 @@ const handleDetailFrameError = () => {
                   <h2>{{ selectedPlace.name }}</h2>
                 </div>
 
-                <button
-                  type="button"
-                  class="close-card-button"
-                  @click="closePlaceCard"
-                >
+                <button type="button" class="close-card-button" @click="closePlaceCard">
                   ×
                 </button>
               </div>
 
-              <div
-                v-if="selectedPlace.tags && selectedPlace.tags.length"
-                class="tag-list"
-              >
-                <span
-                  v-for="tag in getSortedTags(selectedPlace.tags)"
-                  :key="`${getTagName(tag)}-${typeof tag === 'string' ? 'category_rule' : tag.source}`"
-                  class="tag-chip"
-                  :class="getTagClass(tag)"
-                >
+              <div v-if="selectedPlace.tags && selectedPlace.tags.length" class="tag-list">
+                <span v-for="tag in getSortedTags(selectedPlace.tags)"
+                  :key="`${getTagName(tag)}-${typeof tag === 'string' ? 'category_rule' : tag.source}`" class="tag-chip"
+                  :class="getTagClass(tag)">
                   #{{ getTagName(tag) }}
                   <small>{{ getTagSourceText(tag) }}</small>
                 </span>
               </div>
 
-              <section
-                v-if="hasKakaoDetail(selectedPlace)"
-                class="kakao-frame-section"
-              >
+              <section v-if="hasKakaoDetail(selectedPlace)" class="kakao-frame-section">
                 <div class="iframe-fallback" v-if="detailFrameError">
                   <p>카카오맵 상세페이지를 현재 화면에 표시하지 못했습니다.</p>
 
-                  <a
-                    :href="getKakaoDetailUrl(selectedPlace)"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
+                  <a :href="getKakaoDetailUrl(selectedPlace)" target="_blank" rel="noopener noreferrer">
                     새창에서 열기
                   </a>
                 </div>
 
                 <div v-else class="kakao-frame-scroll">
-                  <iframe
-                    :src="getKakaoDetailUrl(selectedPlace)"
-                    class="inline-kakao-frame"
-                    title="카카오맵 장소 상세페이지"
-                    scrolling="no"
-                    referrerpolicy="no-referrer-when-downgrade"
-                    @error="handleDetailFrameError"
-                  ></iframe>
+                  <iframe :src="getKakaoDetailUrl(selectedPlace)" class="inline-kakao-frame" title="카카오맵 장소 상세페이지"
+                    scrolling="no" referrerpolicy="no-referrer-when-downgrade" @error="handleDetailFrameError"></iframe>
                 </div>
               </section>
 
-              <section
-                v-else-if="isDbPlace(selectedPlace)"
-                class="db-summary-card"
-              >
+              <section v-else-if="isDbPlace(selectedPlace)" class="db-summary-card">
                 <div>
                   <strong>DB에 저장된 장소입니다.</strong>
                   <p>좌표 기준으로 지도에서 위치를 확인할 수 있습니다.</p>
                 </div>
 
-                <a
-                  v-if="getPlaceNavigationUrl(selectedPlace)"
-                  :href="getPlaceNavigationUrl(selectedPlace)"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
+                <a v-if="getPlaceNavigationUrl(selectedPlace)" :href="getPlaceNavigationUrl(selectedPlace)"
+                  target="_blank" rel="noopener noreferrer">
                   카카오맵에서 위치 보기
                 </a>
               </section>
@@ -1821,13 +1708,9 @@ const handleDetailFrameError = () => {
                 </div>
               </div>
 
-              <a
-                v-if="!isDbPlace(selectedPlace) && getPlaceNavigationUrl(selectedPlace)"
-                :href="getPlaceNavigationUrl(selectedPlace)"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="fallback-link"
-              >
+              <a v-if="!isDbPlace(selectedPlace) && getPlaceNavigationUrl(selectedPlace)"
+                :href="getPlaceNavigationUrl(selectedPlace)" target="_blank" rel="noopener noreferrer"
+                class="fallback-link">
                 새창에서 열기
               </a>
             </div>
@@ -1844,24 +1727,37 @@ const handleDetailFrameError = () => {
 
 <style scoped>
 .page-header {
-  position: relative;
-  display: flex;
-  justify-content: center;
+  margin-bottom: 24px;
+}
+
+.header-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 16px;
   align-items: center;
 }
 
+.top-bar {
+  grid-column: 2;
+}
+
 .auth-menu {
-  position: absolute;
-  right: 0;
+  grid-column: 3;
+  justify-self: end;
+  min-width: 0;
   display: flex;
   gap: 8px;
   align-items: center;
 }
 
 .user-name {
+  min-width: 0;
+  overflow: hidden;
   color: #344054;
   font-size: 14px;
   font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .auth-button {
@@ -1889,13 +1785,14 @@ const handleDetailFrameError = () => {
 }
 
 @media (max-width: 720px) {
-  .page-header {
+  .header-main {
+    display: flex;
     flex-direction: column;
     gap: 12px;
   }
 
   .auth-menu {
-    position: static;
+    justify-content: center;
   }
 }
 
@@ -2288,7 +2185,7 @@ h1 {
   gap: 4px 8px;
 }
 
-.place-list-meta small + small::before {
+.place-list-meta small+small::before {
   content: '·';
   margin-right: 8px;
   color: #98a2b3;
@@ -2681,6 +2578,7 @@ h1 {
 }
 
 @media (max-width: 1100px) {
+
   .map-content.has-result-list,
   .map-content.has-result-list.has-selected-place,
   .map-content.has-selected-place:not(.has-result-list) {

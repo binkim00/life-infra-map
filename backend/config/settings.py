@@ -41,7 +41,7 @@ ALLOWED_HOSTS = []
 # Application definition
 
 INSTALLED_APPS = [
-    # Django 기본 앱
+    # 기존 앱들
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -55,9 +55,9 @@ INSTALLED_APPS = [
     'corsheaders',
 
     # 로컬 앱
-    'places',
     'recommendations',
     'accounts',
+    'boards',
 ]
 
 MIDDLEWARE = [

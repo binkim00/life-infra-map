@@ -1,0 +1,34 @@
+[
+  {
+    "model": "auth.user",
+    "pk": 9001,
+    "fields": {
+      "password": "!fixture-user-has-no-login-password",
+      "last_login": null,
+      "is_superuser": false,
+      "username": "notice_seed_admin",
+      "first_name": "생활틈지도",
+      "last_name": "운영팀",
+      "email": "notice@example.com",
+      "is_staff": true,
+      "is_active": true,
+      "date_joined": "2026-06-22T00:00:00+09:00",
+      "groups": [],
+      "user_permissions": []
+    }
+  },
+  {
+    "model": "boards.post",
+    "pk": 9001,
+    "fields": {
+      "author": 9001,
+      "board_type": "notice",
+      "title": "[필독] 생활틈지도 공지사항 안내",
+      "content": "생활틈지도 공지사항 게시판입니다.\n\n서비스 이용 안내, 업데이트 소식, 운영 정책 변경처럼 모든 사용자가 확인해야 하는 내용을 이곳에 고정글로 안내합니다.\n\n이 글은 Django fixture로 제공되는 초기 데이터입니다. 필요할 때 `python manage.py loaddata boards_notice_seed` 명령으로 다시 로드할 수 있습니다.",
+      "view_count": 0,
+      "is_pinned": true,
+      "created_at": "2026-06-22T00:00:00+09:00",
+      "updated_at": "2026-06-22T00:00:00+09:00"
+    }
+  }
+]

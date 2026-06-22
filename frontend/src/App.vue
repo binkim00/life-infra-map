@@ -1,3 +1,83 @@
+<script setup>
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
+import { getNotifications } from '@/api/boards'
+import { useAuthStore } from '@/stores/auth'
+
+const authStore = useAuthStore()
+const route = useRoute()
+const notifications = ref([])
+let notificationTimer = null
+
+const unreadNotificationCount = computed(() => {
+  return notifications.value.filter((notification) => !notification.is_read).length
+})
+
+const fetchNotifications = async () => {
+  if (!authStore.isLoggedIn) {
+    notifications.value = []
+    return
+  }
+
+  try {
+    const response = await getNotifications()
+    notifications.value = response.data
+  } catch (error) {
+    console.error(error)
+  }
+}
+
+const startNotificationPolling = () => {
+  if (notificationTimer) {
+    window.clearInterval(notificationTimer)
+  }
+
+  notificationTimer = window.setInterval(fetchNotifications, 30000)
+}
+
+onMounted(() => {
+  authStore.fetchMe()
+    .then(() => {
+      fetchNotifications()
+      startNotificationPolling()
+    })
+    .catch(() => {
+      authStore.logout()
+    })
+})
+
+watch(
+  () => authStore.isLoggedIn,
+  (isLoggedIn) => {
+    if (isLoggedIn) {
+      fetchNotifications()
+      startNotificationPolling()
+      return
+    }
+
+    notifications.value = []
+
+    if (notificationTimer) {
+      window.clearInterval(notificationTimer)
+      notificationTimer = null
+    }
+  },
+)
+
+watch(
+  () => route.fullPath,
+  () => {
+    fetchNotifications()
+  },
+)
+
+onBeforeUnmount(() => {
+  if (notificationTimer) {
+    window.clearInterval(notificationTimer)
+  }
+})
+</script>
+
 <template>
   <div class="app-shell">
     <aside class="app-sidebar">
@@ -12,6 +92,30 @@
         </RouterLink>
         <RouterLink to="/recommendation-test" class="nav-link">
           추천 테스트
+        </RouterLink>
+        <RouterLink to="/boards/free" class="nav-link">
+          게시판
+        </RouterLink>
+        <RouterLink v-if="authStore.isLoggedIn" to="/mypage" class="nav-link">
+          마이페이지
+        </RouterLink>
+        <RouterLink v-if="authStore.isLoggedIn" to="/notifications" class="nav-link notification-link">
+          <span>알림</span>
+          <span v-if="unreadNotificationCount" class="notification-badge">
+            {{ unreadNotificationCount }}
+          </span>
+        </RouterLink>
+        <RouterLink v-if="authStore.isLoggedIn" to="/inquiries/new" class="nav-link">
+          문의하기
+        </RouterLink>
+        <RouterLink v-if="authStore.user?.is_staff" to="/admin/reports" class="nav-link">
+          신고 내역
+        </RouterLink>
+        <RouterLink v-if="authStore.user?.is_staff" to="/admin/users" class="nav-link">
+          유저 관리
+        </RouterLink>
+        <RouterLink v-if="authStore.user?.is_staff" to="/admin/inquiries" class="nav-link">
+          문의 관리
         </RouterLink>
       </nav>
     </aside>
@@ -87,6 +191,10 @@ input {
 
 .nav-link {
   padding: 11px 12px;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: center;
   border-radius: 8px;
   color: #344054;
   font-size: 14px;
@@ -101,6 +209,20 @@ input {
 .nav-link.router-link-active {
   background: #2563eb;
   color: #ffffff;
+}
+
+.notification-badge {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 999px;
+  background: #ef4444;
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1;
 }
 
 .app-main {

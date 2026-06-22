@@ -9,10 +9,12 @@ const authStore = useAuthStore()
 const username = ref('')
 const password = ref('')
 const errorMessage = ref('')
+const penaltyInfo = ref(null)
 const isLoading = ref(false)
 
 const handleLogin = async () => {
   errorMessage.value = ''
+  penaltyInfo.value = null
 
   if (!username.value || !password.value) {
     errorMessage.value = '아이디와 비밀번호를 입력해주세요.'
@@ -30,7 +32,12 @@ const handleLogin = async () => {
     router.push('/')
   } catch (error) {
     console.error(error)
-    errorMessage.value = '아이디 또는 비밀번호가 올바르지 않습니다.'
+    if (error.response?.data?.penalty) {
+      errorMessage.value = error.response.data.detail
+      penaltyInfo.value = error.response.data.penalty
+    } else {
+      errorMessage.value = '아이디 또는 비밀번호가 올바르지 않습니다.'
+    }
   } finally {
     isLoading.value = false
   }
@@ -50,6 +57,15 @@ const handleLogin = async () => {
         <p v-if="errorMessage" class="error-message">
           {{ errorMessage }}
         </p>
+
+        <div v-if="penaltyInfo" class="penalty-box">
+          <strong>
+            {{ penaltyInfo.is_permanent_ban ? '현재 계정은 영구밴 상태입니다.' : '현재 계정은 활동정지 상태입니다.' }}
+          </strong>
+          <p v-if="penaltyInfo.reason">사유: {{ penaltyInfo.reason }}</p>
+          <p v-if="penaltyInfo.message">관리자 메시지: {{ penaltyInfo.message }}</p>
+          <p v-if="penaltyInfo.end_at">정지 해제일: {{ new Date(penaltyInfo.end_at).toLocaleString() }}</p>
+        </div>
 
         <button type="submit" :disabled="isLoading">
           {{ isLoading ? '로그인 중...' : '로그인' }}
@@ -132,6 +148,19 @@ const handleLogin = async () => {
   margin: 0 !important;
   color: #ef4444 !important;
   font-size: 14px;
+}
+
+.penalty-box {
+  padding: 12px;
+  border-radius: 12px;
+  background: #fff7ed;
+  color: #9a3412;
+}
+
+.penalty-box p {
+  margin: 6px 0 0;
+  color: #9a3412;
+  font-size: 13px;
 }
 
 .auth-link {
