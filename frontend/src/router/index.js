@@ -17,7 +17,7 @@ const router = createRouter({
       name: 'recommendation-test',
       component: HomeView,
       props: {
-        initialTab: 'recommendation',
+        initialTab: 'map',
       },
     },
   ],

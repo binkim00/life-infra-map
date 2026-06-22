@@ -51,6 +51,26 @@ TAG_ALIASES = {
     "흡연구역": "실외흡연구역",
 }
 
+INDOOR_WEATHER_KEYWORDS = [
+    "비",
+    "비오",
+    "비 오",
+    "눈",
+    "눈오",
+    "눈 오",
+    "더위",
+    "더운",
+    "덥",
+    "폭염",
+    "추위",
+    "추운",
+    "춥",
+    "한파",
+    "실내",
+]
+INDOOR_WAITING_CATEGORIES = ["cafe", "shelter"]
+INDOOR_EXCLUDED_CATEGORIES = ["city_park", "beach"]
+
 SCENARIO_KEYWORDS = {
     "work_cafe": [
         "작업",
@@ -137,19 +157,48 @@ def _extract_tags(query, scenario):
     return list(dict.fromkeys(tag for tag in tags if tag in ALLOWED_TAGS))
 
 
+def _has_indoor_weather_context(query):
+    normalized = (query or "").lower().replace(" ", "")
+    return any(
+        keyword.replace(" ", "").lower() in normalized
+        for keyword in INDOOR_WEATHER_KEYWORDS
+    )
+
+
+def _apply_context_constraints(parse, query):
+    if parse["scenario"] != "waiting_place" or not _has_indoor_weather_context(query):
+        parse["exclude_categories"] = []
+        return parse
+
+    parse["categories"] = [
+        category
+        for category in parse["categories"]
+        if category in INDOOR_WAITING_CATEGORIES
+    ] or list(INDOOR_WAITING_CATEGORIES)
+    parse["exclude_categories"] = list(INDOOR_EXCLUDED_CATEGORIES)
+
+    if "실내쉼터" not in parse["tags"]:
+        parse["tags"].append("실내쉼터")
+
+    parse["reason_hint"] = (
+        f"{parse['reason_hint']} 날씨/실내 맥락이 있어 실외 장소는 제외했습니다."
+    )
+    return parse
+
+
 def _rule_based_parse(query):
     cleaned_query = (query or "").strip()
     scenario = _pick_scenario(cleaned_query)
     config = SCENARIO_CONFIGS[scenario]
     tags = _extract_tags(cleaned_query, scenario)
 
-    return {
+    return _apply_context_constraints({
         "scenario": scenario,
         "categories": list(config["categories"]),
         "tags": tags,
         "situation_summary": cleaned_query or config["keyword"],
         "reason_hint": "입력 문장에서 장소 유형과 태그 조건을 추출했습니다.",
-    }
+    }, cleaned_query)
 
 
 def _build_parser_system_prompt():
@@ -284,13 +333,13 @@ def _normalize_ai_parse(raw_parse, fallback_parse):
     summary = raw.get("situation_summary") or fallback_parse["situation_summary"]
     reason_hint = raw.get("reason_hint") or fallback_parse["reason_hint"]
 
-    return {
+    return _apply_context_constraints({
         "scenario": scenario,
         "categories": categories,
         "tags": tags,
         "situation_summary": str(summary)[:200],
         "reason_hint": str(reason_hint)[:240],
-    }
+    }, fallback_parse["situation_summary"])
 
 
 def _call_ai_parser(query):

@@ -17,7 +17,7 @@
 | `Place` | 구현됨 | 실제 DB에 저장하는 장소 정보 |
 | `Tag` | 구현됨 | 추천/필터에 사용하는 태그 사전 |
 | `PlaceTag` | 구현됨 | Place와 Tag의 연결, 출처, 상태, 신뢰도 관리 |
-| `ExternalPlaceTag` | 아직 없음 | 카페처럼 Place에 저장하지 않는 외부 장소 후보 태그 저장용 예정 모델 |
+| `ExternalPlaceTag` | 아직 없음 | 카페처럼 Place에 저장하지 않는 외부 장소 후보 태그 저장용으로 검토했던 예정 모델. 현재 구현은 우선 `Place.external_id`와 카카오 place id 매칭을 사용 |
 | `Category` | 별도 모델 없음 | 현재는 `Place.category` 문자열 필드로 관리 |
 
 현재 구현은 별도 `Category` 테이블을 두지 않고, `Place.category` 문자열로 카테고리를 관리합니다. 문서나 ERD를 작성할 때도 현재 구현 기준을 우선합니다.
@@ -139,15 +139,19 @@ place + tag + source
 
 ---
 
-## 6. ExternalPlaceTag 예정 모델
+## 6. 외부 카카오 장소 태그 관리 방향
 
-카페처럼 현재 DB의 `Place`에 직접 저장하지 않는 외부 장소 후보 태그를 관리하기 위해 `ExternalPlaceTag` 모델 추가가 필요합니다.
+현재 구현은 별도 `ExternalPlaceTag` 모델 없이, 카카오 place id와 DB `Place.external_id`를 매칭하여 저장 태그/추천 정보를 보강합니다.
 
-### 6.1 필요한 이유
+카카오 검색 결과는 화면 표시용 후보로 사용하고 DB에 즉시 저장하지 않습니다. 같은 카카오 place id를 가진 DB Place가 있으면 `카카오+DB` 결과로 병합합니다.
+
+`ExternalPlaceTag` 모델은 여전히 검토 가능한 개선안이지만, 현재 구현 완료 기능으로 보지 않습니다.
+
+### 6.1 ExternalPlaceTag 검토 배경
 
 카페 태그 seed는 카카오 Local API 검색 결과의 place id와 매칭하기 위한 데이터입니다. 이 카페들을 전부 `Place`로 저장하면 외부 API 저장 정책, 데이터 최신성, 중복 관리 문제가 생길 수 있습니다.
 
-따라서 카페는 다음 구조가 적절합니다.
+초기 설계에서는 카페를 다음 구조로 관리하는 방안을 검토했습니다.
 
 ```text
 카카오 API 검색 결과
@@ -155,6 +159,8 @@ place + tag + source
 → ExternalPlaceTag 후보 태그 조회
 → 추천 응답에 후보 태그와 추천 이유 표시
 ```
+
+현재는 이 구조 대신 `Place.external_id` 기반 병합을 먼저 사용합니다.
 
 ### 6.2 후보 필드
 
@@ -215,15 +221,41 @@ provider + external_id + tag + source
 - 오류 제보 감점
 ```
 
-생활 인프라 데이터는 DB의 `Place`, `PlaceTag`를 기준으로 추천합니다. 카페 후보는 카카오 API 검색 결과와 `ExternalPlaceTag`를 매칭해 후보 태그를 보여주는 방향입니다.
+생활 인프라 데이터는 DB의 `Place`, `PlaceTag`를 기준으로 추천합니다.
+
+현재 지도 검색에서는 카카오 API 검색 결과를 기본 후보로 사용하고, 카카오 place id와 `Place.external_id`가 일치하는 DB 장소가 있으면 저장 태그/추천 정보를 붙입니다.
+
+DB 태그가 없는 카카오 결과는 추천 점수와 추천 이유를 만들지 않고 외부 검색 후보로 표시합니다.
+
+조건 만족 여부를 확인할 수 없는 경우에는 가능하다고 단정하지 않고 “확인되지 않음” 또는 세부 태그 데이터 없음으로 안내해야 합니다.
+
+---
+
+## 8.1 SearchPlan 백엔드화 검토
+
+현재 자연어 검색 SearchPlan은 프론트엔드 helper 중심으로 구현되어 있습니다.
+
+향후 백엔드 API로 이전할 경우 SearchPlan은 다음 구조를 반환하는 방향으로 검토합니다.
+
+```text
+location + target + conditions + fallbackTargets + resultPolicy
+```
+
+백엔드화 시 고려할 점:
+
+- AI는 실제 장소명, 주소, 좌표, 시설 보유 여부를 생성하지 않습니다.
+- 음식/브랜드/장소 카테고리는 target으로 처리합니다.
+- 흡연 가능, 콘센트 있음, 주차 가능 같은 조건은 conditions로 처리합니다.
+- 조건을 만족하는 target이 없으면 fallbackTargets를 별도 그룹으로 표시합니다.
+- 임베딩 기반 의미 매칭은 하드코딩 키워드 매핑을 줄이기 위한 향후 개선입니다.
 
 ---
 
 ## 9. 다음 모델 작업
 
-1. `ExternalPlaceTag` 모델 추가
-2. 마이그레이션 생성 및 적용
-3. `import_places.py` 작성
-4. `import_place_tags.py` 작성
-5. `import_external_place_tags.py` 작성
-6. serializer에서 source별 `display_group` 계산
+1. 통합 지도 검색에서 필요한 DB 장소/태그 샘플 검증
+2. `Place.external_id` 기반 카카오+DB 병합 정확도 확인
+3. `ExternalPlaceTag` 모델이 필요한지 재검토
+4. 필요 시 `ExternalPlaceTag` 모델 추가
+5. 정제 데이터 import 스크립트 작성
+6. SearchPlan 백엔드 API 설계

@@ -29,6 +29,9 @@ class Place(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
+        indexes = [
+            models.Index(fields=["category", "lat", "lng"]),
+        ]
         constraints = [
             models.UniqueConstraint(
                 fields=["source", "external_id"],
