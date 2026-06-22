@@ -11,9 +11,44 @@ const content = ref('')
 const errorMessage = ref('')
 const isSubmitting = ref(false)
 
+const getInquiryErrorMessage = (error) => {
+  const data = error.response?.data
+
+  if (!data) {
+    return '문의 등록에 실패했습니다.'
+  }
+
+  if (data.detail) {
+    return data.detail
+  }
+
+  const firstFieldError = Object.values(data).flat().find(Boolean)
+
+  return firstFieldError || '문의 등록에 실패했습니다.'
+}
+
+const validateInquiry = () => {
+  if (!title.value.trim()) {
+    return '문의 제목을 입력해주세요.'
+  }
+
+  if (content.value.trim().length < 5) {
+    return '문의 내용은 5자 이상 입력해주세요.'
+  }
+
+  return ''
+}
+
 const submitInquiry = async () => {
   if (!authStore.isLoggedIn) {
     router.push('/login')
+    return
+  }
+
+  const validationMessage = validateInquiry()
+
+  if (validationMessage) {
+    errorMessage.value = validationMessage
     return
   }
 
@@ -24,7 +59,7 @@ const submitInquiry = async () => {
     router.push('/mypage')
   } catch (error) {
     console.error(error)
-    errorMessage.value = error.response?.data?.detail || '문의 등록에 실패했습니다.'
+    errorMessage.value = getInquiryErrorMessage(error)
   } finally {
     isSubmitting.value = false
   }

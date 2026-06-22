@@ -9,6 +9,7 @@ import BoardEditView from '@/views/BoardEditView.vue'
 import ReportListView from '@/views/ReportListView.vue'
 import MypageView from '@/views/MypageView.vue'
 import InquiryCreateView from '@/views/InquiryCreateView.vue'
+import MyInquiryView from '@/views/MyInquiryView.vue'
 import AdminInquiryView from '@/views/AdminInquiryView.vue'
 import AdminUserView from '@/views/AdminUserView.vue'
 import AdminUserProfileView from '@/views/AdminUserProfileView.vue'
@@ -56,6 +57,11 @@ const router = createRouter({
       path: '/inquiries/new',
       name: 'inquiry-create',
       component: InquiryCreateView,
+    },
+    {
+      path: '/inquiries/my',
+      name: 'my-inquiries',
+      component: MyInquiryView,
     },
     {
       path: '/boards/:boardType/write',

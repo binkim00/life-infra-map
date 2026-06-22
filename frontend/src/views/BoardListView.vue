@@ -64,10 +64,6 @@ onMounted(() => {
         </div>
 
         <div class="board-actions">
-          <RouterLink to="/" class="sub-button">
-            홈
-          </RouterLink>
-
           <RouterLink to="/boards/free" class="sub-button">
             자유게시판
           </RouterLink>
