@@ -1,4 +1,11 @@
 from recommendations.models import Place
+from recommendations.services.tag_utils import (
+    get_confidence_label,
+    get_fallback_description,
+    get_fallback_label,
+    get_source_label,
+    get_tag_display_names,
+)
 
 
 def build_runtime_tags(place, scenario):
@@ -165,35 +172,39 @@ def build_recommend_reason(place, scenario, runtime_tags, saved_tag_data=None):
     distance = place.get("distance")
 
     if saved_tag_data and saved_tag_data.get("suggested_tags"):
-        tag_text = ", ".join(saved_tag_data["suggested_tags"][:3])
+        tag_text = ", ".join(get_tag_display_names(saved_tag_data["suggested_tags"][:3]))
 
         if scenario == "work_cafe":
             return (
-                f"현재 위치에서 {distance}m 떨어져 있고, "
-                f"수집된 태그 후보에 {tag_text} 정보가 있어 작업 장소 후보로 추천합니다."
+                f"사용자의 요청은 '노트북 작업하기 좋은 장소 추천'으로 해석되었습니다. "
+                f"이 장소는 외부 검색 후보에 {tag_text} 후보 태그가 보강되어 작업 장소 후보로 분류되었습니다. "
+                "후보 태그 기반 정보이므로 방문 전 실제 이용 가능 여부 확인이 필요합니다."
             )
 
         if scenario == "waiting_place":
             return (
-                f"현재 위치에서 {distance}m 떨어져 있고, "
-                f"수집된 태그 후보에 {tag_text} 정보가 있어 잠깐 머물 장소 후보로 추천합니다."
+                f"사용자의 요청은 '잠깐 쉬거나 머물기 좋은 장소 추천'으로 해석되었습니다. "
+                f"이 장소는 외부 검색 후보에 {tag_text} 후보 태그가 보강되어 대기 장소 후보로 분류되었습니다. "
+                "후보 태그 기반 정보이므로 방문 전 실제 이용 가능 여부 확인이 필요합니다."
             )
 
         return (
-            f"현재 위치에서 {distance}m 떨어져 있고, "
-            f"수집된 태그 후보에 {tag_text} 정보가 있어 추천합니다."
+            f"이 장소는 외부 검색 후보에 {tag_text} 후보 태그가 보강된 후보입니다. "
+            "후보 태그 기반 정보이므로 방문 전 실제 이용 가능 여부 확인이 필요합니다."
         )
 
     if scenario == "work_cafe":
         return (
-            f"현재 위치에서 {distance}m 떨어진 작업 장소 후보입니다. "
-            "카테고리와 장소 정보를 기준으로 추천했습니다."
+            "사용자의 요청은 '노트북 작업하기 좋은 장소 추천'으로 해석되었습니다. "
+            "이 장소는 외부 검색 결과의 카테고리와 위치 정보를 기준으로 제공되는 후보입니다. "
+            "세부 태그 정보는 아직 부족해 낮은 신뢰도의 후보로 표시됩니다."
         )
 
     if scenario == "waiting_place":
         return (
-            f"현재 위치에서 {distance}m 떨어져 있어 "
-            "약속 전 잠깐 머물 장소 후보로 추천합니다."
+            "사용자의 요청은 '잠깐 쉬거나 머물기 좋은 장소 추천'으로 해석되었습니다. "
+            "이 장소는 외부 검색 결과의 카테고리와 위치 정보를 기준으로 제공되는 후보입니다. "
+            "세부 태그 정보는 아직 부족해 낮은 신뢰도의 후보로 표시됩니다."
         )
 
     if scenario == "walk_healing":
@@ -212,10 +223,10 @@ def build_kakao_result_metadata(saved_tag_data):
     if verified_tags:
         return {
             "source_type": "kakao_with_db_tags",
-            "confidence": "high",
+            "confidence": "medium",
             "is_verified": True,
             "fallback_level": 4,
-            "caution_message": "",
+            "caution_message": "외부 검색 결과에 DB 태그를 보강한 후보입니다. 방문 전 최신 정보 확인이 필요합니다.",
         }
 
     if suggested_tags:
@@ -238,6 +249,23 @@ def build_kakao_result_metadata(saved_tag_data):
     }
 
 
+def apply_kakao_score_cap(score, metadata):
+    cap = 100
+
+    if not metadata["is_verified"]:
+        cap = min(cap, 75)
+
+    if metadata["fallback_level"] == 4:
+        cap = min(cap, 60)
+    elif metadata["fallback_level"] == 5:
+        cap = min(cap, 50)
+
+    if metadata["source_type"] == "kakao_candidate":
+        cap = min(cap, 50)
+
+    return min(score, cap), cap
+
+
 def map_kakao_place_to_recommendation(place, scenario):
     runtime_tags = build_runtime_tags(place, scenario)
 
@@ -250,6 +278,8 @@ def map_kakao_place_to_recommendation(place, scenario):
         saved_tag_data=saved_tag_data,
     )
     metadata = build_kakao_result_metadata(saved_tag_data)
+    score, score_cap = apply_kakao_score_cap(score, metadata)
+    matched_tags = saved_tag_data["verified_tags"] + saved_tag_data["suggested_tags"]
     reason = build_recommend_reason(
         place,
         scenario,
@@ -274,12 +304,19 @@ def map_kakao_place_to_recommendation(place, scenario):
 
         # 점수/근거
         "score": score,
-        "matched_tags": saved_tag_data["verified_tags"] + saved_tag_data["suggested_tags"],
+        "matched_tags": matched_tags,
         "missing_tags": [],
+        "matched_tag_labels": get_tag_display_names(matched_tags),
+        "missing_tag_labels": [],
         "source_type": metadata["source_type"],
         "confidence": metadata["confidence"],
         "is_verified": metadata["is_verified"],
         "fallback_level": metadata["fallback_level"],
+        "source_label": get_source_label(metadata["source_type"]),
+        "confidence_label": get_confidence_label(metadata["confidence"]),
+        "fallback_label": get_fallback_label(metadata["fallback_level"]),
+        "fallback_description": get_fallback_description(metadata["fallback_level"]),
+        "score_cap": score_cap,
         "recommendation_reason": reason,
         "recommend_reason": reason,
         "caution_message": metadata["caution_message"],

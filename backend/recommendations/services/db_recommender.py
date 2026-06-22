@@ -6,6 +6,15 @@ from recommendations.services.recommendation_condition import (
     get_default_radius,
 )
 from recommendations.services.smoking_area_data import calculate_distance_m
+from recommendations.services.tag_utils import (
+    get_category_display_name,
+    get_confidence_label,
+    get_fallback_description,
+    get_fallback_label,
+    get_source_label,
+    get_tag_display_name,
+    get_tag_display_names,
+)
 
 
 DEFAULT_CAUTION = "태그 정보는 후보 정보일 수 있으며 실제 이용 가능 여부는 확인이 필요합니다."
@@ -351,17 +360,38 @@ def get_match_level(matched_tags, category_matches):
     return "low_match"
 
 
-def get_recommendation_confidence(score, match_level, matched_tags):
-    if match_level == "tag_matched" and len(matched_tags) >= 2 and score >= 80:
+def get_recommendation_confidence(score, metadata):
+    if metadata["required_missing_tags"]:
+        return "low"
+
+    if (
+        metadata["is_verified"]
+        and metadata["fallback_level"] == 1
+        and not metadata["required_missing_tags"]
+        and len(metadata["missing_tags"]) <= 1
+        and score >= 75
+    ):
         return "high"
 
-    if match_level in {"tag_matched", "category_distance_fallback"} and score >= 60:
+    if metadata["fallback_level"] <= 3 and score >= 55:
         return "medium"
 
     return "low"
 
 
-def build_result_metadata(tag_data, matched_tags, missing_tags, match_level, score_breakdown):
+def build_result_metadata(
+    tag_data,
+    matched_tags,
+    missing_tags,
+    match_level,
+    score_breakdown,
+    required_tags=None,
+):
+    required_tags = required_tags or []
+    required_missing_tags = [
+        tag for tag in required_tags
+        if tag in missing_tags
+    ]
     verified_matches = [
         tag for tag in matched_tags
         if tag in tag_data["verified_tags"]
@@ -376,22 +406,48 @@ def build_result_metadata(tag_data, matched_tags, missing_tags, match_level, sco
         or tag_data["warning_tags"]
     )
 
-    if verified_matches:
+    if verified_matches and not required_missing_tags and len(missing_tags) <= 1:
         return {
             "source_type": "db_verified",
             "confidence": "high",
             "is_verified": True,
             "fallback_level": 1,
+            "missing_tags": missing_tags,
+            "required_missing_tags": required_missing_tags,
             "caution_message": "",
         }
 
+    if verified_matches:
+        caution = "검증 태그 일부는 일치하지만 요청의 핵심 조건 일부는 아직 확인되지 않았습니다."
+        return {
+            "source_type": "db_verified",
+            "confidence": "medium",
+            "is_verified": True,
+            "fallback_level": 2,
+            "missing_tags": missing_tags,
+            "required_missing_tags": required_missing_tags,
+            "caution_message": caution,
+        }
+
     if candidate_matches or matched_tags:
+        if required_missing_tags:
+            caution = "요청의 핵심 조건 일부가 확인되지 않아 낮은 신뢰도의 후보로 표시됩니다."
+        elif missing_tags and len(missing_tags) > len(matched_tags):
+            caution = (
+                "일부 태그는 후보 정보이고 확인되지 않은 조건이 더 많아 "
+                "방문 전 실제 이용 가능 여부 확인이 필요합니다."
+            )
+        else:
+            caution = "일부 태그는 후보 정보이므로 실제 이용 가능 여부는 방문 전 확인이 필요합니다."
+
         return {
             "source_type": "db_candidate",
-            "confidence": "medium",
+            "confidence": "medium" if not required_missing_tags else "low",
             "is_verified": False,
             "fallback_level": 2,
-            "caution_message": DEFAULT_CAUTION,
+            "missing_tags": missing_tags,
+            "required_missing_tags": required_missing_tags,
+            "caution_message": caution,
         }
 
     if match_level == "category_distance_fallback":
@@ -406,13 +462,16 @@ def build_result_metadata(tag_data, matched_tags, missing_tags, match_level, sco
             fallback_level = 5
 
         if missing_tags:
-            caution = f"{caution} 확인되지 않은 조건: {', '.join(missing_tags[:3])}."
+            missing_labels = get_tag_display_names(missing_tags[:3])
+            caution = f"{caution} 확인되지 않은 조건: {', '.join(missing_labels)}."
 
         return {
             "source_type": "db_category_fallback",
             "confidence": "low",
             "is_verified": False,
             "fallback_level": fallback_level,
+            "missing_tags": missing_tags,
+            "required_missing_tags": required_missing_tags,
             "caution_message": caution,
         }
 
@@ -421,39 +480,128 @@ def build_result_metadata(tag_data, matched_tags, missing_tags, match_level, sco
         "confidence": "low",
         "is_verified": False,
         "fallback_level": 5,
+        "missing_tags": missing_tags,
+        "required_missing_tags": required_missing_tags,
         "caution_message": "입력 조건과의 일치 근거가 부족하여 확인이 필요한 후보입니다.",
     }
 
 
-def build_db_recommend_reason(place, scenario, distance, matched_tags, match_level, score_breakdown=None):
-    parts = []
+def apply_score_cap(score, metadata, matched_tags, missing_tags, score_breakdown):
+    cap = 100
+    cap_reasons = []
+
+    if not metadata["is_verified"]:
+        cap = min(cap, 75)
+        cap_reasons.append("unverified")
+
+    if metadata["source_type"] == "db_candidate":
+        cap = min(cap, 75)
+        cap_reasons.append("candidate_tags")
+    elif metadata["source_type"] == "db_category_fallback":
+        cap = min(cap, 60)
+        cap_reasons.append("category_fallback")
+
+    fallback_caps = {
+        3: 65,
+        4: 60,
+        5: 50,
+    }
+    fallback_level = metadata.get("fallback_level")
+    if fallback_level in fallback_caps:
+        cap = min(cap, fallback_caps[fallback_level])
+        cap_reasons.append(f"fallback_level_{fallback_level}")
+
+    if metadata["required_missing_tags"]:
+        cap = min(cap, 60)
+        cap_reasons.append("required_tags_missing")
+
+    category_only = (
+        score_breakdown.get("category", 0) > 0
+        and not matched_tags
+    )
+    if category_only:
+        cap = min(cap, 50)
+        cap_reasons.append("category_only")
+
+    if missing_tags and len(missing_tags) > len(matched_tags):
+        cap = min(cap, 65)
+        cap_reasons.append("more_missing_than_matched")
+
+    capped_score = min(score, cap)
+    return capped_score, cap, cap_reasons
+
+
+def build_result_labels(metadata):
+    fallback_level = metadata.get("fallback_level")
+    return {
+        "source_label": get_source_label(metadata.get("source_type")),
+        "confidence_label": get_confidence_label(metadata.get("confidence")),
+        "fallback_label": get_fallback_label(fallback_level),
+        "fallback_description": get_fallback_description(fallback_level),
+    }
+
+
+def build_db_recommend_reason(
+    place,
+    scenario,
+    distance,
+    matched_tags,
+    match_level,
+    score_breakdown=None,
+    condition=None,
+    metadata=None,
+):
+    condition = condition or build_recommendation_condition(scenario=scenario)
+    metadata = metadata or {}
+    intent = condition.get("intent") or condition.get("keyword") or "입력한 상황"
+    confidence_text = {
+        "high": "높은 편",
+        "medium": "중간 수준",
+        "low": "낮은 수준",
+    }.get(metadata.get("confidence"), "확인 필요")
+    missing_tags = metadata.get("missing_tags", [])
+    required_missing_tags = metadata.get("required_missing_tags", [])
+    matched_tag_labels = get_tag_display_names(matched_tags)
+    missing_tag_labels = get_tag_display_names(missing_tags)
+    required_missing_tag_labels = get_tag_display_names(required_missing_tags)
+    category_label = get_category_display_name(place.category)
+    source_label = get_source_label(metadata.get("source_type"))
+
+    parts = [f"사용자의 요청은 '{intent}'로 해석되었습니다."]
+
+    if matched_tag_labels:
+        parts.append(
+            f"이 장소는 {', '.join(matched_tag_labels[:3])} 태그가 조건과 일부 일치해 {source_label} 후보로 분류되었습니다."
+        )
+    elif match_level == "category_distance_fallback":
+        parts.append(
+            f"이 장소는 {category_label} 카테고리와 위치 조건에는 부합하지만, "
+            "세부 태그 정보가 부족해 요청한 조건과 직접 일치하는 근거는 아직 부족합니다."
+        )
+    elif place.category:
+        parts.append(f"이 장소는 {category_label} 카테고리가 입력 조건과 일부 관련됩니다.")
 
     if distance is not None:
         parts.append(f"현재 위치에서 약 {distance}m 떨어져 있습니다.")
 
-    if matched_tags:
-        parts.append(f"{', '.join(matched_tags[:3])} 태그가 상황 조건과 일치합니다.")
-    elif match_level == "category_distance_fallback":
+    if required_missing_tag_labels:
         parts.append(
-            "세부 태그 정보가 부족해 카테고리와 현재 위치에서의 거리를 기준으로 추천했습니다."
+            f"다만 핵심 조건인 {', '.join(required_missing_tag_labels[:3])} 정보는 확인되지 않았습니다."
         )
-    elif place.category:
-        parts.append(f"{place.category} 카테고리가 입력 조건과 일부 관련됩니다.")
+    elif missing_tag_labels:
+        parts.append(
+            f"다만 {', '.join(missing_tag_labels[:3])} 조건은 아직 확인되지 않았습니다."
+        )
 
-    if scenario == "work_cafe":
-        parts.append("조용히 머물거나 작업하기 좋은 후보입니다.")
-    elif scenario == "waiting_place":
-        if (score_breakdown or {}).get("waiting_place_penalty_reason"):
-            parts.append("일반적인 잠깐 휴식 목적과는 맞지 않을 수 있어 후순위로 반영했습니다.")
-        else:
-            parts.append("잠깐 쉬거나 대기하기 좋은 후보입니다.")
-    elif scenario == "walk_healing":    
-        parts.append("산책이나 휴식 목적에 맞는 후보입니다.")
-    elif scenario == "smoking_area":
-        parts.append("가까운 흡연 가능 장소 후보입니다.")
-    else:
-        parts.append("입력한 상황 조건에 맞는 DB 기반 후보입니다.")
+    if metadata.get("source_type") == "db_category_fallback":
+        parts.append("따라서 검증 추천이 아니라 카테고리 기반 fallback 후보로 제공됩니다.")
+    elif not metadata.get("is_verified"):
+        parts.append("일부 근거가 후보 태그 기반이므로 방문 전 확인이 필요합니다.")
 
+    if (score_breakdown or {}).get("waiting_place_penalty_reason"):
+        parts.append("또한 일반적인 잠깐 휴식 목적과는 맞지 않을 수 있어 후순위로 반영했습니다.")
+
+    parts.append(f"추천 신뢰도는 {confidence_text}으로 표시됩니다.")
     return " ".join(parts)
 
 
@@ -486,7 +634,6 @@ def serialize_recommendation(
 
     category_matches = place.category in set(condition.get("categories") or [place.category])
     match_level = get_match_level(matched_tags, category_matches)
-    legacy_confidence = get_recommendation_confidence(score, match_level, matched_tags)
     missing_tags = _missing_tags(
         tag_data,
         required_tags=required_tags,
@@ -498,7 +645,22 @@ def serialize_recommendation(
         missing_tags=missing_tags,
         match_level=match_level,
         score_breakdown=score_breakdown,
+        required_tags=required_tags,
     )
+    score, score_cap, score_cap_reasons = apply_score_cap(
+        score,
+        metadata,
+        matched_tags,
+        missing_tags,
+        score_breakdown,
+    )
+    metadata["confidence"] = get_recommendation_confidence(score, metadata)
+    labels = build_result_labels(metadata)
+    score_breakdown = {
+        **score_breakdown,
+        "score_cap": score_cap,
+        "score_cap_reasons": score_cap_reasons,
+    }
 
     reason = build_db_recommend_reason(
         place,
@@ -507,6 +669,8 @@ def serialize_recommendation(
         matched_tags,
         match_level,
         score_breakdown,
+        condition=condition,
+        metadata=metadata,
     )
 
     return {
@@ -523,21 +687,36 @@ def serialize_recommendation(
         "runtime_tags": matched_tags,
         "matched_tags": matched_tags,
         "missing_tags": missing_tags,
+        "matched_tag_labels": get_tag_display_names(matched_tags),
+        "missing_tag_labels": get_tag_display_names(missing_tags),
         "match_level": match_level,
-        "recommendation_confidence": legacy_confidence,
+        "recommendation_confidence": metadata["confidence"],
         "source_type": metadata["source_type"],
         "confidence": metadata["confidence"],
         "is_verified": metadata["is_verified"],
         "fallback_level": metadata["fallback_level"],
+        "source_label": labels["source_label"],
+        "confidence_label": labels["confidence_label"],
+        "fallback_label": labels["fallback_label"],
+        "fallback_description": labels["fallback_description"],
         "suggested_tags": tag_data["suggested_tags"],
         "verified_tags": tag_data["verified_tags"],
         "warning_tags": tag_data["warning_tags"],
-        "tag_details": tag_data["tag_details"],
+        "suggested_tag_labels": get_tag_display_names(tag_data["suggested_tags"]),
+        "verified_tag_labels": get_tag_display_names(tag_data["verified_tags"]),
+        "warning_tag_labels": get_tag_display_names(tag_data["warning_tags"]),
+        "tag_details": [
+            {
+                **detail,
+                "display_name": get_tag_display_name(detail["name"]),
+            }
+            for detail in tag_data["tag_details"]
+        ],
         "recommendation_reason": reason,
         "recommend_reason": reason,
         "reason": reason,
         "caution_message": metadata["caution_message"],
-        "caution": metadata["caution_message"] or DEFAULT_CAUTION,
+        "caution": metadata["caution_message"],
         "source": place.source,
         "external_id": place.external_id,
         "source_name": place.source_name,
@@ -644,6 +823,34 @@ def search_db_recommendations(
         if score_breakdown.get("excluded_by_waiting_place"):
             continue
 
+        missing_tags = _missing_tags(
+            tag_data,
+            required_tags=context["required_tags"],
+            preferred_tags=context["preferred_tags"],
+        )
+        category_matches = place.category in set(context["categories"])
+        match_level = get_match_level(matched_tags, category_matches)
+        metadata = build_result_metadata(
+            tag_data=tag_data,
+            matched_tags=matched_tags,
+            missing_tags=missing_tags,
+            match_level=match_level,
+            score_breakdown=score_breakdown,
+            required_tags=context["required_tags"],
+        )
+        score, score_cap, score_cap_reasons = apply_score_cap(
+            score,
+            metadata,
+            matched_tags,
+            missing_tags,
+            score_breakdown,
+        )
+        score_breakdown = {
+            **score_breakdown,
+            "score_cap": score_cap,
+            "score_cap_reasons": score_cap_reasons,
+        }
+
         candidates.append((
             score,
             distance if distance is not None else 999999999,
@@ -681,6 +888,9 @@ def search_db_recommendations(
             "preferred_tags": context["preferred_tags"],
             "avoid_tags": context["avoid_tags"],
             "tags": context["tags"],
+            "required_tag_labels": get_tag_display_names(context["required_tags"]),
+            "preferred_tag_labels": get_tag_display_names(context["preferred_tags"]),
+            "avoid_tag_labels": get_tag_display_names(context["avoid_tags"]),
             "keywords": context["keywords"],
             "fallback_enabled": context["fallback_enabled"],
             "lat": lat,
