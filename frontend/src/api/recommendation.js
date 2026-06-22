@@ -20,6 +20,24 @@ export const aiSearchRecommendations = async ({
   return response.data
 }
 
+export const runAiWebSearch = async ({
+  query,
+  lat = null,
+  lng = null,
+  condition = {},
+  existingResultsSummary = {},
+}) => {
+  const response = await axios.post(`${API_BASE_URL}/recommendations/ai-web-search/`, {
+    query,
+    lat,
+    lng,
+    condition,
+    existing_results_summary: existingResultsSummary,
+  })
+
+  return response.data
+}
+
 export const getSavedPlaces = async ({
   q = '',
   category = '',

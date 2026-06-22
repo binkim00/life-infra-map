@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 import time
 from copy import deepcopy
 from hashlib import sha256
@@ -12,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 AI_WEB_SEARCH_MIN_DB_RESULTS = 3
 AI_WEB_SEARCH_MIN_TOTAL_RESULTS = 5
-AI_WEB_SEARCH_MAX_SOURCES_PER_CANDIDATE = 3
+AI_WEB_SEARCH_MAX_SOURCES_PER_CANDIDATE = 1
 AI_WEB_SEARCH_CACHE_TTL_SECONDS = 600
 AI_WEB_SEARCH_CACHE_MAX_SIZE = 100
 _AI_WEB_SEARCH_CACHE = {}
@@ -56,10 +57,10 @@ AI_SEARCH_CANDIDATE_METADATA = {
 
 def _get_max_candidates():
     try:
-        value = int(getattr(settings, "AI_WEB_SEARCH_MAX_CANDIDATES", 2))
+        value = int(getattr(settings, "AI_WEB_SEARCH_MAX_CANDIDATES", 1))
     except (TypeError, ValueError):
-        value = 2
-    return min(max(value, 1), 5)
+        value = 1
+    return min(max(value, 1), 1)
 
 
 def _get_max_output_tokens():
@@ -67,7 +68,7 @@ def _get_max_output_tokens():
         value = int(getattr(settings, "AI_WEB_SEARCH_MAX_OUTPUT_TOKENS", 800))
     except (TypeError, ValueError):
         value = 800
-    return min(max(value, 200), 2200)
+    return min(max(value, 200), 800)
 
 
 def _get_gms_responses_url():
@@ -110,6 +111,96 @@ def _base_response(enabled=None, executed=False, candidates=None, error="", reas
         "error": error,
         "reason": reason,
     }
+
+
+def _sanitize_error_message(message, max_length=300):
+    text = _safe_text(message, max_length=2000)
+    if not text:
+        return ""
+
+    api_key = _safe_text(getattr(settings, "GMS_API_KEY", ""), 500)
+    if api_key:
+        text = text.replace(api_key, "[redacted]")
+
+    text = re.sub(r"(?i)authorization\s*:\s*bearer\s+[^\s,]+", "authorization: bearer [redacted]", text)
+    text = re.sub(r"(?i)bearer\s+[a-z0-9._\-]+", "bearer [redacted]", text)
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = " ".join(text.split())
+    return text[:max_length]
+
+
+def _error_type_from_status(status_code):
+    if status_code == 400:
+        return "bad_request"
+    if status_code == 401:
+        return "unauthorized"
+    if status_code == 403:
+        return "forbidden"
+    if status_code == 404:
+        return "not_found"
+    if status_code == 429:
+        return "rate_limited"
+    if status_code and status_code >= 500:
+        return "server_error"
+    if status_code:
+        return "http_error"
+    return "network_error"
+
+
+def _extract_response_error_message(response):
+    if response is None:
+        return ""
+
+    try:
+        data = response.json()
+    except ValueError:
+        return _sanitize_error_message(getattr(response, "text", ""))
+
+    if isinstance(data, dict):
+        error = data.get("error")
+        if isinstance(error, dict):
+            return _sanitize_error_message(
+                error.get("message")
+                or error.get("code")
+                or error.get("type")
+                or json.dumps(error, ensure_ascii=False)
+            )
+        if isinstance(error, str):
+            return _sanitize_error_message(error)
+        return _sanitize_error_message(
+            data.get("message")
+            or data.get("detail")
+            or data.get("code")
+            or json.dumps(data, ensure_ascii=False)
+        )
+
+    return _sanitize_error_message(data)
+
+
+def _build_request_error_detail(error):
+    response = getattr(error, "response", None)
+    status_code = getattr(response, "status_code", None)
+    error_type = _error_type_from_status(status_code)
+
+    if isinstance(error, requests.Timeout):
+        error_type = "timeout"
+
+    message = _extract_response_error_message(response) or _sanitize_error_message(str(error))
+    detail = {
+        "type": error_type,
+        "message": message,
+    }
+    if status_code:
+        detail["status_code"] = status_code
+    return detail
+
+
+def get_ai_web_search_status(reason="manual_required"):
+    return _base_response(
+        enabled=bool(getattr(settings, "AI_WEB_SEARCH_AVAILABLE", False)),
+        executed=False,
+        reason=reason,
+    )
 
 
 def _safe_text(value, max_length=240):
@@ -203,59 +294,30 @@ def summarize_existing_results(results, kakao_fallback_count=0):
 
 def _build_system_prompt():
     return (
-        "You are a Korean local-place recommendation evidence structurer. "
-        "Use only actual web-search or grounding results available to the model. "
-        "Do not invent places, coordinates, addresses, menus, business hours, quietness, "
-        "solo-dining suitability, or operation status. Treat all candidates as low confidence. "
-        "Return source titles and URLs, but do not store or return long original text, reviews, "
-        "or article bodies. Return JSON only."
+        "Use web_search to find only one real local place related to the user request. "
+        "Return JSON only. If there is no source URL, return {\"candidates\":[]}. "
+        "Do not invent coordinates, business hours, menu availability, quietness, or atmosphere. "
+        "Keep evidence_summary one short sentence."
     )
 
 
 def _build_user_prompt(query, lat, lng, condition, existing_results_summary):
     prompt_data = {
-        "user_query": _safe_text(query, 500),
-        "reference_location": {
-            "lat": lat,
-            "lng": lng,
-        },
-        "condition": {
-            "scenario": _safe_text((condition or {}).get("scenario"), 80),
-            "intent": _safe_text((condition or {}).get("intent"), 180),
-            "categories": _safe_list((condition or {}).get("categories")),
-            "required_tags": _safe_list((condition or {}).get("required_tags")),
-            "preferred_tags": _safe_list((condition or {}).get("preferred_tags")),
-            "keywords": _safe_list((condition or {}).get("keywords")),
-        },
-        "existing_results_summary": existing_results_summary or {},
-        "rules": [
-            "실제 웹 검색 또는 grounding 결과에서 확인 가능한 장소 후보만 제안하세요.",
-            "좌표를 임의 생성하지 마세요.",
-            "운영 여부, 메뉴 제공 여부, 조용함, 혼밥 가능 여부를 확정하지 마세요.",
-            "후보는 낮은 신뢰도 정보로 취급하세요.",
-            "출처 제목과 URL을 함께 반환하세요.",
-            "긴 원문, 리뷰 전문, 블로그 본문은 반환하지 마세요.",
-            "JSON만 반환하세요.",
-        ],
-        "response_schema": {
+        "query": _safe_text(query, 220),
+        "location_hint": {"lat": lat, "lng": lng},
+        "categories": _safe_list((condition or {}).get("categories"), max_items=3),
+        "keywords": _safe_list((condition or {}).get("keywords"), max_items=5),
+        "instruction": "Use at most 1-2 search queries. Return one candidate max. source_url is required.",
+        "json_shape": {
             "candidates": [
                 {
-                    "name": "장소명",
-                    "address_hint": "주소 또는 지역 힌트",
-                    "category_hint": "카페 / 식당 / 공원 등",
-                    "matched_conditions": ["브런치", "카페"],
-                    "evidence_summary": "웹 검색 결과에서 사용자의 조건과 관련된 후보로 확인되었습니다.",
-                    "evidence_sources": [
-                        {
-                            "title": "출처 제목",
-                            "url": "출처 URL",
-                        }
-                    ],
-                    "confidence": "low",
+                    "name": "",
+                    "category_hint": "",
+                    "address_hint": "",
+                    "evidence_summary": "",
+                    "source_url": "",
                 }
             ],
-            "search_queries": [],
-            "summary": "",
         },
     }
     return json.dumps(prompt_data, ensure_ascii=False)
@@ -359,6 +421,34 @@ def _normalize_sources(sources):
     return normalized[:AI_WEB_SEARCH_MAX_SOURCES_PER_CANDIDATE]
 
 
+def _normalize_source_url(source_url):
+    url = _safe_text(source_url, 500)
+    if not url.startswith(("http://", "https://")):
+        return []
+
+    return [{
+        "title": "web search source",
+        "url": url,
+    }]
+
+
+def _one_sentence_text(value, max_length=180):
+    text = " ".join(_safe_text(value, max_length=max_length).split())
+    if not text:
+        return ""
+
+    indexes = []
+    for ending in (".", "!", "?"):
+        index = text.find(ending)
+        if index != -1:
+            indexes.append(index)
+
+    if indexes:
+        return text[:min(indexes) + 1].strip()
+
+    return text
+
+
 def _normalize_candidates(raw_candidates):
     if not isinstance(raw_candidates, (list, tuple)):
         return []
@@ -372,12 +462,12 @@ def _normalize_candidates(raw_candidates):
         if not name:
             continue
 
-        evidence_sources = _normalize_sources(raw_candidate.get("evidence_sources"))
+        evidence_sources = _normalize_source_url(raw_candidate.get("source_url"))
         if not evidence_sources:
             continue
 
         evidence_summary = (
-            _safe_text(raw_candidate.get("evidence_summary"), 300)
+            _one_sentence_text(raw_candidate.get("evidence_summary"), 180)
             or "웹 검색 결과에서 사용자의 조건과 관련된 후보로 확인되었습니다."
         )
         recommendation_reason = (
@@ -388,11 +478,7 @@ def _normalize_candidates(raw_candidates):
             "name": name,
             "address_hint": _safe_text(raw_candidate.get("address_hint"), 160),
             "category_hint": _safe_text(raw_candidate.get("category_hint"), 80),
-            "matched_conditions": _safe_list(
-                raw_candidate.get("matched_conditions"),
-                max_items=6,
-                max_length=80,
-            ),
+            "matched_conditions": [],
             "evidence_summary": evidence_summary,
             "evidence_sources": evidence_sources,
             "ai_evidence_summary": evidence_summary,
@@ -408,7 +494,7 @@ def _normalize_candidates(raw_candidates):
     return candidates[:_get_max_candidates()]
 
 
-def _build_cache_key(query, lat, lng, condition, existing_results_summary):
+def _build_cache_key(query, lat, lng, condition, existing_results_summary, manual=False):
     cache_payload = {
         "query": _safe_text(query, 500),
         "lat": _safe_text(lat, 32),
@@ -416,6 +502,7 @@ def _build_cache_key(query, lat, lng, condition, existing_results_summary):
         "condition": condition or {},
         "existing_results_summary": existing_results_summary or {},
         "model": getattr(settings, "AI_WEB_SEARCH_MODEL", "gpt-5-nano"),
+        "manual": bool(manual),
         "max_output_tokens": _get_max_output_tokens(),
         "max_candidates": _get_max_candidates(),
     }
@@ -457,6 +544,7 @@ def get_ai_web_search_result(
     lng=None,
     condition=None,
     existing_results_summary=None,
+    manual=False,
 ):
     provider = getattr(settings, "AI_WEB_SEARCH_PROVIDER", "gms")
 
@@ -487,14 +575,21 @@ def get_ai_web_search_result(
             reason="gms_grounding_not_confirmed",
         )
 
+    if not _safe_text(query):
+        return _base_response(
+            enabled=True,
+            error="missing_query",
+            reason="missing_query",
+        )
+
     summary = existing_results_summary or {}
-    if not should_execute_ai_web_search(query, condition, summary):
+    if not manual and not should_execute_ai_web_search(query, condition, summary):
         return _base_response(
             enabled=True,
             reason="enough_existing_results",
         )
 
-    cache_key = _build_cache_key(query, lat, lng, condition or {}, summary)
+    cache_key = _build_cache_key(query, lat, lng, condition or {}, summary, manual=manual)
     cached_response = _get_cached_response(cache_key)
     if cached_response is not None:
         _log_safe_result(
@@ -559,7 +654,7 @@ def get_ai_web_search_result(
             )
             return result
         parsed = _parse_gms_response(data)
-    except requests.RequestException:
+    except requests.RequestException as exc:
         logger.exception("AI web search provider request failed")
         result = _base_response(
             enabled=True,
@@ -567,6 +662,7 @@ def get_ai_web_search_result(
             error="api_error",
             reason="request_failed",
         )
+        result["error_detail"] = _build_request_error_detail(exc)
         _set_cached_response(cache_key, result)
         _log_safe_result(
             executed=False,
@@ -599,8 +695,8 @@ def get_ai_web_search_result(
     result = {
         **_base_response(enabled=True, executed=True),
         "candidates": candidates,
-        "search_queries": _safe_list(parsed.get("search_queries"), max_items=8),
-        "summary": _safe_text(parsed.get("summary"), 300),
+        "search_queries": _safe_list(parsed.get("search_queries"), max_items=2),
+        "summary": _safe_text(parsed.get("summary"), 160),
         "error": "" if candidates else "empty_candidates",
         "reason": "completed" if candidates else "no_valid_candidates",
     }

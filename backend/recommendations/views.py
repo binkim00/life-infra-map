@@ -11,7 +11,7 @@ from .services.place_mapper import (
 from .services.ai_situation_parser import parse_situation
 from .services.ai_web_search_provider import (
     get_ai_web_search_result,
-    summarize_existing_results,
+    get_ai_web_search_status,
 )
 from .services.db_recommender import search_db_recommendations
 from .services.place_urls import get_kakao_place_url
@@ -331,15 +331,32 @@ def ai_recommendation_search(request):
         radius=radius,
     )
     data["ai_parse"] = parsed
-    data["ai_web_search"] = get_ai_web_search_result(
+    data["ai_web_search"] = get_ai_web_search_status()
+
+    return Response(data)
+
+
+@api_view(["POST"])
+def ai_web_search(request):
+    query = request.data.get("query", "")
+    lat = request.data.get("lat")
+    lng = request.data.get("lng")
+    condition = request.data.get("condition") or {}
+    existing_results_summary = request.data.get("existing_results_summary") or {}
+
+    data = get_ai_web_search_result(
         query=query,
         lat=lat,
         lng=lng,
-        condition=data.get("condition") or data.get("recommendation_condition") or parsed,
-        existing_results_summary=summarize_existing_results(data.get("results", [])),
+        condition=condition,
+        existing_results_summary=existing_results_summary,
+        manual=True,
     )
 
-    return Response(data)
+    return Response({
+        "ai_web_search": data,
+    })
+
 
 @api_view(["GET"])
 def kakao_search_test(request):

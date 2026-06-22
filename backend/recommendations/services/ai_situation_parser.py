@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 
 import requests
 from django.conf import settings
@@ -75,6 +76,58 @@ INDOOR_WEATHER_KEYWORDS = [
 ]
 INDOOR_WAITING_CATEGORIES = ["cafe", "shelter"]
 INDOOR_EXCLUDED_CATEGORIES = ["city_park", "beach"]
+
+FOOD_INTENT_KEYWORDS = [
+    "맛집",
+    "먹고",
+    "먹고싶",
+    "먹을",
+    "식사",
+    "밥",
+    "혼밥",
+    "식당",
+    "밥집",
+    "음식점",
+    "레스토랑",
+    "디저트",
+    "브런치",
+    "빵",
+    "빵집",
+    "베이커리",
+    "소금빵",
+    "파스타",
+    "쌀국수",
+    "돈까스",
+    "돈가스",
+]
+BAKERY_MENU_KEYWORDS = ["빵", "소금빵", "디저트", "베이커리", "빵집"]
+CAFE_MENU_KEYWORDS = ["카페", "커피", "디저트", "브런치", "소금빵", "빵"]
+RESTAURANT_MENU_KEYWORDS = ["밥", "식사", "혼밥", "파스타", "쌀국수", "돈까스", "돈가스"]
+KNOWN_MENU_KEYWORDS = [
+    "소금빵",
+    "디저트",
+    "브런치",
+    "커피",
+    "파스타",
+    "쌀국수",
+    "돈까스",
+    "돈가스",
+    "밥",
+    "식사",
+    "빵",
+]
+MENU_PATTERN_SUFFIXES = [
+    "맛집",
+    "먹고 싶",
+    "먹고싶",
+    "파는 곳",
+    "파는곳",
+    "먹을 수 있는 곳",
+    "먹을수있는곳",
+    "카페",
+    "빵집",
+    "디저트",
+]
 
 SCENARIO_KEYWORDS = {
     "work_cafe": [
@@ -158,6 +211,9 @@ EXTRA_TAG_KEYWORDS = {
 
 
 def _pick_scenario(query):
+    if _has_food_intent(query):
+        return "restaurant"
+
     normalized = query.lower()
     scores = {}
 
@@ -168,6 +224,124 @@ def _pick_scenario(query):
 
     best_scenario, best_score = max(scores.items(), key=lambda item: item[1])
     return best_scenario if best_score > 0 else "waiting_place"
+
+
+def _compact_text(value):
+    return (value or "").lower().replace(" ", "")
+
+
+def _has_food_intent(query):
+    compact = _compact_text(query)
+    return any(keyword.replace(" ", "") in compact for keyword in FOOD_INTENT_KEYWORDS)
+
+
+def _clean_menu_keyword(value):
+    text = (value or "").strip()
+    text = re.sub(r"^(근처에|근처|주변에|주변|가까운|가까이|여기서|지금)\s*", "", text)
+    text = re.sub(r"(추천|찾아줘|찾아|좋은|괜찮은|먹고\s*싶어|먹고싶어)$", "", text)
+    text = re.sub(r"\s+", " ", text).strip(" ,.?!")
+    return text[:40]
+
+
+def _extract_menu_keywords(query):
+    text = (query or "").strip()
+    menu_keywords = []
+
+    for suffix in MENU_PATTERN_SUFFIXES:
+        pattern = rf"(.+?)\s*{re.escape(suffix)}"
+        match = re.search(pattern, text)
+        if match:
+            menu = _clean_menu_keyword(match.group(1))
+            if menu:
+                menu_keywords.append(menu)
+
+    compact = _compact_text(text)
+    for keyword in KNOWN_MENU_KEYWORDS:
+        if keyword.replace(" ", "") in compact:
+            menu_keywords.append(keyword)
+
+    return list(dict.fromkeys(menu_keywords))[:3]
+
+
+def _get_food_place_type_keywords(menu_keywords, query):
+    compact = _compact_text(" ".join([query or "", *menu_keywords]))
+
+    if any(keyword in compact for keyword in BAKERY_MENU_KEYWORDS):
+        return ["베이커리", "빵집", "카페"]
+
+    if any(keyword in compact for keyword in CAFE_MENU_KEYWORDS):
+        return ["카페"]
+
+    return ["식당", "음식점"]
+
+
+def _build_food_keywords(query, menu_keywords, place_type_keywords, purpose_keywords):
+    keywords = []
+    has_matjip = "맛집" in (query or "")
+
+    for menu in menu_keywords:
+        if has_matjip:
+            keywords.append(f"{menu} 맛집")
+        keywords.append(menu)
+
+        if any(place_type in {"베이커리", "빵집", "카페"} for place_type in place_type_keywords):
+            keywords.append(f"{menu} 카페")
+        else:
+            keywords.append(f"{menu} 식당")
+
+    if not menu_keywords and any(keyword in _compact_text(query) for keyword in ["혼밥", "혼자밥", "혼자식사"]):
+        keywords.extend(["혼밥", "식당", "밥집", "음식점"])
+
+    keywords.extend(place_type_keywords)
+    keywords.extend(purpose_keywords)
+    return list(dict.fromkeys(keyword for keyword in keywords if keyword))[:10]
+
+
+def _build_food_intent_condition(query):
+    if not _has_food_intent(query):
+        return None
+
+    menu_keywords = _extract_menu_keywords(query)
+    place_type_keywords = _get_food_place_type_keywords(menu_keywords, query)
+    purpose_keywords = ["맛집"] if "맛집" in (query or "") else []
+    compact = _compact_text(query)
+
+    if "혼밥" in compact or "혼자" in compact:
+        purpose_keywords.append("혼밥")
+
+    categories = ["restaurant"]
+    if any(place_type in {"베이커리", "빵집", "카페"} for place_type in place_type_keywords):
+        categories = ["cafe", "restaurant"]
+
+    preferred_tags = ["식사가능"]
+    if "혼밥" in purpose_keywords:
+        preferred_tags.append("혼자이용좋음")
+    if "조용" in compact:
+        preferred_tags.append("조용한")
+
+    keywords = _build_food_keywords(query, menu_keywords, place_type_keywords, purpose_keywords)
+    intent_subject = menu_keywords[0] if menu_keywords else "음식/메뉴"
+    condition = build_recommendation_condition(
+        scenario="restaurant",
+        condition={
+            "intent": f"{intent_subject} 맛집 검색",
+            "scenario": "restaurant",
+            "categories": categories,
+            "required_tags": [],
+            "preferred_tags": preferred_tags,
+            "keywords": keywords,
+            "menu_keywords": menu_keywords,
+            "place_type_keywords": place_type_keywords,
+            "purpose_keywords": purpose_keywords,
+            "fallback_enabled": True,
+        },
+        keyword=query or f"{intent_subject} 맛집 검색",
+    )
+    condition.update({
+        "situation_summary": query or f"{intent_subject} 맛집 검색",
+        "reason_hint": "음식/메뉴/맛집 의도로 해석해 카페, 베이커리, 식당 계열 후보를 우선합니다.",
+    })
+    return condition
 
 
 def _extract_tags(query, scenario):
@@ -230,6 +404,10 @@ def _apply_context_constraints(parse, query):
 
 def _rule_based_parse(query):
     cleaned_query = (query or "").strip()
+    food_condition = _build_food_intent_condition(cleaned_query)
+    if food_condition:
+        return _apply_context_constraints(food_condition, cleaned_query)
+
     scenario = _pick_scenario(cleaned_query)
     config = SCENARIO_CONFIGS[scenario]
     tags = _extract_tags(cleaned_query, scenario)
@@ -254,6 +432,9 @@ def _build_parser_system_prompt():
         "tags, required_tags, preferred_tags, avoid_tags, keywords, radius, "
         "fallback_enabled, situation_summary, reason_hint. Never create places, "
         "addresses, coordinates, opening hours, facilities, menus, or new tags. "
+        "If the query includes menu, food, cafe, bakery, dessert, brunch, meal, "
+        "or matjip intent, do not use waiting_place; use restaurant with food keywords. "
+        "Use waiting_place only for explicit rest, waiting, sitting, shelter, or short-stay intent. "
         "Use only "
         f"scenarios={sorted(ALLOWED_SCENARIOS)}, "
         f"categories={sorted(ALLOWED_CATEGORIES)}, "
@@ -375,9 +556,13 @@ def _normalize_tags(tags, fallback_tags):
 def _normalize_ai_parse(raw_parse, fallback_parse):
     raw = _extract_json_object(raw_parse)
     scenario = raw.get("scenario")
+    food_condition = _build_food_intent_condition(fallback_parse.get("situation_summary", ""))
 
     if scenario not in ALLOWED_SCENARIOS:
         scenario = fallback_parse["scenario"]
+
+    if food_condition and scenario == "waiting_place":
+        return _apply_context_constraints(food_condition, fallback_parse["situation_summary"])
 
     config = SCENARIO_CONFIGS[scenario]
     categories = _normalize_categories(raw.get("categories"), config["categories"])
@@ -413,6 +598,16 @@ def _normalize_ai_parse(raw_parse, fallback_parse):
         "situation_summary": str(summary)[:200],
         "reason_hint": str(reason_hint)[:240],
     })
+    if food_condition:
+        condition["keywords"] = list(dict.fromkeys([
+            *food_condition.get("keywords", []),
+            *condition.get("keywords", []),
+        ]))
+        condition["menu_keywords"] = food_condition.get("menu_keywords", [])
+        condition["place_type_keywords"] = food_condition.get("place_type_keywords", [])
+        condition["purpose_keywords"] = food_condition.get("purpose_keywords", [])
+        if condition.get("scenario") == "restaurant":
+            condition["categories"] = food_condition.get("categories", condition.get("categories", []))
 
     return _apply_context_constraints(condition, fallback_parse["situation_summary"])
 

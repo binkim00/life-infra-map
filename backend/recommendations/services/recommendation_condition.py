@@ -56,6 +56,9 @@ LIST_FIELDS = {
     "preferred_tags",
     "avoid_tags",
     "keywords",
+    "menu_keywords",
+    "place_type_keywords",
+    "purpose_keywords",
     "exclude_categories",
 }
 
@@ -128,6 +131,9 @@ def scenario_to_condition(scenario="work_cafe"):
         "keywords": _unique_list(
             SCENARIO_KEYWORDS.get(normalized_scenario, [config["keyword"]])
         ),
+        "menu_keywords": [],
+        "place_type_keywords": [],
+        "purpose_keywords": [],
         "radius": get_default_radius(normalized_scenario),
         "fallback_enabled": True,
         "exclude_categories": [],
@@ -188,6 +194,9 @@ def build_recommendation_condition(
     normalized["avoid_tags"] = _unique_list(normalized.get("avoid_tags"))
     normalized["categories"] = _unique_list(normalized.get("categories"))
     normalized["keywords"] = _unique_list(normalized.get("keywords"))
+    normalized["menu_keywords"] = _unique_list(normalized.get("menu_keywords"))
+    normalized["place_type_keywords"] = _unique_list(normalized.get("place_type_keywords"))
+    normalized["purpose_keywords"] = _unique_list(normalized.get("purpose_keywords"))
     normalized["exclude_categories"] = _unique_list(normalized.get("exclude_categories"))
     normalized["tags"] = list(normalized["preferred_tags"])
     normalized["fallback_enabled"] = _parse_bool(normalized.get("fallback_enabled"), True)
