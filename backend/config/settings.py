@@ -18,13 +18,33 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 load_dotenv(BASE_DIR / ".env")
 
+
+def _env_bool(name, default=False):
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 KAKAO_REST_API_KEY = os.getenv("KAKAO_REST_API_KEY")
-AI_PROVIDER = os.getenv("AI_PROVIDER", "gms")
-GMS_MODEL = os.getenv("GMS_MODEL", "gpt-5-mini")
+AI_PROVIDER = os.getenv("AI_PROVIDER", "gms").strip().lower()
+AI_WEB_SEARCH_ENABLED = _env_bool("AI_WEB_SEARCH_ENABLED", False)
+AI_WEB_SEARCH_PROVIDER = os.getenv("AI_WEB_SEARCH_PROVIDER", AI_PROVIDER).strip().lower()
+AI_WEB_SEARCH_GROUNDING_SUPPORTED = _env_bool("AI_WEB_SEARCH_GROUNDING_SUPPORTED", False)
+AI_INTENT_MODEL = os.getenv("AI_INTENT_MODEL", "gpt-5-nano")
+AI_WEB_SEARCH_MODEL = os.getenv("AI_WEB_SEARCH_MODEL", "gpt-5-mini")
+AI_REASON_MODEL = os.getenv("AI_REASON_MODEL", "gpt-5-nano")
+GMS_MODEL = os.getenv("GMS_MODEL", AI_INTENT_MODEL)
 GMS_API_KEY = os.getenv("GMS_API_KEY", "")
 GMS_API_URL = os.getenv("GMS_API_URL", "")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 AI_REQUEST_TIMEOUT = int(os.getenv("AI_REQUEST_TIMEOUT", "20"))
+AI_WEB_SEARCH_AVAILABLE = (
+    AI_WEB_SEARCH_ENABLED
+    and AI_WEB_SEARCH_PROVIDER == "gms"
+    and bool(GMS_API_KEY)
+    and bool(GMS_API_URL)
+)
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/

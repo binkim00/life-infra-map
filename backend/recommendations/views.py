@@ -9,6 +9,10 @@ from .services.place_mapper import (
     map_kakao_place_to_recommendation,
 )
 from .services.ai_situation_parser import parse_situation
+from .services.ai_web_search_provider import (
+    get_ai_web_search_result,
+    summarize_existing_results,
+)
 from .services.db_recommender import search_db_recommendations
 from .services.place_urls import get_kakao_place_url
 from .services.smoking_area_data import (
@@ -327,6 +331,13 @@ def ai_recommendation_search(request):
         radius=radius,
     )
     data["ai_parse"] = parsed
+    data["ai_web_search"] = get_ai_web_search_result(
+        query=query,
+        lat=lat,
+        lng=lng,
+        condition=data.get("condition") or data.get("recommendation_condition") or parsed,
+        existing_results_summary=summarize_existing_results(data.get("results", [])),
+    )
 
     return Response(data)
 

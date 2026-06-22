@@ -290,7 +290,11 @@ def _extract_json_object(value):
 def _call_gms_parser(query):
     api_key = getattr(settings, "GMS_API_KEY", "")
     api_url = getattr(settings, "GMS_API_URL", "")
-    model = getattr(settings, "GMS_MODEL", "gpt-5-mini")
+    model = getattr(
+        settings,
+        "AI_INTENT_MODEL",
+        getattr(settings, "GMS_MODEL", "gpt-5-nano"),
+    )
 
     if not api_key or not api_url:
         return None
