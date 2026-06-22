@@ -386,6 +386,7 @@ const aiWebSearchStatus = ref('idle')
 const aiWebSearchMessage = ref('')
 const aiWebSearchCandidates = ref([])
 const aiWebSearchClientCache = ref({})
+const aiWebSearchLastResult = ref(null)
 const activeSearchPlan = ref(null)
 const activeMenuSearchProfile = ref(null)
 
@@ -666,6 +667,22 @@ const getAiWebSearchStatusMessage = (result = {}) => {
     return 'AI 웹 검색 응답이 완성되지 않아 후보를 표시하지 않았습니다.'
   }
 
+  if (result.error === 'temporary_server_error') {
+    return 'AI 웹 검색 서버 응답이 일시적으로 실패했습니다. 다시 시도해 주세요.'
+  }
+
+  if (result.error === 'empty_candidates' || result.reason === 'no_valid_candidates') {
+    return 'AI 웹 검색에서 표시할 후보를 찾지 못했습니다.'
+  }
+
+  if (result.reason === 'invalid_request') {
+    return 'AI 웹 검색 요청 설정을 확인해야 합니다.'
+  }
+
+  if (result.error === 'api_error') {
+    return 'AI 웹 검색 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.'
+  }
+
   if (result.error && !candidates.length) {
     return 'AI 웹 검색 중 오류가 발생했습니다.'
   }
@@ -676,6 +693,44 @@ const getAiWebSearchStatusMessage = (result = {}) => {
 
   return `AI 웹 검색 후보 ${candidates.length}개를 찾았습니다.`
 }
+
+const aiWebSearchDebugText = computed(() => {
+  if (!import.meta.env.DEV) return ''
+
+  const result = aiWebSearchLastResult.value
+  const detail = result?.error_detail
+  const summary = detail?.debug_summary || result?.debug_summary || null
+  if (!detail && !summary) return ''
+
+  const summaryText = summary
+    ? [
+        summary.output_count != null ? `outputs ${summary.output_count}` : '',
+        Array.isArray(summary.output_types) && summary.output_types.length
+          ? `types ${summary.output_types.join('/')}`
+          : '',
+        summary.source_count != null ? `sources ${summary.source_count}` : '',
+        summary.output_url_count != null ? `output urls ${summary.output_url_count}` : '',
+        summary.instruction_url_count != null ? `instruction urls ${summary.instruction_url_count}` : '',
+        summary.annotation_count != null ? `annotations ${summary.annotation_count}` : '',
+        summary.url_citation_count != null ? `citations ${summary.url_citation_count}` : '',
+        summary.message_count != null ? `messages ${summary.message_count}` : '',
+        summary.reasoning_count != null ? `reasoning ${summary.reasoning_count}` : '',
+        summary.web_search_call_count != null ? `web search ${summary.web_search_call_count}` : '',
+        summary.output_text_length != null ? `text ${summary.output_text_length}` : '',
+        Array.isArray(summary.web_search_action_keys) && summary.web_search_action_keys.length
+          ? `action keys ${summary.web_search_action_keys.join('/')}`
+          : '',
+      ].filter(Boolean).join(' · ')
+    : ''
+
+  return [
+    result.reason,
+    detail?.status_code ? `status ${detail.status_code}` : '',
+    detail?.status || '',
+    detail?.type || '',
+    summaryText,
+  ].filter(Boolean).join(' · ')
+})
 
 const placeListItemRefs = ref({})
 
@@ -4678,6 +4733,7 @@ const resetAiWebSearchState = () => {
   aiWebSearchStatus.value = 'idle'
   aiWebSearchMessage.value = ''
   aiWebSearchCandidates.value = []
+  aiWebSearchLastResult.value = null
 }
 
 const setAiWebSearchContext = ({
@@ -4701,6 +4757,7 @@ const setAiWebSearchContext = ({
   aiWebSearchStatus.value = 'idle'
   aiWebSearchMessage.value = ''
   aiWebSearchCandidates.value = []
+  aiWebSearchLastResult.value = null
 }
 
 const setSearchResults = ({
@@ -5539,7 +5596,7 @@ const runAiMapSearchAtCenter = async ({
     setAiWebSearchContext({
       query: targetQuery,
       center,
-      condition: data.condition || data.recommendation_condition || data.ai_parse || {},
+      condition: getRecommendationConditionData(data),
       aiWebSearchStatusData: data.ai_web_search || null,
       existingResultsSummary: {
         db_count: 0,
@@ -5562,7 +5619,7 @@ const runAiMapSearchAtCenter = async ({
   setAiWebSearchContext({
     query: targetQuery,
     center,
-    condition: data.condition || data.recommendation_condition || data.ai_parse || {},
+    condition: getRecommendationConditionData(data),
     aiWebSearchStatusData: data.ai_web_search || null,
     existingResultsSummary: {
       db_count: menuSearchProfile.menuIntent ? directMenuDbMatchCount : recommendationResults.length,
@@ -5592,6 +5649,7 @@ const applyAiWebSearchResult = (aiWebSearch = {}) => {
   const candidates = Array.isArray(aiWebSearch.candidates)
     ? aiWebSearch.candidates
     : []
+  aiWebSearchLastResult.value = aiWebSearch
 
   if (!aiWebSearch.enabled || !aiWebSearch.supported) {
     aiWebSearchStatus.value = 'disabled'
@@ -5634,6 +5692,14 @@ const searchAiWebCandidatesManually = async () => {
   const requestKey = getAiWebSearchRequestKey(context)
   const cachedResult = aiWebSearchClientCache.value[requestKey]
   if (cachedResult) {
+    if (import.meta.env.DEV) {
+      console.debug('[AI 웹 검색 응답]', {
+        executed: false,
+        reason: 'client_cached_result',
+        error: cachedResult.error,
+        candidate_count: Array.isArray(cachedResult.candidates) ? cachedResult.candidates.length : 0,
+      })
+    }
     applyAiWebSearchResult({
       ...cachedResult,
       executed: false,
@@ -5644,6 +5710,16 @@ const searchAiWebCandidatesManually = async () => {
 
   aiWebSearchStatus.value = 'loading'
   aiWebSearchMessage.value = 'AI 웹 검색 중입니다...'
+  aiWebSearchLastResult.value = null
+
+  if (import.meta.env.DEV) {
+    console.debug('[AI 웹 검색 요청]', {
+      query: context.query,
+      scenario: context.condition?.scenario,
+      menu_keywords: context.condition?.menu_keywords || [],
+      place_type_keywords: context.condition?.place_type_keywords || [],
+    })
+  }
 
   try {
     const data = await runAiWebSearch({
@@ -5658,6 +5734,14 @@ const searchAiWebCandidatesManually = async () => {
       ...aiWebSearchClientCache.value,
       [requestKey]: aiWebSearch,
     }
+    if (import.meta.env.DEV) {
+      console.debug('[AI 웹 검색 응답]', {
+        executed: aiWebSearch.executed,
+        reason: aiWebSearch.reason,
+        error: aiWebSearch.error,
+        candidate_count: Array.isArray(aiWebSearch.candidates) ? aiWebSearch.candidates.length : 0,
+      })
+    }
     applyAiWebSearchResult(aiWebSearch)
   } catch (error) {
     console.error('AI 웹 검색 중 오류가 발생했습니다.')
@@ -5671,6 +5755,28 @@ const getAiEvidenceSources = (candidate = {}) => {
   return Array.isArray(candidate.evidence_sources)
     ? candidate.evidence_sources.filter((source) => source?.url)
     : []
+}
+
+const getAiWebCandidateSummary = (candidate = {}) => {
+  return getTextValue(candidate.evidence_summary || candidate.recommendation_reason)
+}
+
+const isAiWebSourceReference = (candidate = {}) => {
+  return candidate?.candidate_type === 'web_source_reference'
+}
+
+const getAiWebCandidateBadge = (candidate = {}) => {
+  return isAiWebSourceReference(candidate)
+    ? '참고 링크'
+    : (candidate.category_hint || 'AI 웹 검색 후보')
+}
+
+const getAiWebCandidateCaution = (candidate = {}) => {
+  if (isAiWebSourceReference(candidate)) {
+    return '이 결과는 웹 검색 출처 기반 참고 정보이며, 실제 장소 정보는 방문 전 확인이 필요합니다.'
+  }
+
+  return candidate.caution_message || 'AI 웹 검색 기반 후보입니다. 위치, 운영 여부, 메뉴, 분위기는 방문 전 확인이 필요합니다.'
 }
 
 const getRegionSearchCoreKeyword = (targetQuery) => {
@@ -6530,6 +6636,13 @@ const handleDetailFrameError = () => {
               {{ aiWebSearchMessage }}
             </p>
 
+            <p
+              v-if="aiWebSearchDebugText"
+              class="ai-web-search-message ai-web-search-debug"
+            >
+              {{ aiWebSearchDebugText }}
+            </p>
+
             <div
               v-if="aiWebSearchCandidates.length"
               class="ai-web-search-candidates"
@@ -6541,15 +6654,25 @@ const handleDetailFrameError = () => {
               >
                 <div class="ai-web-search-candidate-title">
                   <strong>{{ candidate.name }}</strong>
-                  <span>{{ candidate.category_hint || 'AI 웹 검색 후보' }}</span>
+                  <span>{{ getAiWebCandidateBadge(candidate) }}</span>
                 </div>
 
-                <p v-if="candidate.address_hint" class="ai-web-search-hint">
+                <p
+                  v-if="isAiWebSourceReference(candidate) && candidate.source_title"
+                  class="ai-web-search-hint"
+                >
+                  {{ candidate.source_title }}
+                </p>
+
+                <p v-else-if="candidate.address_hint" class="ai-web-search-hint">
                   {{ candidate.address_hint }}
                 </p>
 
-                <p class="ai-web-search-summary">
-                  {{ candidate.evidence_summary || candidate.recommendation_reason }}
+                <p
+                  v-if="getAiWebCandidateSummary(candidate)"
+                  class="ai-web-search-summary"
+                >
+                  {{ getAiWebCandidateSummary(candidate) }}
                 </p>
 
                 <div
@@ -6568,7 +6691,7 @@ const handleDetailFrameError = () => {
                 </div>
 
                 <p class="ai-web-search-caution">
-                  {{ candidate.caution_message || 'AI 웹 검색 기반 후보입니다. 위치, 운영 여부, 메뉴, 분위기는 방문 전 확인이 필요합니다.' }}
+                  {{ getAiWebCandidateCaution(candidate) }}
                 </p>
               </article>
             </div>
@@ -7629,6 +7752,12 @@ h1 {
 
 .ai-web-search-message {
   margin: 0;
+}
+
+.ai-web-search-debug {
+  color: #475467;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  overflow-wrap: anywhere;
 }
 
 .ai-web-search-candidates {

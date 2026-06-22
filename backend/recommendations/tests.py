@@ -172,6 +172,7 @@ class RecommendationSearchTests(TestCase):
         GMS_API_BASE_URL="https://example.invalid/gmsapi",
         GMS_OPENAI_RESPONSES_PATH="api.openai.com/v1/responses",
         AI_WEB_SEARCH_MODEL="gpt-5-nano",
+        AI_WEB_SEARCH_REASONING_EFFORT="minimal",
         AI_WEB_SEARCH_MAX_OUTPUT_TOKENS=1200,
     )
     @patch("recommendations.services.ai_web_search_provider.requests.post")
@@ -226,6 +227,7 @@ class RecommendationSearchTests(TestCase):
             mock_post.call_args.kwargs["json"]["tools"],
             [{"type": "web_search"}],
         )
+        self.assertNotIn("reasoning", mock_post.call_args.kwargs["json"])
         self.assertEqual(
             mock_post.call_args.args[0],
             "https://example.invalid/gmsapi/api.openai.com/v1/responses",
@@ -235,8 +237,14 @@ class RecommendationSearchTests(TestCase):
             result["candidates"][0]["evidence_sources"],
             [{"title": "web search source", "url": "https://example.com/place"}],
         )
-        self.assertIn("source_url", mock_post.call_args.kwargs["json"]["input"])
-        self.assertNotIn("evidence_sources", mock_post.call_args.kwargs["json"]["input"])
+        prompt_input = mock_post.call_args.kwargs["json"]["input"]
+        self.assertIn("source_url", prompt_input)
+        self.assertNotIn("evidence_sources", prompt_input)
+        self.assertNotIn("existing_results_summary", prompt_input)
+        self.assertNotIn("category_hint", prompt_input)
+        self.assertNotIn("address_hint", prompt_input)
+        self.assertNotIn("evidence_summary", prompt_input)
+        self.assertNotIn("https://...", prompt_input)
 
     @override_settings(
         AI_WEB_SEARCH_ENABLED=True,
@@ -521,7 +529,7 @@ class RecommendationSearchTests(TestCase):
         GMS_OPENAI_RESPONSES_PATH="api.openai.com/v1/responses",
     )
     @patch("recommendations.services.ai_web_search_provider.requests.post")
-    def test_ai_web_search_discards_incomplete_response(self, mock_post):
+    def test_ai_web_search_parses_valid_candidate_from_incomplete_response(self, mock_post):
         mock_response = Mock()
         mock_response.raise_for_status.return_value = None
         mock_response.json.return_value = {
@@ -557,8 +565,351 @@ class RecommendationSearchTests(TestCase):
         )
 
         self.assertTrue(result["executed"])
+        self.assertEqual(result["error"], "")
+        self.assertEqual(result["warning"], "incomplete_response")
+        self.assertEqual(result["reason"], "completed_with_incomplete_response")
+        self.assertEqual(result["candidates"][0]["name"], "살리면 안 되는 후보")
+
+    @override_settings(
+        AI_WEB_SEARCH_ENABLED=True,
+        AI_WEB_SEARCH_AVAILABLE=True,
+        AI_WEB_SEARCH_PROVIDER="gms",
+        AI_WEB_SEARCH_GROUNDING_SUPPORTED=True,
+        GMS_API_KEY="fake-key",
+        GMS_API_URL="https://example.invalid/web-search",
+        GMS_API_BASE_URL="https://example.invalid/gmsapi",
+        GMS_OPENAI_RESPONSES_PATH="api.openai.com/v1/responses",
+    )
+    @patch("recommendations.services.ai_web_search_provider.requests.post")
+    def test_ai_web_search_builds_source_reference_from_incomplete_sources(self, mock_post):
+        mock_response = Mock()
+        mock_response.raise_for_status.return_value = None
+        mock_response.json.return_value = {
+            "status": "incomplete",
+            "incomplete_details": {"reason": "max_output_tokens"},
+            "output": [
+                {
+                    "type": "web_search_call",
+                    "action": {
+                        "query": "salt bread cafe",
+                        "sources": [
+                            {
+                                "title": "Salt bread cafe result",
+                                "url": "https://example.com/source",
+                            }
+                        ],
+                    },
+                },
+                {
+                    "type": "message",
+                    "content": [{
+                        "type": "output_text",
+                        "text": "Sources were found, but no JSON candidate was completed.",
+                    }],
+                },
+            ],
+        }
+        mock_post.return_value = mock_response
+
+        result = get_ai_web_search_result(
+            query="salt bread cafe",
+            lat=35.1556,
+            lng=129.0641,
+            condition={"scenario": "restaurant", "menu_keywords": ["salt bread"]},
+            existing_results_summary={"db_count": 0, "kakao_fallback_count": 0},
+            manual=True,
+        )
+
+        self.assertTrue(result["executed"])
+        self.assertEqual(result["error"], "")
+        self.assertEqual(result["reason"], "source_reference_fallback")
+        self.assertEqual(result["warning"], "incomplete_response")
+        self.assertEqual(len(result["candidates"]), 1)
+        self.assertEqual(result["candidates"][0]["candidate_type"], "web_source_reference")
+        self.assertEqual(result["candidates"][0]["name"], "웹 검색 참고 결과")
+        self.assertEqual(result["candidates"][0]["source_url"], "https://example.com/source")
+        self.assertEqual(result["candidates"][0]["source_title"], "Salt bread cafe result")
+        self.assertEqual(result["candidates"][0]["source_query"], "salt bread cafe")
+        self.assertGreater(result["debug_summary"]["source_count"], 0)
+        self.assertIn("web_search_call", result["debug_summary"]["output_types"])
+        self.assertEqual(result["debug_summary"]["web_search_source_count"], 1)
+
+    @override_settings(
+        AI_WEB_SEARCH_ENABLED=True,
+        AI_WEB_SEARCH_AVAILABLE=True,
+        AI_WEB_SEARCH_PROVIDER="gms",
+        AI_WEB_SEARCH_GROUNDING_SUPPORTED=True,
+        GMS_API_KEY="fake-key",
+        GMS_API_URL="https://example.invalid/web-search",
+        GMS_API_BASE_URL="https://example.invalid/gmsapi",
+        GMS_OPENAI_RESPONSES_PATH="api.openai.com/v1/responses",
+    )
+    @patch("recommendations.services.ai_web_search_provider.requests.post")
+    def test_ai_web_search_builds_source_reference_from_message_citation(self, mock_post):
+        mock_response = Mock()
+        mock_response.raise_for_status.return_value = None
+        mock_response.json.return_value = {
+            "status": "incomplete",
+            "incomplete_details": {"reason": "max_output_tokens"},
+            "output": [
+                {
+                    "type": "message",
+                    "content": [
+                        {
+                            "type": "output_text",
+                            "text": "Search completed.",
+                            "annotations": [
+                                {
+                                    "type": "url_citation",
+                                    "title": "Citation source",
+                                    "url": "https://example.com/citation",
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ],
+        }
+        mock_post.return_value = mock_response
+
+        result = get_ai_web_search_result(
+            query="salt bread cafe",
+            lat=35.1556,
+            lng=129.0641,
+            condition={"scenario": "restaurant", "menu_keywords": ["salt bread"]},
+            existing_results_summary={"db_count": 0, "kakao_fallback_count": 0},
+            manual=True,
+        )
+
+        self.assertEqual(result["error"], "")
+        self.assertEqual(result["reason"], "source_reference_fallback")
+        self.assertEqual(result["candidates"][0]["candidate_type"], "web_source_reference")
+        self.assertEqual(result["candidates"][0]["source_url"], "https://example.com/citation")
+        self.assertEqual(result["debug_summary"]["message_count"], 1)
+        self.assertEqual(result["debug_summary"]["url_citation_count"], 1)
+
+    @override_settings(
+        AI_WEB_SEARCH_ENABLED=True,
+        AI_WEB_SEARCH_AVAILABLE=True,
+        AI_WEB_SEARCH_PROVIDER="gms",
+        AI_WEB_SEARCH_GROUNDING_SUPPORTED=True,
+        GMS_API_KEY="fake-key",
+        GMS_API_URL="https://example.invalid/web-search",
+        GMS_API_BASE_URL="https://example.invalid/gmsapi",
+        GMS_OPENAI_RESPONSES_PATH="api.openai.com/v1/responses",
+    )
+    @patch("recommendations.services.ai_web_search_provider.requests.post")
+    def test_ai_web_search_incomplete_without_source_returns_detail(self, mock_post):
+        mock_response = Mock()
+        mock_response.raise_for_status.return_value = None
+        mock_response.json.return_value = {
+            "status": "incomplete",
+            "incomplete_details": {"reason": "max_output_tokens"},
+            "output": [
+                {
+                    "type": "reasoning",
+                    "status": "completed",
+                },
+                {
+                    "type": "web_search_call",
+                    "status": "incomplete",
+                    "action": {
+                        "type": "search",
+                        "query": "salt bread cafe",
+                        "sources": [],
+                    },
+                },
+            ],
+        }
+        mock_post.return_value = mock_response
+
+        result = get_ai_web_search_result(
+            query="salt bread cafe",
+            lat=35.1556,
+            lng=129.0641,
+            condition={"scenario": "restaurant", "menu_keywords": ["salt bread"]},
+            existing_results_summary={"db_count": 0, "kakao_fallback_count": 0},
+            manual=True,
+        )
+
+        self.assertTrue(result["executed"])
         self.assertEqual(result["candidates"], [])
         self.assertEqual(result["error"], "incomplete_response")
+        self.assertEqual(result["reason"], "reasoning_output_exhausted")
+        self.assertEqual(result["error_detail"]["status"], "incomplete")
+        self.assertEqual(
+            result["error_detail"]["message"],
+            "AI web search stopped before generating a final message.",
+        )
+        debug_summary = result["error_detail"]["debug_summary"]
+        self.assertEqual(debug_summary["source_count"], 0)
+        self.assertEqual(debug_summary["output_url_count"], 0)
+        self.assertEqual(debug_summary["instruction_url_count"], 0)
+        self.assertIn("web_search_call", debug_summary["output_types"])
+        self.assertEqual(debug_summary["reasoning_count"], 1)
+        self.assertEqual(debug_summary["message_count"], 0)
+        self.assertEqual(debug_summary["web_search_call_count"], 1)
+        self.assertEqual(debug_summary["web_search_source_count"], 0)
+        self.assertEqual(debug_summary["first_output_preview"]["type"], "reasoning")
+        self.assertEqual(debug_summary["web_search_action_keys"], ["type", "query", "sources"])
+
+    @override_settings(
+        AI_WEB_SEARCH_ENABLED=True,
+        AI_WEB_SEARCH_AVAILABLE=True,
+        AI_WEB_SEARCH_PROVIDER="gms",
+        AI_WEB_SEARCH_GROUNDING_SUPPORTED=True,
+        GMS_API_KEY="fake-key",
+        GMS_API_URL="https://example.invalid/web-search",
+        GMS_API_BASE_URL="https://example.invalid/gmsapi",
+        GMS_OPENAI_RESPONSES_PATH="api.openai.com/v1/responses",
+    )
+    @patch("recommendations.services.ai_web_search_provider.requests.post")
+    def test_ai_web_search_rejects_bad_source_url_reference(self, mock_post):
+        mock_response = Mock()
+        mock_response.raise_for_status.return_value = None
+        mock_response.json.return_value = {
+            "status": "incomplete",
+            "incomplete_details": {"reason": "max_output_tokens"},
+            "output": [
+                {
+                    "type": "web_search_call",
+                    "action": {
+                        "query": "salt bread cafe",
+                        "sources": [
+                            {
+                                "title": "Bad source",
+                                "url": "not-a-url",
+                            }
+                        ],
+                    },
+                }
+            ],
+        }
+        mock_post.return_value = mock_response
+
+        result = get_ai_web_search_result(
+            query="salt bread cafe",
+            lat=35.1556,
+            lng=129.0641,
+            condition={"scenario": "restaurant", "menu_keywords": ["salt bread"]},
+            existing_results_summary={"db_count": 0, "kakao_fallback_count": 0},
+            manual=True,
+        )
+
+        self.assertTrue(result["executed"])
+        self.assertEqual(result["candidates"], [])
+        self.assertEqual(result["error"], "incomplete_response")
+
+    @override_settings(
+        AI_WEB_SEARCH_ENABLED=True,
+        AI_WEB_SEARCH_AVAILABLE=True,
+        AI_WEB_SEARCH_PROVIDER="gms",
+        AI_WEB_SEARCH_GROUNDING_SUPPORTED=True,
+        GMS_API_KEY="fake-key",
+        GMS_API_URL="https://example.invalid/web-search",
+        GMS_API_BASE_URL="https://example.invalid/gmsapi",
+        GMS_OPENAI_RESPONSES_PATH="api.openai.com/v1/responses",
+    )
+    @patch("recommendations.services.ai_web_search_provider.requests.post")
+    def test_ai_web_search_builds_candidate_from_text_and_source(self, mock_post):
+        mock_response = Mock()
+        mock_response.raise_for_status.return_value = None
+        mock_response.json.return_value = {
+            "output": [
+                {
+                    "type": "message",
+                    "content": [
+                        {
+                            "type": "output_text",
+                            "text": (
+                                "Name: Salt Bread Cafe\n"
+                                "Category: cafe\n"
+                                "Address: Busan\n"
+                                "Evidence: Web search result mentions this place.\n"
+                                "Source: https://example.com/salt-bread"
+                            ),
+                        }
+                    ],
+                }
+            ]
+        }
+        mock_post.return_value = mock_response
+
+        result = get_ai_web_search_result(
+            query="salt bread cafe",
+            lat=35.1556,
+            lng=129.0641,
+            condition={
+                "scenario": "restaurant",
+                "menu_keywords": ["salt bread"],
+                "place_type_keywords": ["bakery"],
+            },
+            existing_results_summary={"db_count": 0, "kakao_fallback_count": 0},
+            manual=True,
+        )
+
+        self.assertTrue(result["executed"])
+        self.assertEqual(result["error"], "")
+        self.assertEqual(result["candidates"][0]["name"], "Salt Bread Cafe")
+        self.assertEqual(
+            result["candidates"][0]["evidence_sources"][0]["url"],
+            "https://example.com/salt-bread",
+        )
+
+    @override_settings(
+        AI_WEB_SEARCH_ENABLED=True,
+        AI_WEB_SEARCH_AVAILABLE=True,
+        AI_WEB_SEARCH_PROVIDER="gms",
+        AI_WEB_SEARCH_GROUNDING_SUPPORTED=True,
+        GMS_API_KEY="fake-key",
+        GMS_API_URL="https://example.invalid/web-search",
+        GMS_API_BASE_URL="https://example.invalid/gmsapi",
+        GMS_OPENAI_RESPONSES_PATH="api.openai.com/v1/responses",
+    )
+    @patch("recommendations.services.ai_web_search_provider.requests.post")
+    def test_ai_web_search_prompt_includes_menu_condition(self, mock_post):
+        mock_response = Mock()
+        mock_response.raise_for_status.return_value = None
+        mock_response.json.return_value = {
+            "output_text": json.dumps({
+                "candidates": [
+                    {
+                        "name": "Salt Bread Cafe",
+                        "source_url": "https://example.com/salt-bread",
+                    }
+                ]
+            })
+        }
+        mock_post.return_value = mock_response
+
+        get_ai_web_search_result(
+            query="salt bread cafe",
+            lat=35.1556,
+            lng=129.0641,
+            condition={
+                "scenario": "restaurant",
+                "menu_keywords": ["salt bread"],
+                "place_type_keywords": ["bakery"],
+            },
+            existing_results_summary={"db_count": 0, "kakao_fallback_count": 0},
+            manual=True,
+        )
+
+        payload = mock_post.call_args.kwargs["json"]
+        prompt_input = payload["input"]
+        self.assertIn('query: "salt bread cafe"', prompt_input)
+        self.assertIn("menu_keywords: salt bread", prompt_input)
+        self.assertIn("place_type_keywords: bakery", prompt_input)
+        self.assertIn(
+            '{"candidates":[{"name":"place name","source_url":"<source_url>"}]}',
+            prompt_input,
+        )
+        self.assertNotIn("reasoning", payload)
+        self.assertNotIn("existing_results_summary", prompt_input)
+        self.assertNotIn("category_hint", prompt_input)
+        self.assertNotIn("address_hint", prompt_input)
+        self.assertNotIn("evidence_summary", prompt_input)
+        self.assertNotIn("https://...", prompt_input)
 
     @override_settings(
         AI_WEB_SEARCH_ENABLED=True,
@@ -583,7 +934,7 @@ class RecommendationSearchTests(TestCase):
             existing_results_summary={"db_count": 0, "kakao_fallback_count": 0},
         )
 
-        self.assertFalse(result["executed"])
+        self.assertTrue(result["executed"])
         self.assertEqual(result["candidates"], [])
         self.assertEqual(result["error"], "api_error")
         self.assertEqual(result["error_detail"]["type"], "timeout")
@@ -627,12 +978,134 @@ class RecommendationSearchTests(TestCase):
             manual=True,
         )
 
-        self.assertFalse(result["executed"])
+        self.assertTrue(result["executed"])
         self.assertEqual(result["error"], "api_error")
         self.assertEqual(result["error_detail"]["status_code"], 400)
         self.assertEqual(result["error_detail"]["type"], "bad_request")
         self.assertNotIn("fake-key", result["error_detail"]["message"])
         self.assertLessEqual(len(result["error_detail"]["message"]), 300)
+        self.assertEqual(mock_post.call_count, 1)
+        mock_log_exception.assert_called_once()
+
+    @override_settings(
+        AI_WEB_SEARCH_ENABLED=True,
+        AI_WEB_SEARCH_AVAILABLE=True,
+        AI_WEB_SEARCH_PROVIDER="gms",
+        AI_WEB_SEARCH_GROUNDING_SUPPORTED=True,
+        GMS_API_KEY="fake-key",
+        GMS_API_URL="https://example.invalid/web-search",
+        GMS_API_BASE_URL="https://example.invalid/gmsapi",
+        GMS_OPENAI_RESPONSES_PATH="api.openai.com/v1/responses",
+    )
+    @patch("recommendations.services.ai_web_search_provider.logger.exception")
+    @patch("recommendations.services.ai_web_search_provider.requests.post")
+    def test_ai_web_search_returns_invalid_request_for_reasoning_tool_conflict(
+        self,
+        mock_post,
+        mock_log_exception,
+    ):
+        mock_response = Mock()
+        mock_response.status_code = 400
+        mock_response.json.return_value = {
+            "error": {
+                "type": "invalid_request_error",
+                "message": (
+                    "The following tools cannot be used with reasoning.effort "
+                    "'minimal': web_search."
+                ),
+            }
+        }
+        mock_response.raise_for_status.side_effect = requests.HTTPError(
+            "400 Client Error",
+            response=mock_response,
+        )
+        mock_post.return_value = mock_response
+
+        result = get_ai_web_search_result(
+            query="salt bread cafe",
+            lat=35.1556,
+            lng=129.0641,
+            condition={"scenario": "restaurant", "menu_keywords": ["salt bread"]},
+            existing_results_summary={"db_count": 0, "kakao_fallback_count": 0},
+            manual=True,
+        )
+
+        self.assertTrue(result["executed"])
+        self.assertEqual(result["candidates"], [])
+        self.assertEqual(result["error"], "api_error")
+        self.assertEqual(result["reason"], "invalid_request")
+        self.assertEqual(result["error_detail"]["status_code"], 400)
+        self.assertEqual(result["error_detail"]["type"], "bad_request")
+        self.assertEqual(
+            result["error_detail"]["message"],
+            "web_search cannot be used with reasoning.effort minimal.",
+        )
+        mock_log_exception.assert_called_once()
+
+    @override_settings(
+        AI_WEB_SEARCH_ENABLED=True,
+        AI_WEB_SEARCH_AVAILABLE=True,
+        AI_WEB_SEARCH_PROVIDER="gms",
+        AI_WEB_SEARCH_GROUNDING_SUPPORTED=True,
+        GMS_API_KEY="fake-key",
+        GMS_API_URL="https://example.invalid/web-search",
+        GMS_API_BASE_URL="https://example.invalid/gmsapi",
+        GMS_OPENAI_RESPONSES_PATH="api.openai.com/v1/responses",
+        DEBUG=True,
+    )
+    @patch("recommendations.services.ai_web_search_provider.logger.info")
+    @patch("recommendations.services.ai_web_search_provider.logger.exception")
+    @patch("recommendations.services.ai_web_search_provider.requests.post")
+    def test_ai_web_search_retries_and_returns_temporary_server_error(
+        self,
+        mock_post,
+        mock_log_exception,
+        mock_log_info,
+    ):
+        responses = []
+        for _index in range(2):
+            mock_response = Mock()
+            mock_response.status_code = 500
+            mock_response.json.return_value = {
+                "error": {
+                    "type": "server_error",
+                    "message": "raw server error with request id abc-123",
+                }
+            }
+            mock_response.text = "raw server error with request id abc-123"
+            mock_response.raise_for_status.side_effect = requests.HTTPError(
+                "500 Server Error",
+                response=mock_response,
+            )
+            responses.append(mock_response)
+        mock_post.side_effect = responses
+
+        result = get_ai_web_search_result(
+            query="salt bread cafe",
+            lat=35.1556,
+            lng=129.0641,
+            condition={"scenario": "restaurant", "menu_keywords": ["salt bread"]},
+            existing_results_summary={"db_count": 0, "kakao_fallback_count": 0},
+            manual=True,
+        )
+
+        self.assertTrue(result["executed"])
+        self.assertEqual(result["candidates"], [])
+        self.assertEqual(result["error"], "temporary_server_error")
+        self.assertEqual(result["reason"], "server_error")
+        self.assertEqual(result["error_detail"]["status_code"], 500)
+        self.assertEqual(result["error_detail"]["type"], "server_error")
+        self.assertEqual(
+            result["error_detail"]["message"],
+            "AI web search server response failed temporarily.",
+        )
+        self.assertEqual(mock_post.call_count, 2)
+        self.assertTrue(
+            any(
+                call.args and "[AI_WEB_SEARCH_RETRY]" in str(call.args[0])
+                for call in mock_log_info.call_args_list
+            )
+        )
         mock_log_exception.assert_called_once()
 
     @override_settings(
