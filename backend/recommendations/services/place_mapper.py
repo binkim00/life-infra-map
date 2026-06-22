@@ -205,6 +205,39 @@ def build_recommend_reason(place, scenario, runtime_tags, saved_tag_data=None):
     return "현재 위치와 장소 정보를 기준으로 추천한 후보입니다."
 
 
+def build_kakao_result_metadata(saved_tag_data):
+    verified_tags = saved_tag_data.get("verified_tags", [])
+    suggested_tags = saved_tag_data.get("suggested_tags", [])
+
+    if verified_tags:
+        return {
+            "source_type": "kakao_with_db_tags",
+            "confidence": "high",
+            "is_verified": True,
+            "fallback_level": 4,
+            "caution_message": "",
+        }
+
+    if suggested_tags:
+        return {
+            "source_type": "kakao_with_db_tags",
+            "confidence": "medium",
+            "is_verified": False,
+            "fallback_level": 4,
+            "caution_message": (
+                "수집 태그는 후보 정보이며 실제 이용 가능 여부는 방문 전 확인이 필요합니다."
+            ),
+        }
+
+    return {
+        "source_type": "kakao_candidate",
+        "confidence": "low",
+        "is_verified": False,
+        "fallback_level": 5,
+        "caution_message": "세부 태그 데이터가 부족한 외부 검색 후보입니다.",
+    }
+
+
 def map_kakao_place_to_recommendation(place, scenario):
     runtime_tags = build_runtime_tags(place, scenario)
 
@@ -213,6 +246,13 @@ def map_kakao_place_to_recommendation(place, scenario):
 
     score = calculate_recommendation_score(
         place,
+        runtime_tags,
+        saved_tag_data=saved_tag_data,
+    )
+    metadata = build_kakao_result_metadata(saved_tag_data)
+    reason = build_recommend_reason(
+        place,
+        scenario,
         runtime_tags,
         saved_tag_data=saved_tag_data,
     )
@@ -234,16 +274,16 @@ def map_kakao_place_to_recommendation(place, scenario):
 
         # 점수/근거
         "score": score,
-        "recommend_reason": build_recommend_reason(
-            place,
-            scenario,
-            runtime_tags,
-            saved_tag_data=saved_tag_data,
-        ),
-        "caution": (
-            "수집 태그는 블로그 검색 결과 기반의 후보 정보이며, "
-            "실제 시설 여부는 확인이 필요합니다."
-        ),
+        "matched_tags": saved_tag_data["verified_tags"] + saved_tag_data["suggested_tags"],
+        "missing_tags": [],
+        "source_type": metadata["source_type"],
+        "confidence": metadata["confidence"],
+        "is_verified": metadata["is_verified"],
+        "fallback_level": metadata["fallback_level"],
+        "recommendation_reason": reason,
+        "recommend_reason": reason,
+        "caution_message": metadata["caution_message"],
+        "caution": metadata["caution_message"],
 
         # 위치/출처
         "lat": float(place.get("y")),

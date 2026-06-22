@@ -314,10 +314,9 @@ def ai_recommendation_search(request):
     parsed = parse_situation(query)
     data = search_db_recommendations(
         scenario=parsed["scenario"],
+        condition=parsed,
         lat=lat,
         lng=lng,
-        categories=parsed["categories"],
-        tags=parsed["tags"],
         keyword=parsed["situation_summary"],
         exclude_categories=parsed.get("exclude_categories"),
         limit=limit,

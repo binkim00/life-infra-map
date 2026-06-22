@@ -1,40 +1,14 @@
 import math
 
 from recommendations.models import Place
+from recommendations.services.recommendation_condition import (
+    build_recommendation_condition,
+    get_default_radius,
+)
 from recommendations.services.smoking_area_data import calculate_distance_m
 
 
 DEFAULT_CAUTION = "태그 정보는 후보 정보일 수 있으며 실제 이용 가능 여부는 확인이 필요합니다."
-
-SCENARIO_CONFIGS = {
-    "work_cafe": {
-        "keyword": "조용히 작업할 곳",
-        "categories": ["cafe"],
-        "tags": ["조용한", "와이파이", "콘센트있음", "노트북작업", "혼자이용좋음"],
-    },
-    "waiting_place": {
-        "keyword": "잠깐 머물 곳",
-        "categories": ["cafe", "shelter", "city_park"],
-        "tags": ["잠깐쉬기좋음", "실내쉼터", "편의시설", "조용한", "혼자이용좋음"],
-    },
-    "walk_healing": {
-        "keyword": "산책하고 힐링할 곳",
-        "categories": ["city_park", "beach", "tourism"],
-        "tags": ["산책좋음", "힐링", "전망좋음", "야경", "사진찍기좋음", "호수", "벚꽃"],
-    },
-    "smoking_area": {
-        "keyword": "가까운 흡연구역",
-        "categories": ["smoking_area"],
-        "tags": ["개방형흡연구역", "부스형흡연구역", "실내흡연실", "실외흡연구역"],
-    },
-}
-
-SCENARIO_DEFAULT_RADIUS = {
-    "work_cafe": 1500,
-    "waiting_place": 1200,
-    "walk_healing": 3000,
-    "smoking_area": 800,
-}
 
 WAITING_PLACE_EXCLUDE_KEYWORDS = [
     "경로당",
@@ -84,34 +58,24 @@ WAITING_PLACE_PREFERRED_KEYWORDS = [
     "관광안내소",
 ]
 
-
-def get_scenario_config(scenario):
-    return SCENARIO_CONFIGS.get(scenario, SCENARIO_CONFIGS["work_cafe"])
-
-
-def get_default_radius(scenario):
-    return SCENARIO_DEFAULT_RADIUS.get(scenario, 1500)
-
-
 def normalize_recommendation_context(
     scenario="work_cafe",
+    condition=None,
     categories=None,
     tags=None,
     keyword=None,
     exclude_categories=None,
+    radius=None,
 ):
-    normalized_scenario = scenario if scenario in SCENARIO_CONFIGS else "custom"
-    config = get_scenario_config(scenario)
-    normalized_categories = list(dict.fromkeys(categories or config["categories"]))
-    normalized_tags = list(dict.fromkeys(tags or config["tags"]))
-
-    return {
-        "scenario": normalized_scenario,
-        "keyword": keyword or config["keyword"],
-        "categories": normalized_categories,
-        "tags": normalized_tags,
-        "exclude_categories": list(dict.fromkeys(exclude_categories or [])),
-    }
+    return build_recommendation_condition(
+        scenario=scenario,
+        condition=condition,
+        categories=categories,
+        tags=tags,
+        keyword=keyword,
+        exclude_categories=exclude_categories,
+        radius=radius,
+    )
 
 
 def _parse_float(value):
@@ -166,22 +130,56 @@ def _category_score(place, categories):
     return 25 if place.category in categories else 0
 
 
-def _tag_score(tag_data, preferred_tags):
-    preferred = set(preferred_tags)
+def _tag_score(tag_data, preferred_tags, required_tags=None):
+    required = set(required_tags or [])
+    preferred = set(preferred_tags or [])
+    requested = required | preferred
     matched = []
     score = 0
 
     for tag_name in tag_data["verified_tags"]:
-        if tag_name in preferred:
+        if tag_name in required:
+            matched.append(tag_name)
+            score += 12
+        elif tag_name in requested:
             matched.append(tag_name)
             score += 10
 
     for tag_name in tag_data["suggested_tags"]:
-        if tag_name in preferred:
+        if tag_name in required:
+            matched.append(tag_name)
+            score += 8
+        elif tag_name in requested:
             matched.append(tag_name)
             score += 7
 
     return min(score, 35), list(dict.fromkeys(matched))
+
+
+def _all_tag_names(tag_data):
+    return set(
+        tag_data["verified_tags"]
+        + tag_data["suggested_tags"]
+        + tag_data["warning_tags"]
+    )
+
+
+def _missing_tags(tag_data, required_tags=None, preferred_tags=None):
+    requested = list(dict.fromkeys((required_tags or []) + (preferred_tags or [])))
+    if not requested:
+        return []
+
+    available = _all_tag_names(tag_data)
+    return [tag for tag in requested if tag not in available]
+
+
+def _avoid_tag_penalty(tag_data, avoid_tags=None):
+    avoid = set(avoid_tags or [])
+    if not avoid:
+        return 0, []
+
+    matched_avoid_tags = sorted(_all_tag_names(tag_data) & avoid)
+    return min(len(matched_avoid_tags) * 10, 25), matched_avoid_tags
 
 
 def _quality_score(place):
@@ -286,12 +284,26 @@ def get_place_tag_data(place):
     }
 
 
-def score_place(place, tag_data, categories, preferred_tags, distance, scenario=None):
+def score_place(
+    place,
+    tag_data,
+    categories,
+    preferred_tags,
+    distance,
+    scenario=None,
+    required_tags=None,
+    avoid_tags=None,
+):
     category_score = _category_score(place, categories)
-    tag_score, matched_tags = _tag_score(tag_data, preferred_tags)
+    tag_score, matched_tags = _tag_score(
+        tag_data,
+        preferred_tags,
+        required_tags=required_tags,
+    )
     distance_score = _distance_score(distance)
     quality_score = _quality_score(place)
     warning_penalty = _warning_penalty(tag_data)
+    avoid_penalty, matched_avoid_tags = _avoid_tag_penalty(tag_data, avoid_tags)
     waiting_adjustment = (
         get_waiting_place_adjustment(place, tag_data)
         if scenario == "waiting_place"
@@ -306,6 +318,7 @@ def score_place(place, tag_data, categories, preferred_tags, distance, scenario=
         + quality_score
         + waiting_adjustment["bonus"]
         - warning_penalty
+        - avoid_penalty
         - waiting_adjustment["penalty"]
     )
 
@@ -319,6 +332,8 @@ def score_place(place, tag_data, categories, preferred_tags, distance, scenario=
         "distance": distance_score,
         "data_quality": round(quality_score, 1),
         "warning_penalty": warning_penalty,
+        "avoid_tag_penalty": avoid_penalty,
+        "matched_avoid_tags": matched_avoid_tags,
         "waiting_place_bonus": waiting_adjustment["bonus"],
         "unsuitable_place_penalty": waiting_adjustment["penalty"],
         "waiting_place_penalty_reason": waiting_adjustment["reason"],
@@ -344,6 +359,70 @@ def get_recommendation_confidence(score, match_level, matched_tags):
         return "medium"
 
     return "low"
+
+
+def build_result_metadata(tag_data, matched_tags, missing_tags, match_level, score_breakdown):
+    verified_matches = [
+        tag for tag in matched_tags
+        if tag in tag_data["verified_tags"]
+    ]
+    candidate_matches = [
+        tag for tag in matched_tags
+        if tag in tag_data["suggested_tags"]
+    ]
+    has_any_tag_data = bool(
+        tag_data["verified_tags"]
+        or tag_data["suggested_tags"]
+        or tag_data["warning_tags"]
+    )
+
+    if verified_matches:
+        return {
+            "source_type": "db_verified",
+            "confidence": "high",
+            "is_verified": True,
+            "fallback_level": 1,
+            "caution_message": "",
+        }
+
+    if candidate_matches or matched_tags:
+        return {
+            "source_type": "db_candidate",
+            "confidence": "medium",
+            "is_verified": False,
+            "fallback_level": 2,
+            "caution_message": DEFAULT_CAUTION,
+        }
+
+    if match_level == "category_distance_fallback":
+        if has_any_tag_data:
+            caution = (
+                "요청한 세부 조건과 직접 일치하는 태그는 부족하지만, "
+                "DB 카테고리와 거리 기준으로 추천된 후보입니다."
+            )
+            fallback_level = 3
+        else:
+            caution = "세부 태그 데이터가 부족하여 카테고리와 거리 기준으로 추천된 후보입니다."
+            fallback_level = 5
+
+        if missing_tags:
+            caution = f"{caution} 확인되지 않은 조건: {', '.join(missing_tags[:3])}."
+
+        return {
+            "source_type": "db_category_fallback",
+            "confidence": "low",
+            "is_verified": False,
+            "fallback_level": fallback_level,
+            "caution_message": caution,
+        }
+
+    return {
+        "source_type": "db_category_fallback",
+        "confidence": "low",
+        "is_verified": False,
+        "fallback_level": 5,
+        "caution_message": "입력 조건과의 일치 근거가 부족하여 확인이 필요한 후보입니다.",
+    }
 
 
 def build_db_recommend_reason(place, scenario, distance, matched_tags, match_level, score_breakdown=None):
@@ -385,23 +464,41 @@ def serialize_recommendation(
     matched_tags=None,
     score=None,
     score_breakdown=None,
+    condition=None,
 ):
     tag_data = get_place_tag_data(place)
     matched_tags = matched_tags or []
+    condition = condition or build_recommendation_condition(scenario=scenario)
+    required_tags = condition.get("required_tags", [])
+    preferred_tags = condition.get("preferred_tags", condition.get("tags", []))
 
     if score is None or score_breakdown is None:
         score, matched_tags, score_breakdown = score_place(
             place=place,
             tag_data=tag_data,
-            categories=[place.category],
-            preferred_tags=matched_tags,
+            categories=condition.get("categories") or [place.category],
+            preferred_tags=preferred_tags,
+            required_tags=required_tags,
+            avoid_tags=condition.get("avoid_tags", []),
             distance=distance,
             scenario=scenario,
         )
 
-    category_matches = bool(place.category)
+    category_matches = place.category in set(condition.get("categories") or [place.category])
     match_level = get_match_level(matched_tags, category_matches)
-    confidence = get_recommendation_confidence(score, match_level, matched_tags)
+    legacy_confidence = get_recommendation_confidence(score, match_level, matched_tags)
+    missing_tags = _missing_tags(
+        tag_data,
+        required_tags=required_tags,
+        preferred_tags=preferred_tags,
+    )
+    metadata = build_result_metadata(
+        tag_data=tag_data,
+        matched_tags=matched_tags,
+        missing_tags=missing_tags,
+        match_level=match_level,
+        score_breakdown=score_breakdown,
+    )
 
     reason = build_db_recommend_reason(
         place,
@@ -425,15 +522,22 @@ def serialize_recommendation(
         "score": score,
         "runtime_tags": matched_tags,
         "matched_tags": matched_tags,
+        "missing_tags": missing_tags,
         "match_level": match_level,
-        "recommendation_confidence": confidence,
+        "recommendation_confidence": legacy_confidence,
+        "source_type": metadata["source_type"],
+        "confidence": metadata["confidence"],
+        "is_verified": metadata["is_verified"],
+        "fallback_level": metadata["fallback_level"],
         "suggested_tags": tag_data["suggested_tags"],
         "verified_tags": tag_data["verified_tags"],
         "warning_tags": tag_data["warning_tags"],
         "tag_details": tag_data["tag_details"],
+        "recommendation_reason": reason,
         "recommend_reason": reason,
         "reason": reason,
-        "caution": DEFAULT_CAUTION,
+        "caution_message": metadata["caution_message"],
+        "caution": metadata["caution_message"] or DEFAULT_CAUTION,
         "source": place.source,
         "external_id": place.external_id,
         "source_name": place.source_name,
@@ -446,6 +550,7 @@ def serialize_recommendation(
 
 def search_db_recommendations(
     scenario="work_cafe",
+    condition=None,
     lat=None,
     lng=None,
     categories=None,
@@ -461,15 +566,18 @@ def search_db_recommendations(
 
     context = normalize_recommendation_context(
         scenario=scenario,
+        condition=condition,
         categories=categories,
         tags=tags,
         keyword=keyword,
         exclude_categories=exclude_categories,
+        radius=radius,
     )
     radius = min(
-        max(_parse_int(radius, get_default_radius(context["scenario"])), 300),
+        max(_parse_int(radius, context.get("radius") or get_default_radius(context["scenario"])), 300),
         20000,
     )
+    context["radius"] = radius
 
     base_places = Place.objects.filter(category__in=context["categories"])
 
@@ -526,7 +634,9 @@ def search_db_recommendations(
             place=place,
             tag_data=tag_data,
             categories=context["categories"],
-            preferred_tags=context["tags"],
+            preferred_tags=context["preferred_tags"],
+            required_tags=context["required_tags"],
+            avoid_tags=context["avoid_tags"],
             distance=distance,
             scenario=context["scenario"],
         )
@@ -555,16 +665,24 @@ def search_db_recommendations(
                 matched_tags=matched_tags,
                 score=score,
                 score_breakdown=score_breakdown,
+                condition=context,
             )
         )
 
     return {
         "scenario": context["scenario"],
         "keyword": context["keyword"],
+        "condition": context,
+        "recommendation_condition": context,
         "conditions": {
             "categories": context["categories"],
             "exclude_categories": context["exclude_categories"],
+            "required_tags": context["required_tags"],
+            "preferred_tags": context["preferred_tags"],
+            "avoid_tags": context["avoid_tags"],
             "tags": context["tags"],
+            "keywords": context["keywords"],
+            "fallback_enabled": context["fallback_enabled"],
             "lat": lat,
             "lng": lng,
             "radius": radius,
