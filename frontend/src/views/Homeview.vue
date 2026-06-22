@@ -2,6 +2,8 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import { aiSearchRecommendations, getKakaoPlaceTags, getSavedPlaces } from '@/api/recommendation'
 import KakaoMap from '@/components/KakaoMap.vue'
+import { useRouter } from 'vue-router'
+import { useAuthStore } from '@/stores/auth'
 
 const props = defineProps({
   initialTab: {
@@ -16,6 +18,14 @@ const normalizeTab = (tab) => {
 
 const activeTab = ref(normalizeTab(props.initialTab))
 const searchKeyword = ref('')
+
+const router = useRouter()
+const authStore = useAuthStore()
+
+const handleLogout = async () => {
+  await authStore.logout()
+  router.push('/')
+}
 
 watch(
   () => props.initialTab,
@@ -1761,8 +1771,8 @@ const getDistanceMetersBetweenPlaces = (firstPlace, secondPlace) => {
   const a =
     Math.sin(deltaLat / 2) ** 2 +
     Math.cos(toRadians(lat1)) *
-      Math.cos(toRadians(lat2)) *
-      Math.sin(deltaLng / 2) ** 2
+    Math.cos(toRadians(lat2)) *
+    Math.sin(deltaLng / 2) ** 2
 
   return radius * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
 }
@@ -1776,16 +1786,16 @@ const mergeTags = (firstTags = [], secondTags = []) => {
   const mergedTags = []
   const seen = new Set()
 
-  ;[...firstTags, ...secondTags].forEach((tag) => {
-    const key = getTagKey(tag)
+    ;[...firstTags, ...secondTags].forEach((tag) => {
+      const key = getTagKey(tag)
 
-    if (seen.has(key)) {
-      return
-    }
+      if (seen.has(key)) {
+        return
+      }
 
-    seen.add(key)
-    mergedTags.push(tag)
-  })
+      seen.add(key)
+      mergedTags.push(tag)
+    })
 
   return mergedTags
 }
@@ -2518,7 +2528,7 @@ const makeRecommendationTags = (place) => {
     tags.push(makeTag(categoryText, 'category_rule'))
   }
 
-  ;(place.matched_tags || place.runtime_tags || []).forEach((tagName) => {
+  ; (place.matched_tags || place.runtime_tags || []).forEach((tagName) => {
     tags.push(makeTag(tagName, 'checked'))
   })
 
@@ -3951,24 +3961,44 @@ const handleDetailFrameError = () => {
 
 <template>
   <main class="home-page">
-    <header class="top-bar">
-      <button
-        type="button"
-        class="tab-button"
-        :class="{ active: activeTab === 'search' }"
-        @click="activeTab = 'search'"
-      >
-        검색창
-      </button>
+    <header class="page-header">
+      <div class="header-main">
+        <div class="top-bar">
+          <button type="button" class="tab-button" :class="{ active: activeTab === 'search' }"
+            @click="activeTab = 'search'">
+            검색창
+          </button>
 
-      <button
-        type="button"
-        class="tab-button"
-        :class="{ active: activeTab === 'map' }"
-        @click="activeTab = 'map'"
-      >
-        지도
-      </button>
+          <button type="button" class="tab-button" :class="{ active: activeTab === 'map' }"
+            @click="openMapWithCurrentLocation">
+            지도
+          </button>
+        </div>
+
+        <div class="auth-menu">
+          <template v-if="authStore.isLoggedIn">
+            <span class="user-name">
+              {{ authStore.user?.username }}님
+            </span>
+
+            <button type="button" class="auth-button logout" @click="handleLogout">
+              로그아웃
+            </button>
+          </template>
+
+          <template v-else>
+            <RouterLink to="/login" class="auth-button">
+              로그인
+            </RouterLink>
+
+            <RouterLink to="/signup" class="auth-button signup">
+              회원가입
+            </RouterLink>
+          </template>
+        </div>
+      </div>
+
+      
     </header>
 
     <section v-if="activeTab === 'search'" class="search-section">
@@ -3981,12 +4011,7 @@ const handleDetailFrameError = () => {
       </div>
 
       <div class="search-box">
-        <input
-          v-model="searchKeyword"
-          type="text"
-          placeholder="지금 어떤 장소가 필요하신가요?"
-          @keyup.enter="handleSearch"
-        />
+        <input v-model="searchKeyword" type="text" placeholder="지금 어떤 장소가 필요하신가요?" @keyup.enter="handleSearch" />
 
         <button type="button" @click="handleSearch">
           검색
@@ -4033,11 +4058,7 @@ const handleDetailFrameError = () => {
         </div>
       </div>
 
-      <div
-        v-if="mapParserStatus"
-        class="map-parser-status"
-        :class="mapParserStatus.className"
-      >
+      <div v-if="mapParserStatus" class="map-parser-status" :class="mapParserStatus.className">
         <strong>{{ mapParserStatus.label }}</strong>
         <span>{{ mapParserStatus.detail }}</span>
       </div>
@@ -4230,11 +4251,7 @@ const handleDetailFrameError = () => {
           </div>
 
           <div v-if="hasMoreResults" class="show-more-wrap">
-            <button
-              type="button"
-              class="show-more-button"
-              @click="showMoreResults"
-            >
+            <button type="button" class="show-more-button" @click="showMoreResults">
               더보기
             </button>
           </div>
@@ -4242,13 +4259,8 @@ const handleDetailFrameError = () => {
         </aside>
 
         <div class="map-area">
-          <button
-            v-if="mapSearchKeyword.trim()"
-            type="button"
-            class="map-overlay-research-button"
-            :disabled="isSearchingMap"
-            @click="searchCurrentMapView"
-          >
+          <button v-if="mapSearchKeyword.trim()" type="button" class="map-overlay-research-button"
+            :disabled="isSearchingMap" @click="searchCurrentMapView">
             현재 지도에서 재검색
           </button>
 
@@ -4347,31 +4359,18 @@ const handleDetailFrameError = () => {
                 </span>
               </div>
 
-              <section
-                v-if="hasKakaoDetail(selectedPlace)"
-                class="kakao-frame-section"
-              >
+              <section v-if="hasKakaoDetail(selectedPlace)" class="kakao-frame-section">
                 <div class="iframe-fallback" v-if="detailFrameError">
                   <p>카카오맵 상세페이지를 현재 화면에 표시하지 못했습니다.</p>
 
-                  <a
-                    :href="getKakaoDetailUrl(selectedPlace)"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
+                  <a :href="getKakaoDetailUrl(selectedPlace)" target="_blank" rel="noopener noreferrer">
                     새창에서 열기
                   </a>
                 </div>
 
                 <div v-else class="kakao-frame-scroll">
-                  <iframe
-                    :src="getKakaoDetailUrl(selectedPlace)"
-                    class="inline-kakao-frame"
-                    title="카카오맵 장소 상세페이지"
-                    scrolling="no"
-                    referrerpolicy="no-referrer-when-downgrade"
-                    @error="handleDetailFrameError"
-                  ></iframe>
+                  <iframe :src="getKakaoDetailUrl(selectedPlace)" class="inline-kakao-frame" title="카카오맵 장소 상세페이지"
+                    scrolling="no" referrerpolicy="no-referrer-when-downgrade" @error="handleDetailFrameError"></iframe>
                 </div>
               </section>
 
@@ -4486,6 +4485,76 @@ const handleDetailFrameError = () => {
 </template>
 
 <style scoped>
+.page-header {
+  margin-bottom: 24px;
+}
+
+.header-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 16px;
+  align-items: center;
+}
+
+.top-bar {
+  grid-column: 2;
+}
+
+.auth-menu {
+  grid-column: 3;
+  justify-self: end;
+  min-width: 0;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.user-name {
+  min-width: 0;
+  overflow: hidden;
+  color: #344054;
+  font-size: 14px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.auth-button {
+  padding: 10px 14px;
+  border: 1px solid #d0d5dd;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #344054;
+  font-size: 14px;
+  font-weight: 800;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.auth-button.signup {
+  border-color: #2563eb;
+  background: #2563eb;
+  color: #ffffff;
+}
+
+.auth-button.logout {
+  border-color: #ef4444;
+  background: #ef4444;
+  color: #ffffff;
+}
+
+@media (max-width: 720px) {
+  .header-main {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .auth-menu {
+    justify-content: center;
+  }
+}
+
 .home-page {
   min-height: 100vh;
   padding: 24px;
@@ -5125,7 +5194,7 @@ h1 {
   gap: 4px 8px;
 }
 
-.place-list-meta small + small::before {
+.place-list-meta small+small::before {
   content: '·';
   margin-right: 8px;
   color: #98a2b3;
@@ -5657,6 +5726,7 @@ h1 {
 }
 
 @media (max-width: 1100px) {
+
   .map-content.has-result-list,
   .map-content.has-result-list.has-selected-place,
   .map-content.has-result-list.is-list-collapsed,
