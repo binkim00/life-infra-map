@@ -1,7 +1,83 @@
 <script setup>
-import { ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
+import { getNotifications } from '@/api/boards'
+import { useAuthStore } from '@/stores/auth'
 
 const isSidebarCollapsed = ref(false)
+
+const authStore = useAuthStore()
+const route = useRoute()
+const notifications = ref([])
+let notificationTimer = null
+
+const unreadNotificationCount = computed(() => {
+  return notifications.value.filter((notification) => !notification.is_read).length
+})
+
+const fetchNotifications = async () => {
+  if (!authStore.isLoggedIn) {
+    notifications.value = []
+    return
+  }
+
+  try {
+    const response = await getNotifications()
+    notifications.value = response.data
+  } catch (error) {
+    console.error(error)
+  }
+}
+
+const startNotificationPolling = () => {
+  if (notificationTimer) {
+    window.clearInterval(notificationTimer)
+  }
+
+  notificationTimer = window.setInterval(fetchNotifications, 30000)
+}
+
+onMounted(() => {
+  authStore.fetchMe()
+    .then(() => {
+      fetchNotifications()
+      startNotificationPolling()
+    })
+    .catch(() => {
+      authStore.logout()
+    })
+})
+
+watch(
+  () => authStore.isLoggedIn,
+  (isLoggedIn) => {
+    if (isLoggedIn) {
+      fetchNotifications()
+      startNotificationPolling()
+      return
+    }
+
+    notifications.value = []
+
+    if (notificationTimer) {
+      window.clearInterval(notificationTimer)
+      notificationTimer = null
+    }
+  },
+)
+
+watch(
+  () => route.fullPath,
+  () => {
+    fetchNotifications()
+  },
+)
+
+onBeforeUnmount(() => {
+  if (notificationTimer) {
+    window.clearInterval(notificationTimer)
+  }
+})
 </script>
 
 <template>
@@ -29,9 +105,41 @@ const isSidebarCollapsed = ref(false)
           <span class="nav-icon">홈</span>
           <span class="nav-text">서비스 홈</span>
         </RouterLink>
-        <RouterLink to="/recommendation-test" class="nav-link">
+
+        <RouterLink to="/" class="nav-link">
           <span class="nav-icon">맵</span>
           <span class="nav-text">지도</span>
+        </RouterLink>
+
+        <RouterLink to="/boards/free" class="nav-link">
+          <span class="nav-text">게시판</span>
+        </RouterLink>
+
+        <RouterLink v-if="authStore.isLoggedIn" to="/mypage" class="nav-link">
+          <span class="nav-text">마이페이지</span>
+        </RouterLink>
+
+        <RouterLink v-if="authStore.isLoggedIn" to="/notifications" class="nav-link notification-link">
+          <span class="nav-text">알림</span>
+          <span v-if="unreadNotificationCount" class="notification-badge">
+            {{ unreadNotificationCount }}
+          </span>
+        </RouterLink>
+
+        <RouterLink v-if="authStore.isLoggedIn" to="/inquiries/new" class="nav-link">
+          <span class="nav-text">문의하기</span>
+        </RouterLink>
+
+        <RouterLink v-if="authStore.user?.is_staff" to="/admin/reports" class="nav-link">
+          <span class="nav-text">신고 내역</span>
+        </RouterLink>
+
+        <RouterLink v-if="authStore.user?.is_staff" to="/admin/users" class="nav-link">
+          <span class="nav-text">유저 관리</span>
+        </RouterLink>
+
+        <RouterLink v-if="authStore.user?.is_staff" to="/admin/inquiries" class="nav-link">
+          <span class="nav-text">문의 관리</span>
         </RouterLink>
       </nav>
     </aside>
@@ -150,6 +258,7 @@ input {
 .nav-link {
   padding: 11px 12px;
   display: flex;
+  justify-content: space-between;
   gap: 8px;
   align-items: center;
   border-radius: 8px;
@@ -193,6 +302,20 @@ input {
   color: #ffffff;
 }
 
+.notification-badge {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 999px;
+  background: #ef4444;
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1;
+}
+
 .app-shell.is-sidebar-collapsed .app-sidebar {
   padding: 22px 10px;
   align-items: center;
@@ -230,6 +353,12 @@ input {
 .app-shell.is-sidebar-collapsed .nav-icon {
   width: 32px;
   height: 32px;
+}
+
+.app-shell.is-sidebar-collapsed .notification-badge {
+  position: absolute;
+  top: 4px;
+  right: 4px;
 }
 
 .app-main {
