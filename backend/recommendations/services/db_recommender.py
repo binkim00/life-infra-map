@@ -5,6 +5,7 @@ from recommendations.services.recommendation_condition import (
     build_recommendation_condition,
     get_default_radius,
 )
+from recommendations.services.place_urls import get_kakao_place_url
 from recommendations.services.smoking_area_data import calculate_distance_m
 from recommendations.services.tag_utils import (
     get_category_display_name,
@@ -694,6 +695,7 @@ def serialize_recommendation(
         condition=condition,
         metadata=metadata,
     )
+    kakao_place_url = get_kakao_place_url(place)
 
     return {
         "id": place.id,
@@ -745,6 +747,8 @@ def serialize_recommendation(
         "source": place.source,
         "external_id": place.external_id,
         "source_name": place.source_name,
+        "kakao_place_url": kakao_place_url,
+        "place_url": kakao_place_url,
         "data_quality_score": place.data_quality_score,
         "data_quality_status": place.data_quality_status,
         "raw_scores": tag_data["raw_scores"],

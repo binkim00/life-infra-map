@@ -279,6 +279,8 @@ const resultSourceLabel = ref('검색 결과')
 const resultMessageSuffix = ref('')
 const selectedPlace = ref(null)
 const detailTagList = ref(null)
+const resolvedKakaoDetailUrls = ref({})
+const kakaoDetailLookupStatus = ref({})
 const baseLocationCandidates = ref([])
 const pendingBaseLocationSearch = ref(null)
 const isResultListCollapsed = ref(false)
@@ -296,6 +298,20 @@ const activeSearchPlan = ref(null)
 
 const showDetailPanel = ref(false)
 const detailFrameError = ref(false)
+
+const KAKAO_DETAIL_LOOKUP_RADIUS_M = 300
+const KAKAO_DETAIL_MATCH_DISTANCE_M = 150
+const KAKAO_DETAIL_WIDE_MATCH_DISTANCE_M = 300
+const KAKAO_DETAIL_WIDE_CATEGORIES = new Set([
+  'city_park',
+  'citypark',
+  'tourism',
+  'beach',
+  '공원',
+  '관광지',
+  '해수욕장',
+])
+const KAKAO_DETAIL_NAME_SIMILARITY_MIN = 0.72
 
 const sortedSearchResults = computed(() => {
   return sortSearchResults(allSearchResults.value)
@@ -426,6 +442,7 @@ watch(
       detailTagList.value.scrollTop = 0
     }
 
+    resolveKakaoDetailUrlForPlace(selectedPlace.value)
   },
 )
 
@@ -1681,6 +1698,53 @@ const getSortedTags = (tags = []) => {
   })
 }
 
+const toDisplayList = (value) => {
+  if (!Array.isArray(value)) {
+    return []
+  }
+
+  return value
+    .map((item) => String(item || '').trim())
+    .filter(Boolean)
+}
+
+const getTextValue = (value) => String(value || '').trim()
+
+const getRecommendationMatchedLabels = (place) => {
+  const labels = toDisplayList(place?.matchedTagLabels || place?.matched_tag_labels)
+
+  return labels.length ? labels : toDisplayList(place?.matchedTags || place?.matched_tags)
+}
+
+const getRecommendationMissingLabels = (place) => {
+  return toDisplayList(place?.missingTagLabels || place?.missing_tag_labels)
+}
+
+const getRecommendationMetaText = (place) => {
+  const metaParts = [
+    getTextValue(place?.recommendationSourceLabel || place?.source_label),
+    getTextValue(place?.recommendationConfidenceLabel || place?.confidence_label),
+  ].filter(Boolean)
+
+  return metaParts.join(' · ')
+}
+
+const getRecommendationFallbackText = (place) => {
+  return getTextValue(place?.recommendationFallbackLabel || place?.fallback_label)
+}
+
+const getRecommendationFallbackDescription = (place) => {
+  return getTextValue(place?.recommendationFallbackDescription || place?.fallback_description)
+}
+
+const getRecommendationCaution = (place) => {
+  return getTextValue(place?.recommendationCaution || place?.caution_message || place?.caution)
+}
+
+const getRecommendationPreviewLabels = (labels = [], limit = 3) => {
+  return toDisplayList(labels).slice(0, limit)
+}
+
 const normalizeSearchText = (text = '') => {
   return text.toLowerCase().replace(/\s+/g, '')
 }
@@ -1907,8 +1971,18 @@ const mergeDbDataIntoKakaoPlace = (kakaoPlace, dbPlace) => {
     source: dbPlace.source || kakaoPlace.source,
     sourceName: dbPlace.sourceName || kakaoPlace.sourceName,
     externalId: kakaoPlace.externalId || dbPlace.externalId,
-    kakaoPlaceId: kakaoPlace.kakaoPlaceId || dbPlace.kakaoPlaceId || dbPlace.externalId,
+    kakaoPlaceId:
+      kakaoPlace.kakaoPlaceId ||
+      dbPlace.kakaoPlaceId ||
+      (
+        hasKakaoSourceHint(dbPlace) && isKakaoPlaceId(dbPlace.externalId)
+          ? dbPlace.externalId
+          : null
+      ),
     placeUrl: kakaoPlace.placeUrl || dbPlace.placeUrl,
+    kakaoPlaceUrl: kakaoPlace.kakaoPlaceUrl || dbPlace.kakaoPlaceUrl || '',
+    kakaoUrl: kakaoPlace.kakaoUrl || dbPlace.kakaoUrl || '',
+    detailUrl: kakaoPlace.detailUrl || dbPlace.detailUrl || '',
     navigationUrl: kakaoPlace.navigationUrl || dbPlace.navigationUrl,
     tags: mergeTags(kakaoPlace.tags, dbPlace.tags),
     tagSource: hasRecommendationData
@@ -1923,6 +1997,22 @@ const mergeDbDataIntoKakaoPlace = (kakaoPlace, dbPlace) => {
     matchedTags: dbPlace.matchedTags?.length
       ? dbPlace.matchedTags
       : (kakaoPlace.matchedTags || []),
+    matchedTagLabels: dbPlace.matchedTagLabels?.length
+      ? dbPlace.matchedTagLabels
+      : (kakaoPlace.matchedTagLabels || []),
+    missingTagLabels: dbPlace.missingTagLabels?.length
+      ? dbPlace.missingTagLabels
+      : (kakaoPlace.missingTagLabels || []),
+    recommendationSourceLabel:
+      dbPlace.recommendationSourceLabel || kakaoPlace.recommendationSourceLabel || '',
+    recommendationConfidenceLabel:
+      dbPlace.recommendationConfidenceLabel || kakaoPlace.recommendationConfidenceLabel || '',
+    recommendationFallbackLabel:
+      dbPlace.recommendationFallbackLabel || kakaoPlace.recommendationFallbackLabel || '',
+    recommendationFallbackDescription:
+      dbPlace.recommendationFallbackDescription || kakaoPlace.recommendationFallbackDescription || '',
+    recommendationCaution:
+      dbPlace.recommendationCaution || kakaoPlace.recommendationCaution || '',
     suggestedTags: dbPlace.suggestedTags?.length
       ? dbPlace.suggestedTags
       : (kakaoPlace.suggestedTags || []),
@@ -1991,20 +2081,299 @@ const isDbPlace = (place) => {
   return place?.searchSource === 'local_db'
 }
 
-const getKakaoDetailUrl = (place) => {
-  if (place?.placeUrl || place?.place_url) {
-    return place.placeUrl || place.place_url
+const KAKAO_PLACE_ID_PATTERN = /^\d{5,20}$/
+
+const normalizeKakaoDetailUrl = (url) => {
+  const cleanedUrl = getTextValue(url)
+
+  if (!cleanedUrl) {
+    return ''
   }
 
-  if (place?.kakaoPlaceId) {
-    return `https://place.map.kakao.com/${place.kakaoPlaceId}`
+  if (cleanedUrl.startsWith('http://place.map.kakao.com/')) {
+    return cleanedUrl.replace('http://', 'https://')
   }
 
-  if ((place?.source === 'kakao_local' || place?.rawSource === 'kakao_local') && place?.externalId) {
-    return `https://place.map.kakao.com/${place.externalId}`
+  if (cleanedUrl.startsWith('place.map.kakao.com/')) {
+    return `https://${cleanedUrl}`
+  }
+
+  return cleanedUrl
+}
+
+const isKakaoPlaceId = (value) => {
+  return KAKAO_PLACE_ID_PATTERN.test(getTextValue(value))
+}
+
+const hasKakaoSourceHint = (place) => {
+  const sourceText = [
+    place?.source,
+    place?.rawSource,
+    place?.sourceName,
+    place?.source_name,
+  ]
+    .map((value) => getTextValue(value).toLowerCase())
+    .join(' ')
+
+  return sourceText.includes('kakao')
+}
+
+const getKakaoDetailLookupKey = (place) => {
+  if (!place) {
+    return ''
+  }
+
+  const stableId = place.id || place.savedPlaceId || place.externalId || place.external_id
+  if (stableId) {
+    return String(stableId)
+  }
+
+  return [
+    getTextValue(place.name),
+    getTextValue(place.lat),
+    getTextValue(place.lng),
+  ].join(':')
+}
+
+const getDirectKakaoDetailUrl = (place) => {
+  const explicitUrl = [
+    place?.kakaoPlaceUrl,
+    place?.kakao_place_url,
+    place?.kakaoUrl,
+    place?.kakao_url,
+    place?.placeUrl,
+    place?.place_url,
+    place?.detailUrl,
+    place?.detail_url,
+  ]
+    .map(normalizeKakaoDetailUrl)
+    .find(Boolean)
+
+  if (explicitUrl) {
+    return explicitUrl
+  }
+
+  const kakaoPlaceId = getTextValue(place?.kakaoPlaceId || place?.kakao_place_id)
+  if (isKakaoPlaceId(kakaoPlaceId)) {
+    return `https://place.map.kakao.com/${kakaoPlaceId}`
+  }
+
+  const externalId = getTextValue(place?.externalId || place?.external_id)
+  if (hasKakaoSourceHint(place) && isKakaoPlaceId(externalId)) {
+    return `https://place.map.kakao.com/${externalId}`
   }
 
   return ''
+}
+
+const getResolvedKakaoDetailUrl = (place) => {
+  const lookupKey = getKakaoDetailLookupKey(place)
+  return lookupKey ? resolvedKakaoDetailUrls.value[lookupKey] || '' : ''
+}
+
+const getKakaoDetailLookupStatus = (place) => {
+  const lookupKey = getKakaoDetailLookupKey(place)
+  return lookupKey ? kakaoDetailLookupStatus.value[lookupKey] || 'idle' : 'idle'
+}
+
+const getKakaoDetailUrl = (place) => {
+  return getDirectKakaoDetailUrl(place) || getResolvedKakaoDetailUrl(place)
+}
+
+const getKakaoDetailPlaceCoordinates = (place) => {
+  const lat = Number(place?.lat ?? place?.y)
+  const lng = Number(place?.lng ?? place?.x)
+
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    return null
+  }
+
+  return { lat, lng }
+}
+
+const getKakaoDetailCandidateCoordinates = (candidate) => {
+  const lat = Number(candidate?.y ?? candidate?.lat)
+  const lng = Number(candidate?.x ?? candidate?.lng)
+
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    return null
+  }
+
+  return { lat, lng }
+}
+
+const getKakaoDetailMaxDistance = (place) => {
+  const categoryText = [
+    place?.rawCategory,
+    place?.category,
+  ]
+    .map((value) => getTextValue(value))
+    .filter(Boolean)
+
+  const isWidePlace = categoryText.some((category) => KAKAO_DETAIL_WIDE_CATEGORIES.has(category))
+
+  return isWidePlace
+    ? KAKAO_DETAIL_WIDE_MATCH_DISTANCE_M
+    : KAKAO_DETAIL_MATCH_DISTANCE_M
+}
+
+const isKakaoDetailNameMatch = (placeName, candidateName) => {
+  const placeText = normalizePlaceName(placeName)
+  const candidateText = normalizePlaceName(candidateName)
+
+  if (!placeText || !candidateText) {
+    return false
+  }
+
+  if (placeText.length < 3 || candidateText.length < 3) {
+    return false
+  }
+
+  if (placeText === candidateText) {
+    return true
+  }
+
+  const shorterLength = Math.min(placeText.length, candidateText.length)
+  const hasContainmentMatch = (
+    shorterLength >= 4 &&
+    (placeText.includes(candidateText) || candidateText.includes(placeText))
+  )
+
+  if (hasContainmentMatch) {
+    return true
+  }
+
+  return getPlaceNameSimilarity(placeName, candidateName) >= KAKAO_DETAIL_NAME_SIMILARITY_MIN
+}
+
+const getKakaoDetailCandidateUrl = (candidate) => {
+  const candidateUrl = normalizeKakaoDetailUrl(candidate?.place_url || candidate?.placeUrl)
+
+  if (candidateUrl) {
+    return candidateUrl
+  }
+
+  return candidate?.id
+    ? `https://place.map.kakao.com/${candidate.id}`
+    : ''
+}
+
+const getBestKakaoDetailCandidate = (place, candidates = []) => {
+  const placeCoordinates = getKakaoDetailPlaceCoordinates(place)
+  const maxDistance = getKakaoDetailMaxDistance(place)
+
+  if (!placeCoordinates) {
+    return null
+  }
+
+  return candidates
+    .map((candidate) => {
+      const candidateCoordinates = getKakaoDetailCandidateCoordinates(candidate)
+      const url = getKakaoDetailCandidateUrl(candidate)
+
+      if (!candidateCoordinates || !url) {
+        return null
+      }
+
+      const distance = getDistanceMetersBetweenPlaces(placeCoordinates, candidateCoordinates)
+      const nameMatched = isKakaoDetailNameMatch(place?.name, candidate.place_name)
+
+      if (!Number.isFinite(distance) || distance > maxDistance || !nameMatched) {
+        return null
+      }
+
+      return {
+        candidate,
+        url,
+        distance,
+        nameSimilarity: getPlaceNameSimilarity(place?.name, candidate.place_name),
+      }
+    })
+    .filter(Boolean)
+    .sort((first, second) => {
+      if (second.nameSimilarity !== first.nameSimilarity) {
+        return second.nameSimilarity - first.nameSimilarity
+      }
+
+      return first.distance - second.distance
+    })[0] || null
+}
+
+const shouldLookupKakaoDetailUrl = (place) => {
+  if (!isDbPlace(place) || getDirectKakaoDetailUrl(place)) {
+    return false
+  }
+
+  const lookupKey = getKakaoDetailLookupKey(place)
+  if (!lookupKey || resolvedKakaoDetailUrls.value[lookupKey]) {
+    return false
+  }
+
+  const status = kakaoDetailLookupStatus.value[lookupKey]
+  if (['loading', 'success', 'failed'].includes(status)) {
+    return false
+  }
+
+  return Boolean(getTextValue(place?.name) && getKakaoDetailPlaceCoordinates(place))
+}
+
+const resolveKakaoDetailUrlForPlace = async (place) => {
+  if (!shouldLookupKakaoDetailUrl(place)) {
+    return
+  }
+
+  if (!window.kakao || !window.kakao.maps || !window.kakao.maps.services) {
+    return
+  }
+
+  const lookupKey = getKakaoDetailLookupKey(place)
+  const placeCoordinates = getKakaoDetailPlaceCoordinates(place)
+
+  kakaoDetailLookupStatus.value = {
+    ...kakaoDetailLookupStatus.value,
+    [lookupKey]: 'loading',
+  }
+
+  try {
+    const placesService = new window.kakao.maps.services.Places()
+    const results = await runKakaoKeywordSearchLimited(
+      placesService,
+      place.name,
+      {
+        location: new window.kakao.maps.LatLng(placeCoordinates.lat, placeCoordinates.lng),
+        radius: KAKAO_DETAIL_LOOKUP_RADIUS_M,
+        sort: window.kakao.maps.services.SortBy.DISTANCE,
+      },
+      { maxPages: 1 },
+    )
+    const matchedCandidate = getBestKakaoDetailCandidate(place, results)
+
+    if (!matchedCandidate) {
+      kakaoDetailLookupStatus.value = {
+        ...kakaoDetailLookupStatus.value,
+        [lookupKey]: 'failed',
+      }
+      return
+    }
+
+    resolvedKakaoDetailUrls.value = {
+      ...resolvedKakaoDetailUrls.value,
+      [lookupKey]: matchedCandidate.url,
+    }
+    kakaoDetailLookupStatus.value = {
+      ...kakaoDetailLookupStatus.value,
+      [lookupKey]: 'success',
+    }
+
+    if (selectedPlace.value && getKakaoDetailLookupKey(selectedPlace.value) === lookupKey) {
+      detailFrameError.value = false
+    }
+  } catch (error) {
+    kakaoDetailLookupStatus.value = {
+      ...kakaoDetailLookupStatus.value,
+      [lookupKey]: 'failed',
+    }
+  }
 }
 
 const getCurrentLocationNavigationOrigin = () => {
@@ -2150,6 +2519,44 @@ const getRecommendationReason = (place) => {
   }
 
   return 'DB에 저장된 장소 정보를 바탕으로 추천 후보로 표시했습니다.'
+}
+
+const getRecommendationReasonSummary = (place) => {
+  if (!isRecommendationPlace(place)) {
+    return ''
+  }
+
+  const matchedLabels = getRecommendationPreviewLabels(getRecommendationMatchedLabels(place), 2)
+  const missingLabels = getRecommendationPreviewLabels(getRecommendationMissingLabels(place), 1)
+  const fallbackText = getRecommendationFallbackText(place)
+
+  if (matchedLabels.length) {
+    const summaryParts = [`${matchedLabels.join(', ')} 조건과 일치`]
+
+    if (missingLabels.length) {
+      summaryParts.push(`${missingLabels.join(', ')} 확인 필요`)
+    }
+
+    return summaryParts.join(' · ')
+  }
+
+  if (fallbackText) {
+    return missingLabels.length
+      ? `${fallbackText} · ${missingLabels.join(', ')} 확인 필요`
+      : fallbackText
+  }
+
+  const reason = getRecommendationReason(place)
+  const sentenceEndIndex = reason.indexOf('.')
+  const firstSentence = sentenceEndIndex >= 0
+    ? reason.slice(0, sentenceEndIndex + 1)
+    : reason
+
+  if (firstSentence.length <= 80) {
+    return firstSentence
+  }
+
+  return `${firstSentence.slice(0, 80).trim()}...`
 }
 
 const getCandidateDescription = (place) => {
@@ -2354,6 +2761,7 @@ const convertKakaoPlaces = (
       distance: place.distance ? Number(place.distance) : null,
       phone: place.phone,
       placeUrl: place.place_url,
+      kakaoPlaceUrl: place.place_url,
       navigationUrl: `https://map.kakao.com/link/to/${encodeURIComponent(place.place_name)},${place.y},${place.x}`,
       markerColor: 'red',
       searchSource: 'kakao',
@@ -2366,6 +2774,13 @@ const convertKakaoPlaces = (
       verifiedTags: savedTagData.verified_tags || [],
       warningTags: savedTagData.warning_tags || [],
       tagDetails: savedTagData.tag_details || [],
+      matchedTagLabels: [],
+      missingTagLabels: [],
+      recommendationSourceLabel: '',
+      recommendationConfidenceLabel: '',
+      recommendationFallbackLabel: '',
+      recommendationFallbackDescription: '',
+      recommendationCaution: '',
       dataQualityStatus: savedTagData.data_quality_status || null,
       dataQualityScore: savedTagData.data_quality_score || null,
       rawScores,
@@ -2465,6 +2880,14 @@ const convertDbPlaces = (places) => {
   return places.map((place) => {
     const externalId = place.external_id || place.externalId || null
     const isKakaoLocal = place.source === 'kakao_local'
+    const sourceName = place.source_name || place.sourceName || ''
+    const kakaoPlaceId = isKakaoLocal && isKakaoPlaceId(externalId) ? externalId : null
+    const kakaoDetailUrl = getKakaoDetailUrl({
+      ...place,
+      externalId,
+      sourceName,
+      kakaoPlaceId,
+    })
     const ancillaryAdjustment = getAncillaryPlaceAdjustment({
       place: {
         ...place,
@@ -2477,9 +2900,9 @@ const convertDbPlaces = (places) => {
       id: `db-${place.id}`,
       savedPlaceId: place.id,
       source: place.source,
-      sourceName: place.source_name || place.sourceName || '',
+      sourceName,
       externalId,
-      kakaoPlaceId: isKakaoLocal && externalId ? externalId : null,
+      kakaoPlaceId,
       rawCategory: place.category,
       name: place.name,
       category: getDbCategoryText(place.category),
@@ -2489,9 +2912,10 @@ const convertDbPlaces = (places) => {
       lng: Number(place.lng),
       distance: place.distance ?? null,
       phone: '',
-      placeUrl: isKakaoLocal && externalId
-        ? `https://place.map.kakao.com/${externalId}`
-        : '',
+      placeUrl: kakaoDetailUrl,
+      kakaoPlaceUrl: getTextValue(place.kakao_place_url || place.kakaoPlaceUrl),
+      kakaoUrl: getTextValue(place.kakao_url || place.kakaoUrl),
+      detailUrl: getTextValue(place.detail_url || place.detailUrl),
       navigationUrl: `https://map.kakao.com/link/to/${encodeURIComponent(place.name)},${place.lat},${place.lng}`,
       markerColor: 'blue',
       searchSource: 'local_db',
@@ -2505,6 +2929,16 @@ const convertDbPlaces = (places) => {
       verifiedTags: place.verified_tags || [],
       warningTags: place.warning_tags || [],
       tagDetails: place.tag_details || [],
+      matchedTagLabels: toDisplayList(place.matched_tag_labels),
+      missingTagLabels: toDisplayList(place.missing_tag_labels),
+      recommendationSourceLabel: getTextValue(place.source_label),
+      recommendationConfidenceLabel: getTextValue(place.confidence_label),
+      recommendationFallbackLabel: getTextValue(place.fallback_label),
+      recommendationFallbackDescription: getTextValue(place.fallback_description),
+      recommendationCaution: getTextValue(place.caution_message || place.caution),
+      recommendationReason: getTextValue(
+        place.recommendation_reason || place.recommend_reason || place.reason,
+      ),
       recommendScore:
         place.raw?.scores?.recommendation_ready_score ??
         place.data_quality_score ??
@@ -2567,6 +3001,14 @@ const convertRecommendationPlaces = (
   return places.map((place) => {
     const externalId = place.external_id || place.externalId || null
     const isKakaoLocal = place.source === 'kakao_local'
+    const sourceName = place.source_name || place.sourceName || ''
+    const kakaoPlaceId = isKakaoLocal && isKakaoPlaceId(externalId) ? externalId : null
+    const kakaoDetailUrl = getKakaoDetailUrl({
+      ...place,
+      externalId,
+      sourceName,
+      kakaoPlaceId,
+    })
     const ancillaryAdjustment = getAncillaryPlaceAdjustment({
       place: {
         ...place,
@@ -2589,9 +3031,9 @@ const convertRecommendationPlaces = (
       id: `recommendation-${place.id}`,
       savedPlaceId: place.id,
       source: place.source,
-      sourceName: place.source_name || place.sourceName || '',
+      sourceName,
       externalId,
-      kakaoPlaceId: isKakaoLocal && externalId ? externalId : null,
+      kakaoPlaceId,
       rawCategory: place.category,
       name: place.name,
       category: getDbCategoryText(place.category),
@@ -2601,9 +3043,10 @@ const convertRecommendationPlaces = (
       lng: Number(place.lng),
       distance: place.distance ?? place.distance_m ?? null,
       phone: '',
-      placeUrl: isKakaoLocal && externalId
-        ? `https://place.map.kakao.com/${externalId}`
-        : '',
+      placeUrl: kakaoDetailUrl,
+      kakaoPlaceUrl: getTextValue(place.kakao_place_url || place.kakaoPlaceUrl),
+      kakaoUrl: getTextValue(place.kakao_url || place.kakaoUrl),
+      detailUrl: getTextValue(place.detail_url || place.detailUrl),
       navigationUrl: `https://map.kakao.com/link/to/${encodeURIComponent(place.name)},${place.lat},${place.lng}`,
       markerColor: '#7c3aed',
       searchSource: 'local_db',
@@ -2617,14 +3060,25 @@ const convertRecommendationPlaces = (
       verifiedTags: place.verified_tags || [],
       warningTags: place.warning_tags || [],
       tagDetails: place.tag_details || [],
+      matchedTagLabels: toDisplayList(place.matched_tag_labels),
+      missingTagLabels: toDisplayList(place.missing_tag_labels),
+      recommendationSourceLabel: getTextValue(place.source_label),
+      recommendationConfidenceLabel: getTextValue(place.confidence_label),
+      recommendationFallbackLabel: getTextValue(place.fallback_label),
+      recommendationFallbackDescription: getTextValue(place.fallback_description),
+      recommendationCaution: getTextValue(place.caution_message || place.caution),
       recommendScore: Math.min(
         100,
         Number(place.score ?? place.data_quality_score ?? 0) + preferredMatchCount * 8,
       ),
-      recommendationReason: place.recommend_reason,
+      recommendationReason: getTextValue(
+        place.recommendation_reason || place.recommend_reason || place.reason,
+      ),
       matchedTags: place.matched_tags || place.runtime_tags || [],
       matchLevel: place.match_level,
-      recommendationConfidence: place.recommendation_confidence,
+      recommendationConfidence: place.confidence || place.recommendation_confidence,
+      recommendationSourceType: place.source_type || '',
+      fallbackLevel: place.fallback_level ?? null,
       recommendationIntent,
       preferredTags,
       preferredMatchCount,
@@ -4227,6 +4681,57 @@ const handleDetailFrameError = () => {
                         {{ getDistanceText(place) }}
                       </small>
 
+                      <small v-if="isRecommendationPlace(place) && getRecommendScore(place)">
+                        추천 점수 {{ getRecommendScore(place) }}
+                      </small>
+
+                    </span>
+
+                    <span
+                      v-if="isRecommendationPlace(place) && (getRecommendationMetaText(place) || getRecommendationFallbackText(place))"
+                      class="place-list-recommend-meta"
+                    >
+                      <small v-if="getRecommendationMetaText(place)">
+                        {{ getRecommendationMetaText(place) }}
+                      </small>
+                      <small v-if="getRecommendationFallbackText(place)">
+                        {{ getRecommendationFallbackText(place) }}
+                      </small>
+                    </span>
+
+                    <span
+                      v-if="isRecommendationPlace(place) && getRecommendationReasonSummary(place)"
+                      class="place-list-reason"
+                    >
+                      {{ getRecommendationReasonSummary(place) }}
+                    </span>
+
+                    <span
+                      v-if="isRecommendationPlace(place) && getRecommendationMatchedLabels(place).length"
+                      class="place-list-condition-group"
+                    >
+                      <span class="place-list-condition-label">일치 조건</span>
+                      <span
+                        v-for="(label, index) in getRecommendationPreviewLabels(getRecommendationMatchedLabels(place), 3)"
+                        :key="`matched-${place.id}-${label}-${index}`"
+                        class="place-list-condition-chip matched"
+                      >
+                        {{ label }}
+                      </span>
+                    </span>
+
+                    <span
+                      v-if="isRecommendationPlace(place) && getRecommendationMissingLabels(place).length"
+                      class="place-list-condition-group needs-check"
+                    >
+                      <span class="place-list-condition-label">확인 필요</span>
+                      <span
+                        v-for="(label, index) in getRecommendationPreviewLabels(getRecommendationMissingLabels(place), 2)"
+                        :key="`missing-${place.id}-${label}-${index}`"
+                        class="place-list-condition-chip missing"
+                      >
+                        {{ label }}
+                      </span>
                     </span>
 
                     <span
@@ -4242,6 +4747,13 @@ const handleDetailFrameError = () => {
                       class="place-list-phone"
                     >
                       전화 {{ place.phone }}
+                    </span>
+
+                    <span
+                      v-if="isRecommendationPlace(place) && getRecommendationCaution(place)"
+                      class="place-list-caution"
+                    >
+                      {{ getRecommendationCaution(place) }}
                     </span>
 
                   </span>
@@ -4381,6 +4893,9 @@ const handleDetailFrameError = () => {
                 <div>
                   <strong>DB에 저장된 장소입니다.</strong>
                   <p>좌표 기준으로 지도에서 위치를 확인할 수 있습니다.</p>
+                  <p v-if="getKakaoDetailLookupStatus(selectedPlace) === 'loading'">
+                    카카오 상세 링크를 확인하는 중입니다.
+                  </p>
                 </div>
 
               </section>
@@ -4392,20 +4907,70 @@ const handleDetailFrameError = () => {
                     <strong>{{ getRecommendScore(selectedPlace) }}점</strong>
                   </div>
 
-                  <div v-if="getRecommendationConfidence(selectedPlace)">
-                    <span>추천 신뢰도</span>
-                    <strong>{{ getRecommendationConfidenceText(getRecommendationConfidence(selectedPlace)) }}</strong>
+                  <div v-if="getRecommendationMetaText(selectedPlace) || getRecommendationConfidence(selectedPlace)">
+                    <span>출처/신뢰도</span>
+                    <strong>
+                      {{ getRecommendationMetaText(selectedPlace) || getRecommendationConfidenceText(getRecommendationConfidence(selectedPlace)) }}
+                    </strong>
+                  </div>
+
+                  <div v-if="getRecommendationFallbackText(selectedPlace)">
+                    <span>추천 방식</span>
+                    <strong>{{ getRecommendationFallbackText(selectedPlace) }}</strong>
                   </div>
                 </div>
 
                 <div v-if="isRecommendationPlace(selectedPlace) && getRecommendationReason(selectedPlace)" class="info-row">
                   <span>추천 이유</span>
-                  <p>{{ getRecommendationReason(selectedPlace) }}</p>
+                  <p class="recommendation-reason-text">{{ getRecommendationReason(selectedPlace) }}</p>
                 </div>
 
-                <div v-if="isRecommendationPlace(selectedPlace) && getMatchedTagText(selectedPlace)" class="info-row">
-                  <span>매칭 태그</span>
-                  <p>{{ getMatchedTagText(selectedPlace) }}</p>
+                <div
+                  v-if="isRecommendationPlace(selectedPlace) && getRecommendationFallbackDescription(selectedPlace)"
+                  class="info-row subtle-info-row"
+                >
+                  <span>추천 기준</span>
+                  <p>{{ getRecommendationFallbackDescription(selectedPlace) }}</p>
+                </div>
+
+                <div
+                  v-if="isRecommendationPlace(selectedPlace) && getRecommendationMatchedLabels(selectedPlace).length"
+                  class="info-row"
+                >
+                  <span>일치 조건</span>
+                  <div class="recommendation-chip-list">
+                    <span
+                      v-for="(label, index) in getRecommendationMatchedLabels(selectedPlace)"
+                      :key="`detail-matched-${selectedPlace.id}-${label}-${index}`"
+                      class="recommendation-chip matched"
+                    >
+                      {{ label }}
+                    </span>
+                  </div>
+                </div>
+
+                <div
+                  v-if="isRecommendationPlace(selectedPlace) && getRecommendationMissingLabels(selectedPlace).length"
+                  class="info-row missing-info-row"
+                >
+                  <span>확인 필요</span>
+                  <div class="recommendation-chip-list">
+                    <span
+                      v-for="(label, index) in getRecommendationMissingLabels(selectedPlace)"
+                      :key="`detail-missing-${selectedPlace.id}-${label}-${index}`"
+                      class="recommendation-chip missing"
+                    >
+                      {{ label }}
+                    </span>
+                  </div>
+                </div>
+
+                <div
+                  v-if="isRecommendationPlace(selectedPlace) && getRecommendationCaution(selectedPlace)"
+                  class="info-row caution-info-row"
+                >
+                  <span>안내</span>
+                  <p>{{ getRecommendationCaution(selectedPlace) }}</p>
                 </div>
 
                 <div v-if="selectedPlace.warningTags && selectedPlace.warningTags.length" class="info-row warning-info-row">
@@ -5200,6 +5765,83 @@ h1 {
   color: #98a2b3;
 }
 
+.place-list-recommend-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+}
+
+.place-list-recommend-meta small {
+  color: #475467;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.35;
+  white-space: normal;
+}
+
+.place-list-recommend-meta small+small::before {
+  content: '·';
+  margin-right: 8px;
+  color: #98a2b3;
+}
+
+.place-list-reason {
+  display: -webkit-box;
+  overflow: hidden;
+  color: #475467;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.place-list-condition-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  align-items: center;
+}
+
+.place-list-condition-label {
+  color: #667085;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.place-list-condition-chip {
+  max-width: 100%;
+  padding: 3px 7px;
+  overflow: hidden;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.place-list-condition-chip.matched {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.place-list-condition-chip.missing {
+  background: #fff7ed;
+  color: #b45309;
+}
+
+.place-list-caution {
+  display: -webkit-box;
+  overflow: hidden;
+  color: #92400e;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
 .place-list-phone {
   color: #1d4ed8;
   font-size: 12px;
@@ -5662,6 +6304,55 @@ h1 {
   color: #344054;
   font-size: 14px;
   line-height: 1.5;
+}
+
+.recommendation-reason-text {
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.subtle-info-row p {
+  color: #667085;
+}
+
+.recommendation-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.recommendation-chip {
+  padding: 5px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.recommendation-chip.matched {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.recommendation-chip.missing {
+  background: #fff7ed;
+  color: #b45309;
+}
+
+.missing-info-row {
+  padding: 11px 10px;
+  border-radius: 12px;
+  border-bottom: 0;
+  background: #fffbeb;
+}
+
+.missing-info-row span {
+  color: #b45309;
+}
+
+.caution-info-row p {
+  color: #92400e;
+  font-size: 13px;
 }
 
 .warning-info-row p {

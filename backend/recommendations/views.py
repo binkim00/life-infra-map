@@ -10,6 +10,7 @@ from .services.place_mapper import (
 )
 from .services.ai_situation_parser import parse_situation
 from .services.db_recommender import search_db_recommendations
+from .services.place_urls import get_kakao_place_url
 from .services.smoking_area_data import (
     calculate_distance_m,
     search_nearby_smoking_areas,
@@ -62,6 +63,7 @@ def get_matching_categories(keyword):
 
 
 def serialize_place(place, distance=None):
+    kakao_place_url = get_kakao_place_url(place)
     data = {
         "id": place.id,
         "name": place.name,
@@ -73,6 +75,8 @@ def serialize_place(place, distance=None):
         "source": place.source,
         "external_id": place.external_id,
         "source_name": place.source_name,
+        "kakao_place_url": kakao_place_url,
+        "place_url": kakao_place_url,
         "source_updated_at": (
             place.source_updated_at.isoformat()
             if place.source_updated_at

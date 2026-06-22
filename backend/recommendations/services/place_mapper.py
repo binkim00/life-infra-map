@@ -288,6 +288,11 @@ def map_kakao_place_to_recommendation(place, scenario):
         runtime_tags,
         saved_tag_data=saved_tag_data,
     )
+    kakao_place_url = place.get("place_url") or (
+        f"https://place.map.kakao.com/{place.get('id')}"
+        if place.get("id")
+        else ""
+    )
 
     return {
         "id": place.get("id"),
@@ -328,8 +333,11 @@ def map_kakao_place_to_recommendation(place, scenario):
         "lat": float(place.get("y")),
         "lng": float(place.get("x")),
         "source": "kakao_local",
+        "external_id": place.get("id"),
         "source_name": saved_place.source_name if saved_place else "kakao_local",
         "data_quality_score": saved_place.data_quality_score if saved_place else None,
         "raw_scores": saved_tag_data["raw_scores"],
+        "kakao_place_url": kakao_place_url,
+        "place_url": kakao_place_url,
         "navigation_url": place.get("place_url"),
     }
