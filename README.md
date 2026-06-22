@@ -1,93 +1,349 @@
-# 13_pjt
+# AI 활용방안, 데이터 출처 확인, DB 모델링 요약
 
+> 프로젝트: 상황 기반 생활 장소 추천 지도 서비스  
+> 기준: 서비스 전체 DB 모델링  
+> 작성일: 2026-06-22
 
+---
 
-## Getting started
+## 1. AI 활용방안
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+AI는 실제 장소 정보를 새로 만들어내는 용도가 아니라, **이미 확보한 장소 데이터와 사용자의 입력을 추천에 활용하기 쉽게 정리하는 보조 기능**으로 사용한다.
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
+---
 
-## Add your files
+### 1.1 자연어 상황 해석
 
-* [Create](https://docs.gitlab.com/user/project/repository/web_editor/#create-a-file) or [upload](https://docs.gitlab.com/user/project/repository/web_editor/#upload-a-file) files
-* [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
+사용자가 입력한 문장을 추천에 필요한 카테고리와 태그 조건으로 변환한다.
 
+| 예시 입력 | 변환 결과 |
+|---|---|
+| 노트북 작업할 조용한 곳 | 카페, 노트북 작업 가능, 조용함, 콘센트 있음 |
+| 잠깐 쉬고 싶어 | 쉼터, 공원, 잠깐 쉬기 좋음 |
+| 산책하기 좋은 곳 | 공원, 해변, 산책하기 좋음 |
+| 흡연 가능한 곳 | 흡연구역 |
+
+AI가 해석한 결과는 실제 장소 정보가 아니라, 추천 조건을 만드는 데 사용한다.
+
+---
+
+### 1.2 태그 후보 생성
+
+AI는 장소명, 카테고리, 설명, 원본 데이터, 검색 결과 등을 참고해 태그 후보를 만들 수 있다.
+
+| 장소 정보 | 태그 후보 예시 |
+|---|---|
+| 공원, 산책로, 녹지 | 산책하기 좋음, 힐링하기 좋음 |
+| 관광지, 야경 명소 | 야경 보기 좋음, 드라이브 목적지 |
+| 카페 관련 텍스트 | 조용함, 노트북 작업 가능, 콘센트 있음 |
+
+AI가 만든 태그는 확정 정보가 아니라 **후보 태그**로 저장한다. 이후 관리자 검수, 신뢰도 점수, 사용자 검증 등을 통해 활용 여부를 판단한다.
+
+---
+
+### 1.3 추천 이유 생성
+
+AI는 추천 결과에 대해 사용자가 이해하기 쉬운 이유 문장을 생성할 수 있다.
+
+예시:
+
+```text
+현재 위치에서 가깝고, 산책하기 좋은 태그가 있으며, 최근에 확인된 공원 데이터이기 때문에 추천합니다.
 ```
-cd existing_repo
-git remote add origin https://lab.ssafy.com/k0b0301/13_pjt.git
-git branch -M master
-git push -uf origin master
+
+추천 이유는 실제 DB에 저장된 정보만 사용한다. AI가 운영 여부, 시설 여부, 위치 정보를 임의로 만들어내지 않는다.
+
+---
+
+### 1.4 관리자 검수 보조
+
+AI는 관리자가 장소와 태그를 검수할 때 참고할 수 있는 자료를 정리한다.
+
+| 기능 | 설명 |
+|---|---|
+| 태그 후보 정리 | 후보 태그와 근거를 보기 쉽게 정리 |
+| 확인 필요 표시 | 출처, 기준일, 위치 정보가 부족한 데이터를 표시 |
+| 제보 요약 | 사용자 제보 내용을 짧게 요약 |
+
+AI는 최종 승인자가 아니라, 관리자 검수를 돕는 보조 역할이다.
+
+---
+
+### 1.5 AI 사용 기준
+
+| 할 수 있는 것 | 하지 않는 것 |
+|---|---|
+| 자연어를 카테고리와 태그로 변환 | 없는 장소를 만들어내기 |
+| 태그 후보 생성 | 실제 위치를 임의로 생성 |
+| 추천 이유 생성 | 운영 여부를 사실처럼 단정 |
+| 관리자 검수 보조 | 외부 지도 리뷰 무단 수집 |
+
+---
+
+## 2. 데이터 출처 확인
+
+장소 데이터는 외부 공개 데이터와 팀 정제 데이터를 중심으로 사용한다. 카페는 현재 실제 장소 데이터가 아니라 **추천 태그만 보유한 상태**이다.
+
+---
+
+### 2.1 데이터 출처 요약
+
+| 구분 | 출처 | 현재 활용 내용 | 저장 방식 | 비고 |
+|---|---|---|---|---|
+| 공중화장실 | 공공데이터, 지자체 공개 데이터 | 화장실명, 주소, 이용 정보 | `Place.category = "toilet"` | 좌표 부족 시 보정 필요 |
+| 무료 와이파이 | 공공데이터 | 설치 장소, 주소, 위도, 경도 | `Place.category = "free_wifi"` | 위치 중심 데이터 |
+| 도시공원 | 공공데이터 | 공원명, 주소, 좌표, 시설 정보 | `Place.category = "park"` | 산책, 힐링 추천에 활용 |
+| 주차장 | 공공데이터 | 주차장명, 주소, 좌표, 운영정보 | `Place.category = "parking"` | 실시간 주차 대수는 제외 |
+| 관광지/명소 | 관광공사 API, 지자체 관광 데이터 | 명소명, 주소, 좌표, 설명 | `Place.category = "tourist_spot"` | 야경, 드라이브, 힐링 태그 후보 생성 가능 |
+| 해수욕장/해변 | 공공데이터, 지자체 데이터, 팀 정제 데이터 | 해수욕장명, 주소, 좌표 | `Place.category = "beach"` | 산책, 힐링, 드라이브 추천 가능 |
+| 흡연구역 | 일부 공공데이터 + 인터넷 공개 자료 팀 수집 | 흡연구역명, 주소, 좌표, 상세 위치 | `Place.category = "smoking_area"` | 혼합 출처 데이터 |
+| 쉼터 | 지자체 쉼터 데이터, 공공데이터 | 쉼터명, 주소, 운영시간, 좌표 | `Place.category = "shelter"` | 지역별 제공 항목 차이 있음 |
+| 카페 태그 | 팀이 정리한 태그 | 조용함, 노트북 작업 가능, 콘센트 있음 등 | `Tag`에 저장 | 현재 카페 장소 데이터는 없음 |
+
+---
+
+### 2.2 카페 데이터 기준
+
+현재 카페는 실제 장소 목록이 확보된 상태가 아니다.  
+따라서 카페를 `Place`에 저장하지 않고, 추천에 사용할 태그만 `Tag`에 저장한다.
+
+```text
+현재 보유한 카페 관련 태그
+- 조용함
+- 노트북 작업 가능
+- 콘센트 있음
+- 와이파이 있음
+- 혼자 이용 좋음
+- 공부하기 좋음
+- 작업하기 좋음
 ```
 
-## Integrate with your tools
+카페별 태그 연결은 실제 카페 장소 데이터가 확보된 뒤 `PlaceTag`에 저장한다.
 
-* [Set up project integrations](https://lab.ssafy.com/k0b0301/13_pjt/-/settings/integrations)
+---
 
-## Collaborate with your team
+### 2.3 흡연구역 데이터 기준
 
-* [Invite team members and collaborators](https://docs.gitlab.com/user/project/members/)
-* [Create a new merge request](https://docs.gitlab.com/user/project/merge_requests/creating_merge_requests/)
-* [Automatically close issues from merge requests](https://docs.gitlab.com/user/project/issues/managing_issues/#closing-issues-automatically)
-* [Enable merge request approvals](https://docs.gitlab.com/user/project/merge_requests/approvals/)
-* [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
+흡연구역은 지역마다 출처가 다르다.
 
-## Test and Deploy
+| 구분 | 저장 방식 | 설명 |
+|---|---|---|
+| 공공데이터 기반 | `source = "public_data"` | 지자체에서 제공한 공식 데이터 |
+| 인터넷 수집 기반 | `source = "web_collected"` | 인터넷 공개 자료를 팀이 직접 정리한 데이터 |
 
-Use the built-in continuous integration in GitLab.
+흡연구역은 출처와 정확도가 다를 수 있으므로 `data_quality_status`, `data_quality_score`, `raw` 필드를 함께 사용한다.
 
-* [Get started with GitLab CI/CD](https://docs.gitlab.com/ci/quick_start/)
-* [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/user/application_security/sast/)
-* [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/topics/autodevops/requirements/)
-* [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/user/clusters/agent/)
-* [Set up protected environments](https://docs.gitlab.com/ci/environments/protected_environments/)
+---
 
-***
+## 3. DB 모델링
 
-# Editing this README
+DB는 장소 추천, 태그 관리, 사용자 기능, 제보와 검수 기능을 함께 고려하여 설계한다.  
+핵심은 `Place`, `Tag`, `PlaceTag`를 중심으로 장소와 추천 조건을 연결하는 것이다.
 
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
+---
 
-## Suggestions for a good README
+### 3.1 테이블 정보
 
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
+| 테이블 | 쉬운 설명 |
+|---|---|
+| `Category` | 장소 종류를 관리하는 테이블이다. 예: 공원, 주차장, 화장실, 흡연구역 |
+| `Place` | 지도에 표시하고 추천할 실제 장소 정보를 저장하는 테이블이다. |
+| `Tag` | 추천 조건으로 사용할 태그를 저장하는 테이블이다. 예: 조용함, 산책하기 좋음 |
+| `PlaceTag` | 장소와 태그를 연결하고, 태그의 출처와 신뢰도를 저장하는 테이블이다. |
+| `User` | 서비스를 이용하는 사용자와 관리자를 저장하는 테이블이다. |
+| `Bookmark` | 사용자가 관심 장소를 저장하는 테이블이다. |
+| `Review` | 사용자가 장소에 남긴 후기나 메모를 저장하는 테이블이다. |
+| `Report` | 장소 정보 오류, 폐업, 위치 오류 등을 제보하는 테이블이다. |
+| `Verification` | 사용자가 장소 정보나 태그가 맞는지 확인한 기록을 저장하는 테이블이다. |
+| `UserAction` | 사용자의 조회, 클릭, 저장, 검색 같은 행동을 기록하는 테이블이다. |
+| `AdminAction` | 관리자의 승인, 반려, 수정 기록을 저장하는 테이블이다. |
+| `RecommendationLog` | 추천 요청과 자연어 검색 조건을 기록하는 테이블이다. |
 
-## Name
-Choose a self-explaining name for your project.
+---
 
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
+### 3.2 주요 테이블 설명
 
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
+#### Category
 
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
+`Category`는 장소의 종류를 관리한다.
 
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
+예시:
 
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
+```text
+공중화장실, 무료 와이파이, 도시공원, 주차장, 관광지, 해변, 흡연구역, 쉼터
+```
 
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
+카테고리를 별도 테이블로 관리하면 장소 종류를 일관되게 관리할 수 있다.
 
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
+---
 
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
+#### Place
 
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
+`Place`는 실제 장소 정보를 저장한다.  
+지도 마커와 추천 결과 목록에 표시되는 기본 데이터이다.
 
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
+주요 정보:
 
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
+```text
+장소명, 카테고리, 주소, 위도, 경도, 데이터 출처, 원본 ID, 상세 위치, 데이터 품질 상태, 신뢰도 점수, 원본 JSON
+```
 
-## License
-For open source projects, say how it is licensed.
+---
 
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+#### Tag
+
+`Tag`는 추천과 필터링에 사용할 조건을 저장한다.
+
+예시:
+
+```text
+조용함, 노트북 작업 가능, 콘센트 있음, 와이파이 있음, 산책하기 좋음, 잠깐 쉬기 좋음, 확인 필요
+```
+
+카페는 현재 장소 데이터가 없으므로, 카페 관련 정보는 우선 `Tag`에 저장한다.
+
+---
+
+#### PlaceTag
+
+`PlaceTag`는 장소와 태그를 연결한다.
+
+예시:
+
+```text
+A공원 - 산책하기 좋음
+B해변 - 드라이브 목적지
+C흡연구역 - 확인 필요
+```
+
+`PlaceTag`에는 태그 출처, 상태, 신뢰도, 근거, 검증 여부를 함께 저장한다.  
+따라서 단순 연결 테이블이 아니라 추천 신뢰도를 관리하는 중요한 테이블이다.
+
+---
+
+#### User
+
+`User`는 서비스 이용자와 관리자를 저장한다.  
+일반 사용자는 장소 저장, 후기 작성, 오류 제보를 할 수 있고, 관리자는 장소와 태그를 검수할 수 있다.
+
+---
+
+#### Bookmark
+
+`Bookmark`는 사용자가 관심 있는 장소를 저장할 때 사용한다.
+
+예시:
+
+```text
+사용자 A가 B공원을 저장
+```
+
+---
+
+#### Review
+
+`Review`는 사용자가 장소에 대해 남긴 후기나 메모를 저장한다.  
+초기에는 별점보다 간단한 메모 중심으로 사용할 수 있다.
+
+---
+
+#### Report
+
+`Report`는 사용자가 잘못된 장소 정보를 제보할 때 사용한다.
+
+예시:
+
+```text
+위치가 잘못됨
+운영하지 않음
+중복 장소임
+정보가 부족함
+```
+
+---
+
+#### Verification
+
+`Verification`은 사용자가 장소 정보나 태그가 실제와 맞는지 확인한 기록을 저장한다.
+
+예시:
+
+```text
+이 장소는 실제로 존재함
+이 장소는 산책하기 좋음 태그와 맞음
+이 장소의 위치가 맞음
+```
+
+---
+
+#### UserAction
+
+`UserAction`은 사용자의 행동을 기록한다.
+
+예시:
+
+```text
+장소 조회
+장소 클릭
+장소 저장
+추천 검색
+```
+
+이 데이터는 나중에 사용자 행동 기반 추천이나 개인화 추천에 활용할 수 있다.
+
+---
+
+#### AdminAction
+
+`AdminAction`은 관리자의 처리 기록을 저장한다.
+
+예시:
+
+```text
+태그 승인
+태그 반려
+장소 정보 수정
+오류 제보 처리
+```
+
+---
+
+#### RecommendationLog
+
+`RecommendationLog`는 사용자가 어떤 상황으로 추천을 요청했는지 기록한다.
+
+예시:
+
+```text
+입력 문장: 노트북 작업할 조용한 곳
+해석 결과: 카페, 노트북 작업 가능, 조용함
+사용자 위치: 위도, 경도
+검색 반경: 1500m
+```
+
+추천 기능 개선과 검색 패턴 분석에 활용할 수 있다.
+
+---
+
+### 3.4 DB 모델링 요약
+
+```text
+장소 데이터 저장
+→ 장소에 태그 연결
+→ 사용자 상황에 맞는 장소 추천
+→ 사용자의 저장, 후기, 제보, 검증 기록 저장
+→ 관리자 검수와 추천 기록 분석으로 데이터 품질 개선
+```
+
+구조
+
+```text
+Place      = 실제 장소 정보
+Tag        = 추천 조건 태그
+PlaceTag   = 장소와 태그 연결 + 태그 신뢰도 관리
+User       = 사용자와 관리자
+Report     = 오류 제보
+Verification = 사용자 검증
+RecommendationLog = 추천 요청 기록
+```
+
