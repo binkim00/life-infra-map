@@ -18,6 +18,20 @@ const boardTitle = computed(() => {
   return '자유게시판'
 })
 
+const formatDateTime = (value) => {
+  if (!value) {
+    return ''
+  }
+
+  return new Date(value).toLocaleString('ko-KR', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
 const fetchPosts = async () => {
   try {
     isLoading.value = true
@@ -50,10 +64,6 @@ onMounted(() => {
         </div>
 
         <div class="board-actions">
-          <RouterLink to="/" class="sub-button">
-            홈
-          </RouterLink>
-
           <RouterLink to="/boards/free" class="sub-button">
             자유게시판
           </RouterLink>
@@ -111,7 +121,18 @@ onMounted(() => {
             <h2>{{ post.title }}</h2>
 
             <div class="post-meta">
-              <span>{{ post.author_username }}</span>
+              <span class="author-chip">
+                <span class="author-avatar">
+                  <img
+                    v-if="post.author_profile_image_url"
+                    :src="post.author_profile_image_url"
+                    :alt="post.author_nickname"
+                  />
+                  <span v-else class="default-avatar" aria-hidden="true"></span>
+                </span>
+                {{ post.author_nickname }}
+              </span>
+              <span>{{ formatDateTime(post.created_at) }} <template v-if="post.is_edited">(수정됨)</template></span>
               <span>댓글 {{ post.comments_count }}</span>
               <span>좋아요 {{ post.likes_count }}</span>
               <span>조회 {{ post.view_count }}</span>
@@ -241,10 +262,65 @@ onMounted(() => {
 
 .post-meta {
   display: flex;
+  align-items: center;
   flex-wrap: wrap;
   gap: 12px;
   color: #667085;
   font-size: 14px;
+}
+
+.author-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #344054;
+  font-weight: 800;
+}
+
+.author-avatar {
+  position: relative;
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  overflow: hidden;
+  border-radius: 50%;
+  background: #8fb8cc;
+}
+
+.author-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.default-avatar {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.default-avatar::before,
+.default-avatar::after {
+  position: absolute;
+  left: 50%;
+  content: "";
+  transform: translateX(-50%);
+  background: #c8ddea;
+}
+
+.default-avatar::before {
+  top: 20%;
+  width: 34%;
+  height: 34%;
+  border-radius: 50%;
+}
+
+.default-avatar::after {
+  bottom: -10%;
+  width: 72%;
+  height: 48%;
+  border-radius: 50% 50% 0 0;
 }
 
 .status-text,

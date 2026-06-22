@@ -1,4 +1,6 @@
 from django.contrib import admin
+from django.conf import settings
+from django.conf.urls.static import static
 from django.urls import path, include
 from boards import views as board_views
 
@@ -20,3 +22,6 @@ urlpatterns = [
     path("api/admin/users/<int:user_id>/penalties/", board_views.admin_create_user_penalty),
     path("api/admin/users/<int:user_id>/notifications/", board_views.admin_create_user_notification),
 ]
+
+if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

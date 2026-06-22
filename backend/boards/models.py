@@ -1,4 +1,5 @@
 from django.conf import settings
+from django.core.validators import FileExtensionValidator
 from django.db import models
 from django.utils import timezone
 
@@ -25,6 +26,15 @@ class Post(models.Model):
 
     title = models.CharField(max_length=200, verbose_name="제목")
     content = models.TextField(verbose_name="내용")
+    image = models.FileField(
+        upload_to="board_images/",
+        blank=True,
+        null=True,
+        validators=[
+            FileExtensionValidator(["jpg", "jpeg", "png", "gif", "webp"]),
+        ],
+        verbose_name="첨부 이미지",
+    )
 
     view_count = models.PositiveIntegerField(default=0, verbose_name="조회수")
     is_pinned = models.BooleanField(default=False, verbose_name="상단 고정 여부")

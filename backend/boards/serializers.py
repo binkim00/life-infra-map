@@ -1,12 +1,38 @@
+from datetime import timedelta
+
 from django.contrib.auth.models import User
 from rest_framework import serializers
+from accounts.serializers import get_or_create_profile
 from .models import Comment, Inquiry, Notification, Post, Report, UserPenalty
+
+
+def is_edited(obj):
+    if not obj.created_at or not obj.updated_at:
+        return False
+
+    return obj.updated_at > obj.created_at + timedelta(seconds=1)
+
+
+def get_file_url(serializer, file_field):
+    if not file_field:
+        return ""
+
+    request = serializer.context.get("request")
+    url = file_field.url
+
+    if request:
+        return request.build_absolute_uri(url)
+
+    return url
 
 
 class CommentSerializer(serializers.ModelSerializer):
     author_username = serializers.CharField(source="author.username", read_only=True)
+    author_nickname = serializers.SerializerMethodField()
+    author_profile_image_url = serializers.SerializerMethodField()
     likes_count = serializers.IntegerField(source="comment_likes.count", read_only=True)
     is_liked = serializers.SerializerMethodField()
+    is_edited = serializers.SerializerMethodField()
 
     class Meta:
         model = Comment
@@ -15,9 +41,12 @@ class CommentSerializer(serializers.ModelSerializer):
             "post",
             "author",
             "author_username",
+            "author_nickname",
+            "author_profile_image_url",
             "content",
             "likes_count",
             "is_liked",
+            "is_edited",
             "created_at",
             "updated_at",
         ]
@@ -26,8 +55,11 @@ class CommentSerializer(serializers.ModelSerializer):
             "post",
             "author",
             "author_username",
+            "author_nickname",
+            "author_profile_image_url",
             "likes_count",
             "is_liked",
+            "is_edited",
             "created_at",
             "updated_at",
         ]
@@ -40,12 +72,26 @@ class CommentSerializer(serializers.ModelSerializer):
 
         return obj.comment_likes.filter(user=request.user).exists()
 
+    def get_is_edited(self, obj):
+        return is_edited(obj)
+
+    def get_author_nickname(self, obj):
+        return get_or_create_profile(obj.author).nickname
+
+    def get_author_profile_image_url(self, obj):
+        profile = get_or_create_profile(obj.author)
+        return get_file_url(self, profile.profile_image)
+
 
 class PostListSerializer(serializers.ModelSerializer):
     author_username = serializers.CharField(source="author.username", read_only=True)
+    author_nickname = serializers.SerializerMethodField()
+    author_profile_image_url = serializers.SerializerMethodField()
     comments_count = serializers.IntegerField(source="comments.count", read_only=True)
     likes_count = serializers.IntegerField(source="post_likes.count", read_only=True)
     is_liked = serializers.SerializerMethodField()
+    image_url = serializers.SerializerMethodField()
+    is_edited = serializers.SerializerMethodField()
 
     class Meta:
         model = Post
@@ -53,13 +99,18 @@ class PostListSerializer(serializers.ModelSerializer):
             "id",
             "author",
             "author_username",
+            "author_nickname",
+            "author_profile_image_url",
             "board_type",
             "title",
+            "image",
+            "image_url",
             "view_count",
             "is_pinned",
             "comments_count",
             "likes_count",
             "is_liked",
+            "is_edited",
             "created_at",
             "updated_at",
         ]
@@ -67,11 +118,15 @@ class PostListSerializer(serializers.ModelSerializer):
             "id",
             "author",
             "author_username",
+            "author_nickname",
+            "author_profile_image_url",
+            "image_url",
             "view_count",
             "is_pinned",
             "comments_count",
             "likes_count",
             "is_liked",
+            "is_edited",
             "created_at",
             "updated_at",
         ]
@@ -83,14 +138,31 @@ class PostListSerializer(serializers.ModelSerializer):
             return False
 
         return obj.post_likes.filter(user=request.user).exists()
+
+    def get_image_url(self, obj):
+        return get_file_url(self, obj.image)
+
+    def get_is_edited(self, obj):
+        return is_edited(obj)
+
+    def get_author_nickname(self, obj):
+        return get_or_create_profile(obj.author).nickname
+
+    def get_author_profile_image_url(self, obj):
+        profile = get_or_create_profile(obj.author)
+        return get_file_url(self, profile.profile_image)
 
 
 class PostDetailSerializer(serializers.ModelSerializer):
     author_username = serializers.CharField(source="author.username", read_only=True)
+    author_nickname = serializers.SerializerMethodField()
+    author_profile_image_url = serializers.SerializerMethodField()
     comments = CommentSerializer(many=True, read_only=True)
     comments_count = serializers.IntegerField(source="comments.count", read_only=True)
     likes_count = serializers.IntegerField(source="post_likes.count", read_only=True)
     is_liked = serializers.SerializerMethodField()
+    image_url = serializers.SerializerMethodField()
+    is_edited = serializers.SerializerMethodField()
 
     class Meta:
         model = Post
@@ -98,15 +170,20 @@ class PostDetailSerializer(serializers.ModelSerializer):
             "id",
             "author",
             "author_username",
+            "author_nickname",
+            "author_profile_image_url",
             "board_type",
             "title",
             "content",
+            "image",
+            "image_url",
             "view_count",
             "is_pinned",
             "comments",
             "comments_count",
             "likes_count",
             "is_liked",
+            "is_edited",
             "created_at",
             "updated_at",
         ]
@@ -114,12 +191,16 @@ class PostDetailSerializer(serializers.ModelSerializer):
             "id",
             "author",
             "author_username",
+            "author_nickname",
+            "author_profile_image_url",
+            "image_url",
             "view_count",
             "is_pinned",
             "comments",
             "comments_count",
             "likes_count",
             "is_liked",
+            "is_edited",
             "created_at",
             "updated_at",
         ]
@@ -131,6 +212,19 @@ class PostDetailSerializer(serializers.ModelSerializer):
             return False
 
         return obj.post_likes.filter(user=request.user).exists()
+
+    def get_image_url(self, obj):
+        return get_file_url(self, obj.image)
+
+    def get_is_edited(self, obj):
+        return is_edited(obj)
+
+    def get_author_nickname(self, obj):
+        return get_or_create_profile(obj.author).nickname
+
+    def get_author_profile_image_url(self, obj):
+        profile = get_or_create_profile(obj.author)
+        return get_file_url(self, profile.profile_image)
 
 
 class ReportCreateSerializer(serializers.ModelSerializer):

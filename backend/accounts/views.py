@@ -4,7 +4,13 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
-from .serializers import LoginSerializer, SignupSerializer, UserSerializer
+from .serializers import (
+    LoginSerializer,
+    NicknameUpdateSerializer,
+    ProfileImageUpdateSerializer,
+    SignupSerializer,
+    UserSerializer,
+)
 
 
 @api_view(["POST"])
@@ -22,7 +28,7 @@ def signup(request):
         {
             "message": "회원가입이 완료되었습니다.",
             "token": token.key,
-            "user": UserSerializer(user).data,
+            "user": UserSerializer(user, context={"request": request}).data,
         },
         status=status.HTTP_201_CREATED,
     )
@@ -62,7 +68,7 @@ def login(request):
     return Response({
         "message": "로그인되었습니다.",
         "token": token.key,
-        "user": UserSerializer(user).data,
+        "user": UserSerializer(user, context={"request": request}).data,
     })
 
 
@@ -83,7 +89,43 @@ def logout(request):
 @permission_classes([IsAuthenticated])
 def me(request):
     return Response({
-        "user": UserSerializer(request.user).data
+        "user": UserSerializer(request.user, context={"request": request}).data
+    })
+
+
+@api_view(["PATCH"])
+@permission_classes([IsAuthenticated])
+def update_nickname(request):
+    serializer = NicknameUpdateSerializer(
+        data=request.data,
+        context={"request": request},
+    )
+
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    serializer.save()
+
+    return Response({
+        "user": UserSerializer(request.user, context={"request": request}).data
+    })
+
+
+@api_view(["PATCH"])
+@permission_classes([IsAuthenticated])
+def update_profile_image(request):
+    serializer = ProfileImageUpdateSerializer(
+        data=request.data,
+        context={"request": request},
+    )
+
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    serializer.save()
+
+    return Response({
+        "user": UserSerializer(request.user, context={"request": request}).data
     })
 
 
@@ -102,7 +144,7 @@ def mypage(request):
     current_penalty = get_current_penalty(request.user)
 
     return Response({
-        "user": UserSerializer(request.user).data,
+        "user": UserSerializer(request.user, context={"request": request}).data,
         "posts": PostListSerializer(
             Post.objects.filter(author=request.user),
             many=True,

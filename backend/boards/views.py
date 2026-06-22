@@ -97,6 +97,19 @@ def create_notification(recipient, title, message, notification_type="system", s
     )
 
 
+def notify_if_not_self(recipient, sender, title, message, notification_type="system"):
+    if recipient == sender:
+        return None
+
+    return create_notification(
+        recipient=recipient,
+        sender=sender,
+        notification_type=notification_type,
+        title=title,
+        message=message,
+    )
+
+
 def get_penalty_end_at(penalty_type):
     now = timezone.now()
 
@@ -286,6 +299,14 @@ def comment_create(request, post_id):
             author=request.user,
         )
 
+        notify_if_not_self(
+            recipient=post.author,
+            sender=request.user,
+            notification_type="post_commented",
+            title="내 게시글에 댓글이 달렸습니다.",
+            message=f"{request.user.username}님이 '{post.title}' 글에 댓글을 남겼습니다.",
+        )
+
         result_serializer = CommentSerializer(
             comment,
             context={"request": request},
@@ -365,6 +386,13 @@ def toggle_post_like(request, post_id):
         liked = False
     else:
         liked = True
+        notify_if_not_self(
+            recipient=post.author,
+            sender=request.user,
+            notification_type="post_liked",
+            title="내 게시글에 좋아요가 달렸습니다.",
+            message=f"{request.user.username}님이 '{post.title}' 글을 좋아합니다.",
+        )
 
     return Response({
         "liked": liked,
@@ -397,6 +425,13 @@ def toggle_comment_like(request, comment_id):
         liked = False
     else:
         liked = True
+        notify_if_not_self(
+            recipient=comment.author,
+            sender=request.user,
+            notification_type="comment_liked",
+            title="내 댓글에 좋아요가 달렸습니다.",
+            message=f"{request.user.username}님이 내 댓글을 좋아합니다.",
+        )
 
     return Response({
         "liked": liked,

@@ -13,8 +13,17 @@ const postId = computed(() => route.params.postId)
 
 const title = ref('')
 const content = ref('')
+const imageFile = ref(null)
+const imagePreviewUrl = ref('')
 const errorMessage = ref('')
 const isLoading = ref(false)
+
+const handleImageChange = (event) => {
+  const file = event.target.files?.[0]
+
+  imageFile.value = file || null
+  imagePreviewUrl.value = file ? URL.createObjectURL(file) : imagePreviewUrl.value
+}
 
 const boardTitle = computed(() => {
   if (boardType.value === 'notice') return '공지사항'
@@ -34,6 +43,7 @@ const fetchPost = async () => {
 
     title.value = post.title
     content.value = post.content
+    imagePreviewUrl.value = post.image_url || ''
   } catch (error) {
     console.error(error)
     errorMessage.value = '게시글을 불러오지 못했습니다.'
@@ -51,11 +61,16 @@ const handleSubmit = async () => {
   try {
     isLoading.value = true
 
-    const response = await updatePost(postId.value, {
-      title: title.value,
-      content: content.value,
-      board_type: boardType.value,
-    })
+    const payload = new FormData()
+    payload.append('title', title.value)
+    payload.append('content', content.value)
+    payload.append('board_type', boardType.value)
+
+    if (imageFile.value) {
+      payload.append('image', imageFile.value)
+    }
+
+    const response = await updatePost(postId.value, payload)
 
     router.push(`/boards/${response.data.board_type}/${response.data.id}`)
   } catch (error) {
@@ -98,6 +113,18 @@ onMounted(() => {
           rows="12"
           placeholder="내용을 입력하세요"
         ></textarea>
+
+        <label class="image-field">
+          <span>이미지 첨부</span>
+          <input type="file" accept="image/*" @change="handleImageChange" />
+        </label>
+
+        <img
+          v-if="imagePreviewUrl"
+          :src="imagePreviewUrl"
+          alt="첨부 이미지 미리보기"
+          class="image-preview"
+        />
 
         <p v-if="errorMessage" class="error-text">
           {{ errorMessage }}
@@ -179,6 +206,26 @@ onMounted(() => {
 .write-form textarea {
   resize: vertical;
   line-height: 1.6;
+}
+
+.image-field {
+  display: grid;
+  gap: 8px;
+  color: #344054;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.image-field input {
+  padding: 12px;
+}
+
+.image-preview {
+  max-height: 360px;
+  width: 100%;
+  border-radius: 14px;
+  object-fit: contain;
+  background: #f9fafb;
 }
 
 .write-form input:focus,

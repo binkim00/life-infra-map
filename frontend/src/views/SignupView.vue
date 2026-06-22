@@ -7,17 +7,27 @@ const router = useRouter()
 const authStore = useAuthStore()
 
 const username = ref('')
+const nickname = ref('')
 const email = ref('')
 const password = ref('')
 const passwordConfirm = ref('')
+const profileImageFile = ref(null)
+const profileImagePreviewUrl = ref('')
 const errorMessage = ref('')
 const isLoading = ref(false)
+
+const handleProfileImageChange = (event) => {
+  const file = event.target.files?.[0]
+
+  profileImageFile.value = file || null
+  profileImagePreviewUrl.value = file ? URL.createObjectURL(file) : ''
+}
 
 const handleSignup = async () => {
   errorMessage.value = ''
 
-  if (!username.value || !password.value || !passwordConfirm.value) {
-    errorMessage.value = '아이디와 비밀번호를 입력해주세요.'
+  if (!username.value || !nickname.value || !password.value || !passwordConfirm.value) {
+    errorMessage.value = '아이디, 닉네임, 비밀번호를 입력해주세요.'
     return
   }
 
@@ -29,12 +39,18 @@ const handleSignup = async () => {
   try {
     isLoading.value = true
 
-    await authStore.signup({
-      username: username.value,
-      email: email.value,
-      password: password.value,
-      password_confirm: passwordConfirm.value,
-    })
+    const payload = new FormData()
+    payload.append('username', username.value)
+    payload.append('nickname', nickname.value)
+    payload.append('email', email.value)
+    payload.append('password', password.value)
+    payload.append('password_confirm', passwordConfirm.value)
+
+    if (profileImageFile.value) {
+      payload.append('profile_image', profileImageFile.value)
+    }
+
+    await authStore.signup(payload)
 
     router.push('/')
   } catch (error) {
@@ -53,7 +69,21 @@ const handleSignup = async () => {
       <p>생활 장소 추천 서비스를 이용하기 위한 계정을 만들어주세요.</p>
 
       <form @submit.prevent="handleSignup" class="auth-form">
+        <label class="profile-image-picker">
+          <span class="profile-avatar-preview">
+            <img
+              v-if="profileImagePreviewUrl"
+              :src="profileImagePreviewUrl"
+              alt="프로필 사진 미리보기"
+            />
+            <span v-else class="default-avatar" aria-hidden="true"></span>
+          </span>
+          <span>프로필 사진 선택</span>
+          <input type="file" accept="image/*" @change="handleProfileImageChange" />
+        </label>
+
         <input v-model="username" type="text" placeholder="아이디" />
+        <input v-model="nickname" type="text" placeholder="닉네임" />
         <input v-model="email" type="email" placeholder="이메일 선택" />
         <input v-model="password" type="password" placeholder="비밀번호" />
         <input v-model="passwordConfirm" type="password" placeholder="비밀번호 확인" />
@@ -120,6 +150,71 @@ const handleSignup = async () => {
 
 .auth-form input:focus {
   border-color: #2563eb;
+}
+
+.profile-image-picker {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 14px;
+  border: 1px dashed #d0d5dd;
+  border-radius: 14px;
+  color: #344054;
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.profile-image-picker input {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  font-size: 13px;
+}
+
+.profile-avatar-preview {
+  width: 96px;
+  height: 96px;
+  overflow: hidden;
+  border-radius: 50%;
+  background: #8fb8cc;
+}
+
+.profile-avatar-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.default-avatar {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.default-avatar::before,
+.default-avatar::after {
+  position: absolute;
+  left: 50%;
+  content: "";
+  transform: translateX(-50%);
+  background: #c8ddea;
+}
+
+.default-avatar::before {
+  top: 20%;
+  width: 34%;
+  height: 34%;
+  border-radius: 50%;
+}
+
+.default-avatar::after {
+  bottom: -10%;
+  width: 72%;
+  height: 48%;
+  border-radius: 50% 50% 0 0;
 }
 
 .auth-form button {

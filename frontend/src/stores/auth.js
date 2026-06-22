@@ -9,7 +9,13 @@ export const useAuthStore = defineStore('auth', () => {
   const isLoggedIn = ref(!!token.value)
 
   const signup = async (payload) => {
-    const response = await api.post('/accounts/signup/', payload)
+    const config = payload instanceof FormData ? {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    } : undefined
+
+    const response = await api.post('/accounts/signup/', payload, config)
 
     token.value = response.data.token
     user.value = response.data.user
