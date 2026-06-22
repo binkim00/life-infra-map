@@ -50,6 +50,10 @@ const SEARCH_SIZE_PER_PAGE = 15
 const MAX_SEARCH_RESULT_COUNT = 50
 const DB_SEARCH_RESULT_COUNT = 50
 const DISPLAY_BATCH_SIZE = 15
+const KAKAO_FALLBACK_MIN_RESULTS = 3
+const KAKAO_FALLBACK_MAX_QUERIES = 4
+const KAKAO_FALLBACK_MAX_RESULTS = 8
+const KAKAO_FALLBACK_MAX_SCORE = 60
 const CAFE_SEARCH_KEYWORDS = ['카페', '커피', 'cafe']
 const INFRA_SEARCH_KEYWORDS = [
   '화장실',
@@ -80,6 +84,7 @@ const AI_SCENARIO_KAKAO_KEYWORDS = {
   waiting_place: '카페',
   walk_healing: '공원',
   smoking_area: '흡연구역',
+  restaurant: '식당',
 }
 const CATEGORY_KAKAO_KEYWORDS = {
   cafe: '카페',
@@ -88,6 +93,7 @@ const CATEGORY_KAKAO_KEYWORDS = {
   beach: '해수욕장',
   tourism: '관광지',
   smoking_area: '흡연구역',
+  restaurant: '식당',
 }
 const CATEGORY_KEYWORD_MAP = [
   { category: 'toilet', keyword: '화장실', aliases: ['화장실', '공중화장실'] },
@@ -131,6 +137,18 @@ const WAITING_PLACE_KEYWORDS = [
   '피할곳',
   '피할 곳',
 ]
+const RESTAURANT_INTENT_KEYWORDS = [
+  '혼밥',
+  '혼자밥',
+  '혼자 밥',
+  '혼자식사',
+  '혼자 식사',
+  '식당',
+  '밥집',
+  '음식점',
+  '맛집',
+  '브런치',
+]
 const WALK_HEALING_KEYWORDS = [
   '산책',
   '힐링',
@@ -147,6 +165,7 @@ const INTENT_PREFERRED_TAGS = {
   waiting_place: ['실내쉼터', '잠깐쉬기좋음'],
   walk_healing: ['산책좋음', '힐링', '야경'],
   smoking_area: ['흡연가능', '흡연구역'],
+  restaurant: ['혼자이용좋음', '혼밥좋음', '조용한', '식사좋음'],
 }
 const INTENT_NEGATIVE_TAGS = {
   waiting_place: ['실외', '야외'],
@@ -156,7 +175,26 @@ const INTENT_KAKAO_KEYWORD_CANDIDATES = {
   waiting_place: ['카페', '쉼터', '실내 쉼터'],
   walk_healing: ['공원', '산책로', '전망대'],
   smoking_area: ['흡연구역', '흡연실'],
+  restaurant: ['혼밥', '식당', '밥집', '음식점'],
 }
+const KAKAO_FALLBACK_KEYWORD_RULES = [
+  {
+    keywords: ['혼밥', '혼자밥', '혼자 밥', '혼자식사', '혼자 식사', '식당', '밥집', '음식점', '맛집', '브런치'],
+    queries: ['혼밥', '식당', '밥집', '음식점'],
+  },
+  {
+    keywords: ['카페', '커피', '노트북', '작업', '공부', '조용'],
+    queries: ['조용한 카페', '노트북 카페', '카페'],
+  },
+  {
+    keywords: ['잠깐쉴', '잠깐 쉴', '쉴곳', '쉴 곳', '쉬기', '휴식', '쉼터'],
+    queries: ['쉼터', '휴게공간', '도서관', '공원'],
+  },
+  {
+    keywords: ['산책', '힐링', '걷기', '야경'],
+    queries: ['공원', '산책로', '해변', '관광지'],
+  },
+]
 const ABSTRACT_TARGET_KEYWORDS = [
   '곳',
   '장소',
@@ -274,6 +312,7 @@ const mapFitBoundsKey = ref(0)
 const currentLocationPlace = ref([])
 const allSearchResults = ref([])
 const visibleCount = ref(DISPLAY_BATCH_SIZE)
+const resultFilterMode = ref('all')
 const sortMode = ref('distance')
 const resultSourceLabel = ref('검색 결과')
 const resultMessageSuffix = ref('')
@@ -298,6 +337,28 @@ const activeSearchPlan = ref(null)
 
 const showDetailPanel = ref(false)
 const detailFrameError = ref(false)
+
+const NO_RESULT_MESSAGE_PATTERNS = [
+  '검색 결과가 없습니다',
+  '추천 결과가 없습니다',
+  '조건에 맞는 추천 결과가 없습니다',
+]
+
+const isNoResultLocationMessage = (message = '') => {
+  return NO_RESULT_MESSAGE_PATTERNS.some((pattern) => {
+    return String(message || '').includes(pattern)
+  })
+}
+
+const clearNoResultLocationMessage = () => {
+  if (isNoResultLocationMessage(locationMessage.value)) {
+    locationMessage.value = ''
+  }
+}
+
+const resetSearchStatusMessage = (message = '검색 조건을 확인하는 중입니다.') => {
+  locationMessage.value = message
+}
 
 const KAKAO_DETAIL_LOOKUP_RADIUS_M = 300
 const KAKAO_DETAIL_MATCH_DISTANCE_M = 150
@@ -350,8 +411,30 @@ const KAKAO_DETAIL_SUFFIX_BOUNDARY_WORDS = [
   '지점',
 ]
 
+const RESULT_FILTER_OPTIONS = [
+  { value: 'all', label: '전체' },
+  { value: 'db', label: 'DB 추천' },
+  { value: 'kakao', label: '카카오 후보' },
+]
+
+const RESULT_SORT_OPTIONS = [
+  { value: 'recommendation', label: '추천순' },
+  { value: 'distance', label: '거리순' },
+  { value: 'confidence', label: '신뢰도순' },
+]
+
+const getResultFilterLabel = (filterMode = resultFilterMode.value) => {
+  return RESULT_FILTER_OPTIONS.find((option) => option.value === filterMode)?.label || '전체'
+}
+
+const filteredSearchResults = computed(() => {
+  return allSearchResults.value.filter((place) => {
+    return matchesResultFilter(place, resultFilterMode.value)
+  })
+})
+
 const sortedSearchResults = computed(() => {
-  return sortSearchResults(allSearchResults.value)
+  return sortSearchResults(filteredSearchResults.value)
 })
 
 const searchedPlaces = computed(() => {
@@ -375,7 +458,7 @@ const mapLayoutKey = computed(() => {
 })
 
 const hasMoreResults = computed(() => {
-  return visibleCount.value < allSearchResults.value.length
+  return visibleCount.value < filteredSearchResults.value.length
 })
 
 const resultCountText = computed(() => {
@@ -387,7 +470,11 @@ const resultCountText = computed(() => {
     ? ` · ${resultMessageSuffix.value}`
     : ''
 
-  return `${resultSourceLabel.value} ${allSearchResults.value.length}개 중 ${searchedPlaces.value.length}개 표시${suffix}`
+  if (resultFilterMode.value !== 'all') {
+    return `${getResultFilterLabel()} ${filteredSearchResults.value.length}개 중 ${searchedPlaces.value.length}개 표시${suffix}`
+  }
+
+  return `${resultSourceLabel.value} ${filteredSearchResults.value.length}개 중 ${searchedPlaces.value.length}개 표시${suffix}`
 })
 
 const mapParserStatus = computed(() => {
@@ -482,6 +569,18 @@ watch(
     resolveKakaoDetailUrlForPlace(selectedPlace.value)
   },
 )
+
+watch(resultFilterMode, async () => {
+  visibleCount.value = DISPLAY_BATCH_SIZE
+  mapFitBoundsKey.value += 1
+  await nextTick()
+  clearSelectedPlaceIfFilteredOut()
+})
+
+watch(sortMode, () => {
+  visibleCount.value = DISPLAY_BATCH_SIZE
+  mapFitBoundsKey.value += 1
+})
 
 const toFiniteCoordinate = (value) => {
   const numberValue = Number(value)
@@ -712,6 +811,17 @@ const resolveCurrentContextCenter = async ({ updateMessage = true } = {}) => {
   }
 }
 
+const getSearchCenterForRecommendation = async ({ updateMessage = true } = {}) => {
+  const currentContext = await resolveCurrentContextCenter({ updateMessage })
+  const center = currentContext?.center || mapCenter.value || DEFAULT_CENTER
+
+  return {
+    center,
+    baseLabel: currentContext?.baseLabel || '현재 지도 중심 기준',
+    source: currentContext?.source || 'map_center',
+  }
+}
+
 const openMapWithCurrentLocation = () => {
   activeTab.value = 'map'
 
@@ -745,7 +855,7 @@ const parseMapSearchInput = (keyword) => {
   const normalizedKeyword = keyword.replace(/\s+/g, ' ').trim()
   const currentContextPattern = /^(현재\s*위치|내\s*주변|내\s*근처|이\s*근처|이\s*주변|이\s*지도|지도|현재\s*지도)\s*(?:주변|근처|인근|가까운)?(?:에서|의)?\s*(.+)$/
   const currentContextMatched = normalizedKeyword.match(currentContextPattern)
-  const currentContextPrefixPattern = /^(근처|주변|인근|가까운|가까이)\s+(.+)$/
+  const currentContextPrefixPattern = /^(근처|주변|인근|가까운|가까이)(?:에|에서|의)?\s+(.+)$/
   const currentContextPrefixMatched = normalizedKeyword.match(currentContextPrefixPattern)
 
   if (currentContextMatched || currentContextPrefixMatched) {
@@ -863,6 +973,12 @@ const NON_REGION_LOCATION_WORDS = [
   '조용히',
   '가까운',
   '가까이',
+  '혼자',
+  '혼밥',
+  '노트북',
+  '작업',
+  '공부',
+  '잠깐',
   '근처',
   '주변',
   '인근',
@@ -885,9 +1001,20 @@ const isValidAroundBaseLocation = (baseKeyword = '') => {
 
   if (!baseText) return false
 
-  return !NON_REGION_LOCATION_WORDS.some((word) => {
+  return !isNonRegionLocationText(baseText)
+}
+
+const isNonRegionLocationText = (locationText = '') => {
+  const normalizedLocationText = normalizeLocationText(locationText)
+
+  return NON_REGION_LOCATION_WORDS.some((word) => {
     const wordText = normalizeLocationText(word)
-    return baseText === wordText || baseText.includes(wordText)
+    return (
+      normalizedLocationText === wordText ||
+      normalizedLocationText === `${wordText}에` ||
+      normalizedLocationText === `${wordText}에서` ||
+      normalizedLocationText === `${wordText}의`
+    )
   })
 }
 
@@ -897,7 +1024,11 @@ const isLikelyRegionSearchPair = (locationQuery, targetQuery) => {
 
   if (!locationText || !targetText) return false
 
-  if (NON_REGION_LOCATION_WORDS.some((word) => locationText === normalizeLocationText(word))) {
+  if (isNonRegionLocationText(locationText)) {
+    return false
+  }
+
+  if (isRecommendationQueryText(locationQuery)) {
     return false
   }
 
@@ -933,10 +1064,26 @@ const RECOMMENDATION_QUERY_HINTS = [
   'wifi',
   '오래',
   '혼자',
+  '혼밥',
+  '찾아줘',
+  '찾아',
+  '갈만한',
+  '좋은곳',
+  '좋은 곳',
+  '식당',
+  '밥집',
+  '음식점',
+  '맛집',
+  '브런치',
+  '카페',
+  '쉼터',
   '쉴',
   '쉬',
   '힐링',
   '산책',
+  '공원',
+  '화장실',
+  '주차장',
   '흡연',
   '가능',
   '가볼',
@@ -1006,9 +1153,16 @@ const getTargetType = ({ targetQuery = '', categoryHint = '' }) => {
 
 const getRecommendationIntent = (query = '') => {
   const queryText = normalizeLocationText(query)
+  const hasRestaurantKeyword = RESTAURANT_INTENT_KEYWORDS.some((keyword) => {
+    return queryText.includes(normalizeLocationText(keyword))
+  })
   const hasWorkCafeKeyword = WORK_CAFE_KEYWORDS.some((keyword) => {
     return queryText.includes(normalizeLocationText(keyword))
   })
+
+  if (hasRestaurantKeyword) {
+    return 'restaurant'
+  }
 
   if (hasWorkCafeKeyword) {
     return 'work_cafe'
@@ -2127,15 +2281,25 @@ const normalizeKakaoDetailUrl = (url) => {
     return ''
   }
 
-  if (cleanedUrl.startsWith('http://place.map.kakao.com/')) {
-    return cleanedUrl.replace('http://', 'https://')
-  }
+  const candidateUrl = cleanedUrl.startsWith('place.map.kakao.com/')
+    ? `https://${cleanedUrl}`
+    : cleanedUrl
 
-  if (cleanedUrl.startsWith('place.map.kakao.com/')) {
-    return `https://${cleanedUrl}`
-  }
+  try {
+    const parsedUrl = new URL(candidateUrl)
+    const [placeId] = parsedUrl.pathname.split('/').filter(Boolean)
 
-  return cleanedUrl
+    if (
+      parsedUrl.hostname !== 'place.map.kakao.com' ||
+      !KAKAO_PLACE_ID_PATTERN.test(placeId)
+    ) {
+      return ''
+    }
+
+    return `https://place.map.kakao.com/${placeId}`
+  } catch (error) {
+    return ''
+  }
 }
 
 const isKakaoPlaceId = (value) => {
@@ -2808,9 +2972,73 @@ const isRecommendationPlace = (place) => {
   return (
     place?.sourceLabel === 'DB추천' ||
     place?.sourceLabel === '카카오+DB' ||
+    place?.recommendationSourceType === 'kakao_candidate' ||
+    place?.source_type === 'kakao_candidate' ||
+    place?.resultType === 'kakao_fallback_candidate' ||
     place?.tagSource === 'DB 추천 결과' ||
     place?.tagSource?.includes('DB 추천 결과')
   )
+}
+
+const isDbRecommendationResult = (place = {}) => {
+  const sourceType = getTextValue(place.recommendationSourceType || place.source_type)
+  const dbSourceTypes = ['db_verified', 'db_candidate', 'db_category_fallback']
+
+  return (
+    dbSourceTypes.includes(sourceType) ||
+    place.sourceLabel === 'DB추천' ||
+    place.sourceLabel === '카카오+DB' ||
+    place.searchSource === 'local_db' ||
+    Boolean(place.savedPlaceId)
+  )
+}
+
+const isKakaoCandidateResult = (place = {}) => {
+  const sourceType = getTextValue(place.recommendationSourceType || place.source_type)
+
+  return (
+    ['kakao_candidate', 'kakao_with_db_tags'].includes(sourceType) ||
+    place.sourceLabel === '카카오' ||
+    place.sourceLabel === '카카오+DB' ||
+    place.searchSource === 'kakao' ||
+    String(place.resultType || '').startsWith('kakao_') ||
+    Boolean(place.kakaoPlaceId)
+  )
+}
+
+const matchesResultFilter = (place, filterMode = 'all') => {
+  if (filterMode === 'db') {
+    return isDbRecommendationResult(place)
+  }
+
+  if (filterMode === 'kakao') {
+    return isKakaoCandidateResult(place)
+  }
+
+  return true
+}
+
+const clearSelectedPlaceIfFilteredOut = () => {
+  if (!selectedPlace.value?.id) {
+    return
+  }
+
+  const selectedPlaceVisible = filteredSearchResults.value.some((place) => {
+    return place.id === selectedPlace.value.id
+  })
+
+  if (selectedPlaceVisible) {
+    return
+  }
+
+  selectedPlace.value = null
+  showDetailPanel.value = false
+  detailFrameError.value = false
+  isPlaceDetailCollapsed.value = false
+}
+
+const setResultFilterMode = (filterMode) => {
+  resultFilterMode.value = filterMode
 }
 
 const useDefaultMapLocation = () => {
@@ -2988,7 +3216,26 @@ const getRecommendationSortScore = (place) => {
     return baseScore + sourceBonus + placeShapeScore - 12 - waitingPenalty
   }
 
+  if (place?.resultType === 'kakao_fallback_candidate') {
+    return baseScore + sourceBonus + placeShapeScore - 75 - waitingPenalty
+  }
+
   return baseScore + sourceBonus + placeShapeScore - waitingPenalty
+}
+
+const getConfidenceRank = (place) => {
+  const confidence = getTextValue(
+    place?.recommendationConfidence ||
+    place?.confidence ||
+    getRecommendationConfidence(place),
+  ).toLowerCase()
+  const confidenceRankMap = {
+    high: 3,
+    medium: 2,
+    low: 1,
+  }
+
+  return confidenceRankMap[confidence] || 0
 }
 
 const getResultSourceRank = (place) => {
@@ -3006,6 +3253,14 @@ const getResultSourceRank = (place) => {
 const compareByDistance = (firstPlace, secondPlace) => {
   const firstDistance = getDistanceValue(firstPlace)
   const secondDistance = getDistanceValue(secondPlace)
+
+  if (firstDistance === null && secondDistance !== null) {
+    return 1
+  }
+
+  if (firstDistance !== null && secondDistance === null) {
+    return -1
+  }
 
   if (
     firstDistance !== null &&
@@ -3048,6 +3303,23 @@ const compareForRecommendationSearch = (firstPlace, secondPlace) => {
   return compareByDistance(firstPlace, secondPlace)
 }
 
+const compareForConfidenceSearch = (firstPlace, secondPlace) => {
+  const confidenceDifference = getConfidenceRank(secondPlace) - getConfidenceRank(firstPlace)
+
+  if (confidenceDifference !== 0) {
+    return confidenceDifference
+  }
+
+  const scoreDifference =
+    getRecommendationSortScore(secondPlace) - getRecommendationSortScore(firstPlace)
+
+  if (scoreDifference !== 0) {
+    return scoreDifference
+  }
+
+  return compareByDistance(firstPlace, secondPlace)
+}
+
 const sortSearchResults = (results = []) => {
   const indexedResults = results.map((place, index) => ({
     ...place,
@@ -3057,6 +3329,10 @@ const sortSearchResults = (results = []) => {
   const sortedResults = [...indexedResults].sort((firstPlace, secondPlace) => {
     if (sortMode.value === 'recommendation') {
       return compareForRecommendationSearch(firstPlace, secondPlace)
+    }
+
+    if (sortMode.value === 'confidence') {
+      return compareForConfidenceSearch(firstPlace, secondPlace)
     }
 
     return compareForGeneralSearch(firstPlace, secondPlace)
@@ -3075,6 +3351,7 @@ const convertKakaoPlaces = (
     recommendationIntent = '',
     categoryHint = '',
     isAncillaryIntent = false,
+    fallbackCandidate = false,
   } = {},
 ) => {
   return places.map((place) => {
@@ -3100,6 +3377,15 @@ const convertKakaoPlaces = (
       recommendationIntent,
       isAncillaryIntent,
     })
+    const fallbackScore = getKakaoFallbackCandidateScore({
+      place,
+      center,
+      mainPlaceScore: ancillaryAdjustment.mainPlaceScore,
+      ancillaryPlacePenalty: ancillaryAdjustment.ancillaryPlacePenalty,
+      intentMismatchPenalty: ancillaryAdjustment.intentMismatchPenalty,
+      waitingPlacePenalty: recommendationData.waitingPlacePenalty || waitingSuitability.penalty || 0,
+    })
+    const fallbackReason = 'DB 추천 결과가 부족해 카카오 검색 결과를 낮은 신뢰도 후보로 함께 표시합니다. 외부 검색 결과이므로 방문 전 세부 조건 확인이 필요합니다.'
 
     return {
       id: `kakao-${place.id}`,
@@ -3126,17 +3412,41 @@ const convertKakaoPlaces = (
       verifiedTags: savedTagData.verified_tags || [],
       warningTags: savedTagData.warning_tags || [],
       tagDetails: savedTagData.tag_details || [],
-      matchedTagLabels: [],
+      matchedTagLabels: fallbackCandidate && hasTagData
+        ? getSavedTagNames(savedTagData).slice(0, 3)
+        : [],
+      matched_tag_labels: fallbackCandidate && hasTagData
+        ? getSavedTagNames(savedTagData).slice(0, 3)
+        : [],
       missingTagLabels: [],
-      recommendationSourceLabel: '',
-      recommendationConfidenceLabel: '',
-      recommendationFallbackLabel: '',
-      recommendationFallbackDescription: '',
-      recommendationCaution: '',
+      missing_tag_labels: [],
+      recommendationSourceLabel: fallbackCandidate ? '카카오 검색 후보' : '',
+      source_type: fallbackCandidate ? 'kakao_candidate' : '',
+      source_label: fallbackCandidate ? '카카오 검색 후보' : '',
+      recommendationConfidenceLabel: fallbackCandidate ? '낮은 신뢰도' : '',
+      confidence: fallbackCandidate ? 'low' : '',
+      confidence_label: fallbackCandidate ? '낮은 신뢰도' : '',
+      recommendationFallbackLabel: fallbackCandidate ? '카카오 검색 기반 후보' : '',
+      fallback_level: fallbackCandidate ? 5 : null,
+      fallback_label: fallbackCandidate ? '카카오 검색 기반 후보' : '',
+      recommendationFallbackDescription: fallbackCandidate
+        ? 'DB 추천 결과가 부족해 카카오 검색 결과를 함께 표시한 후보입니다.'
+        : '',
+      fallback_description: fallbackCandidate
+        ? 'DB 추천 결과가 부족해 카카오 검색 결과를 함께 표시한 후보입니다.'
+        : '',
+      recommendationCaution: fallbackCandidate
+        ? '외부 검색 결과 기반 후보이므로 세부 정보는 방문 전 확인이 필요합니다.'
+        : '',
+      caution_message: fallbackCandidate
+        ? '외부 검색 결과 기반 후보이므로 세부 정보는 방문 전 확인이 필요합니다.'
+        : '',
       dataQualityStatus: savedTagData.data_quality_status || null,
       dataQualityScore: savedTagData.data_quality_score || null,
       rawScores,
-      recommendScore: hasTagData
+      recommendScore: fallbackCandidate
+        ? fallbackScore
+        : hasTagData
         ? (
           recommendationData.recommendScore ??
           rawScores.recommendation_ready_score ??
@@ -3144,9 +3454,16 @@ const convertKakaoPlaces = (
           null
         )
         : null,
-      recommendationReason: recommendationData.recommendationReason,
+      score: fallbackCandidate ? fallbackScore : null,
+      recommendationReason: fallbackCandidate
+        ? fallbackReason
+        : recommendationData.recommendationReason,
       matchedTags: recommendationData.matchedTags,
-      recommendationConfidence: recommendationData.recommendationConfidence,
+      recommendationConfidence: fallbackCandidate
+        ? 'low'
+        : recommendationData.recommendationConfidence,
+      recommendationSourceType: fallbackCandidate ? 'kakao_candidate' : '',
+      fallbackLevel: fallbackCandidate ? 5 : null,
       externalCandidateMessage: hasTagData ? '' : '세부 태그 데이터 없음',
       recommendationIntent,
       preferredTags,
@@ -3161,10 +3478,16 @@ const convertKakaoPlaces = (
       isAncillaryPlace: ancillaryAdjustment.isAncillaryPlace,
       resultType: hasTagData
         ? (
-          !preferredTags.length || recommendationData.preferredMatchCount > 0
-            ? 'kakao_tag_matched'
-            : 'kakao_tag_weak'
+          fallbackCandidate
+            ? 'kakao_fallback_candidate'
+            : (
+              !preferredTags.length || recommendationData.preferredMatchCount > 0
+                ? 'kakao_tag_matched'
+                : 'kakao_tag_weak'
+            )
         )
+        : fallbackCandidate
+        ? 'kakao_fallback_candidate'
         : (
           waitingSuitability.excluded
             ? 'kakao_unsuitable_waiting_place'
@@ -3191,6 +3514,324 @@ const searchKakaoSavedTags = async (places) => {
   } catch (error) {
     console.error(error)
     return {}
+  }
+}
+
+const getKakaoFallbackCandidateScore = ({
+  place,
+  center = null,
+  mainPlaceScore = 0,
+  ancillaryPlacePenalty = 0,
+  intentMismatchPenalty = 0,
+  waitingPlacePenalty = 0,
+} = {}) => {
+  const distance = center
+    ? getDistanceMetersBetweenPlaces(
+      { lat: center.lat, lng: center.lng },
+      { lat: Number(place?.y ?? place?.lat), lng: Number(place?.x ?? place?.lng) },
+    )
+    : Number(place?.distance || 0)
+  const distanceBonus = Number.isFinite(distance)
+    ? (
+      distance <= 500
+        ? 8
+        : distance <= 1000
+        ? 5
+        : distance <= 3000
+        ? 2
+        : 0
+    )
+    : 0
+  const shapeScore = Math.max(
+    -12,
+    Math.min(8, mainPlaceScore - ancillaryPlacePenalty - intentMismatchPenalty),
+  )
+  const penalty = Math.min(15, Math.round(waitingPlacePenalty / 10))
+
+  return Math.max(
+    40,
+    Math.min(
+      KAKAO_FALLBACK_MAX_SCORE,
+      45 + distanceBonus + shapeScore - penalty,
+    ),
+  )
+}
+
+const isKakaoFallbackLikelySparseQuery = ({
+  query = '',
+  recommendationIntent = '',
+  categoryHint = '',
+  data = {},
+} = {}) => {
+  if (['restaurant', 'work_cafe'].includes(recommendationIntent)) {
+    return true
+  }
+
+  if (['restaurant', 'cafe'].includes(categoryHint)) {
+    return true
+  }
+
+  const text = normalizeLocationText([
+    query,
+    data?.scenario,
+    data?.conditions?.intent,
+    ...toDisplayList(data?.conditions?.keywords),
+    ...toDisplayList(data?.conditions?.preferred_tag_labels),
+  ].filter(Boolean).join(' '))
+
+  return KAKAO_FALLBACK_KEYWORD_RULES.slice(0, 2).some((rule) => {
+    return rule.keywords.some((keyword) => text.includes(normalizeLocationText(keyword)))
+  })
+}
+
+const shouldRunKakaoRecommendationFallback = ({
+  dbResults = [],
+  query = '',
+  recommendationIntent = '',
+  categoryHint = '',
+  data = {},
+} = {}) => {
+  if (dbResults.length < KAKAO_FALLBACK_MIN_RESULTS) {
+    return true
+  }
+
+  return (
+    dbResults.length < KAKAO_FALLBACK_MAX_RESULTS &&
+    isKakaoFallbackLikelySparseQuery({
+      query,
+      recommendationIntent,
+      categoryHint,
+      data,
+    })
+  )
+}
+
+const getKakaoFallbackCategoryKeywords = (categories = []) => {
+  return categories
+    .map((category) => CATEGORY_KAKAO_KEYWORDS[category])
+    .filter(Boolean)
+}
+
+const buildKakaoRecommendationFallbackQueries = ({
+  query = '',
+  data = {},
+  parsedIntent = null,
+} = {}) => {
+  const textForRules = normalizeLocationText([
+    query,
+    data?.scenario,
+    parsedIntent?.recommendationIntent,
+    parsedIntent?.categoryHint,
+    data?.conditions?.intent,
+    ...toDisplayList(data?.conditions?.keywords),
+    ...toDisplayList(data?.conditions?.preferred_tag_labels),
+  ].filter(Boolean).join(' '))
+  const ruleQueries = KAKAO_FALLBACK_KEYWORD_RULES
+    .filter((rule) => {
+      return rule.keywords.some((keyword) => textForRules.includes(normalizeLocationText(keyword)))
+    })
+    .flatMap((rule) => rule.queries)
+  const categories = [
+    ...toDisplayList(data?.conditions?.categories),
+    ...toDisplayList(data?.ai_parse?.categories),
+    parsedIntent?.categoryHint,
+  ].filter(Boolean)
+  const conditionKeywords = [
+    ...toDisplayList(data?.conditions?.keywords),
+    ...toDisplayList(data?.conditions?.preferred_tag_labels),
+    ...toDisplayList(data?.conditions?.required_tag_labels),
+  ]
+  const candidates = [
+    ...ruleQueries,
+    ...getKakaoFallbackCategoryKeywords(categories),
+    ...(parsedIntent?.kakaoKeywordCandidates || []),
+    getKakaoKeywordForAiSearch(data, query),
+    ...conditionKeywords,
+    query,
+  ]
+
+  return [...new Set(
+    candidates
+      .map((keyword) => getTextValue(keyword))
+      .filter(Boolean),
+  )].slice(0, KAKAO_FALLBACK_MAX_QUERIES)
+}
+
+const getKakaoFallbackAllowedKeywords = ({
+  recommendationIntent = '',
+  categoryHint = '',
+  query = '',
+} = {}) => {
+  const text = normalizeLocationText(`${recommendationIntent} ${categoryHint} ${query}`)
+
+  if (recommendationIntent === 'restaurant' || categoryHint === 'restaurant') {
+    return ['음식', '식당', '밥집', '맛집', '한식', '중식', '일식', '양식', '분식', '레스토랑', '브런치']
+  }
+
+  if (recommendationIntent === 'work_cafe' || categoryHint === 'cafe' || text.includes('카페')) {
+    return ['카페', '커피', '디저트', '베이커리', '스터디카페']
+  }
+
+  if (recommendationIntent === 'waiting_place') {
+    return ['쉼터', '휴게', '도서관', '공원', '문화시설', '관광', '대합실', '터미널', '역사']
+  }
+
+  if (recommendationIntent === 'walk_healing') {
+    return ['공원', '산책', '해변', '해수욕장', '관광', '전망', '명소', '둘레길']
+  }
+
+  if (recommendationIntent === 'smoking_area' || categoryHint === 'smoking_area') {
+    return ['흡연']
+  }
+
+  return []
+}
+
+const isRelevantKakaoFallbackCandidate = ({
+  place,
+  query = '',
+  recommendationIntent = '',
+  categoryHint = '',
+} = {}) => {
+  const placeText = getPlaceTextForRule(place)
+  const allowedKeywords = getKakaoFallbackAllowedKeywords({
+    recommendationIntent,
+    categoryHint,
+    query,
+  })
+
+  if (!allowedKeywords.length) {
+    return true
+  }
+
+  const hasAllowedKeyword = allowedKeywords.some((keyword) => {
+    return placeText.includes(normalizeLocationText(keyword))
+  })
+
+  if (!hasAllowedKeyword) {
+    return false
+  }
+
+  if (recommendationIntent === 'waiting_place') {
+    const blockedKeywords = ['음식점', '식당', '술집', '주점', '노래방', '편의점']
+    return !blockedKeywords.some((keyword) => placeText.includes(normalizeLocationText(keyword)))
+  }
+
+  return true
+}
+
+const filterKakaoFallbackRawPlaces = ({
+  places = [],
+  center = null,
+  radius = SEARCH_RADIUS,
+  query = '',
+  recommendationIntent = '',
+  categoryHint = '',
+} = {}) => {
+  return places.filter((place) => {
+    const hasUrl = Boolean(place?.place_url || isKakaoPlaceId(place?.id))
+    const lat = Number(place?.y)
+    const lng = Number(place?.x)
+
+    if (!hasUrl || !Number.isFinite(lat) || !Number.isFinite(lng)) {
+      return false
+    }
+
+    if (center) {
+      const distance = getDistanceMetersBetweenPlaces(center, { lat, lng })
+      if (!Number.isFinite(distance) || distance > radius) {
+        return false
+      }
+    }
+
+    return isRelevantKakaoFallbackCandidate({
+      place,
+      query,
+      recommendationIntent,
+      categoryHint,
+    })
+  }).slice(0, KAKAO_FALLBACK_MAX_RESULTS)
+}
+
+const runKakaoRecommendationFallbackSearch = async ({
+  placesService,
+  query = '',
+  data = {},
+  parsedIntent = null,
+  fallbackQueries = null,
+  center,
+  preferredTags = [],
+  recommendationIntent = '',
+  categoryHint = '',
+  isAncillaryIntent = false,
+  radius = SEARCH_RADIUS,
+} = {}) => {
+  const fallbackSearchQueries = Array.isArray(fallbackQueries)
+    ? fallbackQueries
+    : buildKakaoRecommendationFallbackQueries({
+      query,
+      data,
+      parsedIntent,
+    })
+
+  if (!fallbackSearchQueries.length) {
+    return {
+      results: [],
+      rawCount: 0,
+      queries: [],
+      queryResultCounts: [],
+      excludedCount: 0,
+    }
+  }
+
+  const searchOptions = {
+    location: new window.kakao.maps.LatLng(center.lat, center.lng),
+    radius,
+    sort: window.kakao.maps.services.SortBy.DISTANCE,
+  }
+  const rawPlaces = []
+  const queryResultCounts = []
+
+  for (const searchQuery of fallbackSearchQueries) {
+    const queryResults = await runKakaoKeywordSearchLimited(
+      placesService,
+      searchQuery,
+      searchOptions,
+      { maxPages: 1 },
+    )
+
+    queryResultCounts.push({
+      query: searchQuery,
+      count: queryResults.length,
+    })
+    rawPlaces.push(...queryResults)
+  }
+
+  const dedupedRawPlaces = dedupeKakaoRawPlaces(rawPlaces)
+  const filteredPlaces = filterKakaoFallbackRawPlaces({
+    places: dedupedRawPlaces,
+    center,
+    radius,
+    query,
+    recommendationIntent,
+    categoryHint,
+  })
+  const savedTagDataByExternalId = await searchKakaoSavedTags(filteredPlaces)
+
+  return {
+    results: convertKakaoPlaces(filteredPlaces, savedTagDataByExternalId, {
+      query,
+      center,
+      preferredTags,
+      recommendationIntent,
+      categoryHint,
+      isAncillaryIntent,
+      fallbackCandidate: true,
+    }),
+    rawCount: dedupedRawPlaces.length,
+    queries: fallbackSearchQueries,
+    queryResultCounts,
+    excludedCount: Math.max(0, dedupedRawPlaces.length - filteredPlaces.length),
   }
 }
 
@@ -3459,11 +4100,16 @@ const setSearchResults = ({
   messageSuffix = '',
 }) => {
   allSearchResults.value = results
+  resultFilterMode.value = 'all'
   visibleCount.value = DISPLAY_BATCH_SIZE
   resultSourceLabel.value = sourceLabel
   resultMessageSuffix.value = messageSuffix
   placeListItemRefs.value = {}
   mapFitBoundsKey.value += 1
+
+  if (results.length > 0) {
+    clearNoResultLocationMessage()
+  }
 }
 
 const clearSearchResults = () => {
@@ -4127,52 +4773,82 @@ const runAiMapSearchAtCenter = async ({
     preferredTags,
     recommendationIntent,
   })
-  const kakaoKeywordCandidates = parsedIntent?.kakaoKeywordCandidates?.length
-    ? parsedIntent.kakaoKeywordCandidates
-    : [parsedIntent?.categoryKeyword || getKakaoKeywordForAiSearch(data, targetQuery)]
   let kakaoResults = []
+  let kakaoFallbackQueries = []
+  let kakaoFallbackDebug = {
+    queryResultCounts: [],
+    excludedCount: 0,
+    rawCount: 0,
+  }
+  const shouldRunFallback = shouldRunKakaoRecommendationFallback({
+    dbResults: recommendationResults,
+    query: targetQuery,
+    recommendationIntent,
+    categoryHint,
+    data,
+  })
+  kakaoFallbackQueries = buildKakaoRecommendationFallbackQueries({
+    query: targetQuery,
+    data,
+    parsedIntent,
+  })
 
-  if (kakaoKeywordCandidates.length) {
-    loadingMessage.value = '주변 장소 검색 중'
-    const centerLatLng = new window.kakao.maps.LatLng(center.lat, center.lng)
-    const kakaoSearchOptions = {
-      location: centerLatLng,
-      radius: SEARCH_RADIUS,
-      sort: window.kakao.maps.services.SortBy.DISTANCE,
-    }
-    let kakaoPlaces = await runKakaoKeywordCandidateSearch(
-      placesService,
-      kakaoKeywordCandidates,
-      kakaoSearchOptions,
-      { maxPages: 1 },
-    )
-    kakaoPlaces = await appendMainPlaceFallbackResults({
-      placesService,
-      places: kakaoPlaces,
-      searchOptions: kakaoSearchOptions,
-      searchContext: {
-        query: targetQuery,
-        categoryHint,
-        recommendationIntent,
-        isAncillaryIntent,
-      },
-      fallbackKeyword: parsedIntent?.mainPlaceFallbackKeyword || '',
-    })
-    const savedTagDataByExternalId = await searchKakaoSavedTags(kakaoPlaces)
-    kakaoResults = convertKakaoPlaces(kakaoPlaces, savedTagDataByExternalId, {
+  if (import.meta.env.DEV) {
+    console.debug('[카카오 fallback 시작]', {
       query: targetQuery,
+      originalQuery,
+      dbResultCount: recommendationResults.length,
+      shouldRunFallback,
+      center,
+      fallbackQueries: kakaoFallbackQueries,
+    })
+  }
+
+  if (shouldRunFallback) {
+    loadingMessage.value = '부족한 추천 후보 보강 중'
+    const fallbackData = await runKakaoRecommendationFallbackSearch({
+      placesService,
+      query: targetQuery,
+      data,
+      parsedIntent,
+      fallbackQueries: kakaoFallbackQueries,
       center,
       preferredTags,
       recommendationIntent,
       categoryHint,
       isAncillaryIntent,
     })
+    kakaoResults = fallbackData.results
+    kakaoFallbackQueries = fallbackData.queries
+    kakaoFallbackDebug = {
+      queryResultCounts: fallbackData.queryResultCounts || [],
+      excludedCount: fallbackData.excludedCount || 0,
+      rawCount: fallbackData.rawCount || 0,
+    }
   }
 
   loadingMessage.value = '추천 결과 정리 중'
   const mergedResults = dedupeSearchResults(kakaoResults, recommendationResults)
+  const hasAnyResults = (
+    mergedResults.length > 0 ||
+    recommendationResults.length > 0 ||
+    kakaoResults.length > 0
+  )
+  const willShowNoResultMessage = !hasAnyResults
 
-  if (!mergedResults.length) {
+  if (import.meta.env.DEV) {
+    console.debug('[카카오 fallback 결과]', {
+      query: targetQuery,
+      queryResultCounts: kakaoFallbackDebug.queryResultCounts,
+      rawCandidateCount: kakaoFallbackDebug.rawCount,
+      excludedCandidateCount: kakaoFallbackDebug.excludedCount,
+      mergedFallbackCount: kakaoResults.length,
+      totalMergedCount: mergedResults.length,
+      willShowNoResultMessage,
+    })
+  }
+
+  if (!hasAnyResults) {
     clearSearchResults()
     locationMessage.value = `"${originalQuery}" 조건에 맞는 추천 결과가 없습니다.`
     return
@@ -4181,10 +4857,12 @@ const runAiMapSearchAtCenter = async ({
   setSearchResults({
     results: mergedResults,
     sourceLabel: 'AI 검색 결과',
-    messageSuffix: `DB ${recommendationResults.length}개, 카카오 ${kakaoResults.length}개 · ${data.scenario}`,
+    messageSuffix: `DB ${recommendationResults.length}개, 카카오 fallback ${kakaoResults.length}개 · ${data.scenario}`,
   })
 
-  locationMessage.value = `${baseLabel} "${originalQuery}" 자연어 조건의 DB 추천과 카카오 검색 결과를 함께 표시했습니다.`
+  locationMessage.value = kakaoResults.length
+    ? `${baseLabel} "${originalQuery}" DB 추천이 부족해 카카오 fallback 후보를 함께 표시했습니다.`
+    : `${baseLabel} "${originalQuery}" 자연어 조건의 DB 추천 결과를 표시했습니다.`
 }
 
 const getRegionSearchCoreKeyword = (targetQuery) => {
@@ -4420,6 +5098,7 @@ const searchKakaoPlaces = async ({ useMapBounds = false } = {}) => {
 
   isSearchingMap.value = true
   loadingMessage.value = '주변 장소 검색 중'
+  resetSearchStatusMessage('주변 장소를 검색하는 중입니다.')
   sortMode.value = 'distance'
   mapAiParse.value = null
   selectedPlace.value = null
@@ -4470,7 +5149,7 @@ const searchKakaoPlaces = async ({ useMapBounds = false } = {}) => {
     pendingBaseLocationSearch.value = null
 
     if (!parsedKeyword.hasBaseLocation) {
-      const currentContext = await resolveCurrentContextCenter()
+      const currentContext = await getSearchCenterForRecommendation()
       await searchAroundCenter({
         placesService,
         targetKeyword,
@@ -4534,6 +5213,7 @@ const searchAiRecommendationsOnMap = async () => {
 
   isSearchingMap.value = true
   loadingMessage.value = '상황 해석 중'
+  resetSearchStatusMessage('AI 추천 조건을 확인하는 중입니다.')
   selectedPlace.value = null
   showDetailPanel.value = false
   detailFrameError.value = false
@@ -4561,7 +5241,7 @@ const searchAiRecommendationsOnMap = async () => {
     }
 
     if (!parsedQuery.hasBaseLocation) {
-      const currentContext = await resolveCurrentContextCenter()
+      const currentContext = await getSearchCenterForRecommendation()
       searchCenter = currentContext.center
       baseLabel = currentContext.baseLabel
     }
@@ -4956,7 +5636,7 @@ const handleDetailFrameError = () => {
         }"
       >
         <aside
-          v-if="searchedPlaces.length || isSearchingMap"
+          v-if="allSearchResults.length || isSearchingMap"
           class="place-list-panel"
           :class="{ 'is-collapsed': isResultListCollapsed }"
         >
@@ -4973,6 +5653,37 @@ const handleDetailFrameError = () => {
             >
               {{ isResultListCollapsed ? '펼치기' : '접기' }}
             </button>
+          </div>
+
+          <div
+            v-if="allSearchResults.length && !isSearchingMap && !isResultListCollapsed"
+            class="result-controls"
+          >
+            <div class="result-filter-buttons" aria-label="결과 필터">
+              <button
+                v-for="filterOption in RESULT_FILTER_OPTIONS"
+                :key="filterOption.value"
+                type="button"
+                class="result-filter-button"
+                :class="{ active: resultFilterMode === filterOption.value }"
+                @click="setResultFilterMode(filterOption.value)"
+              >
+                {{ filterOption.label }}
+              </button>
+            </div>
+
+            <label class="result-sort-select">
+              <span>정렬</span>
+              <select v-model="sortMode">
+                <option
+                  v-for="sortOption in RESULT_SORT_OPTIONS"
+                  :key="sortOption.value"
+                  :value="sortOption.value"
+                >
+                  {{ sortOption.label }}
+                </option>
+              </select>
+            </label>
           </div>
 
           <div v-if="isResultListCollapsed" class="collapsed-panel-summary">
@@ -4997,6 +5708,13 @@ const handleDetailFrameError = () => {
             </div>
 
             <template v-else>
+              <div
+                v-if="!searchedPlaces.length && allSearchResults.length"
+                class="filtered-empty-message"
+              >
+                선택한 필터에 맞는 결과가 없습니다.
+              </div>
+
               <article
                 v-for="place in searchedPlaces"
                 :key="place.id"
@@ -5908,7 +6626,62 @@ h1 {
   margin: 0;
   color: #111827;
   font-size: 16px;
-  letter-spacing: -0.03em;
+  letter-spacing: 0;
+}
+
+.result-controls {
+  padding: 10px 0;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+  border-bottom: 1px solid #eef0f4;
+}
+
+.result-filter-buttons {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.result-filter-button {
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid #e5e8f0;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #475467;
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.result-filter-button.active {
+  border-color: #2563eb;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.result-sort-select {
+  flex-shrink: 0;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  color: #667085;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.result-sort-select select {
+  min-height: 30px;
+  padding: 0 26px 0 10px;
+  border: 1px solid #e5e8f0;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #344054;
+  font-size: 12px;
+  font-weight: 900;
 }
 
 .place-list-panel.is-collapsed .place-list-label,
@@ -5950,6 +6723,16 @@ h1 {
   margin-top: 10px;
   overflow-y: auto;
   padding-right: 4px;
+}
+
+.filtered-empty-message {
+  padding: 18px 10px;
+  border-radius: 12px;
+  background: #f8fafc;
+  color: #667085;
+  font-size: 13px;
+  font-weight: 800;
+  text-align: center;
 }
 
 .skeleton-list {
@@ -6828,6 +7611,16 @@ h1 {
 
   .map-header {
     flex-direction: column;
+  }
+
+  .result-controls {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .result-sort-select {
+    width: 100%;
+    justify-content: space-between;
   }
 
   .map-header-actions {
