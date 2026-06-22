@@ -3,6 +3,8 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { aiSearchRecommendations, getKakaoPlaceTags, getSavedPlaces } from '@/api/recommendation'
 import KakaoMap from '@/components/KakaoMap.vue'
 import RecommendationTestPanel from '@/components/RecommendationTestPanel.vue'
+import { useRouter } from 'vue-router'
+import { useAuthStore } from '@/stores/auth'
 
 const props = defineProps({
   initialTab: {
@@ -17,6 +19,14 @@ const normalizeTab = (tab) => {
 
 const activeTab = ref(normalizeTab(props.initialTab))
 const searchKeyword = ref('')
+
+const router = useRouter()
+const authStore = useAuthStore()
+
+const handleLogout = async () => {
+  await authStore.logout()
+  router.push('/')
+}
 
 watch(
   () => props.initialTab,
@@ -1434,33 +1444,52 @@ const handleDetailFrameError = () => {
 
 <template>
   <main class="home-page">
-    <header class="top-bar">
-      <button
-        type="button"
-        class="tab-button"
-        :class="{ active: activeTab === 'search' }"
-        @click="activeTab = 'search'"
-      >
-        검색창
-      </button>
+    <header class="page-header">
+      <div class="top-bar">
+        <button
+          type="button"
+          class="tab-button"
+          :class="{ active: activeTab === 'search' }"
+          @click="activeTab = 'search'"
+        >
+          검색창
+        </button>
 
-      <button
-        type="button"
-        class="tab-button"
-        :class="{ active: activeTab === 'map' }"
-        @click="openMapWithCurrentLocation"
-      >
-        지도
-      </button>
+        <button
+          type="button"
+          class="tab-button"
+          :class="{ active: activeTab === 'map' }"
+          @click="openMapWithCurrentLocation"
+        >
+          지도
+        </button>
+      </div>
 
-      <button
-        type="button"
-        class="tab-button"
-        :class="{ active: activeTab === 'recommendation' }"
-        @click="activeTab = 'recommendation'"
-      >
-        추천 테스트
-      </button>
+      <div class="auth-menu">
+        <template v-if="authStore.isLoggedIn">
+          <span class="user-name">
+            {{ authStore.user?.username }}님
+          </span>
+
+          <button
+            type="button"
+            class="auth-button logout"
+            @click="handleLogout"
+          >
+            로그아웃
+          </button>
+        </template>
+
+        <template v-else>
+          <RouterLink to="/login" class="auth-button">
+            로그인
+          </RouterLink>
+
+          <RouterLink to="/signup" class="auth-button signup">
+            회원가입
+          </RouterLink>
+        </template>
+      </div>
     </header>
 
     <section v-if="activeTab === 'search'" class="search-section">
@@ -1814,6 +1843,62 @@ const handleDetailFrameError = () => {
 </template>
 
 <style scoped>
+.page-header {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.auth-menu {
+  position: absolute;
+  right: 0;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.user-name {
+  color: #344054;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.auth-button {
+  padding: 10px 14px;
+  border: 1px solid #d0d5dd;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #344054;
+  font-size: 14px;
+  font-weight: 800;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.auth-button.signup {
+  border-color: #2563eb;
+  background: #2563eb;
+  color: #ffffff;
+}
+
+.auth-button.logout {
+  border-color: #ef4444;
+  background: #ef4444;
+  color: #ffffff;
+}
+
+@media (max-width: 720px) {
+  .page-header {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .auth-menu {
+    position: static;
+  }
+}
+
 .home-page {
   min-height: 100vh;
   padding: 24px;

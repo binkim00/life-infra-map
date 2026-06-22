@@ -51,11 +51,13 @@ INSTALLED_APPS = [
 
     # 외부 라이브러리
     'rest_framework',
+    'rest_framework.authtoken',
     'corsheaders',
 
     # 로컬 앱
     'places',
     'recommendations',
+    'accounts',
 ]
 
 MIDDLEWARE = [
@@ -149,6 +151,11 @@ REST_FRAMEWORK = {
         'rest_framework.renderers.JSONRenderer',
         'rest_framework.renderers.BrowsableAPIRenderer',
     ],
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.TokenAuthentication',
+    ],
 }
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+
