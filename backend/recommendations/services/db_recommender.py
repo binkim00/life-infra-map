@@ -14,6 +14,7 @@ from recommendations.services.tag_utils import (
     get_source_label,
     get_tag_display_name,
     get_tag_display_names,
+    get_visible_tag_names,
 )
 
 
@@ -462,7 +463,10 @@ def build_result_metadata(
             fallback_level = 5
 
         if missing_tags:
-            missing_labels = get_tag_display_names(missing_tags[:3])
+            missing_labels = get_tag_display_names(
+                missing_tags[:3],
+                hidden_label="확인되지 않은 세부 조건",
+            )
             caution = f"{caution} 확인되지 않은 조건: {', '.join(missing_labels)}."
 
         return {
@@ -541,6 +545,16 @@ def build_result_labels(metadata):
     }
 
 
+def build_response_condition(context):
+    return {
+        **context,
+        "required_tags": get_visible_tag_names(context.get("required_tags")),
+        "preferred_tags": get_visible_tag_names(context.get("preferred_tags")),
+        "avoid_tags": get_visible_tag_names(context.get("avoid_tags")),
+        "tags": get_visible_tag_names(context.get("tags")),
+    }
+
+
 def build_db_recommend_reason(
     place,
     scenario,
@@ -562,8 +576,14 @@ def build_db_recommend_reason(
     missing_tags = metadata.get("missing_tags", [])
     required_missing_tags = metadata.get("required_missing_tags", [])
     matched_tag_labels = get_tag_display_names(matched_tags)
-    missing_tag_labels = get_tag_display_names(missing_tags)
-    required_missing_tag_labels = get_tag_display_names(required_missing_tags)
+    missing_tag_labels = get_tag_display_names(
+        missing_tags,
+        hidden_label="확인되지 않은 세부 조건",
+    )
+    required_missing_tag_labels = get_tag_display_names(
+        required_missing_tags,
+        hidden_label="요청한 핵심 조건",
+    )
     category_label = get_category_display_name(place.category)
     source_label = get_source_label(metadata.get("source_type"))
 
@@ -661,6 +681,8 @@ def serialize_recommendation(
         "score_cap": score_cap,
         "score_cap_reasons": score_cap_reasons,
     }
+    visible_matched_tags = get_visible_tag_names(matched_tags)
+    visible_missing_tags = get_visible_tag_names(missing_tags)
 
     reason = build_db_recommend_reason(
         place,
@@ -684,11 +706,14 @@ def serialize_recommendation(
         "distance": distance,
         "distance_m": distance,
         "score": score,
-        "runtime_tags": matched_tags,
-        "matched_tags": matched_tags,
-        "missing_tags": missing_tags,
-        "matched_tag_labels": get_tag_display_names(matched_tags),
-        "missing_tag_labels": get_tag_display_names(missing_tags),
+        "runtime_tags": visible_matched_tags,
+        "matched_tags": visible_matched_tags,
+        "missing_tags": visible_missing_tags,
+        "matched_tag_labels": get_tag_display_names(visible_matched_tags),
+        "missing_tag_labels": get_tag_display_names(
+            missing_tags,
+            hidden_label="확인되지 않은 세부 조건",
+        ),
         "match_level": match_level,
         "recommendation_confidence": metadata["confidence"],
         "source_type": metadata["source_type"],
@@ -876,21 +901,32 @@ def search_db_recommendations(
             )
         )
 
+    response_condition = build_response_condition(context)
+
     return {
         "scenario": context["scenario"],
         "keyword": context["keyword"],
-        "condition": context,
-        "recommendation_condition": context,
+        "condition": response_condition,
+        "recommendation_condition": response_condition,
         "conditions": {
             "categories": context["categories"],
             "exclude_categories": context["exclude_categories"],
-            "required_tags": context["required_tags"],
-            "preferred_tags": context["preferred_tags"],
-            "avoid_tags": context["avoid_tags"],
-            "tags": context["tags"],
-            "required_tag_labels": get_tag_display_names(context["required_tags"]),
-            "preferred_tag_labels": get_tag_display_names(context["preferred_tags"]),
-            "avoid_tag_labels": get_tag_display_names(context["avoid_tags"]),
+            "required_tags": response_condition["required_tags"],
+            "preferred_tags": response_condition["preferred_tags"],
+            "avoid_tags": response_condition["avoid_tags"],
+            "tags": response_condition["tags"],
+            "required_tag_labels": get_tag_display_names(
+                context["required_tags"],
+                hidden_label="요청한 핵심 조건",
+            ),
+            "preferred_tag_labels": get_tag_display_names(
+                context["preferred_tags"],
+                hidden_label="요청한 세부 조건",
+            ),
+            "avoid_tag_labels": get_tag_display_names(
+                context["avoid_tags"],
+                hidden_label="피해야 할 조건",
+            ),
             "keywords": context["keywords"],
             "fallback_enabled": context["fallback_enabled"],
             "lat": lat,

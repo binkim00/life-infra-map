@@ -5,6 +5,7 @@ from recommendations.services.tag_utils import (
     get_fallback_label,
     get_source_label,
     get_tag_display_names,
+    get_visible_tag_names,
 )
 
 
@@ -280,6 +281,7 @@ def map_kakao_place_to_recommendation(place, scenario):
     metadata = build_kakao_result_metadata(saved_tag_data)
     score, score_cap = apply_kakao_score_cap(score, metadata)
     matched_tags = saved_tag_data["verified_tags"] + saved_tag_data["suggested_tags"]
+    visible_matched_tags = get_visible_tag_names(matched_tags)
     reason = build_recommend_reason(
         place,
         scenario,
@@ -304,9 +306,9 @@ def map_kakao_place_to_recommendation(place, scenario):
 
         # 점수/근거
         "score": score,
-        "matched_tags": matched_tags,
+        "matched_tags": visible_matched_tags,
         "missing_tags": [],
-        "matched_tag_labels": get_tag_display_names(matched_tags),
+        "matched_tag_labels": get_tag_display_names(visible_matched_tags),
         "missing_tag_labels": [],
         "source_type": metadata["source_type"],
         "confidence": metadata["confidence"],

@@ -28,6 +28,12 @@ TAG_DISPLAY_NAMES = {
     "야외자리": "야외 자리 있음",
 }
 
+HIDDEN_TAG_NAMES = {
+    "필수태그없음",
+    "필수태그누락",
+    "없는태그테스트",
+}
+
 CATEGORY_DISPLAY_NAMES = {
     "cafe": "카페",
     "shelter": "쉼터",
@@ -79,13 +85,61 @@ def normalize_tag_name(tag_name):
     return str(tag_name).strip().replace(" ", "")
 
 
+def is_hidden_tag_name(tag_name):
+    normalized = normalize_tag_name(tag_name)
+    if normalized in HIDDEN_TAG_NAMES:
+        return True
+
+    if "테스트" in normalized:
+        return True
+
+    if normalized.startswith("필수태그") and ("없음" in normalized or "누락" in normalized):
+        return True
+
+    if normalized.startswith("없는태그"):
+        return True
+
+    return False
+
+
+def get_visible_tag_names(tag_names):
+    return [
+        tag_name
+        for tag_name in tag_names or []
+        if normalize_tag_name(tag_name) and not is_hidden_tag_name(tag_name)
+    ]
+
+
 def get_tag_display_name(tag_name):
     normalized = normalize_tag_name(tag_name)
+    if not normalized:
+        return ""
+
+    if is_hidden_tag_name(normalized):
+        return "요청한 조건"
+
     return TAG_DISPLAY_NAMES.get(normalized, str(tag_name or "").strip())
 
 
-def get_tag_display_names(tag_names):
-    return [get_tag_display_name(tag_name) for tag_name in tag_names or []]
+def get_tag_display_names(tag_names, hidden_label="요청한 조건"):
+    labels = []
+    hidden_count = 0
+
+    for tag_name in tag_names or []:
+        normalized = normalize_tag_name(tag_name)
+        if not normalized:
+            continue
+
+        if is_hidden_tag_name(normalized):
+            hidden_count += 1
+            continue
+
+        labels.append(get_tag_display_name(tag_name))
+
+    if hidden_count and hidden_label and hidden_label not in labels:
+        labels.append(hidden_label)
+
+    return labels
 
 
 def get_category_display_name(category):
