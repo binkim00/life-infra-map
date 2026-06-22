@@ -17,8 +17,17 @@ const boardTitle = computed(() => {
 
 const title = ref('')
 const content = ref('')
+const imageFile = ref(null)
+const imagePreviewUrl = ref('')
 const errorMessage = ref('')
 const isLoading = ref(false)
+
+const handleImageChange = (event) => {
+  const file = event.target.files?.[0]
+
+  imageFile.value = file || null
+  imagePreviewUrl.value = file ? URL.createObjectURL(file) : ''
+}
 
 const handleSubmit = async () => {
   errorMessage.value = ''
@@ -36,11 +45,16 @@ const handleSubmit = async () => {
   try {
     isLoading.value = true
 
-    const response = await createPost({
-      board_type: boardType.value,
-      title: title.value,
-      content: content.value,
-    })
+    const payload = new FormData()
+    payload.append('board_type', boardType.value)
+    payload.append('title', title.value)
+    payload.append('content', content.value)
+
+    if (imageFile.value) {
+      payload.append('image', imageFile.value)
+    }
+
+    const response = await createPost(payload)
 
     router.push(`/boards/${response.data.board_type}/${response.data.id}`)
   } catch (error) {
@@ -79,6 +93,18 @@ const handleSubmit = async () => {
           rows="12"
           placeholder="내용을 입력하세요"
         ></textarea>
+
+        <label class="image-field">
+          <span>이미지 첨부</span>
+          <input type="file" accept="image/*" @change="handleImageChange" />
+        </label>
+
+        <img
+          v-if="imagePreviewUrl"
+          :src="imagePreviewUrl"
+          alt="첨부 이미지 미리보기"
+          class="image-preview"
+        />
 
         <p v-if="errorMessage" class="error-text">
           {{ errorMessage }}
@@ -160,6 +186,26 @@ const handleSubmit = async () => {
 .write-form textarea {
   resize: vertical;
   line-height: 1.6;
+}
+
+.image-field {
+  display: grid;
+  gap: 8px;
+  color: #344054;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.image-field input {
+  padding: 12px;
+}
+
+.image-preview {
+  max-height: 360px;
+  width: 100%;
+  border-radius: 14px;
+  object-fit: contain;
+  background: #f9fafb;
 }
 
 .write-form input:focus,

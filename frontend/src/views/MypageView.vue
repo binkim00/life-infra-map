@@ -1,7 +1,7 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
-import { getMypage } from '@/api/boards'
+import { getMypage, updateNickname, updateProfileImage } from '@/api/boards'
 import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
@@ -11,6 +11,13 @@ const data = ref(null)
 const isLoading = ref(false)
 const errorMessage = ref('')
 const selectedSection = ref('profile')
+const nicknameInput = ref('')
+const nicknameMessage = ref('')
+const isUpdatingNickname = ref(false)
+const profileImageFile = ref(null)
+const profileImagePreviewUrl = ref('')
+const profileImageMessage = ref('')
+const isUpdatingProfileImage = ref(false)
 
 const sections = [
   { value: 'profile', label: '내 프로필' },
@@ -19,15 +26,6 @@ const sections = [
   { value: 'liked', label: '내가 좋아요한 글' },
   { value: 'inquiries', label: '내 문의내역' },
 ]
-
-const unreadCount = computed(() => {
-  return data.value?.notifications?.filter((notification) => !notification.is_read).length || 0
-})
-
-const statusLabel = computed(() => {
-  if (!data.value?.penalty?.is_suspended) return '정상 이용 가능'
-  return data.value.penalty.is_permanent_ban ? '영구밴' : '활동정지'
-})
 
 const fetchMypage = async () => {
   if (!authStore.isLoggedIn) {
@@ -39,11 +37,78 @@ const fetchMypage = async () => {
     isLoading.value = true
     const response = await getMypage()
     data.value = response.data
+    nicknameInput.value = response.data.user.nickname || ''
+    profileImagePreviewUrl.value = response.data.user.profile_image_url || ''
   } catch (error) {
     console.error(error)
     errorMessage.value = '마이페이지 정보를 불러오지 못했습니다.'
   } finally {
     isLoading.value = false
+  }
+}
+
+const handleProfileImageChange = (event) => {
+  const file = event.target.files?.[0]
+
+  profileImageFile.value = file || null
+  profileImagePreviewUrl.value = file ? URL.createObjectURL(file) : data.value?.user?.profile_image_url || ''
+}
+
+const handleUpdateNickname = async () => {
+  nicknameMessage.value = ''
+
+  if (!nicknameInput.value.trim()) {
+    nicknameMessage.value = '닉네임을 입력해주세요.'
+    return
+  }
+
+  try {
+    isUpdatingNickname.value = true
+    const response = await updateNickname({
+      nickname: nicknameInput.value,
+    })
+
+    data.value.user = response.data.user
+    authStore.user = response.data.user
+    localStorage.setItem('authUser', JSON.stringify(response.data.user))
+    nicknameMessage.value = '닉네임이 수정되었습니다.'
+  } catch (error) {
+    console.error(error)
+    nicknameMessage.value =
+      error.response?.data?.nickname?.[0] || '닉네임 수정에 실패했습니다.'
+  } finally {
+    isUpdatingNickname.value = false
+  }
+}
+
+const handleUpdateProfileImage = async () => {
+  profileImageMessage.value = ''
+
+  if (!profileImageFile.value) {
+    profileImageMessage.value = '변경할 프로필 사진을 선택해주세요.'
+    return
+  }
+
+  try {
+    isUpdatingProfileImage.value = true
+
+    const payload = new FormData()
+    payload.append('profile_image', profileImageFile.value)
+
+    const response = await updateProfileImage(payload)
+
+    data.value.user = response.data.user
+    authStore.user = response.data.user
+    localStorage.setItem('authUser', JSON.stringify(response.data.user))
+    profileImagePreviewUrl.value = response.data.user.profile_image_url || ''
+    profileImageFile.value = null
+    profileImageMessage.value = '프로필 사진이 수정되었습니다.'
+  } catch (error) {
+    console.error(error)
+    profileImageMessage.value =
+      error.response?.data?.profile_image?.[0] || '프로필 사진 수정에 실패했습니다.'
+  } finally {
+    isUpdatingProfileImage.value = false
   }
 }
 
@@ -64,20 +129,17 @@ onMounted(fetchMypage)
       <div v-else-if="data" class="mypage-layout">
         <section class="profile-card">
           <div class="profile-main">
-            <span class="status-badge" :class="{ warning: data.penalty.is_suspended }">
-              {{ statusLabel }}
+            <span class="profile-avatar">
+              <img
+                v-if="data.user.profile_image_url"
+                :src="data.user.profile_image_url"
+                :alt="data.user.nickname"
+              />
+              <span v-else class="default-avatar" aria-hidden="true"></span>
             </span>
-            <h2>{{ data.user.username }}</h2>
+            <h2>{{ data.user.nickname }}</h2>
+            <p class="profile-username">@{{ data.user.username }}</p>
             <p>{{ data.user.email || '이메일 없음' }}</p>
-          </div>
-
-          <div class="profile-actions">
-            <RouterLink to="/notifications" class="secondary-action">
-              알림 {{ unreadCount ? unreadCount : '' }}
-            </RouterLink>
-            <RouterLink to="/inquiries/new" class="primary-action">
-              문의하기
-            </RouterLink>
           </div>
         </section>
 
@@ -92,6 +154,10 @@ onMounted(fetchMypage)
 
         <section v-if="selectedSection === 'profile'" class="panel profile-panel">
           <div class="profile-info-grid">
+            <article>
+              <span>닉네임</span>
+              <strong>{{ data.user.nickname }}</strong>
+            </article>
             <article>
               <span>아이디</span>
               <strong>{{ data.user.username }}</strong>
@@ -109,6 +175,54 @@ onMounted(fetchMypage)
               <strong>{{ data.user.is_staff ? '관리자 계정' : '일반 사용자' }}</strong>
             </article>
           </div>
+
+          <form class="profile-image-form" @submit.prevent="handleUpdateProfileImage">
+            <label for="profile-image">프로필 사진 수정</label>
+            <div class="profile-image-editor">
+              <span class="profile-avatar large">
+                <img
+                  v-if="profileImagePreviewUrl"
+                  :src="profileImagePreviewUrl"
+                  :alt="data.user.nickname"
+                />
+                <span v-else class="default-avatar" aria-hidden="true"></span>
+              </span>
+
+              <div class="profile-image-controls">
+                <input
+                  id="profile-image"
+                  type="file"
+                  accept="image/*"
+                  @change="handleProfileImageChange"
+                />
+                <button type="submit" :disabled="isUpdatingProfileImage">
+                  {{ isUpdatingProfileImage ? '저장 중' : '사진 저장' }}
+                </button>
+              </div>
+            </div>
+            <p v-if="profileImageMessage" class="profile-image-message">
+              {{ profileImageMessage }}
+            </p>
+          </form>
+
+          <form class="nickname-form" @submit.prevent="handleUpdateNickname">
+            <label for="nickname">닉네임 수정</label>
+            <div class="nickname-control">
+              <input
+                id="nickname"
+                v-model="nicknameInput"
+                type="text"
+                maxlength="50"
+                placeholder="새 닉네임"
+              />
+              <button type="submit" :disabled="isUpdatingNickname">
+                {{ isUpdatingNickname ? '저장 중' : '저장' }}
+              </button>
+            </div>
+            <p v-if="nicknameMessage" class="nickname-message">
+              {{ nicknameMessage }}
+            </p>
+          </form>
 
           <div v-if="data.penalty.is_suspended" class="penalty-detail">
             <strong>{{ data.penalty.is_permanent_ban ? '영구밴 상태입니다.' : '활동정지 상태입니다.' }}</strong>
@@ -160,7 +274,7 @@ onMounted(fetchMypage)
           <RouterLink v-for="post in data.liked_posts" :key="post.id" :to="`/boards/${post.board_type}/${post.id}`"
             class="activity-item link-item">
             <strong>{{ post.title }}</strong>
-            <span>{{ post.author_username }} · 댓글 {{ post.comments_count }} · 좋아요 {{ post.likes_count }}</span>
+            <span>{{ post.author_nickname }} · 댓글 {{ post.comments_count }} · 좋아요 {{ post.likes_count }}</span>
           </RouterLink>
           <p v-if="data.liked_posts.length === 0" class="empty">좋아요한 글이 없습니다.</p>
         </section>
@@ -244,46 +358,62 @@ h2 {
   font-weight: 700;
 }
 
-.status-badge {
-  display: inline-flex;
-  padding: 6px 10px;
-  border-radius: 999px;
-  background: #dbeafe;
-  color: #2563eb;
-  font-size: 12px;
-  font-weight: 900;
-}
-
-.status-badge.warning {
-  background: #fff7ed;
-  color: #f97316;
-}
-
-.profile-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  justify-content: flex-end;
-}
-
-.primary-action,
-.secondary-action {
-  padding: 10px 14px;
-  border-radius: 999px;
-  font-size: 14px;
-  font-weight: 900;
-  text-decoration: none;
-}
-
-.primary-action {
-  background: #2563eb;
-  color: #ffffff;
-}
-
-.secondary-action {
-  border: 1px solid #d0d5dd;
-  background: #ffffff;
+.profile-main .profile-username {
   color: #344054;
+  font-size: 14px;
+}
+
+.profile-avatar {
+  position: relative;
+  display: inline-flex;
+  width: 64px;
+  height: 64px;
+  overflow: hidden;
+  border-radius: 50%;
+  background: #8fb8cc;
+  vertical-align: middle;
+}
+
+.profile-avatar.large {
+  width: 96px;
+  height: 96px;
+  flex: 0 0 auto;
+}
+
+.profile-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.default-avatar {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.default-avatar::before,
+.default-avatar::after {
+  position: absolute;
+  left: 50%;
+  content: "";
+  transform: translateX(-50%);
+  background: #c8ddea;
+}
+
+.default-avatar::before {
+  top: 20%;
+  width: 34%;
+  height: 34%;
+  border-radius: 50%;
+}
+
+.default-avatar::after {
+  bottom: -10%;
+  width: 72%;
+  height: 48%;
+  border-radius: 50% 50% 0 0;
 }
 
 .section-control {
@@ -336,6 +466,122 @@ h2 {
 
 .profile-info-grid strong {
   color: #111827;
+}
+
+.nickname-form {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+  padding: 14px;
+  border-radius: 14px;
+  background: #f9fafb;
+}
+
+.profile-image-form {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 14px;
+  border-radius: 14px;
+  background: #f9fafb;
+}
+
+.profile-image-form label {
+  color: #344054;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.profile-image-editor {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+}
+
+.profile-image-controls {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.profile-image-controls input {
+  max-width: 100%;
+  color: #344054;
+  font-size: 13px;
+}
+
+.profile-image-controls button {
+  justify-self: start;
+  padding: 10px 14px;
+  border: 0;
+  border-radius: 12px;
+  background: #2563eb;
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.profile-image-controls button:disabled {
+  background: #98a2b3;
+  cursor: not-allowed;
+}
+
+.profile-image-message {
+  margin: 0;
+  color: #2563eb;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.nickname-form label {
+  color: #344054;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.nickname-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.nickname-control input {
+  width: 100%;
+  padding: 12px 13px;
+  border: 1px solid #d0d5dd;
+  border-radius: 12px;
+  background: #ffffff;
+  color: #111827;
+  font-size: 15px;
+  outline: none;
+}
+
+.nickname-control input:focus {
+  border-color: #2563eb;
+}
+
+.nickname-control button {
+  padding: 0 16px;
+  border: 0;
+  border-radius: 12px;
+  background: #2563eb;
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.nickname-control button:disabled {
+  background: #98a2b3;
+  cursor: not-allowed;
+}
+
+.nickname-message {
+  margin: 0;
+  color: #2563eb;
+  font-size: 13px;
+  font-weight: 800;
 }
 
 .penalty-detail {
@@ -412,9 +658,17 @@ h2 {
   .summary-grid {
     grid-template-columns: 1fr;
   }
+  .nickname-control {
+    grid-template-columns: 1fr;
+  }
 
-  .profile-actions {
-    justify-content: flex-start;
+  .nickname-control button {
+    min-height: 42px;
+  }
+
+  .profile-image-editor {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }
 </style>

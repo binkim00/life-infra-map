@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { getNotifications } from '@/api/boards'
 import { useAuthStore } from '@/stores/auth'
 
@@ -8,8 +8,14 @@ const isSidebarCollapsed = ref(false)
 
 const authStore = useAuthStore()
 const route = useRoute()
+const router = useRouter()
 const notifications = ref([])
 let notificationTimer = null
+
+const handleLogout = async () => {
+  await authStore.logout()
+  router.push('/')
+}
 
 const unreadNotificationCount = computed(() => {
   return notifications.value.filter((notification) => !notification.is_read).length
@@ -145,6 +151,37 @@ onBeforeUnmount(() => {
     </aside>
 
     <div class="app-main">
+      <div class="global-account-bar">
+        <template v-if="authStore.isLoggedIn">
+          <RouterLink to="/mypage" class="global-user-link">
+            <span class="global-avatar">
+              <img
+                v-if="authStore.user?.profile_image_url"
+                :src="authStore.user.profile_image_url"
+                :alt="authStore.user?.nickname || authStore.user?.username"
+              />
+              <span v-else class="default-avatar" aria-hidden="true"></span>
+            </span>
+            <span class="global-user-name">
+              {{ authStore.user?.username }}님
+            </span>
+          </RouterLink>
+
+          <button type="button" class="global-logout-button" @click="handleLogout">
+            로그아웃
+          </button>
+        </template>
+
+        <template v-else>
+          <RouterLink to="/login" class="global-auth-button">
+            로그인
+          </RouterLink>
+          <RouterLink to="/signup" class="global-auth-button signup">
+            회원가입
+          </RouterLink>
+        </template>
+      </div>
+
       <RouterView />
     </div>
   </div>
@@ -363,6 +400,119 @@ input {
 
 .app-main {
   min-width: 0;
+  position: relative;
+  padding-top: 68px;
+}
+
+.global-account-bar {
+  position: fixed;
+  top: 16px;
+  right: 24px;
+  z-index: 80;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  max-width: calc(100vw - 48px);
+}
+
+.global-user-link {
+  min-width: 0;
+  max-width: min(280px, calc(100vw - 160px));
+  height: 42px;
+  padding: 4px 12px 4px 4px;
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  border: 1px solid #e5e8f0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.96);
+  color: #344054;
+  font-size: 14px;
+  font-weight: 900;
+  text-decoration: none;
+  box-shadow: 0 10px 28px rgba(20, 35, 70, 0.12);
+  backdrop-filter: blur(8px);
+}
+
+.global-user-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.global-avatar {
+  position: relative;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  overflow: hidden;
+  border-radius: 50%;
+  background: #8fb8cc;
+}
+
+.global-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.default-avatar {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.default-avatar::before,
+.default-avatar::after {
+  position: absolute;
+  left: 50%;
+  content: "";
+  transform: translateX(-50%);
+  background: #c8ddea;
+}
+
+.default-avatar::before {
+  top: 20%;
+  width: 34%;
+  height: 34%;
+  border-radius: 50%;
+}
+
+.default-avatar::after {
+  bottom: -10%;
+  width: 72%;
+  height: 48%;
+  border-radius: 50% 50% 0 0;
+}
+
+.global-auth-button,
+.global-logout-button {
+  height: 42px;
+  padding: 0 14px;
+  border: 1px solid #d0d5dd;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.96);
+  color: #344054;
+  font-size: 14px;
+  font-weight: 900;
+  text-decoration: none;
+  cursor: pointer;
+  box-shadow: 0 10px 28px rgba(20, 35, 70, 0.12);
+  backdrop-filter: blur(8px);
+}
+
+.global-auth-button.signup {
+  border-color: #2563eb;
+  background: #2563eb;
+  color: #ffffff;
+}
+
+.global-logout-button {
+  border-color: #ef4444;
+  background: #ef4444;
+  color: #ffffff;
 }
 
 @media (max-width: 820px) {
@@ -384,6 +534,20 @@ input {
     justify-content: space-between;
     border-right: 0;
     border-bottom: 1px solid #e5e8f0;
+  }
+
+  .app-main {
+    padding-top: 72px;
+  }
+
+  .global-account-bar {
+    top: 72px;
+    right: 12px;
+    max-width: calc(100vw - 24px);
+  }
+
+  .global-user-link {
+    max-width: calc(100vw - 128px);
   }
 
   .app-shell.is-sidebar-collapsed .app-sidebar {

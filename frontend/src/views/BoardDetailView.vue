@@ -10,6 +10,7 @@ import {
   reportPost,
   toggleCommentLike,
   togglePostLike,
+  updateComment,
 } from '@/api/boards'
 import { useAuthStore } from '@/stores/auth'
 
@@ -25,6 +26,8 @@ const reportTarget = ref(null)
 const reportReason = ref('')
 const reportMessage = ref('')
 const isSubmittingReport = ref(false)
+const editingCommentId = ref(null)
+const editingCommentContent = ref('')
 
 const boardType = computed(() => route.params.boardType || 'free')
 const postId = computed(() => route.params.postId)
@@ -33,6 +36,20 @@ const boardTitle = computed(() => {
   if (boardType.value === 'notice') return '공지사항'
   return '자유게시판'
 })
+
+const formatDateTime = (value) => {
+  if (!value) {
+    return ''
+  }
+
+  return new Date(value).toLocaleString('ko-KR', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
 
 const fetchPost = async () => {
   try {
@@ -110,6 +127,34 @@ const handleDeleteComment = async (comment) => {
 
   post.value.comments = post.value.comments.filter((item) => item.id !== comment.id)
   post.value.comments_count -= 1
+}
+
+const startEditComment = (comment) => {
+  editingCommentId.value = comment.id
+  editingCommentContent.value = comment.content
+}
+
+const cancelEditComment = () => {
+  editingCommentId.value = null
+  editingCommentContent.value = ''
+}
+
+const handleUpdateComment = async (comment) => {
+  if (!editingCommentContent.value.trim()) {
+    return
+  }
+
+  const response = await updateComment(comment.id, {
+    content: editingCommentContent.value,
+  })
+
+  const index = post.value.comments.findIndex((item) => item.id === comment.id)
+
+  if (index !== -1) {
+    post.value.comments[index] = response.data
+  }
+
+  cancelEditComment()
 }
 
 const openReportModal = (type, target) => {
@@ -216,11 +261,29 @@ onMounted(() => {
         </div>
 
         <div class="post-meta">
-          <span>작성자 {{ post.author_username }}</span>
+          <span class="author-chip">
+            <span class="author-avatar">
+              <img
+                v-if="post.author_profile_image_url"
+                :src="post.author_profile_image_url"
+                :alt="post.author_nickname"
+              />
+              <span v-else class="default-avatar" aria-hidden="true"></span>
+            </span>
+            {{ post.author_nickname }}
+          </span>
+          <span>{{ formatDateTime(post.created_at) }} <template v-if="post.is_edited">(수정됨)</template></span>
           <span>조회 {{ post.view_count }}</span>
           <span>댓글 {{ post.comments_count }}</span>
           <span>좋아요 {{ post.likes_count }}</span>
         </div>
+
+        <img
+          v-if="post.image_url"
+          :src="post.image_url"
+          :alt="post.title"
+          class="post-image"
+        />
 
         <div class="post-content">
           {{ post.content }}
@@ -267,11 +330,42 @@ onMounted(() => {
           <div class="comment-list">
             <article v-for="comment in post.comments" :key="comment.id" class="comment-card">
               <div class="comment-top">
-                <strong>{{ comment.author_username }}</strong>
+                <div class="comment-author-block">
+                  <strong class="author-chip">
+                    <span class="author-avatar">
+                      <img
+                        v-if="comment.author_profile_image_url"
+                        :src="comment.author_profile_image_url"
+                        :alt="comment.author_nickname"
+                      />
+                      <span v-else class="default-avatar" aria-hidden="true"></span>
+                    </span>
+                    {{ comment.author_nickname }}
+                  </strong>
+                  <span>{{ formatDateTime(comment.created_at) }} <template v-if="comment.is_edited">(수정됨)</template></span>
+                </div>
                 <span>좋아요 {{ comment.likes_count }}</span>
               </div>
 
-              <p>{{ comment.content }}</p>
+              <form
+                v-if="editingCommentId === comment.id"
+                class="comment-edit-form"
+                @submit.prevent="handleUpdateComment(comment)"
+              >
+                <textarea v-model="editingCommentContent" rows="3"></textarea>
+
+                <div class="comment-edit-actions">
+                  <button type="button" class="comment-cancel-button" @click="cancelEditComment">
+                    취소
+                  </button>
+
+                  <button type="submit" class="comment-save-button">
+                    저장
+                  </button>
+                </div>
+              </form>
+
+              <p v-else>{{ comment.content }}</p>
 
               <button type="button" class="comment-like-button" :class="{ active: comment.is_liked }"
                 @click="handleCommentLike(comment)">
@@ -281,6 +375,11 @@ onMounted(() => {
               <button v-if="authStore.user?.id === comment.author" type="button" class="comment-delete-button"
                 @click="handleDeleteComment(comment)">
                 댓글 삭제
+              </button>
+
+              <button v-if="authStore.user?.id === comment.author" type="button" class="comment-edit-button"
+                @click="startEditComment(comment)">
+                댓글 수정
               </button>
 
               <button v-if="post.board_type === 'free'" type="button" class="comment-report-button"
@@ -354,16 +453,25 @@ onMounted(() => {
   text-decoration: none;
 }
 
-.comment-delete-button {
+.comment-delete-button,
+.comment-edit-button {
   margin-left: 8px;
   padding: 8px 12px;
   border: 0;
   border-radius: 999px;
-  background: #fee2e2;
-  color: #ef4444;
   font-size: 13px;
   font-weight: 900;
   cursor: pointer;
+}
+
+.comment-delete-button {
+  background: #fee2e2;
+  color: #ef4444;
+}
+
+.comment-edit-button {
+  background: #eef2ff;
+  color: #2563eb;
 }
 
 .report-button,
@@ -463,10 +571,65 @@ onMounted(() => {
 
 .post-meta {
   display: flex;
+  align-items: center;
   flex-wrap: wrap;
   gap: 12px;
   color: #667085;
   font-size: 14px;
+}
+
+.author-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #344054;
+  font-weight: 800;
+}
+
+.author-avatar {
+  position: relative;
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  overflow: hidden;
+  border-radius: 50%;
+  background: #8fb8cc;
+}
+
+.author-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.default-avatar {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.default-avatar::before,
+.default-avatar::after {
+  position: absolute;
+  left: 50%;
+  content: "";
+  transform: translateX(-50%);
+  background: #c8ddea;
+}
+
+.default-avatar::before {
+  top: 20%;
+  width: 34%;
+  height: 34%;
+  border-radius: 50%;
+}
+
+.default-avatar::after {
+  bottom: -10%;
+  width: 72%;
+  height: 48%;
+  border-radius: 50% 50% 0 0;
 }
 
 .post-content {
@@ -478,6 +641,15 @@ onMounted(() => {
   color: #111827;
   line-height: 1.7;
   white-space: pre-wrap;
+}
+
+.post-image {
+  width: 100%;
+  max-height: 520px;
+  margin-top: 24px;
+  border-radius: 16px;
+  object-fit: contain;
+  background: #f9fafb;
 }
 
 .like-button,
@@ -618,6 +790,57 @@ onMounted(() => {
   gap: 12px;
   color: #344054;
   font-size: 14px;
+}
+
+.comment-author-block {
+  display: grid;
+  gap: 4px;
+}
+
+.comment-author-block span {
+  color: #667085;
+  font-size: 12px;
+}
+
+.comment-edit-form {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0;
+}
+
+.comment-edit-form textarea {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #d0d5dd;
+  border-radius: 12px;
+  resize: vertical;
+  outline: none;
+}
+
+.comment-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.comment-cancel-button,
+.comment-save-button {
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.comment-cancel-button {
+  background: #f2f4f7;
+  color: #344054;
+}
+
+.comment-save-button {
+  background: #2563eb;
+  color: #ffffff;
 }
 
 .comment-card p {

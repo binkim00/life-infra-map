@@ -2,8 +2,6 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import { aiSearchRecommendations, getKakaoPlaceTags, getSavedPlaces } from '@/api/recommendation'
 import KakaoMap from '@/components/KakaoMap.vue'
-import { useRouter } from 'vue-router'
-import { useAuthStore } from '@/stores/auth'
 
 const props = defineProps({
   initialTab: {
@@ -18,14 +16,6 @@ const normalizeTab = (tab) => {
 
 const activeTab = ref(normalizeTab(props.initialTab))
 const searchKeyword = ref('')
-
-const router = useRouter()
-const authStore = useAuthStore()
-
-const handleLogout = async () => {
-  await authStore.logout()
-  router.push('/')
-}
 
 watch(
   () => props.initialTab,
@@ -3974,28 +3964,6 @@ const handleDetailFrameError = () => {
             지도
           </button>
         </div>
-
-        <div class="auth-menu">
-          <template v-if="authStore.isLoggedIn">
-            <span class="user-name">
-              {{ authStore.user?.username }}님
-            </span>
-
-            <button type="button" class="auth-button logout" @click="handleLogout">
-              로그아웃
-            </button>
-          </template>
-
-          <template v-else>
-            <RouterLink to="/login" class="auth-button">
-              로그인
-            </RouterLink>
-
-            <RouterLink to="/signup" class="auth-button signup">
-              회원가입
-            </RouterLink>
-          </template>
-        </div>
       </div>
 
       
@@ -4500,58 +4468,11 @@ const handleDetailFrameError = () => {
   grid-column: 2;
 }
 
-.auth-menu {
-  grid-column: 3;
-  justify-self: end;
-  min-width: 0;
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-
-.user-name {
-  min-width: 0;
-  overflow: hidden;
-  color: #344054;
-  font-size: 14px;
-  font-weight: 800;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.auth-button {
-  padding: 10px 14px;
-  border: 1px solid #d0d5dd;
-  border-radius: 999px;
-  background: #ffffff;
-  color: #344054;
-  font-size: 14px;
-  font-weight: 800;
-  text-decoration: none;
-  cursor: pointer;
-}
-
-.auth-button.signup {
-  border-color: #2563eb;
-  background: #2563eb;
-  color: #ffffff;
-}
-
-.auth-button.logout {
-  border-color: #ef4444;
-  background: #ef4444;
-  color: #ffffff;
-}
-
 @media (max-width: 720px) {
   .header-main {
     display: flex;
     flex-direction: column;
     gap: 12px;
-  }
-
-  .auth-menu {
-    justify-content: center;
   }
 }
 

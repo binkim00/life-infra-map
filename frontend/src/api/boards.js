@@ -13,11 +13,23 @@ export const getPost = (postId) => {
 }
 
 export const createPost = (payload) => {
-  return api.post('/boards/posts/', payload)
+  const config = payload instanceof FormData ? {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  } : undefined
+
+  return api.post('/boards/posts/', payload, config)
 }
 
 export const updatePost = (postId, payload) => {
-  return api.patch(`/boards/posts/${postId}/`, payload)
+  const config = payload instanceof FormData ? {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  } : undefined
+
+  return api.patch(`/boards/posts/${postId}/`, payload, config)
 }
 
 export const deletePost = (postId) => {
@@ -62,6 +74,18 @@ export const processReport = (reportId, payload) => {
 
 export const getMypage = () => {
   return api.get('/accounts/mypage/')
+}
+
+export const updateNickname = (payload) => {
+  return api.patch('/accounts/me/nickname/', payload)
+}
+
+export const updateProfileImage = (payload) => {
+  return api.patch('/accounts/me/profile-image/', payload, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  })
 }
 
 export const getNotifications = () => {
