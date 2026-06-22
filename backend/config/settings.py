@@ -26,24 +26,44 @@ def _env_bool(name, default=False):
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _env_int(name, default, min_value=None, max_value=None):
+    try:
+        value = int(os.getenv(name, default))
+    except (TypeError, ValueError):
+        value = default
+
+    if min_value is not None:
+        value = max(value, min_value)
+    if max_value is not None:
+        value = min(value, max_value)
+    return value
+
+
 KAKAO_REST_API_KEY = os.getenv("KAKAO_REST_API_KEY")
 AI_PROVIDER = os.getenv("AI_PROVIDER", "gms").strip().lower()
 AI_WEB_SEARCH_ENABLED = _env_bool("AI_WEB_SEARCH_ENABLED", False)
 AI_WEB_SEARCH_PROVIDER = os.getenv("AI_WEB_SEARCH_PROVIDER", AI_PROVIDER).strip().lower()
 AI_WEB_SEARCH_GROUNDING_SUPPORTED = _env_bool("AI_WEB_SEARCH_GROUNDING_SUPPORTED", False)
 AI_INTENT_MODEL = os.getenv("AI_INTENT_MODEL", "gpt-5-nano")
-AI_WEB_SEARCH_MODEL = os.getenv("AI_WEB_SEARCH_MODEL", "gpt-5-mini")
+AI_WEB_SEARCH_MODEL = os.getenv("AI_WEB_SEARCH_MODEL", "gpt-5-nano")
+AI_WEB_SEARCH_MAX_CANDIDATES = _env_int("AI_WEB_SEARCH_MAX_CANDIDATES", 2, 1, 5)
+AI_WEB_SEARCH_MAX_OUTPUT_TOKENS = _env_int("AI_WEB_SEARCH_MAX_OUTPUT_TOKENS", 800, 200, 2200)
 AI_REASON_MODEL = os.getenv("AI_REASON_MODEL", "gpt-5-nano")
 GMS_MODEL = os.getenv("GMS_MODEL", AI_INTENT_MODEL)
 GMS_API_KEY = os.getenv("GMS_API_KEY", "")
 GMS_API_URL = os.getenv("GMS_API_URL", "")
+GMS_API_BASE_URL = os.getenv("GMS_API_BASE_URL", "")
+GMS_OPENAI_RESPONSES_PATH = os.getenv(
+    "GMS_OPENAI_RESPONSES_PATH",
+    "api.openai.com/v1/responses",
+)
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 AI_REQUEST_TIMEOUT = int(os.getenv("AI_REQUEST_TIMEOUT", "20"))
 AI_WEB_SEARCH_AVAILABLE = (
     AI_WEB_SEARCH_ENABLED
     and AI_WEB_SEARCH_PROVIDER == "gms"
     and bool(GMS_API_KEY)
-    and bool(GMS_API_URL)
+    and bool(GMS_API_URL or GMS_API_BASE_URL)
 )
 
 # Quick-start development settings - unsuitable for production
