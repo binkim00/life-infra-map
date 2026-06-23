@@ -14,6 +14,7 @@ const memoByReport = ref({})
 const reporterMessageByReport = ref({})
 const reportedUserMessageByReport = ref({})
 const penaltyByReport = ref({})
+const openedReportIds = ref(new Set())
 
 const penaltyOptions = [
   ['warning', '경고만'],
@@ -27,6 +28,43 @@ const penaltyOptions = [
 const formatTargetType = (type) => {
   if (type === 'deleted') return '삭제됨'
   return type === 'post' ? '게시글' : '댓글'
+}
+
+const formatStatus = (status) => {
+  if (status === 'passed') return '패스'
+  if (status === 'penalized') return '조치 완료'
+  return '대기'
+}
+
+const formatDateTime = (value) => {
+  if (!value) return '-'
+
+  return new Date(value).toLocaleString('ko-KR', {
+    year: '2-digit',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+const getUserLabel = (nickname, username, id) => {
+  const displayName = nickname || username || `#${id}`
+  return username && nickname ? `${displayName} (${username})` : displayName
+}
+
+const isReportOpen = (reportId) => openedReportIds.value.has(reportId)
+
+const toggleReport = (reportId) => {
+  const next = new Set(openedReportIds.value)
+
+  if (next.has(reportId)) {
+    next.delete(reportId)
+  } else {
+    next.add(reportId)
+  }
+
+  openedReportIds.value = next
 }
 
 const fetchPendingReports = async () => {
@@ -64,13 +102,23 @@ const fetchReports = async () => {
 }
 
 const handleProcess = async (report, action) => {
-  await processReport(report.id, {
-    action,
-    admin_memo: memoByReport.value[report.id] || '',
-    penalty_type: penaltyByReport.value[report.id] || 'warning',
-    penalty_reason: memoByReport.value[report.id] || report.reason,
-  })
-  reports.value = reports.value.filter((item) => item.id !== report.id)
+  try {
+    await processReport(report.id, {
+      action,
+      admin_memo: memoByReport.value[report.id] || '',
+      penalty_type: penaltyByReport.value[report.id] || 'warning',
+      penalty_reason: memoByReport.value[report.id] || report.reason,
+    })
+
+    reports.value = reports.value.filter((item) => item.id !== report.id)
+
+    const next = new Set(openedReportIds.value)
+    next.delete(report.id)
+    openedReportIds.value = next
+  } catch (error) {
+    console.error(error)
+    alert('신고 처리에 실패했습니다.')
+  }
 }
 
 const sendReportMessage = async (userId, message) => {
@@ -84,12 +132,17 @@ const sendReportMessage = async (userId, message) => {
     return
   }
 
-  await createUserNotification(userId, {
-    title: '신고 처리 안내',
-    message,
-  })
+  try {
+    await createUserNotification(userId, {
+      title: '신고 처리 안내',
+      message,
+    })
 
-  alert('메시지를 보냈습니다.')
+    alert('메시지를 보냈습니다.')
+  } catch (error) {
+    console.error(error)
+    alert('메시지 전송에 실패했습니다.')
+  }
 }
 
 onMounted(() => {
@@ -98,17 +151,22 @@ onMounted(() => {
 </script>
 
 <template>
-  <main class="report-page">
-    <section class="report-container">
-      <header class="report-header">
+  <main class="admin-board-page">
+    <section class="admin-board-container">
+      <header class="admin-board-header">
         <div>
-          <p class="eyebrow">ADMIN</p>
+          <p class="eyebrow">COMMUNITY ADMIN</p>
           <h1>신고 내역</h1>
+          <p class="header-description">
+            자유게시판에서 접수된 게시글·댓글 신고를 확인하고 처리합니다.
+          </p>
         </div>
 
-        <RouterLink to="/boards/free" class="back-button">
-          자유게시판
-        </RouterLink>
+        <nav class="admin-tabs">
+          <RouterLink to="/admin/reports" class="admin-tab">신고 내역</RouterLink>
+          <RouterLink to="/admin/users" class="admin-tab">유저 관리</RouterLink>
+          <RouterLink to="/admin/inquiries" class="admin-tab">문의 관리</RouterLink>
+        </nav>
       </header>
 
       <p v-if="isLoading" class="status-text">
@@ -119,84 +177,146 @@ onMounted(() => {
         {{ errorMessage }}
       </p>
 
-      <section v-else class="report-list">
-        <article v-for="report in reports" :key="report.id" class="report-card">
-          <div class="report-top">
-            <span class="target-badge">
-              {{ formatTargetType(report.target_type) }}
-            </span>
+      <section v-else class="admin-table-wrap">
+        <table class="admin-table report-table">
+          <colgroup>
+            <col class="col-number" />
+            <col class="col-type" />
+            <col class="col-title" />
+            <col class="col-user" />
+            <col class="col-user" />
+            <col class="col-date" />
+            <col class="col-status" />
+            <col class="col-action" />
+          </colgroup>
 
-            <span class="report-date">
-              {{ new Date(report.created_at).toLocaleString() }}
-            </span>
-          </div>
+          <thead>
+            <tr>
+              <th>번호</th>
+              <th>대상</th>
+              <th>신고 내용</th>
+              <th>신고자</th>
+              <th>신고당한 유저</th>
+              <th>접수일</th>
+              <th>상태</th>
+              <th>관리</th>
+            </tr>
+          </thead>
 
-          <h2>{{ report.post_title }}</h2>
+          <tbody>
+            <template v-for="report in reports" :key="report.id">
+              <tr :class="{ opened: isReportOpen(report.id) }">
+                <td class="number-cell">{{ report.id }}</td>
+                <td>
+                  <span class="category-label report-target">
+                    {{ formatTargetType(report.target_type) }}
+                  </span>
+                </td>
+                <td class="title-cell">
+                  <button type="button" class="title-button" @click="toggleReport(report.id)">
+                    <span class="title-text">
+                      {{ report.post_title || '삭제되었거나 제목 없음' }}
+                    </span>
+                    <span class="reason-preview">{{ report.reason }}</span>
+                  </button>
+                </td>
+                <td>
+                  <RouterLink :to="`/admin/users/${report.reporter}`" class="user-link">
+                    {{ getUserLabel(report.reporter_nickname, report.reporter_username, report.reporter) }}
+                  </RouterLink>
+                </td>
+                <td>
+                  <RouterLink
+                    v-if="report.reported_user_id"
+                    :to="`/admin/users/${report.reported_user_id}`"
+                    class="user-link danger"
+                  >
+                    {{ getUserLabel(report.reported_nickname, report.reported_username, report.reported_user_id) }}
+                  </RouterLink>
+                  <span v-else class="muted-text">-</span>
+                </td>
+                <td>{{ formatDateTime(report.created_at) }}</td>
+                <td>
+                  <span class="status-badge pending">
+                    {{ formatStatus(report.status) }}
+                  </span>
+                </td>
+                <td>
+                  <button type="button" class="row-action" @click="toggleReport(report.id)">
+                    {{ isReportOpen(report.id) ? '닫기' : '처리' }}
+                  </button>
+                </td>
+              </tr>
 
-          <div class="report-meta">
-            <span>신고 #{{ report.id }}</span>
-            <span>상태 {{ report.status }}</span>
-            <RouterLink :to="`/admin/users/${report.reporter}`" class="user-link">
-              신고자 #{{ report.reporter }} {{ report.reporter_username }}
-            </RouterLink>
-            <RouterLink v-if="report.reported_user_id" :to="`/admin/users/${report.reported_user_id}`" class="user-link">
-              신고당한 유저 #{{ report.reported_user_id }} {{ report.reported_username }}
-            </RouterLink>
-            <span>대상 ID {{ report.target_id }}</span>
-          </div>
+              <tr v-if="isReportOpen(report.id)" class="detail-row">
+                <td colspan="8">
+                  <div class="detail-panel">
+                    <div class="detail-grid">
+                      <section class="detail-box">
+                        <strong>신고 사유</strong>
+                        <p>{{ report.reason }}</p>
+                      </section>
 
-          <div class="report-block">
-            <strong>신고 사유</strong>
-            <p>{{ report.reason }}</p>
-          </div>
+                      <section class="detail-box">
+                        <strong>대상 내용</strong>
+                        <p>{{ report.target_content || '대상 내용이 없습니다.' }}</p>
+                      </section>
+                    </div>
 
-          <div class="report-block">
-            <strong>대상 내용</strong>
-            <p>{{ report.target_content }}</p>
-          </div>
+                    <RouterLink v-if="report.post_id" :to="`/boards/free/${report.post_id}`" class="detail-link">
+                      원문 보기
+                    </RouterLink>
 
-          <RouterLink v-if="report.post_id" :to="`/boards/free/${report.post_id}`" class="detail-link">
-            원문 보기
-          </RouterLink>
+                    <section class="process-panel">
+                      <h3>신고 처리</h3>
+                      <textarea v-model="memoByReport[report.id]" rows="3" placeholder="관리자 메모 또는 조치 사유"></textarea>
 
-          <div class="process-box">
-            <textarea v-model="memoByReport[report.id]" rows="3" placeholder="관리자 메모 또는 조치 사유"></textarea>
+                      <div class="process-controls">
+                        <select v-model="penaltyByReport[report.id]">
+                          <option v-for="[value, label] in penaltyOptions" :key="value" :value="value">
+                            {{ label }}
+                          </option>
+                        </select>
 
-            <select v-model="penaltyByReport[report.id]">
-              <option v-for="[value, label] in penaltyOptions" :key="value" :value="value">
-                {{ label }}
-              </option>
-            </select>
+                        <button type="button" class="pass-button" @click="handleProcess(report, 'passed')">
+                          패스
+                        </button>
 
-            <div class="process-actions">
-              <button type="button" class="pass-button" @click="handleProcess(report, 'passed')">
-                패스
-              </button>
+                        <button type="button" class="penalty-button" @click="handleProcess(report, 'penalized')">
+                          패널티 조치
+                        </button>
+                      </div>
+                    </section>
 
-              <button type="button" class="penalty-button" @click="handleProcess(report, 'penalized')">
-                패널티 조치
-              </button>
-            </div>
-          </div>
+                    <section class="message-panel">
+                      <h3>관리자 메시지</h3>
 
-          <div class="message-box">
-            <div class="message-row">
-              <input v-model="reporterMessageByReport[report.id]" type="text" placeholder="신고자에게 보낼 메시지" />
-              <button type="button"
-                @click="sendReportMessage(report.reporter, reporterMessageByReport[report.id]); reporterMessageByReport[report.id] = ''">
-                신고자에게 보내기
-              </button>
-            </div>
+                      <div class="message-row">
+                        <input v-model="reporterMessageByReport[report.id]" type="text" placeholder="신고자에게 보낼 메시지" />
+                        <button
+                          type="button"
+                          @click="sendReportMessage(report.reporter, reporterMessageByReport[report.id]); reporterMessageByReport[report.id] = ''"
+                        >
+                          신고자에게 보내기
+                        </button>
+                      </div>
 
-            <div class="message-row">
-              <input v-model="reportedUserMessageByReport[report.id]" type="text" placeholder="신고당한 유저에게 보낼 메시지" />
-              <button type="button"
-                @click="sendReportMessage(report.reported_user_id, reportedUserMessageByReport[report.id]); reportedUserMessageByReport[report.id] = ''">
-                신고당한 유저에게 보내기
-              </button>
-            </div>
-          </div>
-        </article>
+                      <div class="message-row">
+                        <input v-model="reportedUserMessageByReport[report.id]" type="text" placeholder="신고당한 유저에게 보낼 메시지" />
+                        <button
+                          type="button"
+                          @click="sendReportMessage(report.reported_user_id, reportedUserMessageByReport[report.id]); reportedUserMessageByReport[report.id] = ''"
+                        >
+                          신고당한 유저에게 보내기
+                        </button>
+                      </div>
+                    </section>
+                  </div>
+                </td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
 
         <p v-if="reports.length === 0" class="empty-text">
           접수된 신고 내역이 없습니다.
@@ -207,127 +327,247 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.report-page {
+.admin-board-page {
   min-height: 100vh;
   padding: 40px 24px;
-  background: #f6f7fb;
+  background: #fff8ed;
 }
 
-.report-container {
-  max-width: 960px;
+.admin-board-container {
+  max-width: 1180px;
   margin: 0 auto;
 }
 
-.report-header {
+.admin-board-header {
   display: flex;
   justify-content: space-between;
   gap: 16px;
-  align-items: center;
+  align-items: flex-end;
   margin-bottom: 24px;
 }
 
 .eyebrow {
   margin: 0 0 6px;
-  color: #f97316;
+  color: #f59e0b;
   font-size: 13px;
   font-weight: 900;
   letter-spacing: 0.08em;
 }
 
-.report-header h1 {
+.admin-board-header h1 {
   margin: 0;
   color: #111827;
   font-size: 32px;
 }
 
-.back-button,
-.detail-link {
+.header-description {
+  margin: 8px 0 0;
+  color: #667085;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.admin-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.admin-tab {
   padding: 10px 14px;
+  border: 1px solid #d0d5dd;
   border-radius: 999px;
+  background: #ffffff;
+  color: #344054;
   font-size: 14px;
   font-weight: 900;
   text-decoration: none;
 }
 
-.back-button {
-  border: 1px solid #d0d5dd;
-  background: #ffffff;
-  color: #344054;
+.admin-tab.router-link-active {
+  border-color: #f59e0b;
+  background: #fff7ed;
+  color: #f59e0b;
 }
 
-.report-list {
-  display: grid;
-  gap: 14px;
-}
-
-.report-card {
-  padding: 20px;
-  border: 1px solid #e5e8f0;
+.admin-table-wrap {
+  overflow: hidden;
+  border: 1px solid #eadcc5;
   border-radius: 18px;
   background: #ffffff;
-  box-shadow: 0 10px 28px rgba(20, 35, 70, 0.08);
+  box-shadow: 0 10px 28px rgba(146, 64, 14, 0.08);
 }
 
-.report-top,
-.report-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  align-items: center;
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
 }
 
-.report-top {
-  justify-content: space-between;
-  margin-bottom: 12px;
+.admin-table th,
+.admin-table td {
+  padding: 14px 12px;
+  border-bottom: 1px solid #f3e7d3;
+  color: #344054;
+  font-size: 14px;
+  vertical-align: middle;
 }
 
-.target-badge {
-  padding: 5px 9px;
-  border-radius: 999px;
-  background: #fff7ed;
-  color: #f97316;
+.admin-table th {
+  background: #ffffff;
+  color: #667085;
   font-size: 12px;
   font-weight: 900;
+  letter-spacing: 0.04em;
+  text-align: left;
 }
 
-.report-date,
-.report-meta {
-  color: #667085;
+.admin-table tbody tr:hover:not(.detail-row) {
+  background: #fffbeb;
+}
+
+.admin-table tbody tr.opened {
+  background: #fff7ed;
+}
+
+.col-number { width: 70px; }
+.col-type { width: 90px; }
+.col-title { width: auto; }
+.col-user { width: 160px; }
+.col-date { width: 140px; }
+.col-status { width: 90px; }
+.col-action { width: 80px; }
+
+.number-cell {
+  color: #98a2b3;
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 900;
+  text-align: center;
+}
+
+.category-label,
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.report-target {
+  background: #fff7ed;
+  color: #f59e0b;
+}
+
+.status-badge.pending {
+  background: #fff7ed;
+  color: #f97316;
+}
+
+.title-cell {
+  min-width: 0;
+}
+
+.title-button {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.title-text {
+  overflow: hidden;
+  color: #111827;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reason-preview {
+  overflow: hidden;
+  color: #667085;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .user-link {
-  color: #2563eb;
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  color: #f59e0b;
   font-weight: 900;
   text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-link.danger {
+  color: #ef4444;
 }
 
 .user-link:hover {
   text-decoration: underline;
 }
 
-.report-card h2 {
-  margin: 0 0 10px;
-  color: #111827;
-  font-size: 20px;
+.muted-text {
+  color: #98a2b3;
 }
 
-.report-block {
-  margin-top: 14px;
+.row-action {
+  border: 0;
+  border-radius: 999px;
+  background: #f59e0b;
+  color: #ffffff;
+  padding: 8px 11px;
+  font-size: 13px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.detail-row td {
+  padding: 0;
+  background: #fffbeb;
+}
+
+.detail-panel {
+  display: grid;
+  gap: 14px;
+  padding: 20px;
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.detail-box {
   padding: 14px;
+  border: 1px solid #eadcc5;
   border-radius: 14px;
-  background: #f9fafb;
+  background: #ffffff;
 }
 
-.report-block strong {
+.detail-box strong,
+.process-panel h3,
+.message-panel h3 {
   display: block;
-  margin-bottom: 6px;
+  margin: 0 0 8px;
   color: #344054;
   font-size: 13px;
+  font-weight: 900;
 }
 
-.report-block p {
+.detail-box p {
   margin: 0;
   color: #111827;
   line-height: 1.6;
@@ -335,56 +575,28 @@ onMounted(() => {
 }
 
 .detail-link {
-  display: inline-flex;
-  margin-top: 14px;
-  background: #2563eb;
-  color: #ffffff;
-}
-
-.process-box {
-  margin-top: 14px;
-  display: grid;
-  gap: 8px;
-}
-
-.process-box textarea,
-.process-box select {
-  width: 100%;
-  padding: 12px;
-  border: 1px solid #d0d5dd;
-  border-radius: 12px;
-  outline: none;
-}
-
-.process-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.process-actions button {
-  border: 0;
-  border-radius: 999px;
+  justify-self: start;
   padding: 10px 14px;
+  border-radius: 999px;
+  background: #f59e0b;
   color: #ffffff;
   font-size: 14px;
   font-weight: 900;
-  cursor: pointer;
+  text-decoration: none;
 }
 
-.message-box {
-  margin-top: 14px;
-  display: grid;
-  gap: 8px;
+.process-panel,
+.message-panel {
+  padding: 16px;
+  border: 1px solid #eadcc5;
+  border-radius: 16px;
+  background: #ffffff;
 }
 
-.message-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 8px;
-}
-
+.process-panel textarea,
+.process-panel select,
 .message-row input {
+  width: 100%;
   min-width: 0;
   padding: 12px;
   border: 1px solid #d0d5dd;
@@ -392,10 +604,21 @@ onMounted(() => {
   outline: none;
 }
 
+.process-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.process-controls select {
+  width: 180px;
+}
+
+.process-controls button,
 .message-row button {
   border: 0;
   border-radius: 999px;
-  background: #2563eb;
   color: #ffffff;
   padding: 10px 14px;
   font-size: 14px;
@@ -411,6 +634,21 @@ onMounted(() => {
   background: #f97316;
 }
 
+.message-panel {
+  display: grid;
+  gap: 8px;
+}
+
+.message-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.message-row button {
+  background: #f59e0b;
+}
+
 .status-text,
 .empty-text,
 .error-text {
@@ -424,12 +662,25 @@ onMounted(() => {
   color: #ef4444;
 }
 
-@media (max-width: 720px) {
-  .report-header {
+@media (max-width: 920px) {
+  .admin-board-header {
     align-items: flex-start;
     flex-direction: column;
   }
 
+  .admin-tabs {
+    justify-content: flex-start;
+  }
+
+  .admin-table-wrap {
+    overflow-x: auto;
+  }
+
+  .admin-table {
+    min-width: 920px;
+  }
+
+  .detail-grid,
   .message-row {
     grid-template-columns: 1fr;
   }
