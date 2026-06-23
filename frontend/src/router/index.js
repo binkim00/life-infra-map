@@ -8,6 +8,8 @@ import BoardDetailView from '@/views/BoardDetailView.vue'
 import BoardEditView from '@/views/BoardEditView.vue'
 import ReportListView from '@/views/ReportListView.vue'
 import MypageView from '@/views/MypageView.vue'
+import PreferenceSettingsView from '@/views/PreferenceSettingsView.vue'
+import SearchHistoryView from '@/views/SearchHistoryView.vue'
 import InquiryCreateView from '@/views/InquiryCreateView.vue'
 import MyInquiryView from '@/views/MyInquiryView.vue'
 import AdminInquiryView from '@/views/AdminInquiryView.vue'
@@ -48,6 +50,16 @@ const router = createRouter({
       path: '/mypage',
       name: 'mypage',
       component: MypageView,
+    },
+    {
+      path: '/mypage/preferences',
+      name: 'mypage-preferences',
+      component: PreferenceSettingsView,
+    },
+    {
+      path: '/mypage/search-history',
+      name: 'mypage-search-history',
+      component: SearchHistoryView,
     },
     {
       path: '/settings',

@@ -71,7 +71,7 @@ const isCustomerCenterActive = computed(() => {
 })
 
 const isMypageActive = computed(() => {
-  return route.path === '/mypage'
+  return route.path.startsWith('/mypage')
 })
 
 const fetchNotifications = async () => {

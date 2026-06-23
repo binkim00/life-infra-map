@@ -2,7 +2,11 @@
 import { onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { getMypage, updateNickname, updateProfileImage } from '@/api/boards'
-import { fetchSearchLogs, fetchUserPreferences } from '@/api/recommendation'
+import {
+  deleteSearchLog,
+  fetchSearchLogs,
+  fetchUserPreferences,
+} from '@/api/recommendation'
 import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
@@ -129,13 +133,13 @@ const fetchPreferences = async () => {
   try {
     isLoadingPreferences.value = true
     preferenceMessage.value = ''
-    const response = await fetchUserPreferences(10)
+    const response = await fetchUserPreferences({ page: 1, pageSize: 5 })
     userPreferences.value = (response.results || []).filter((preference) => {
       return normalizeLabelValue(preference.label)
     })
 
     if (!userPreferences.value.length) {
-      preferenceMessage.value = '검색을 이용하면 자주 찾는 조건과 키워드가 이곳에 표시됩니다.'
+      preferenceMessage.value = '검색하거나 직접 선호를 추가하면 이곳에 표시됩니다.'
     }
   } catch (error) {
     userPreferences.value = []
@@ -166,7 +170,7 @@ const fetchRecentSearchLogs = async () => {
   try {
     isLoadingSearchLogs.value = true
     searchLogMessage.value = ''
-    const response = await fetchSearchLogs(10)
+    const response = await fetchSearchLogs({ page: 1, pageSize: 5 })
     searchLogs.value = response.results || []
 
     if (!searchLogs.value.length) {
@@ -188,6 +192,20 @@ const fetchRecentSearchLogs = async () => {
     }
   } finally {
     isLoadingSearchLogs.value = false
+  }
+}
+
+const handleDeleteSearchLog = async (log) => {
+  if (!log?.id) return
+
+  try {
+    await deleteSearchLog(log.id)
+    searchLogMessage.value = '검색 기록을 삭제했습니다.'
+    await fetchRecentSearchLogs()
+    await fetchPreferences()
+  } catch (error) {
+    searchLogMessage.value =
+      error.response?.data?.detail || '검색 기록을 삭제하지 못했습니다.'
   }
 }
 
@@ -251,6 +269,18 @@ const preferenceTypeLabels = {
 
 const getPreferenceTypeLabel = (type) => {
   return preferenceTypeLabels[type] || '선호'
+}
+
+const isUserSelectedPreference = (preference) => {
+  return preference?.source === 'user_selected'
+}
+
+const getPreferenceSourceLabel = (preference) => {
+  return isUserSelectedPreference(preference) ? '직접 선택' : '자동'
+}
+
+const getPreferenceSourceClass = (preference) => {
+  return isUserSelectedPreference(preference) ? 'is-user-selected' : 'is-search-log'
 }
 
 const getPreferenceLabel = (preference) => {
@@ -529,19 +559,22 @@ onMounted(() => {
                 <h2>최근 검색 기록</h2>
                 <p>이전에 찾았던 장소 조건을 다시 검색할 수 있습니다.</p>
               </div>
-              <button type="button" class="refresh-history-button" @click="fetchRecentSearchLogs">
-                새로고침
-              </button>
+              <div class="section-action-row">
+                <RouterLink to="/mypage/search-history" class="refresh-history-button">
+                  검색 기록 관리
+                </RouterLink>
+                <button type="button" class="refresh-history-button" @click="fetchRecentSearchLogs">
+                  새로고침
+                </button>
+              </div>
             </div>
 
             <p v-if="isLoadingSearchLogs" class="empty search-history-status">검색 기록을 불러오는 중입니다.</p>
             <div v-else-if="searchLogs.length" class="search-history-list">
-              <button
+              <article
                 v-for="log in searchLogs"
                 :key="log.id"
-                type="button"
                 class="search-history-item"
-                @click="rerunSearchLog(log)"
               >
                 <strong>{{ log.query }}</strong>
                 <span>{{ getSearchLogMeta(log) }}</span>
@@ -551,7 +584,15 @@ onMounted(() => {
                     {{ chip }}
                   </span>
                 </span>
-              </button>
+                <span class="search-history-actions">
+                  <button type="button" @click="rerunSearchLog(log)">
+                    다시 검색
+                  </button>
+                  <button type="button" class="danger" @click="handleDeleteSearchLog(log)">
+                    삭제
+                  </button>
+                </span>
+              </article>
             </div>
             <div v-else class="empty search-history-status">
               <p>{{ searchLogMessage }}</p>
@@ -564,9 +605,12 @@ onMounted(() => {
           <section class="preference-section">
             <div class="section-heading-row">
               <div>
-                <h2>내 선호 키워드</h2>
-                <p>최근 검색에서 자주 등장한 조건과 키워드입니다. 추천 결과에 약하게 반영됩니다.</p>
+                <h2>내 선호 요약</h2>
+                <p>추천에 반영되는 선호를 간단히 확인할 수 있습니다.</p>
               </div>
+              <RouterLink to="/mypage/preferences" class="refresh-history-button">
+                선호 태그 설정하기
+              </RouterLink>
             </div>
 
             <p v-if="isLoadingPreferences" class="empty preference-status">선호 키워드를 불러오는 중입니다.</p>
@@ -576,15 +620,23 @@ onMounted(() => {
                 :key="preference.id"
                 class="preference-item"
               >
-                <span class="preference-type-badge">
-                  {{ getPreferenceTypeLabel(preference.preference_type) }}
+                <span class="preference-badge-row">
+                  <span
+                    class="preference-source-badge"
+                    :class="getPreferenceSourceClass(preference)"
+                  >
+                    {{ getPreferenceSourceLabel(preference) }}
+                  </span>
+                  <span class="preference-type-badge">
+                    {{ getPreferenceTypeLabel(preference.preference_type) }}
+                  </span>
                 </span>
                 <strong>{{ getPreferenceLabel(preference) }}</strong>
-                <span>{{ getPreferenceMeta(preference) }}</span>
+                <span class="preference-meta">{{ getPreferenceMeta(preference) }}</span>
               </article>
             </div>
             <p v-else class="empty preference-status">
-              {{ preferenceMessage || '검색을 이용하면 자주 찾는 조건과 키워드가 이곳에 표시됩니다.' }}
+              {{ preferenceMessage || '검색하거나 선호 태그를 선택하면 이곳에 표시됩니다.' }}
             </p>
           </section>
         </section>
@@ -1046,14 +1098,24 @@ h2 {
   font-weight: 700;
 }
 
+.section-action-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
 .refresh-history-button {
   min-height: 34px;
   padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
   border: 1px solid #d0d5dd;
   border-radius: 8px;
   background: #ffffff;
   color: #344054;
   font-weight: 900;
+  text-decoration: none;
   cursor: pointer;
 }
 
@@ -1078,7 +1140,6 @@ h2 {
   background: #f9fafb;
   color: #111827;
   text-align: left;
-  cursor: pointer;
   transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
 }
 
@@ -1116,6 +1177,40 @@ h2 {
   white-space: nowrap;
 }
 
+.search-history-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.search-history-actions button {
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid #d0d5dd;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #344054;
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.search-history-actions button:hover {
+  border-color: #bfdbfe;
+  color: #2563eb;
+}
+
+.search-history-actions .danger {
+  border-color: #fecaca;
+  color: #b91c1c;
+}
+
+.search-history-actions .danger:hover {
+  background: #fef2f2;
+  color: #991b1b;
+}
+
 .search-history-status {
   margin: 12px 0 0;
   padding: 14px;
@@ -1137,6 +1232,89 @@ h2 {
   border-top: 1px solid #e5e8f0;
 }
 
+.preference-form-message {
+  margin: 8px 0 0;
+  color: #2563eb;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.preference-tag-picker,
+.preference-subsection {
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid #e5e8f0;
+  border-radius: 14px;
+  background: #ffffff;
+}
+
+.preference-subheading h3,
+.preference-tag-group h4 {
+  margin: 0;
+  color: #111827;
+}
+
+.preference-subheading p {
+  margin: 5px 0 0;
+  color: #667085;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.preference-tag-group-list {
+  margin-top: 12px;
+  display: grid;
+  gap: 12px;
+}
+
+.preference-tag-group {
+  display: grid;
+  gap: 8px;
+}
+
+.preference-tag-group h4 {
+  font-size: 13px;
+}
+
+.preference-tag-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.preference-tag-option {
+  min-height: 36px;
+  padding: 0 11px;
+  display: inline-flex;
+  gap: 7px;
+  align-items: center;
+  border: 1px solid #d0d5dd;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #344054;
+  font-size: 13px;
+  font-weight: 900;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.preference-tag-option:hover {
+  border-color: #bfdbfe;
+  color: #2563eb;
+}
+
+.preference-tag-option.is-selected {
+  border-color: #86efac;
+  background: #dcfce7;
+  color: #166534;
+}
+
+.preference-tag-option input {
+  width: 14px;
+  height: 14px;
+  accent-color: #16a34a;
+}
+
 .preference-list {
   margin-top: 12px;
   display: grid;
@@ -1148,11 +1326,19 @@ h2 {
   min-width: 0;
   padding: 12px;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
   align-items: center;
   border-radius: 12px;
   background: #f9fafb;
+}
+
+.preference-badge-row {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
 }
 
 .preference-item strong {
@@ -1162,10 +1348,32 @@ h2 {
   white-space: nowrap;
 }
 
-.preference-item span:last-child {
+.preference-meta {
   color: #667085;
   font-size: 12px;
   font-weight: 900;
+}
+
+.preference-delete-button {
+  grid-column: 2;
+  grid-row: 2 / span 2;
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid #fecaca;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #b91c1c;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.preference-delete-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.preference-delete-button:hover {
+  background: #fef2f2;
 }
 
 .preference-type-badge {
@@ -1176,6 +1384,24 @@ h2 {
   font-size: 11px;
   font-weight: 900;
   white-space: nowrap;
+}
+
+.preference-source-badge {
+  padding: 4px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.preference-source-badge.is-search-log {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.preference-source-badge.is-user-selected {
+  background: #dcfce7;
+  color: #166534;
 }
 
 .preference-status {
@@ -1242,11 +1468,12 @@ h2 {
   }
 
   .preference-item {
-    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
   }
 
-  .preference-item span:last-child {
+  .preference-delete-button {
     grid-column: 1 / -1;
+    grid-row: auto;
   }
 }
 </style>

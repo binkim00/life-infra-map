@@ -1,12 +1,21 @@
-from django.db import transaction
+import re
 
-from recommendations.models import UserPreference, UserSearchLog
+from django.db import transaction
+from django.utils import timezone
+
+from recommendations.models import Tag, UserPreference, UserSearchLog
 
 
 PREFERENCE_SCORE_CAP = 100.0
 PERSONALIZATION_BOOST_CAP = 5.0
 MAX_LABEL_LENGTH = 100
+MAX_USER_SELECTED_LABEL_LENGTH = 50
 MAX_TARGET_QUERY_LENGTH = 60
+SEARCH_LOG_SOURCE = "search_log"
+USER_SELECTED_SOURCE = "user_selected"
+USER_SELECTED_SCORE = 10.0
+USER_SELECTED_BOOST_MULTIPLIER = 1.5
+ALLOWED_USER_SELECTED_TYPES = {"tag", "condition", "menu", "place_type", "category"}
 LABEL_VALUE_KEYS = [
     "label",
     "name",
@@ -16,6 +25,7 @@ LABEL_VALUE_KEYS = [
     "text",
 ]
 INVALID_LABEL_VALUES = {"[object object]"}
+HTML_TAG_RE = re.compile(r"<[^>]*>")
 
 PREFERENCE_WEIGHTS = {
     "tag": 2.0,
@@ -93,6 +103,99 @@ def unique_valid_labels(values, max_length=MAX_LABEL_LENGTH):
     return labels
 
 
+def clean_user_selected_label(value):
+    label = normalize_preference_label(value)
+    if not label or HTML_TAG_RE.search(label):
+        return ""
+
+    return re.sub(r"\s+", " ", label).strip()
+
+
+@transaction.atomic
+def create_or_update_user_selected_preference(user, preference_type, label):
+    preference_type = normalize_preference_label(preference_type) or "tag"
+    if preference_type not in ALLOWED_USER_SELECTED_TYPES:
+        raise ValueError("지원하지 않는 선호 유형입니다.")
+
+    cleaned_label = clean_user_selected_label(label)
+    if not is_valid_preference_label(cleaned_label, max_length=MAX_USER_SELECTED_LABEL_LENGTH):
+        raise ValueError("선호 키워드를 다시 확인해 주세요.")
+
+    key = normalize_preference_key(cleaned_label)
+    now = timezone.now()
+    preference, created = UserPreference.objects.select_for_update().get_or_create(
+        user=user,
+        preference_type=preference_type,
+        key=key,
+        defaults={
+            "label": cleaned_label,
+            "score": USER_SELECTED_SCORE,
+            "search_count": 0,
+            "source": USER_SELECTED_SOURCE,
+            "last_seen_at": now,
+        },
+    )
+
+    if not created:
+        preference.label = cleaned_label
+        preference.score = max(float(preference.score or 0), USER_SELECTED_SCORE)
+        preference.source = USER_SELECTED_SOURCE
+        preference.last_seen_at = now
+        preference.save(
+            update_fields=[
+                "label",
+                "score",
+                "source",
+                "last_seen_at",
+                "updated_at",
+            ],
+        )
+
+    return preference, created
+
+
+@transaction.atomic
+def create_or_update_user_selected_tag_preference(user, tag):
+    if not isinstance(tag, Tag):
+        raise ValueError("태그를 다시 확인해 주세요.")
+
+    label = normalize_preference_label(tag.name)
+    if not is_valid_preference_label(label, max_length=MAX_USER_SELECTED_LABEL_LENGTH):
+        raise ValueError("태그를 다시 확인해 주세요.")
+
+    key = normalize_preference_key(label)
+    now = timezone.now()
+    preference, created = UserPreference.objects.select_for_update().get_or_create(
+        user=user,
+        preference_type="tag",
+        key=key,
+        defaults={
+            "label": label,
+            "score": USER_SELECTED_SCORE,
+            "search_count": 0,
+            "source": USER_SELECTED_SOURCE,
+            "last_seen_at": now,
+        },
+    )
+
+    if not created:
+        preference.label = label
+        preference.score = max(float(preference.score or 0), USER_SELECTED_SCORE)
+        preference.source = USER_SELECTED_SOURCE
+        preference.last_seen_at = now
+        preference.save(
+            update_fields=[
+                "label",
+                "score",
+                "source",
+                "last_seen_at",
+                "updated_at",
+            ],
+        )
+
+    return preference, created
+
+
 def iter_preference_entries_from_search_log(search_log):
     field_map = [
         ("tag", search_log.preferred_tags),
@@ -138,15 +241,18 @@ def update_user_preferences_from_search_log(search_log):
                 "label": label,
                 "score": 0,
                 "search_count": 0,
-                "source": "search_log",
+                "source": SEARCH_LOG_SOURCE,
                 "last_seen_at": search_log.created_at,
             },
         )
         preference.label = preference.label or label
         preference.score = min(PREFERENCE_SCORE_CAP, float(preference.score or 0) + weight)
         preference.search_count = int(preference.search_count or 0) + 1
-        preference.source = "search_log"
-        preference.last_seen_at = search_log.created_at
+        if preference.source != USER_SELECTED_SOURCE:
+            preference.source = SEARCH_LOG_SOURCE
+            preference.last_seen_at = search_log.created_at
+        elif not preference.last_seen_at or search_log.created_at > preference.last_seen_at:
+            preference.last_seen_at = search_log.created_at
         preference.save(
             update_fields=[
                 "label",
@@ -164,7 +270,9 @@ def update_user_preferences_from_search_log(search_log):
 
 @transaction.atomic
 def rebuild_user_preferences(user):
-    UserPreference.objects.filter(user=user).delete()
+    UserPreference.objects.filter(user=user, key__iexact="[object object]").delete()
+    UserPreference.objects.filter(user=user, label__iexact="[object object]").delete()
+    UserPreference.objects.filter(user=user, source=SEARCH_LOG_SOURCE).delete()
 
     for search_log in UserSearchLog.objects.filter(user=user).order_by("created_at", "id"):
         update_user_preferences_from_search_log(search_log)
@@ -185,8 +293,22 @@ def get_user_preference_lookup(user):
     return lookup
 
 
+def _source_multiplier(preference):
+    return USER_SELECTED_BOOST_MULTIPLIER if preference.source == USER_SELECTED_SOURCE else 1.0
+
+
 def _preference_contribution(preference, multiplier, max_contribution):
-    return min(float(preference.score or 0) * multiplier, max_contribution)
+    contribution = min(float(preference.score or 0) * multiplier, max_contribution)
+    return contribution * _source_multiplier(preference)
+
+
+def _personalization_reason(preference):
+    if preference.source == USER_SELECTED_SOURCE:
+        if preference.preference_type == "tag":
+            return f"직접 선택한 선호 태그와 일치: {preference.label}"
+        return f"직접 선택한 선호와 일치: {preference.label}"
+
+    return f"최근 검색 선호와 일부 일치: {preference.label}"
 
 
 def calculate_personalization_boost(
@@ -217,21 +339,21 @@ def calculate_personalization_boost(
 
             matched_keys.add((preference_type, key))
             boost += _preference_contribution(preference, 0.18, 2.0)
-            reasons.append(f"최근 자주 찾은 조건: {preference.label}")
+            reasons.append(_personalization_reason(preference))
 
     category_preference = preference_lookup.get("category", {}).get(
         normalize_preference_key(place.category)
     )
     if category_preference:
         boost += _preference_contribution(category_preference, 0.08, 1.0)
-        reasons.append(f"최근 자주 찾은 카테고리: {category_preference.label}")
+        reasons.append(_personalization_reason(category_preference))
 
     scenario_preference = preference_lookup.get("scenario", {}).get(
         normalize_preference_key(scenario)
     )
     if scenario_preference:
         boost += _preference_contribution(scenario_preference, 0.05, 0.8)
-        reasons.append(f"최근 자주 찾은 상황: {scenario_preference.label}")
+        reasons.append(_personalization_reason(scenario_preference))
 
     searchable_text = normalize_preference_key(
         " ".join([
@@ -251,7 +373,7 @@ def calculate_personalization_boost(
 
             matched_keys.add((preference_type, key))
             boost += _preference_contribution(preference, 0.06, 0.8)
-            reasons.append(f"최근 자주 찾은 키워드: {preference.label}")
+            reasons.append(_personalization_reason(preference))
 
     applied_boost = min(round(boost, 2), PERSONALIZATION_BOOST_CAP)
     return applied_boost, reasons[:3] if applied_boost else []

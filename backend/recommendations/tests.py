@@ -279,6 +279,163 @@ class RecommendationSearchTests(TestCase):
         self.assertEqual(max_limited_response.status_code, 200)
         self.assertEqual(len(max_limited_response.json()["results"]), 50)
 
+    def test_search_log_list_supports_page_and_page_size(self):
+        now = timezone.now()
+        for index in range(12):
+            self._create_search_log(
+                query=f"페이지 검색어 {index}",
+                created_at=now + timedelta(minutes=index),
+            )
+
+        response = self.client.get(
+            "/api/recommendations/search-logs/",
+            {"page": 2, "page_size": 5},
+            **self._auth_headers(),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["count"], 12)
+        self.assertEqual(data["page"], 2)
+        self.assertEqual(data["page_size"], 5)
+        self.assertEqual(data["total_pages"], 3)
+        self.assertEqual(len(data["results"]), 5)
+        self.assertEqual(data["results"][0]["query"], "페이지 검색어 6")
+
+    def test_search_log_page_size_is_limited(self):
+        now = timezone.now()
+        for index in range(30):
+            self._create_search_log(
+                query=f"제한 검색어 {index}",
+                created_at=now + timedelta(minutes=index),
+            )
+
+        response = self.client.get(
+            "/api/recommendations/search-logs/",
+            {"page": 1, "page_size": 100},
+            **self._auth_headers(),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["page_size"], 20)
+        self.assertEqual(len(data["results"]), 20)
+
+    def test_user_can_delete_own_search_log(self):
+        search_log = self._create_search_log(query="삭제할 검색")
+
+        response = self.client.delete(
+            f"/api/recommendations/search-logs/{search_log.id}/",
+            **self._auth_headers(),
+        )
+
+        self.assertEqual(response.status_code, 204)
+        self.assertFalse(UserSearchLog.objects.filter(id=search_log.id).exists())
+
+    def test_user_cannot_delete_another_users_search_log(self):
+        other_user = get_user_model().objects.create_user(
+            username="other-log-owner",
+            password="pass",
+        )
+        search_log = self._create_search_log(user=other_user, query="다른 사용자 검색")
+
+        response = self.client.delete(
+            f"/api/recommendations/search-logs/{search_log.id}/",
+            **self._auth_headers(),
+        )
+
+        self.assertEqual(response.status_code, 404)
+        self.assertTrue(UserSearchLog.objects.filter(id=search_log.id).exists())
+
+    def test_deleting_search_log_recalculates_search_log_preferences(self):
+        delete_response = self.client.post(
+            "/api/recommendations/search-logs/",
+            data=json.dumps({
+                "query": "소금빵 맛집",
+                "menu_keywords": ["소금빵"],
+            }, ensure_ascii=False),
+            content_type="application/json",
+            **self._auth_headers(),
+        )
+        keep_response = self.client.post(
+            "/api/recommendations/search-logs/",
+            data=json.dumps({
+                "query": "쌀국수 맛집",
+                "menu_keywords": ["쌀국수"],
+            }, ensure_ascii=False),
+            content_type="application/json",
+            **self._auth_headers(),
+        )
+
+        self.assertEqual(delete_response.status_code, 201)
+        self.assertEqual(keep_response.status_code, 201)
+        self.assertTrue(
+            UserPreference.objects.filter(
+                user=self.user,
+                source="search_log",
+                preference_type="menu",
+                key="소금빵",
+            ).exists()
+        )
+
+        response = self.client.delete(
+            f"/api/recommendations/search-logs/{delete_response.json()['id']}/",
+            **self._auth_headers(),
+        )
+
+        self.assertEqual(response.status_code, 204)
+        self.assertFalse(
+            UserPreference.objects.filter(
+                user=self.user,
+                source="search_log",
+                preference_type="menu",
+                key="소금빵",
+            ).exists()
+        )
+        self.assertTrue(
+            UserPreference.objects.filter(
+                user=self.user,
+                source="search_log",
+                preference_type="menu",
+                key="쌀국수",
+            ).exists()
+        )
+
+    def test_deleting_search_log_keeps_user_selected_preferences(self):
+        UserPreference.objects.create(
+            user=self.user,
+            preference_type="tag",
+            key="와이파이",
+            label="와이파이",
+            score=10,
+            source="user_selected",
+        )
+        response = self.client.post(
+            "/api/recommendations/search-logs/",
+            data=json.dumps({
+                "query": "소금빵 맛집",
+                "menu_keywords": ["소금빵"],
+            }, ensure_ascii=False),
+            content_type="application/json",
+            **self._auth_headers(),
+        )
+
+        self.assertEqual(response.status_code, 201)
+        delete_response = self.client.delete(
+            f"/api/recommendations/search-logs/{response.json()['id']}/",
+            **self._auth_headers(),
+        )
+
+        self.assertEqual(delete_response.status_code, 204)
+        self.assertTrue(
+            UserPreference.objects.filter(
+                user=self.user,
+                source="user_selected",
+                preference_type="tag",
+                key="와이파이",
+            ).exists()
+        )
+
     def test_search_log_save_updates_user_preferences(self):
         response = self.client.post(
             "/api/recommendations/search-logs/",
@@ -553,6 +710,64 @@ class RecommendationSearchTests(TestCase):
         self.assertEqual(data["results"][0]["label"], "소금빵")
         self.assertNotIn("쌀국수", [item["label"] for item in data["results"]])
 
+    def test_preferences_support_source_filter_and_pagination(self):
+        for index in range(7):
+            UserPreference.objects.create(
+                user=self.user,
+                preference_type="keyword",
+                key=f"자동{index}",
+                label=f"자동{index}",
+                score=10 - index,
+                search_count=1,
+                source="search_log",
+            )
+        for index in range(2):
+            UserPreference.objects.create(
+                user=self.user,
+                preference_type="tag",
+                key=f"직접{index}",
+                label=f"직접{index}",
+                score=10,
+                source="user_selected",
+            )
+
+        search_log_response = self.client.get(
+            "/api/recommendations/preferences/",
+            {"source": "search_log", "page": 1, "page_size": 5},
+            **self._auth_headers(),
+        )
+        user_selected_response = self.client.get(
+            "/api/recommendations/preferences/",
+            {"source": "user_selected", "page": 1, "page_size": 5},
+            **self._auth_headers(),
+        )
+
+        self.assertEqual(search_log_response.status_code, 200)
+        self.assertEqual(search_log_response.json()["count"], 7)
+        self.assertEqual(search_log_response.json()["page_size"], 5)
+        self.assertEqual(len(search_log_response.json()["results"]), 5)
+        self.assertTrue(
+            all(item["source"] == "search_log" for item in search_log_response.json()["results"])
+        )
+        self.assertEqual(user_selected_response.status_code, 200)
+        self.assertEqual(user_selected_response.json()["count"], 2)
+        self.assertTrue(
+            all(item["source"] == "user_selected" for item in user_selected_response.json()["results"])
+        )
+
+    def test_preference_tags_api_returns_existing_tags(self):
+        response = self.client.get(
+            "/api/recommendations/preference-tags/",
+            HTTP_HOST="localhost",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        results = response.json()["results"]
+        self.assertTrue(any(item["name"] == "와이파이" for item in results))
+        wifi_tag = next(item for item in results if item["name"] == "와이파이")
+        self.assertEqual(wifi_tag["display_name"], "와이파이")
+        self.assertIn("group", wifi_tag)
+
     def test_preferences_require_authenticated_user(self):
         response = self.client.get(
             "/api/recommendations/preferences/",
@@ -560,6 +775,223 @@ class RecommendationSearchTests(TestCase):
         )
 
         self.assertIn(response.status_code, [401, 403])
+
+    def test_authenticated_user_can_create_user_selected_preference(self):
+        response = self.client.post(
+            "/api/recommendations/preferences/",
+            data=json.dumps({
+                "preference_type": "tag",
+                "label": "노트북 작업 가능",
+            }, ensure_ascii=False),
+            content_type="application/json",
+            **self._auth_headers(),
+        )
+
+        self.assertEqual(response.status_code, 201)
+        preference = UserPreference.objects.get(user=self.user)
+        self.assertEqual(preference.preference_type, "tag")
+        self.assertEqual(preference.label, "노트북 작업 가능")
+        self.assertEqual(preference.source, "user_selected")
+        self.assertGreaterEqual(preference.score, 10)
+
+    def test_authenticated_user_can_create_user_selected_preference_by_tag_id(self):
+        tag = Tag.objects.get(name="와이파이")
+        response = self.client.post(
+            "/api/recommendations/preferences/",
+            data=json.dumps({
+                "preference_type": "tag",
+                "tag_id": tag.id,
+            }, ensure_ascii=False),
+            content_type="application/json",
+            **self._auth_headers(),
+        )
+
+        self.assertEqual(response.status_code, 201)
+        preference = UserPreference.objects.get(user=self.user)
+        self.assertEqual(preference.preference_type, "tag")
+        self.assertEqual(preference.key, "와이파이")
+        self.assertEqual(preference.label, "와이파이")
+        self.assertEqual(preference.source, "user_selected")
+
+    def test_user_selected_preference_by_tag_id_rejects_unknown_tag(self):
+        response = self.client.post(
+            "/api/recommendations/preferences/",
+            data=json.dumps({
+                "preference_type": "tag",
+                "tag_id": 999999,
+            }, ensure_ascii=False),
+            content_type="application/json",
+            **self._auth_headers(),
+        )
+
+        self.assertEqual(response.status_code, 404)
+        self.assertFalse(UserPreference.objects.filter(user=self.user).exists())
+
+    def test_user_selected_preference_by_tag_id_deduplicates(self):
+        tag = Tag.objects.get(name="와이파이")
+
+        for expected_status in [201, 200]:
+            response = self.client.post(
+                "/api/recommendations/preferences/",
+                data=json.dumps({
+                    "preference_type": "tag",
+                    "tag_id": tag.id,
+                }, ensure_ascii=False),
+                content_type="application/json",
+                **self._auth_headers(),
+            )
+            self.assertEqual(response.status_code, expected_status)
+
+        self.assertEqual(
+            UserPreference.objects.filter(
+                user=self.user,
+                preference_type="tag",
+                key="와이파이",
+            ).count(),
+            1,
+        )
+
+    def test_user_selected_tag_preference_is_returned_with_source(self):
+        tag = Tag.objects.get(name="와이파이")
+        self.client.post(
+            "/api/recommendations/preferences/",
+            data=json.dumps({
+                "preference_type": "tag",
+                "tag_id": tag.id,
+            }, ensure_ascii=False),
+            content_type="application/json",
+            **self._auth_headers(),
+        )
+
+        response = self.client.get(
+            "/api/recommendations/preferences/",
+            {"type": "tag"},
+            **self._auth_headers(),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["results"][0]["label"], "와이파이")
+        self.assertEqual(response.json()["results"][0]["source"], "user_selected")
+
+    def test_anonymous_user_cannot_create_user_selected_preference(self):
+        response = self.client.post(
+            "/api/recommendations/preferences/",
+            data=json.dumps({
+                "preference_type": "tag",
+                "label": "조용함",
+            }, ensure_ascii=False),
+            content_type="application/json",
+            HTTP_HOST="localhost",
+        )
+
+        self.assertIn(response.status_code, [401, 403])
+        self.assertFalse(UserPreference.objects.exists())
+
+    def test_user_selected_preference_deduplicates_same_type_and_key(self):
+        UserPreference.objects.create(
+            user=self.user,
+            preference_type="tag",
+            key="조용함",
+            label="조용함",
+            score=2,
+            search_count=3,
+            source="search_log",
+        )
+
+        response = self.client.post(
+            "/api/recommendations/preferences/",
+            data=json.dumps({
+                "preference_type": "tag",
+                "label": "조용함",
+            }, ensure_ascii=False),
+            content_type="application/json",
+            **self._auth_headers(),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(UserPreference.objects.filter(user=self.user).count(), 1)
+        preference = UserPreference.objects.get(user=self.user, key="조용함")
+        self.assertEqual(preference.source, "user_selected")
+        self.assertEqual(preference.search_count, 3)
+        self.assertGreaterEqual(preference.score, 10)
+
+    def test_user_selected_preference_rejects_object_object_label(self):
+        response = self.client.post(
+            "/api/recommendations/preferences/",
+            data=json.dumps({
+                "preference_type": "tag",
+                "label": "[object Object]",
+            }, ensure_ascii=False),
+            content_type="application/json",
+            **self._auth_headers(),
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(
+            UserPreference.objects.filter(
+                user=self.user,
+                key__iexact="[object object]",
+            ).exists()
+        )
+
+    def test_user_cannot_delete_another_users_preference(self):
+        other_user = get_user_model().objects.create_user(
+            username="other-direct-preference-user",
+            password="pass",
+        )
+        preference = UserPreference.objects.create(
+            user=other_user,
+            preference_type="tag",
+            key="조용함",
+            label="조용함",
+            score=10,
+            source="user_selected",
+        )
+
+        response = self.client.delete(
+            f"/api/recommendations/preferences/{preference.id}/",
+            **self._auth_headers(),
+        )
+
+        self.assertEqual(response.status_code, 404)
+        self.assertTrue(UserPreference.objects.filter(id=preference.id).exists())
+
+    def test_user_cannot_delete_search_log_preference(self):
+        preference = UserPreference.objects.create(
+            user=self.user,
+            preference_type="tag",
+            key="조용함",
+            label="조용함",
+            score=4,
+            search_count=2,
+            source="search_log",
+        )
+
+        response = self.client.delete(
+            f"/api/recommendations/preferences/{preference.id}/",
+            **self._auth_headers(),
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertTrue(UserPreference.objects.filter(id=preference.id).exists())
+
+    def test_user_can_delete_user_selected_preference(self):
+        preference = UserPreference.objects.create(
+            user=self.user,
+            preference_type="tag",
+            key="조용함",
+            label="조용함",
+            score=10,
+            source="user_selected",
+        )
+
+        response = self.client.delete(
+            f"/api/recommendations/preferences/{preference.id}/",
+            **self._auth_headers(),
+        )
+
+        self.assertEqual(response.status_code, 204)
+        self.assertFalse(UserPreference.objects.filter(id=preference.id).exists())
 
     def test_rebuild_preferences_deletes_existing_and_recalculates_from_logs(self):
         UserPreference.objects.create(
@@ -625,6 +1057,36 @@ class RecommendationSearchTests(TestCase):
         self.assertGreater(first_result["personalization_boost"], 0)
         self.assertLessEqual(first_result["personalization_boost"], 5)
         self.assertIn("personalization_reasons", first_result)
+
+    def test_user_selected_preference_is_distinguished_in_personalization_reasons(self):
+        UserPreference.objects.create(
+            user=self.user,
+            preference_type="tag",
+            key="와이파이",
+            label="와이파이",
+            score=80,
+            search_count=0,
+            source="user_selected",
+        )
+
+        response = self.client.get(
+            "/api/recommendations/search/",
+            {
+                "scenario": "work_cafe",
+                "lat": 35.1556,
+                "lng": 129.0641,
+                "limit": 3,
+            },
+            **self._auth_headers(),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        first_result = response.json()["results"][0]
+        self.assertLessEqual(first_result["personalization_boost"], 5)
+        self.assertIn(
+            "직접 선택한 선호 태그와 일치: 와이파이",
+            first_result["personalization_reasons"],
+        )
 
     def test_recommendation_search_does_not_apply_personalization_for_anonymous_user(self):
         UserPreference.objects.create(

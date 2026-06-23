@@ -93,23 +93,55 @@ export const saveSearchLog = async (payload) => {
   return response.data
 }
 
-export const fetchSearchLogs = async (limit = 10) => {
+export const fetchSearchLogs = async ({ page = 1, pageSize = 5 } = {}) => {
   const response = await api.get('/recommendations/search-logs/', {
     params: {
-      limit,
+      page,
+      page_size: pageSize,
     },
   })
 
   return response.data
 }
 
-export const fetchUserPreferences = async (limit = 10, type = '') => {
+export const deleteSearchLog = async (searchLogId) => {
+  const response = await api.delete(`/recommendations/search-logs/${searchLogId}/`)
+
+  return response.data
+}
+
+export const fetchUserPreferences = async ({
+  page = 1,
+  pageSize = 5,
+  source = '',
+  type = '',
+  limit = null,
+} = {}) => {
   const response = await api.get('/recommendations/preferences/', {
     params: {
-      limit,
+      ...(limit ? { limit } : { page, page_size: pageSize }),
+      ...(source ? { source } : {}),
       ...(type ? { type } : {}),
     },
   })
+
+  return response.data
+}
+
+export const fetchPreferenceTags = async () => {
+  const response = await api.get('/recommendations/preference-tags/')
+
+  return response.data
+}
+
+export const createUserPreference = async (payload) => {
+  const response = await api.post('/recommendations/preferences/', payload)
+
+  return response.data
+}
+
+export const deleteUserPreference = async (preferenceId) => {
+  const response = await api.delete(`/recommendations/preferences/${preferenceId}/`)
 
   return response.data
 }

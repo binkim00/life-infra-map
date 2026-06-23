@@ -1,12 +1,14 @@
 import logging
+import math
 
+from django.shortcuts import get_object_or_404
 from django.db.models import Q
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from .models import Place, UserPreference, UserSearchLog
+from .models import Place, Tag, UserPreference, UserSearchLog
 from .serializers import (
     UserPreferenceSerializer,
     UserSearchLogListSerializer,
@@ -30,6 +32,9 @@ from .services.smoking_area_data import (
     map_smoking_area_to_recommendation,
 )
 from .services.user_preferences import (
+    USER_SELECTED_SOURCE,
+    create_or_update_user_selected_preference,
+    create_or_update_user_selected_tag_preference,
     rebuild_user_preferences,
     update_user_preferences_from_search_log,
 )
@@ -64,6 +69,39 @@ DB_MARKER_ALLOWED_CATEGORIES = [
     "tourism",
 ]
 
+TAG_TYPE_GROUP_LABELS = {
+    "category": "카테고리",
+    "recommendation": "추천 태그",
+    "warning": "주의/확인 필요",
+}
+
+
+def parse_positive_int(value, default):
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+
+    return parsed if parsed > 0 else default
+
+
+def paginated_response(queryset, serializer_class, request, default_page_size=5, max_page_size=20):
+    page = parse_positive_int(request.GET.get("page"), 1)
+    page_size = parse_positive_int(request.GET.get("page_size"), default_page_size)
+    page_size = min(page_size, max_page_size)
+    count = queryset.count()
+    total_pages = max(math.ceil(count / page_size), 1)
+    offset = (page - 1) * page_size
+    serializer = serializer_class(queryset[offset:offset + page_size], many=True)
+
+    return Response({
+        "count": count,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": total_pages,
+        "results": serializer.data,
+    })
+
 @api_view(["GET"])
 def health_check(request):
     return Response({
@@ -75,19 +113,25 @@ def health_check(request):
 @permission_classes([IsAuthenticated])
 def search_logs(request):
     if request.method == "GET":
-        try:
-            limit = int(request.GET.get("limit", 20))
-        except (TypeError, ValueError):
-            limit = 20
-
-        limit = min(max(limit, 1), 50)
         search_log_queryset = UserSearchLog.objects.filter(
             user=request.user,
-        ).order_by("-created_at")[:limit]
-        serializer = UserSearchLogListSerializer(search_log_queryset, many=True)
-        return Response({
-            "results": serializer.data,
-        })
+        ).order_by("-created_at")
+
+        if "limit" in request.GET and "page" not in request.GET and "page_size" not in request.GET:
+            limit = parse_positive_int(request.GET.get("limit"), 20)
+            limit = min(limit, 50)
+            serializer = UserSearchLogListSerializer(search_log_queryset[:limit], many=True)
+            return Response({
+                "results": serializer.data,
+            })
+
+        return paginated_response(
+            search_log_queryset,
+            UserSearchLogListSerializer,
+            request,
+            default_page_size=5,
+            max_page_size=20,
+        )
 
     serializer = UserSearchLogSerializer(
         data=request.data,
@@ -112,16 +156,71 @@ def search_logs(request):
     )
 
 
-@api_view(["GET"])
+@api_view(["DELETE"])
+@permission_classes([IsAuthenticated])
+def search_log_detail(request, search_log_id):
+    search_log = get_object_or_404(
+        UserSearchLog,
+        id=search_log_id,
+        user=request.user,
+    )
+    search_log.delete()
+
+    try:
+        rebuild_user_preferences(request.user)
+    except Exception:
+        logger.debug("Failed to rebuild user preferences after search log delete.", exc_info=True)
+
+    return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+@api_view(["GET", "POST"])
 @permission_classes([IsAuthenticated])
 def user_preferences(request):
-    try:
-        limit = int(request.GET.get("limit", 20))
-    except (TypeError, ValueError):
-        limit = 20
+    if request.method == "POST":
+        try:
+            tag_id = request.data.get("tag_id")
+            if tag_id is not None and str(tag_id).strip():
+                try:
+                    normalized_tag_id = int(tag_id)
+                except (TypeError, ValueError):
+                    return Response(
+                        {
+                            "detail": "태그를 다시 확인해 주세요.",
+                        },
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
 
-    limit = min(max(limit, 1), 50)
+                tag = get_object_or_404(Tag, id=normalized_tag_id)
+                preference, created = create_or_update_user_selected_tag_preference(
+                    user=request.user,
+                    tag=tag,
+                )
+            else:
+                preference, created = create_or_update_user_selected_preference(
+                    user=request.user,
+                    preference_type=request.data.get("preference_type", "tag"),
+                    label=request.data.get("label", ""),
+                )
+        except ValueError as error:
+            return Response(
+                {
+                    "detail": str(error),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        serializer = UserPreferenceSerializer(preference)
+        return Response(
+            {
+                "message": "preference created" if created else "preference updated",
+                "preference": serializer.data,
+            },
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
+
     preference_type = request.GET.get("type", "").strip()
+    source = request.GET.get("source", "").strip()
     preferences = (
         UserPreference.objects
         .filter(user=request.user)
@@ -132,11 +231,65 @@ def user_preferences(request):
     if preference_type:
         preferences = preferences.filter(preference_type=preference_type)
 
-    preferences = preferences.order_by("-score", "-last_seen_at", "label")[:limit]
-    serializer = UserPreferenceSerializer(preferences, many=True)
+    if source:
+        preferences = preferences.filter(source=source)
+
+    preferences = preferences.order_by("-score", "-last_seen_at", "label")
+
+    if "limit" in request.GET and "page" not in request.GET and "page_size" not in request.GET:
+        limit = parse_positive_int(request.GET.get("limit"), 20)
+        limit = min(limit, 50)
+        serializer = UserPreferenceSerializer(preferences[:limit], many=True)
+        return Response({
+            "results": serializer.data,
+        })
+
+    return paginated_response(
+        preferences,
+        UserPreferenceSerializer,
+        request,
+        default_page_size=5,
+        max_page_size=50,
+    )
+
+
+@api_view(["GET"])
+def preference_tags(request):
+    tags = Tag.objects.exclude(name="").order_by("tag_type", "name")
     return Response({
-        "results": serializer.data,
+        "results": [
+            {
+                "id": tag.id,
+                "name": tag.name,
+                "display_name": tag.name,
+                "group": TAG_TYPE_GROUP_LABELS.get(tag.tag_type, "기타"),
+                "tag_type": tag.tag_type,
+                "description": tag.description,
+            }
+            for tag in tags
+        ],
     })
+
+
+@api_view(["DELETE"])
+@permission_classes([IsAuthenticated])
+def user_preference_detail(request, preference_id):
+    preference = get_object_or_404(
+        UserPreference,
+        id=preference_id,
+        user=request.user,
+    )
+
+    if preference.source != USER_SELECTED_SOURCE:
+        return Response(
+            {
+                "detail": "자동으로 추정된 선호는 삭제할 수 없습니다.",
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    preference.delete()
+    return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 @api_view(["POST"])
