@@ -42,7 +42,7 @@ def _env_int(name, default, min_value=None, max_value=None):
 KAKAO_REST_API_KEY = os.getenv("KAKAO_REST_API_KEY")
 AI_PROVIDER = os.getenv("AI_PROVIDER", "gms").strip().lower()
 AI_WEB_SEARCH_ENABLED = _env_bool("AI_WEB_SEARCH_ENABLED", False)
-AI_WEB_SEARCH_PROVIDER = os.getenv("AI_WEB_SEARCH_PROVIDER", AI_PROVIDER).strip().lower()
+AI_WEB_SEARCH_PROVIDER = os.getenv("AI_WEB_SEARCH_PROVIDER", "gms").strip().lower()
 AI_WEB_SEARCH_GROUNDING_SUPPORTED = _env_bool("AI_WEB_SEARCH_GROUNDING_SUPPORTED", False)
 AI_INTENT_MODEL = os.getenv("AI_INTENT_MODEL", "gpt-5-nano")
 AI_WEB_SEARCH_MODEL = os.getenv("AI_WEB_SEARCH_MODEL", "gpt-5-nano")
@@ -60,11 +60,20 @@ GMS_OPENAI_RESPONSES_PATH = os.getenv(
 )
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 AI_REQUEST_TIMEOUT = int(os.getenv("AI_REQUEST_TIMEOUT", "20"))
+NAVER_SEARCH_CLIENT_ID = os.getenv("NAVER_SEARCH_CLIENT_ID", "")
+NAVER_SEARCH_CLIENT_SECRET = os.getenv("NAVER_SEARCH_CLIENT_SECRET", "")
+NAVER_SEARCH_DISPLAY = _env_int("NAVER_SEARCH_DISPLAY", 5, 1, 100)
+NAVER_SEARCH_SORT = os.getenv("NAVER_SEARCH_SORT", "sim").strip() or "sim"
 AI_WEB_SEARCH_AVAILABLE = (
     AI_WEB_SEARCH_ENABLED
-    and AI_WEB_SEARCH_PROVIDER == "gms"
-    and bool(GMS_API_KEY)
-    and bool(GMS_API_URL or GMS_API_BASE_URL)
+    and (
+        (
+            AI_WEB_SEARCH_PROVIDER == "gms"
+            and bool(GMS_API_KEY)
+            and bool(GMS_API_URL or GMS_API_BASE_URL)
+        )
+        or AI_WEB_SEARCH_PROVIDER == "naver_search"
+    )
 )
 
 # Quick-start development settings - unsuitable for production

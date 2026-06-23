@@ -44,6 +44,14 @@ ALLOWED_TAGS = {
     "실외흡연구역",
     "식사가능",
 }
+SAFETY_BLOCK_MESSAGE = (
+    "요청하신 목적은 장소 추천으로 도와드리기 어렵습니다. "
+    "공공장소와 영업장을 정상적으로 이용하는 범위에서 다시 검색해 주세요."
+)
+SAFETY_CHECK_UNAVAILABLE_MESSAGE = (
+    "요청을 안전하게 확인하지 못해 검색을 진행하지 않았습니다. "
+    "잠시 후 다시 시도해 주세요."
+)
 CATEGORY_ALIASES = {
     "park": "city_park",
     "tourist_spot": "tourism",
@@ -402,11 +410,45 @@ def _apply_context_constraints(parse, query):
     return _sync_condition_aliases(parse)
 
 
+def _apply_default_safety(parse):
+    parse.setdefault("is_searchable", True)
+    parse.setdefault("blocked", False)
+    parse.setdefault("block_reason", "")
+    parse.setdefault("safety_reason", "")
+    parse.setdefault("user_message", "")
+    return parse
+
+
+def _is_false_value(value):
+    if isinstance(value, bool):
+        return value is False
+
+    if isinstance(value, str):
+        return value.strip().lower() in {"false", "no", "not_allowed", "blocked", "0"}
+
+    return value == 0
+
+
+def _build_blocked_parse(fallback_parse, raw_parse=None):
+    raw_parse = raw_parse or {}
+    blocked_parse = {
+        **fallback_parse,
+        "is_searchable": False,
+        "blocked": True,
+        "block_reason": raw_parse.get("block_reason") or "inappropriate_place_use",
+        "safety_reason": str(raw_parse.get("safety_reason") or "")[:240],
+        "user_message": str(raw_parse.get("user_message") or SAFETY_BLOCK_MESSAGE)[:240],
+        "fallback_enabled": False,
+        "keywords": [],
+    }
+    return _sync_condition_aliases(blocked_parse)
+
+
 def _rule_based_parse(query):
     cleaned_query = (query or "").strip()
     food_condition = _build_food_intent_condition(cleaned_query)
     if food_condition:
-        return _apply_context_constraints(food_condition, cleaned_query)
+        return _apply_default_safety(_apply_context_constraints(food_condition, cleaned_query))
 
     scenario = _pick_scenario(cleaned_query)
     config = SCENARIO_CONFIGS[scenario]
@@ -422,13 +464,15 @@ def _rule_based_parse(query):
         "reason_hint": "입력 문장에서 장소 유형과 태그 조건을 추출했습니다.",
     })
 
-    return _apply_context_constraints(condition, cleaned_query)
+    return _apply_default_safety(_apply_context_constraints(condition, cleaned_query))
 
 
 def _build_parser_system_prompt():
     return (
         "You convert a Korean user situation into recommendation filters. "
-        "Return only a JSON object with these keys: scenario, categories, "
+        "A separate safety classifier has already allowed the request, so set "
+        "is_searchable=true. Return only a JSON object with these "
+        "keys: is_searchable, safety_reason, user_message, scenario, categories, "
         "tags, required_tags, preferred_tags, avoid_tags, keywords, radius, "
         "fallback_enabled, situation_summary, reason_hint. Never create places, "
         "addresses, coordinates, opening hours, facilities, menus, or new tags. "
@@ -439,6 +483,22 @@ def _build_parser_system_prompt():
         f"scenarios={sorted(ALLOWED_SCENARIOS)}, "
         f"categories={sorted(ALLOWED_CATEGORIES)}, "
         f"tags={sorted(ALLOWED_TAGS)}."
+    )
+
+
+def _build_safety_system_prompt():
+    return (
+        "You are a safety classifier for a Korean public-place recommendation "
+        "service. Decide only whether the user's requested use of a place is "
+        "appropriate for search. Block requests asking for places to damage, "
+        "contaminate, harass, threaten, sexually misuse, illegally use, or "
+        "clearly abuse a business, public facility, or shared space. Do not "
+        "convert blocked requests into restaurant, cafe, restroom, facility, "
+        "or nearby-place searches. Allow normal food, cafe, rest, tourism, "
+        "parking, smoking-area, restroom, accessibility, or facility searches "
+        "when the requested use is ordinary. Return only JSON with keys "
+        "is_searchable, safety_reason, user_message. Use Korean for "
+        "user_message."
     )
 
 
@@ -468,7 +528,11 @@ def _extract_json_object(value):
             return {}
 
 
-def _call_gms_parser(query):
+def _has_gms_config():
+    return bool(getattr(settings, "GMS_API_KEY", "") and getattr(settings, "GMS_API_URL", ""))
+
+
+def _call_gms_chat_json(query, system_prompt, max_completion_tokens):
     api_key = getattr(settings, "GMS_API_KEY", "")
     api_url = getattr(settings, "GMS_API_URL", "")
     model = getattr(
@@ -477,7 +541,7 @@ def _call_gms_parser(query):
         getattr(settings, "GMS_MODEL", "gpt-5-nano"),
     )
 
-    if not api_key or not api_url:
+    if not _has_gms_config():
         return None
 
     payload = {
@@ -485,7 +549,7 @@ def _call_gms_parser(query):
         "messages": [
             {
                 "role": "system",
-                "content": _build_parser_system_prompt(),
+                "content": system_prompt,
             },
             {
                 "role": "user",
@@ -493,7 +557,8 @@ def _call_gms_parser(query):
             },
         ],
         "response_format": {"type": "json_object"},
-        "max_completion_tokens": 500,
+        "reasoning_effort": "minimal",
+        "max_completion_tokens": max_completion_tokens,
     }
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -516,12 +581,89 @@ def _call_gms_parser(query):
         if content:
             return _extract_json_object(content)
 
-    return (
+    structured = (
         data.get("parsed")
         or data.get("result")
         or data.get("output")
-        or data
     )
+    if structured:
+        return structured
+
+    if any(key in data for key in ("is_searchable", "searchable", "scenario")):
+        return data
+
+    return None
+
+
+def _normalize_safety_decision(raw_decision):
+    raw = _extract_json_object(raw_decision)
+    if not raw:
+        return None
+
+    searchable_value = raw.get("is_searchable", raw.get("searchable"))
+    if searchable_value is None:
+        return {
+            "is_searchable": False,
+            "block_reason": "safety_check_incomplete",
+            "safety_reason": "AI safety classifier did not return a searchable decision.",
+            "user_message": SAFETY_CHECK_UNAVAILABLE_MESSAGE,
+        }
+
+    is_searchable = not _is_false_value(searchable_value)
+    block_reason = str(raw.get("block_reason") or "inappropriate_place_use")[:80]
+    user_message = "" if is_searchable else SAFETY_BLOCK_MESSAGE
+
+    return {
+        "is_searchable": is_searchable,
+        "block_reason": block_reason,
+        "safety_reason": str(raw.get("safety_reason") or "")[:240],
+        "user_message": user_message,
+    }
+
+
+def _call_gms_safety_classifier(query):
+    raw_decision = _call_gms_chat_json(
+        query,
+        _build_safety_system_prompt(),
+        max_completion_tokens=500,
+    )
+    decision = _normalize_safety_decision(raw_decision)
+    if decision is None:
+        return {
+            "is_searchable": False,
+            "block_reason": "safety_check_incomplete",
+            "safety_reason": "AI safety classifier returned no usable decision.",
+            "user_message": SAFETY_CHECK_UNAVAILABLE_MESSAGE,
+        }
+    return decision
+
+
+def _call_gms_parser(query):
+    if not _has_gms_config():
+        return None
+
+    try:
+        safety_decision = _call_gms_safety_classifier(query)
+    except Exception as exc:
+        logger.info("GMS safety classifier failed; blocking search: %s", exc)
+        return {
+            "is_searchable": False,
+            "block_reason": "safety_check_unavailable",
+            "safety_reason": "AI safety classifier request failed.",
+            "user_message": SAFETY_CHECK_UNAVAILABLE_MESSAGE,
+        }
+
+    if safety_decision and safety_decision.get("is_searchable") is False:
+        return safety_decision
+
+    raw_parse = _call_gms_chat_json(
+        query,
+        _build_parser_system_prompt(),
+        max_completion_tokens=500,
+    )
+    if isinstance(raw_parse, dict):
+        raw_parse.setdefault("is_searchable", True)
+    return raw_parse
 
 
 def _call_openai_parser(query):
@@ -555,6 +697,9 @@ def _normalize_tags(tags, fallback_tags):
 
 def _normalize_ai_parse(raw_parse, fallback_parse):
     raw = _extract_json_object(raw_parse)
+    if _is_false_value(raw.get("is_searchable", raw.get("searchable", True))):
+        return _build_blocked_parse(fallback_parse, raw)
+
     scenario = raw.get("scenario")
     food_condition = _build_food_intent_condition(fallback_parse.get("situation_summary", ""))
 
@@ -562,7 +707,7 @@ def _normalize_ai_parse(raw_parse, fallback_parse):
         scenario = fallback_parse["scenario"]
 
     if food_condition and scenario == "waiting_place":
-        return _apply_context_constraints(food_condition, fallback_parse["situation_summary"])
+        return _apply_default_safety(_apply_context_constraints(food_condition, fallback_parse["situation_summary"]))
 
     config = SCENARIO_CONFIGS[scenario]
     categories = _normalize_categories(raw.get("categories"), config["categories"])
@@ -609,7 +754,7 @@ def _normalize_ai_parse(raw_parse, fallback_parse):
         if condition.get("scenario") == "restaurant":
             condition["categories"] = food_condition.get("categories", condition.get("categories", []))
 
-    return _apply_context_constraints(condition, fallback_parse["situation_summary"])
+    return _apply_default_safety(_apply_context_constraints(condition, fallback_parse["situation_summary"]))
 
 
 def _call_ai_parser(query):

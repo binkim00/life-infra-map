@@ -1,6 +1,6 @@
 <script setup>
 import { computed, nextTick, ref, watch } from 'vue'
-import { aiSearchRecommendations, getKakaoPlaceTags, getSavedPlaces, runAiWebSearch } from '@/api/recommendation'
+import { aiSearchRecommendations, checkSearchSafety, getKakaoPlaceTags, getSavedPlaces, runAiWebSearch } from '@/api/recommendation'
 import KakaoMap from '@/components/KakaoMap.vue'
 
 const IS_DEV = import.meta.env.DEV
@@ -48,6 +48,53 @@ const KAKAO_FALLBACK_MAX_RESULTS = 8
 const KAKAO_FALLBACK_MAX_SCORE = 60
 const AI_WEB_SEARCH_MIN_DB_RESULTS = 3
 const AI_WEB_SEARCH_MIN_TOTAL_RESULTS = 5
+const AI_WEB_SEARCH_SUFFICIENT_TOTAL_RESULTS = 10
+const AI_WEB_SEARCH_INFRA_BLOCK_CATEGORIES = new Set([
+  'toilet',
+  'parking',
+  'smoking_area',
+  'freewifi',
+])
+const AI_WEB_SEARCH_EXPLICIT_KEYWORDS = [
+  '웹에서',
+  '웹 검색',
+  '웹검색',
+  '블로그',
+  '후기',
+  '리뷰',
+  '최신',
+  '최근',
+  '요즘',
+  '핫플',
+]
+const AI_WEB_SEARCH_HELPFUL_KEYWORDS = [
+  '맛집',
+  '메뉴',
+  '먹고',
+  '식당',
+  '음식점',
+  '카페',
+  '커피',
+  '브런치',
+  '디저트',
+  '베이커리',
+  '빵집',
+  '소금빵',
+  '쌀국수',
+  '관광',
+  '가볼만한',
+  '야경',
+  '산책',
+  '데이트',
+  '분위기',
+]
+const AI_WEB_SEARCH_HELPFUL_CATEGORIES = new Set([
+  'restaurant',
+  'cafe',
+  'tourism',
+  'beach',
+  'city_park',
+])
 const AI_WEB_SEARCH_DETAIL_KEYWORDS = [
   '메뉴',
   '브런치',
@@ -599,11 +646,21 @@ const searchPlanStatus = computed(() => {
   }
 })
 
-const hasAiWebSearchDetailCondition = (query = '', condition = {}) => {
-  const conditionParts = [
+const getAiWebSearchSignalParts = (query = '', condition = {}, searchPlan = {}) => {
+  return [
     query,
     condition?.intent,
+    condition?.scenario,
+    condition?.category,
+    condition?.categoryHint,
+    condition?.category_hint,
     condition?.keyword,
+    searchPlan?.targetQuery,
+    searchPlan?.target_query,
+    searchPlan?.targetKeyword,
+    searchPlan?.target_keyword,
+    searchPlan?.categoryHint,
+    searchPlan?.category_hint,
     ...(Array.isArray(condition?.keywords) ? condition.keywords : []),
     ...(Array.isArray(condition?.menu_keywords) ? condition.menu_keywords : []),
     ...(Array.isArray(condition?.place_type_keywords) ? condition.place_type_keywords : []),
@@ -611,9 +668,96 @@ const hasAiWebSearchDetailCondition = (query = '', condition = {}) => {
     ...(Array.isArray(condition?.required_tags) ? condition.required_tags : []),
     ...(Array.isArray(condition?.preferred_tags) ? condition.preferred_tags : []),
     ...(Array.isArray(condition?.tags) ? condition.tags : []),
+    ...(Array.isArray(searchPlan?.menu_keywords) ? searchPlan.menu_keywords : []),
+    ...(Array.isArray(searchPlan?.place_type_keywords) ? searchPlan.place_type_keywords : []),
+    ...(Array.isArray(searchPlan?.requestedConditions) ? searchPlan.requestedConditions : []),
+    ...(Array.isArray(searchPlan?.requested_conditions) ? searchPlan.requested_conditions : []),
   ]
-  const text = normalizeLocationText(conditionParts.filter(Boolean).join(' '))
-  return AI_WEB_SEARCH_DETAIL_KEYWORDS.some((keyword) => text.includes(normalizeLocationText(keyword)))
+}
+
+const getAiWebSearchSignalText = (query = '', condition = {}, searchPlan = {}) => {
+  return normalizeLocationText(getAiWebSearchSignalParts(query, condition, searchPlan).filter(Boolean).join(' '))
+}
+
+const hasAiWebSearchKeyword = (keywords = [], query = '', condition = {}, searchPlan = {}) => {
+  const text = getAiWebSearchSignalText(query, condition, searchPlan)
+  return keywords.some((keyword) => text.includes(normalizeLocationText(keyword)))
+}
+
+const hasAiWebSearchDetailCondition = (query = '', condition = {}, searchPlan = {}) => {
+  return hasAiWebSearchKeyword(AI_WEB_SEARCH_DETAIL_KEYWORDS, query, condition, searchPlan)
+}
+
+const hasExplicitAiWebSearchRequest = (query = '', condition = {}, searchPlan = {}) => {
+  return hasAiWebSearchKeyword(AI_WEB_SEARCH_EXPLICIT_KEYWORDS, query, condition, searchPlan)
+}
+
+const getAiWebSearchCategories = (condition = {}, searchPlan = {}) => {
+  return [
+    condition?.category,
+    condition?.categoryHint,
+    condition?.category_hint,
+    condition?.scenario,
+    searchPlan?.categoryHint,
+    searchPlan?.category_hint,
+  ].map((value) => getTextValue(value))
+}
+
+const isAiWebSearchHelpfulTopic = (query = '', condition = {}, searchPlan = {}) => {
+  if (getAiWebSearchCategories(condition, searchPlan).some((category) => {
+    return AI_WEB_SEARCH_HELPFUL_CATEGORIES.has(category)
+  })) {
+    return true
+  }
+
+  return hasAiWebSearchKeyword(AI_WEB_SEARCH_HELPFUL_KEYWORDS, query, condition, searchPlan)
+}
+
+const isAiWebSearchInfraBlockedTopic = (query = '', condition = {}, searchPlan = {}) => {
+  if (getAiWebSearchCategories(condition, searchPlan).some((category) => {
+    return AI_WEB_SEARCH_INFRA_BLOCK_CATEGORIES.has(category)
+  })) {
+    return true
+  }
+
+  if (isAiWebSearchHelpfulTopic(query, condition, searchPlan)) {
+    return false
+  }
+
+  const targetText = normalizeLocationText([
+    searchPlan?.targetQuery,
+    searchPlan?.target_query,
+    searchPlan?.targetKeyword,
+    searchPlan?.target_keyword,
+    condition?.keyword,
+    query,
+  ].filter(Boolean).join(' '))
+
+  return [
+    '공중화장실',
+    '화장실',
+    '주차장',
+    '흡연구역',
+    '흡연장',
+    '무료와이파이',
+    '무료wifi',
+    'freewifi',
+  ].some((keyword) => targetText.includes(normalizeLocationText(keyword)))
+}
+
+const hasAiWebSearchStrongEvidence = (place = {}) => {
+  if (isCategoryFallbackRecommendation(place)) return false
+
+  const evidenceLabels = [
+    ...getRecommendationMatchedLabels(place),
+    ...toDisplayList(place?.verifiedTags || place?.verified_tags),
+    ...toDisplayList(place?.matchedTags || place?.matched_tags),
+  ]
+  if (evidenceLabels.length) return true
+
+  const sourceType = getTextValue(place.recommendationSourceType || place.source_type)
+  const confidence = getTextValue(getRecommendationConfidence(place)).toLowerCase()
+  return ['db_verified', 'db_candidate'].includes(sourceType) && confidence !== 'low'
 }
 
 const getAiWebSearchLowConfidenceCount = (results = []) => {
@@ -627,6 +771,10 @@ const getAiWebSearchLowConfidenceCount = (results = []) => {
   }).length
 }
 
+const getAiWebSearchStrongEvidenceCount = (results = []) => {
+  return results.filter((place) => hasAiWebSearchStrongEvidence(place)).length
+}
+
 const shouldSuggestAiWebSearch = computed(() => {
   const context = aiWebSearchContext.value
   if (!context) return false
@@ -635,17 +783,59 @@ const shouldSuggestAiWebSearch = computed(() => {
   const dbCount = Number(summary.db_count || 0)
   const kakaoFallbackCount = Number(summary.kakao_fallback_count || 0)
   const totalCount = Number(summary.total_count || dbCount + kakaoFallbackCount)
+  const rawTotalCount = Number(summary.raw_total_count || totalCount)
   const lowConfidenceCount = Number(summary.low_confidence_count || 0)
+  const weakMatchCount = Number(summary.weak_match_count || 0)
+  const strongEvidenceCount = Number(summary.strong_evidence_count || 0)
   const directMatchCount = Number(summary.direct_match_count ?? dbCount)
   const menuIntent = Boolean(summary.menu_intent)
+  const searchPlan = context.searchPlan || {}
+  const explicitRequest = Boolean(summary.explicit_web_request) ||
+    hasExplicitAiWebSearchRequest(context.query, context.condition, searchPlan)
+  const helpfulTopic = Boolean(summary.web_helpful_topic) ||
+    isAiWebSearchHelpfulTopic(context.query, context.condition, searchPlan)
 
-  return (
+  if (summary.infra_blocked_topic || isAiWebSearchInfraBlockedTopic(context.query, context.condition, searchPlan)) {
+    return false
+  }
+
+  if (explicitRequest) {
+    return true
+  }
+
+  if (!helpfulTopic) {
+    return false
+  }
+
+  if (rawTotalCount >= AI_WEB_SEARCH_SUFFICIENT_TOTAL_RESULTS) {
+    return false
+  }
+
+  if (
+    strongEvidenceCount > 0 &&
+    dbCount >= AI_WEB_SEARCH_MIN_DB_RESULTS &&
+    totalCount >= AI_WEB_SEARCH_MIN_TOTAL_RESULTS &&
+    lowConfidenceCount < Math.max(1, Math.ceil(totalCount / 2))
+  ) {
+    return false
+  }
+
+  const lacksEnoughResults = (
     totalCount === 0 ||
     dbCount < AI_WEB_SEARCH_MIN_DB_RESULTS ||
-    (menuIntent && directMatchCount < KAKAO_FALLBACK_MIN_RESULTS) ||
-    kakaoFallbackCount > 0 ||
+    (menuIntent && directMatchCount < KAKAO_FALLBACK_MIN_RESULTS)
+  )
+  const kakaoOnlyOrWeak = kakaoFallbackCount > 0 && strongEvidenceCount === 0
+  const lowQualityMajority = totalCount > 0 && (
     lowConfidenceCount >= Math.max(1, Math.ceil(totalCount / 2)) ||
-    hasAiWebSearchDetailCondition(context.query, context.condition)
+    weakMatchCount >= Math.max(1, Math.ceil(totalCount / 2))
+  )
+
+  return (
+    lacksEnoughResults ||
+    kakaoOnlyOrWeak ||
+    lowQualityMajority ||
+    (hasAiWebSearchDetailCondition(context.query, context.condition, searchPlan) && strongEvidenceCount === 0)
   )
 })
 
@@ -664,6 +854,15 @@ const aiWebSearchButtonDisabled = computed(() => {
     !aiWebSearchAvailability.value?.enabled ||
     !aiWebSearchAvailability.value?.supported
   )
+})
+
+const aiWebSearchSummary = computed(() => {
+  const summary = aiWebSearchLastResult.value?.summary
+  return summary && typeof summary === 'object' ? summary : null
+})
+
+const aiWebSearchEvidenceCandidates = computed(() => {
+  return aiWebSearchCandidates.value.slice(0, 5)
 })
 
 const stableStringify = (value) => {
@@ -686,6 +885,8 @@ const getAiWebSearchRequestKey = (context) => {
     query: context.query || '',
     lat: context.lat ?? null,
     lng: context.lng ?? null,
+    locationHint: context.locationHint || '',
+    searchPlan: context.searchPlan || {},
     condition: context.condition || {},
     existingResultsSummary: context.existingResultsSummary || {},
   })
@@ -710,6 +911,22 @@ const getAiWebSearchStatusMessage = (result = {}) => {
     return 'AI 웹 검색에서 표시할 후보를 찾지 못했습니다.'
   }
 
+  if (result.error === 'missing_credentials') {
+    return '검색 API 설정이 없어 참고 링크를 가져오지 못했습니다.'
+  }
+
+  if (result.reason === 'no_search_result') {
+    return '웹 검색 참고 결과를 찾지 못했습니다.'
+  }
+
+  if (result.reason === 'no_location_matched_search_result') {
+    return '현재 위치와 일치하는 웹 검색 참고 결과를 찾지 못했습니다.'
+  }
+
+  if (result.reason === 'missing_location_hint_for_broad_search') {
+    return '웹 검색 참고 결과를 보려면 현재 위치 또는 지역 정보가 필요합니다.'
+  }
+
   if (result.reason === 'invalid_request') {
     return 'AI 웹 검색 요청 설정을 확인해야 합니다.'
   }
@@ -724,6 +941,10 @@ const getAiWebSearchStatusMessage = (result = {}) => {
 
   if (!candidates.length) {
     return 'AI 웹 검색 결과가 없습니다.'
+  }
+
+  if (result.provider === 'naver_search') {
+    return `방문 전 확인이 필요한 참고 링크 ${candidates.length}개입니다.`
   }
 
   return `AI 웹 검색 후보 ${candidates.length}개를 찾았습니다.`
@@ -1836,6 +2057,51 @@ const runKakaoAddressSearch = (geocoder, keyword) => {
       }
 
       reject(new Error('카카오 주소 검색 중 오류가 발생했습니다.'))
+    })
+  })
+}
+
+const normalizeKakaoRegionName = (name = '') => {
+  return getTextValue(name)
+    .replace(/특별자치시$/, '')
+    .replace(/특별자치도$/, '')
+    .replace(/특별시$/, '')
+    .replace(/광역시$/, '')
+    .replace(/자치도$/, '')
+    .replace(/도$/, '')
+}
+
+const formatKakaoRegionHint = (address = {}) => {
+  const region1 = normalizeKakaoRegionName(address.region_1depth_name)
+  const region2 = getTextValue(address.region_2depth_name)
+
+  if (region1 && region2) {
+    return `${region1} ${region2}`.trim()
+  }
+
+  const addressNameParts = getTextValue(address.address_name).split(/\s+/).filter(Boolean)
+  if (addressNameParts.length >= 2) {
+    return `${normalizeKakaoRegionName(addressNameParts[0])} ${addressNameParts[1]}`.trim()
+  }
+
+  return region1 || region2 || ''
+}
+
+const reverseGeocodeLocationHint = (geocoder, center) => {
+  if (!geocoder || !center || !Number.isFinite(Number(center.lat)) || !Number.isFinite(Number(center.lng))) {
+    return Promise.resolve('')
+  }
+
+  return new Promise((resolve) => {
+    geocoder.coord2Address(Number(center.lng), Number(center.lat), (data, status) => {
+      if (status !== window.kakao.maps.services.Status.OK || !Array.isArray(data) || !data.length) {
+        resolve('')
+        return
+      }
+
+      const first = data[0] || {}
+      const address = first.address || first.road_address || {}
+      resolve(formatKakaoRegionHint(address))
     })
   })
 }
@@ -4912,9 +5178,90 @@ const resetAiWebSearchState = () => {
   aiWebSearchLastResult.value = null
 }
 
+const stripAiWebSearchRequestWords = (query = '') => {
+  return getTextValue(query)
+    .replace(/\s*(찾아줘|찾아주세요|추천해줘|추천해주세요|알려줘|알려주세요)\s*$/g, '')
+    .replace(/\s*(먹고\s*싶어|먹고싶어|먹을래|가고\s*싶어|가고싶어)\s*$/g, '')
+    .trim()
+}
+
+const buildAiWebTargetQuery = ({
+  rawTarget = '',
+  originalQuery = '',
+  menuKeywords = [],
+  placeTypeKeywords = [],
+}) => {
+  const cleanedTarget = stripAiWebSearchRequestWords(rawTarget || originalQuery)
+  const normalizedOriginal = normalizeLocationText(`${originalQuery} ${rawTarget}`)
+  const firstMenu = getTextValue(menuKeywords[0])
+
+  if (firstMenu) {
+    const hasCafeType = placeTypeKeywords.some((keyword) => normalizeLocationText(keyword).includes('카페'))
+    if (normalizedOriginal.includes('카페') && hasCafeType) {
+      return `${firstMenu} 카페`
+    }
+    if (normalizedOriginal.includes('맛집')) {
+      return `${firstMenu} 맛집`
+    }
+    return firstMenu
+  }
+
+  return cleanedTarget
+}
+
+const buildAiWebSearchPlanPayload = (parsedIntent = null, condition = {}, originalQuery = '') => {
+  const source = parsedIntent || {}
+  const menuKeywords = condition?.menu_keywords || source.menu_keywords || []
+  const placeTypeKeywords = condition?.place_type_keywords || source.place_type_keywords || []
+  const rawTarget = source.targetQuery || source.targetKeyword || condition?.keyword || originalQuery
+
+  return {
+    locationQuery: source.locationQuery || '',
+    baseLocationQuery: source.baseLocationQuery || '',
+    targetQuery: buildAiWebTargetQuery({
+      rawTarget,
+      originalQuery,
+      menuKeywords,
+      placeTypeKeywords,
+    }),
+    targetType: source.targetType || '',
+    categoryHint: source.categoryHint || '',
+    requestedConditions: Array.isArray(source.requestedConditions)
+      ? source.requestedConditions
+      : [],
+    menu_keywords: menuKeywords,
+    place_type_keywords: placeTypeKeywords,
+  }
+}
+
+const getAiWebSearchLocationHint = (baseLabel = '', parsedIntent = null) => {
+  const planLocation = parsedIntent?.locationQuery || parsedIntent?.baseLocationQuery || ''
+  if (planLocation) return planLocation
+
+  const label = getTextValue(baseLabel)
+  if (!label || label.includes('현재') || label.includes('지도')) {
+    return ''
+  }
+  return label.replace(/\s*기준\s*$/g, '').trim()
+}
+
+const resolveAiWebSearchLocationHint = async ({
+  geocoder = null,
+  center = null,
+  baseLabel = '',
+  parsedIntent = null,
+}) => {
+  const explicitHint = getAiWebSearchLocationHint(baseLabel, parsedIntent)
+  if (explicitHint) return explicitHint
+
+  return reverseGeocodeLocationHint(geocoder, center)
+}
+
 const setAiWebSearchContext = ({
   query,
   center,
+  locationHint = '',
+  searchPlan = null,
   condition,
   aiWebSearchStatusData,
   existingResultsSummary,
@@ -4923,6 +5270,8 @@ const setAiWebSearchContext = ({
     query,
     lat: center?.lat ?? null,
     lng: center?.lng ?? null,
+    locationHint,
+    searchPlan: searchPlan || {},
     condition: condition || {},
     existingResultsSummary: existingResultsSummary || {},
   }
@@ -5598,6 +5947,7 @@ const getKakaoKeywordForAiSearch = (data, query) => {
 
 const runAiMapSearchAtCenter = async ({
   placesService,
+  geocoder = null,
   originalQuery,
   targetQuery,
   center,
@@ -5619,6 +5969,16 @@ const runAiMapSearchAtCenter = async ({
   })
 
   mapAiParse.value = data.ai_parse || null
+
+  if (data.blocked || data.ai_parse?.blocked || data.ai_parse?.is_searchable === false) {
+    clearSearchResults()
+    selectedPlace.value = null
+    showDetailPanel.value = false
+    detailFrameError.value = false
+    locationMessage.value = data.message || data.ai_parse?.user_message || '요청하신 목적은 장소 추천으로 도와드리기 어렵습니다.'
+    return
+  }
+
   const recommendationResults = convertRecommendationPlaces(data.results || [], {
     preferredTags,
     recommendationIntent,
@@ -5725,6 +6085,14 @@ const runAiMapSearchAtCenter = async ({
     kakaoResults.length > 0
   )
   const willShowNoResultMessage = !hasAnyResults
+  const recommendationCondition = getRecommendationConditionData(data)
+  const aiWebSearchPlan = buildAiWebSearchPlanPayload(parsedIntent, recommendationCondition, originalQuery)
+  const aiWebSearchLocationHint = await resolveAiWebSearchLocationHint({
+    geocoder,
+    center,
+    baseLabel,
+    parsedIntent,
+  })
 
   if (import.meta.env.DEV && menuSearchProfile.menuIntent) {
     console.debug('[메뉴 fallback 최종]', {
@@ -5777,16 +6145,23 @@ const runAiMapSearchAtCenter = async ({
   if (!hasAnyResults) {
     clearSearchResults()
     setAiWebSearchContext({
-      query: targetQuery,
+      query: originalQuery,
       center,
-      condition: getRecommendationConditionData(data),
+      locationHint: aiWebSearchLocationHint,
+      searchPlan: aiWebSearchPlan,
+      condition: recommendationCondition,
       aiWebSearchStatusData: data.ai_web_search || null,
       existingResultsSummary: {
         db_count: 0,
         kakao_fallback_count: 0,
         total_count: 0,
+        raw_total_count: 0,
         weak_match_count: 0,
         low_confidence_count: 0,
+        strong_evidence_count: 0,
+        web_helpful_topic: isAiWebSearchHelpfulTopic(originalQuery, recommendationCondition, aiWebSearchPlan),
+        infra_blocked_topic: isAiWebSearchInfraBlockedTopic(originalQuery, recommendationCondition, aiWebSearchPlan),
+        explicit_web_request: hasExplicitAiWebSearchRequest(originalQuery, recommendationCondition, aiWebSearchPlan),
       },
     })
     locationMessage.value = `"${originalQuery}" 조건에 맞는 추천 결과가 없습니다.`
@@ -5800,9 +6175,11 @@ const runAiMapSearchAtCenter = async ({
   })
   activeMenuSearchProfile.value = menuSearchProfile.menuIntent ? menuSearchProfile : null
   setAiWebSearchContext({
-    query: targetQuery,
+    query: originalQuery,
     center,
-    condition: getRecommendationConditionData(data),
+    locationHint: aiWebSearchLocationHint,
+    searchPlan: aiWebSearchPlan,
+    condition: recommendationCondition,
     aiWebSearchStatusData: data.ai_web_search || null,
     existingResultsSummary: {
       db_count: menuSearchProfile.menuIntent ? directMenuDbMatchCount : recommendationResults.length,
@@ -5820,6 +6197,10 @@ const runAiMapSearchAtCenter = async ({
         )
       }).length,
       low_confidence_count: getAiWebSearchLowConfidenceCount(mergedResults),
+      strong_evidence_count: getAiWebSearchStrongEvidenceCount(mergedResults),
+      web_helpful_topic: isAiWebSearchHelpfulTopic(originalQuery, recommendationCondition, aiWebSearchPlan),
+      infra_blocked_topic: isAiWebSearchInfraBlockedTopic(originalQuery, recommendationCondition, aiWebSearchPlan),
+      explicit_web_request: hasExplicitAiWebSearchRequest(originalQuery, recommendationCondition, aiWebSearchPlan),
     },
   })
 
@@ -5830,7 +6211,7 @@ const runAiMapSearchAtCenter = async ({
 
 const applyAiWebSearchResult = (aiWebSearch = {}) => {
   const candidates = Array.isArray(aiWebSearch.candidates)
-    ? aiWebSearch.candidates
+    ? dedupeAiWebSearchCandidates(aiWebSearch.candidates)
     : []
   aiWebSearchLastResult.value = aiWebSearch
 
@@ -5898,6 +6279,8 @@ const searchAiWebCandidatesManually = async () => {
   if (import.meta.env.DEV) {
     console.debug('[AI 웹 검색 요청]', {
       query: context.query,
+      location_hint: context.locationHint || '',
+      search_plan: context.searchPlan || {},
       scenario: context.condition?.scenario,
       menu_keywords: context.condition?.menu_keywords || [],
       place_type_keywords: context.condition?.place_type_keywords || [],
@@ -5909,6 +6292,8 @@ const searchAiWebCandidatesManually = async () => {
       query: context.query,
       lat: context.lat,
       lng: context.lng,
+      locationHint: context.locationHint,
+      searchPlan: context.searchPlan,
       condition: context.condition,
       existingResultsSummary: context.existingResultsSummary,
     })
@@ -5940,6 +6325,69 @@ const getAiEvidenceSources = (candidate = {}) => {
     : []
 }
 
+const getAiWebCandidateSourceUrl = (candidate = {}) => {
+  return getTextValue(candidate.source_url || getAiEvidenceSources(candidate)[0]?.url)
+}
+
+const normalizeAiWebReferenceTitle = (candidate = {}) => {
+  return normalizeLocationText(
+    getTextValue(candidate.source_title || candidate.name)
+      .replace(/[\[\](){}<>]/g, ' ')
+      .replace(/[|｜].*$/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim(),
+  )
+}
+
+const getAiWebTitleTokens = (candidate = {}) => {
+  const title = getTextValue(candidate.source_title || candidate.name)
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .split(/\s+/)
+    .map((token) => normalizeLocationText(token))
+    .filter((token) => token.length >= 2)
+
+  return [...new Set(title)]
+}
+
+const hasSimilarAiWebReferenceTitle = (candidate, seenTokenSets) => {
+  const tokens = getAiWebTitleTokens(candidate)
+  if (!tokens.length) return false
+
+  return seenTokenSets.some((seenTokens) => {
+    const overlapCount = tokens.filter((token) => seenTokens.has(token)).length
+    const smallerTokenCount = Math.min(tokens.length, seenTokens.size)
+    return overlapCount >= 3 || (smallerTokenCount >= 2 && overlapCount >= smallerTokenCount)
+  })
+}
+
+const dedupeAiWebSearchCandidates = (candidates = []) => {
+  const seenUrls = new Set()
+  const seenTitles = new Set()
+  const seenTokenSets = []
+  const deduped = []
+
+  candidates.forEach((candidate) => {
+    const url = getTextValue(candidate.source_url)
+    const normalizedTitle = normalizeAiWebReferenceTitle(candidate)
+
+    if (url && seenUrls.has(url)) return
+    if (normalizedTitle && seenTitles.has(normalizedTitle)) return
+
+    if (isAiWebSourceReference(candidate) && hasSimilarAiWebReferenceTitle(candidate, seenTokenSets)) {
+      return
+    }
+
+    if (url) seenUrls.add(url)
+    if (normalizedTitle) seenTitles.add(normalizedTitle)
+    if (isAiWebSourceReference(candidate)) {
+      seenTokenSets.push(new Set(getAiWebTitleTokens(candidate)))
+    }
+    deduped.push(candidate)
+  })
+
+  return deduped
+}
+
 const getAiWebCandidateSummary = (candidate = {}) => {
   return getTextValue(candidate.evidence_summary || candidate.recommendation_reason)
 }
@@ -5954,8 +6402,20 @@ const getAiWebCandidateBadge = (candidate = {}) => {
     : (candidate.category_hint || 'AI 웹 검색 후보')
 }
 
+const getAiWebSourceChannelLabel = (candidate = {}) => {
+  const channel = getTextValue(candidate.source_channel)
+  if (channel === 'local') return '네이버 지역'
+  if (channel === 'blog') return '네이버 블로그'
+  if (channel === 'webkr') return '네이버 웹문서'
+  return '웹 검색'
+}
+
 const getAiWebCandidateCaution = (candidate = {}) => {
   if (isAiWebSourceReference(candidate)) {
+    if (candidate.source_channel === 'local') {
+      return '네이버 지역 검색 참고 결과입니다. 방문 전 상세 정보를 확인해 주세요.'
+    }
+
     return '이 결과는 웹 검색 출처 기반 참고 정보이며, 실제 장소 정보는 방문 전 확인이 필요합니다.'
   }
 
@@ -6069,6 +6529,52 @@ const makeRegionCandidateFromGroup = (group, convertedResults) => {
   }
 }
 
+const applySearchSafetyBlock = (data = {}) => {
+  const aiParse = data.ai_parse || null
+  const blocked = data.blocked || aiParse?.blocked || data.is_searchable === false || aiParse?.is_searchable === false
+
+  if (!blocked) return false
+
+  mapAiParse.value = aiParse
+  clearSearchResults()
+  selectedPlace.value = null
+  showDetailPanel.value = false
+  detailFrameError.value = false
+  isSearchingMap.value = false
+  loadingMessage.value = ''
+  locationMessage.value = data.message || aiParse?.user_message || '요청하신 목적은 장소 추천으로 도와드리기 어렵습니다.'
+  return true
+}
+
+const ensureSearchSafety = async (query) => {
+  const trimmedQuery = (query || '').trim()
+
+  if (!trimmedQuery) return true
+
+  loadingMessage.value = '요청 안전 확인 중'
+
+  try {
+    const data = await checkSearchSafety({ query: trimmedQuery })
+    return !applySearchSafetyBlock(data)
+  } catch (error) {
+    if (import.meta.env.DEV) {
+      console.warn('[SearchSafety] check failed', error)
+    }
+
+    applySearchSafetyBlock({
+      blocked: true,
+      reason: 'safety_check_unavailable',
+      message: '요청을 안전하게 확인하지 못해 검색을 진행하지 않았습니다. 잠시 후 다시 시도해 주세요.',
+      ai_parse: {
+        blocked: true,
+        is_searchable: false,
+        block_reason: 'safety_check_unavailable',
+      },
+    })
+    return false
+  }
+}
+
 const runRegionMapSearch = async ({
   placesService,
   originalQuery,
@@ -6076,6 +6582,11 @@ const runRegionMapSearch = async ({
   targetQuery,
   parsedIntent = null,
 }) => {
+  loadingMessage.value = '지역 장소 검색 중'
+  const allowed = await ensureSearchSafety(originalQuery)
+
+  if (!allowed) return
+
   loadingMessage.value = '지역 장소 검색 중'
   const recommendationIntent = parsedIntent?.recommendationIntent || getRecommendationIntent(`${originalQuery} ${targetQuery}`)
   const preferredTags = parsedIntent?.preferredTags || getPreferredTagsForIntent(recommendationIntent)
@@ -6194,6 +6705,12 @@ const searchKakaoPlaces = async ({ useMapBounds = false } = {}) => {
     alert('카카오 지도 서비스를 불러오는 중입니다. 잠시 후 다시 검색해주세요.')
     return
   }
+
+  isSearchingMap.value = true
+  loadingMessage.value = '요청 안전 확인 중'
+  const allowed = await ensureSearchSafety(keyword)
+
+  if (!allowed) return
 
   isSearchingMap.value = true
   loadingMessage.value = '주변 장소 검색 중'
@@ -6368,6 +6885,7 @@ const searchAiRecommendationsOnMap = async () => {
 
     await runAiMapSearchAtCenter({
       placesService,
+      geocoder,
       originalQuery: query,
       targetQuery: parsedQuery.targetQuery,
       center: resolvedSearchCenter,
@@ -6446,6 +6964,7 @@ const selectBaseLocationCandidate = async (candidate) => {
 
   try {
     const placesService = new window.kakao.maps.services.Places()
+    const geocoder = new window.kakao.maps.services.Geocoder()
     const resolvedBase = setBaseLocationFromKakaoPlace(candidate)
 
     if (pendingSearch.type === 'map') {
@@ -6471,6 +6990,7 @@ const selectBaseLocationCandidate = async (candidate) => {
 
     await runAiMapSearchAtCenter({
       placesService,
+      geocoder,
       originalQuery: pendingSearch.originalQuery,
       targetQuery: pendingSearch.targetQuery,
       center: resolvedBase.center,
@@ -6770,7 +7290,7 @@ const handleDetailFrameError = () => {
           >
             <div class="ai-web-search-heading">
               <div>
-                <strong>AI 웹 검색 후보</strong>
+                <strong>AI 웹 검색 참고 결과</strong>
                 <span>웹 검색을 사용하므로 시간이 조금 걸릴 수 있습니다.</span>
               </div>
 
@@ -6781,7 +7301,7 @@ const handleDetailFrameError = () => {
                 :disabled="aiWebSearchButtonDisabled"
                 @click="searchAiWebCandidatesManually"
               >
-                {{ aiWebSearchStatus === 'loading' ? '검색 중...' : 'AI 웹 검색으로 더 찾아보기' }}
+                {{ aiWebSearchStatus === 'loading' ? '검색 중...' : '웹 검색 참고 링크 보기' }}
               </button>
             </div>
 
@@ -6811,24 +7331,63 @@ const handleDetailFrameError = () => {
               class="ai-web-search-candidates"
             >
               <article
-                v-for="(candidate, index) in aiWebSearchCandidates"
+                v-if="aiWebSearchSummary"
+                class="ai-web-search-summary-card"
+              >
+                <strong>{{ aiWebSearchSummary.title || 'AI 웹 검색 요약' }}</strong>
+                <p>{{ aiWebSearchSummary.main_text }}</p>
+                <p
+                  v-if="Array.isArray(aiWebSearchSummary.keywords) && aiWebSearchSummary.keywords.length"
+                  class="ai-web-search-summary-keywords"
+                >
+                  키워드: {{ aiWebSearchSummary.keywords.join(', ') }}
+                </p>
+                <small>{{ aiWebSearchSummary.caution || '웹 검색 출처 기반 참고 정보이며, 실제 정보는 방문 전 확인이 필요합니다.' }}</small>
+              </article>
+
+              <div class="ai-web-search-evidence-heading">
+                근거 링크 {{ aiWebSearchEvidenceCandidates.length }}개
+              </div>
+
+              <article
+                v-for="(candidate, index) in aiWebSearchEvidenceCandidates"
                 :key="`ai-web-${candidate.name}-${index}`"
                 class="ai-web-search-candidate"
+                :class="{ 'is-reference': isAiWebSourceReference(candidate) }"
               >
+                <div
+                  v-if="isAiWebSourceReference(candidate)"
+                  class="ai-web-search-reference-badges"
+                >
+                  <span>참고 링크</span>
+                  <span>{{ getAiWebSourceChannelLabel(candidate) }}</span>
+                </div>
+
                 <div class="ai-web-search-candidate-title">
-                  <strong>{{ candidate.name }}</strong>
-                  <span>{{ getAiWebCandidateBadge(candidate) }}</span>
+                  <a
+                    v-if="getAiWebCandidateSourceUrl(candidate)"
+                    :href="getAiWebCandidateSourceUrl(candidate)"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    {{ candidate.name }}
+                  </a>
+                  <strong v-else>{{ candidate.name }}</strong>
+                  <span v-if="!isAiWebSourceReference(candidate)">{{ getAiWebCandidateBadge(candidate) }}</span>
                 </div>
 
                 <p
-                  v-if="isAiWebSourceReference(candidate) && candidate.source_title"
+                  v-if="candidate.address_hint"
+                  class="ai-web-search-hint ai-web-search-address"
+                >
+                  {{ candidate.address_hint }}
+                </p>
+
+                <p
+                  v-else-if="isAiWebSourceReference(candidate) && candidate.source_title && candidate.source_title !== candidate.name"
                   class="ai-web-search-hint"
                 >
                   {{ candidate.source_title }}
-                </p>
-
-                <p v-else-if="candidate.address_hint" class="ai-web-search-hint">
-                  {{ candidate.address_hint }}
                 </p>
 
                 <p
@@ -6849,7 +7408,7 @@ const handleDetailFrameError = () => {
                     target="_blank"
                     rel="noopener noreferrer"
                   >
-                    {{ source.title || '출처 보기' }}
+                    출처 보기
                   </a>
                 </div>
 
@@ -7893,7 +8452,53 @@ h1 {
 
 .ai-web-search-candidates {
   display: grid;
-  gap: 8px;
+  gap: 6px;
+}
+
+.ai-web-search-summary-card {
+  padding: 10px;
+  display: grid;
+  gap: 6px;
+  border: 1px solid #dbeafe;
+  border-radius: 10px;
+  background: #eff6ff;
+}
+
+.ai-web-search-summary-card strong {
+  color: #1e3a8a;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.ai-web-search-summary-card p,
+.ai-web-search-summary-card small {
+  margin: 0;
+  color: #344054;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.ai-web-search-summary-card p {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.ai-web-search-summary-card small {
+  color: #475467;
+}
+
+.ai-web-search-summary-keywords {
+  color: #1d4ed8;
+  font-weight: 800;
+}
+
+.ai-web-search-evidence-heading {
+  margin-top: 2px;
+  color: #475467;
+  font-size: 12px;
+  font-weight: 900;
 }
 
 .ai-web-search-candidate {
@@ -7905,6 +8510,35 @@ h1 {
   background: #ffffff;
 }
 
+.ai-web-search-candidate.is-reference {
+  padding: 9px;
+  gap: 6px;
+  border-radius: 8px;
+}
+
+.ai-web-search-reference-badges {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.ai-web-search-reference-badges span {
+  min-height: 20px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #f2f4f7;
+  color: #475467;
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1.35;
+}
+
+.ai-web-search-reference-badges span:first-child {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
 .ai-web-search-candidate-title {
   display: flex;
   justify-content: space-between;
@@ -7912,12 +8546,26 @@ h1 {
   align-items: flex-start;
 }
 
-.ai-web-search-candidate-title strong {
+.ai-web-search-candidate-title strong,
+.ai-web-search-candidate-title a {
   min-width: 0;
+  display: -webkit-box;
+  overflow: hidden;
   color: #111827;
   font-size: 14px;
+  line-height: 1.35;
   font-weight: 900;
   overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.ai-web-search-candidate-title a {
+  text-decoration: none;
+}
+
+.ai-web-search-candidate-title a:hover {
+  color: #1d4ed8;
 }
 
 .ai-web-search-candidate-title span {
@@ -7936,15 +8584,23 @@ h1 {
 }
 
 .ai-web-search-hint {
+  display: -webkit-box;
+  overflow: hidden;
   color: #475467;
   font-size: 12px;
   line-height: 1.4;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
 }
 
 .ai-web-search-summary {
+  display: -webkit-box;
+  overflow: hidden;
   color: #344054;
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .ai-web-search-sources {
@@ -7954,7 +8610,7 @@ h1 {
 }
 
 .ai-web-search-sources a {
-  padding: 5px 8px;
+  padding: 4px 8px;
   border-radius: 999px;
   background: #eff6ff;
   color: #1d4ed8;
@@ -7964,6 +8620,8 @@ h1 {
 }
 
 .ai-web-search-caution {
+  font-size: 11px;
+  line-height: 1.4;
   color: #92400e;
 }
 

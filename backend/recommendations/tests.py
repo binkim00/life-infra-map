@@ -10,6 +10,7 @@ from recommendations.services.ai_web_search_provider import (
     clear_ai_web_search_cache,
     get_ai_web_search_result,
 )
+from recommendations.services.naver_search_provider import build_naver_search_query
 
 
 @override_settings(ALLOWED_HOSTS=["localhost", "testserver"])
@@ -48,6 +49,12 @@ class RecommendationSearchTests(TestCase):
             confidence=90,
             is_verified=True,
         )
+
+    def _make_naver_response(self, items):
+        response = Mock()
+        response.raise_for_status.return_value = None
+        response.json.return_value = {"items": items}
+        return response
 
     def test_db_recommendation_search_returns_saved_place(self):
         response = self.client.get(
@@ -161,6 +168,523 @@ class RecommendationSearchTests(TestCase):
         self.assertFalse(result["executed"])
         self.assertEqual(result["candidates"], [])
         self.assertEqual(result["reason"], "disabled")
+
+    @override_settings(
+        AI_WEB_SEARCH_ENABLED=True,
+        AI_WEB_SEARCH_PROVIDER="naver_search",
+        NAVER_SEARCH_CLIENT_ID="",
+        NAVER_SEARCH_CLIENT_SECRET="",
+    )
+    def test_naver_search_returns_missing_credentials(self):
+        result = get_ai_web_search_result(
+            query="소금빵 맛집 찾아줘",
+            manual=True,
+        )
+
+        self.assertTrue(result["enabled"])
+        self.assertTrue(result["supported"])
+        self.assertFalse(result["executed"])
+        self.assertEqual(result["provider"], "naver_search")
+        self.assertEqual(result["error"], "missing_credentials")
+        self.assertEqual(result["reason"], "missing_naver_search_credentials")
+
+    @override_settings(
+        DEBUG=True,
+        AI_WEB_SEARCH_ENABLED=True,
+        AI_WEB_SEARCH_PROVIDER="naver_search",
+        NAVER_SEARCH_CLIENT_ID="fake-id",
+        NAVER_SEARCH_CLIENT_SECRET="fake-secret",
+        NAVER_SEARCH_DISPLAY=5,
+        NAVER_SEARCH_SORT="sim",
+        GMS_API_KEY="",
+        GMS_API_URL="",
+    )
+    @patch("recommendations.services.naver_search_provider.requests.get")
+    def test_naver_search_uses_local_result_first(self, mock_get):
+        mock_get.return_value = self._make_naver_response([
+            {
+                "title": "<b>서면 소금빵</b> 카페",
+                "link": "https://example.com/local",
+                "description": "소금빵을 소개하는 검색 결과",
+                "category": "카페",
+                "address": "부산 부산진구 테스트동",
+                "roadAddress": "부산 부산진구 테스트로 1",
+            }
+        ])
+
+        result = get_ai_web_search_result(
+            query="서면 소금빵 맛집",
+            location_hint="서면",
+            search_plan={"targetQuery": "소금빵 맛집"},
+            manual=True,
+        )
+
+        self.assertEqual(result["provider"], "naver_search")
+        self.assertTrue(result["executed"])
+        self.assertEqual(result["reason"], "search_api_reference")
+        self.assertEqual(result["candidates"][0]["candidate_type"], "web_source_reference")
+        self.assertEqual(result["candidates"][0]["source_channel"], "local")
+        self.assertEqual(result["candidates"][0]["source_url"], "https://example.com/local")
+        self.assertEqual(mock_get.call_count, 1)
+
+    @override_settings(
+        DEBUG=True,
+        AI_WEB_SEARCH_ENABLED=True,
+        AI_WEB_SEARCH_PROVIDER="naver_search",
+        NAVER_SEARCH_CLIENT_ID="fake-id",
+        NAVER_SEARCH_CLIENT_SECRET="fake-secret",
+        GMS_API_KEY="",
+        GMS_API_URL="",
+    )
+    @patch("recommendations.services.naver_search_provider.requests.get")
+    def test_naver_search_falls_back_to_blog_when_local_empty(self, mock_get):
+        mock_get.side_effect = [
+            self._make_naver_response([]),
+            self._make_naver_response([
+                {
+                    "title": "부산 사상구 소금빵 후기",
+                    "link": "https://example.com/blog",
+                    "description": "부산 사상구 블로그 검색 결과입니다.",
+                }
+            ]),
+        ]
+
+        result = get_ai_web_search_result(
+            query="서면 소금빵 맛집",
+            location_hint="부산 사상구",
+            search_plan={"targetQuery": "소금빵 맛집"},
+            manual=True,
+        )
+
+        self.assertEqual(result["reason"], "search_api_reference")
+        self.assertEqual(result["candidates"][0]["source_channel"], "blog")
+        self.assertEqual(result["candidates"][0]["source_url"], "https://example.com/blog")
+        self.assertEqual(mock_get.call_count, 2)
+
+    @override_settings(
+        AI_WEB_SEARCH_ENABLED=True,
+        AI_WEB_SEARCH_PROVIDER="naver_search",
+        NAVER_SEARCH_CLIENT_ID="fake-id",
+        NAVER_SEARCH_CLIENT_SECRET="fake-secret",
+        GMS_API_KEY="",
+        GMS_API_URL="",
+    )
+    @patch("recommendations.services.naver_search_provider.requests.get")
+    def test_naver_search_returns_no_result_when_all_channels_empty(self, mock_get):
+        mock_get.side_effect = [
+            self._make_naver_response([]),
+            self._make_naver_response([]),
+            self._make_naver_response([]),
+        ]
+
+        result = get_ai_web_search_result(
+            query="결과 없는 검색어",
+            location_hint="부산 사상구",
+            manual=True,
+        )
+
+        self.assertTrue(result["executed"])
+        self.assertEqual(result["candidates"], [])
+        self.assertEqual(result["error"], "")
+        self.assertEqual(result["reason"], "no_search_result")
+        self.assertEqual(mock_get.call_count, 3)
+
+    @override_settings(
+        DEBUG=True,
+        AI_WEB_SEARCH_ENABLED=True,
+        AI_WEB_SEARCH_PROVIDER="naver_search",
+        NAVER_SEARCH_CLIENT_ID="fake-id",
+        NAVER_SEARCH_CLIENT_SECRET="fake-secret",
+        GMS_API_KEY="",
+        GMS_API_URL="",
+    )
+    @patch("recommendations.services.naver_search_provider.requests.get")
+    def test_naver_search_filters_blog_results_that_do_not_match_location(self, mock_get):
+        mock_get.side_effect = [
+            self._make_naver_response([]),
+            self._make_naver_response([
+                {
+                    "title": "김포 소금빵 맛집",
+                    "link": "https://example.com/gimpo",
+                    "description": "김포 베이커리 후기입니다.",
+                },
+                {
+                    "title": "청주빵집",
+                    "link": "https://example.com/cheongju",
+                    "description": "청주 소금빵 후기입니다.",
+                },
+                {
+                    "title": "담양 소금빵",
+                    "link": "https://example.com/damyang",
+                    "description": "담양 카페 후기입니다.",
+                },
+            ]),
+            self._make_naver_response([]),
+        ]
+
+        result = get_ai_web_search_result(
+            query="소금빵 맛집",
+            location_hint="부산 사상구",
+            search_plan={"targetQuery": "소금빵 맛집"},
+            manual=True,
+        )
+
+        self.assertEqual(result["candidates"], [])
+        self.assertEqual(result["error"], "")
+        self.assertEqual(result["reason"], "no_location_matched_search_result")
+        self.assertEqual(result["debug_summary"]["query"], "부산 사상구 소금빵 맛집")
+        self.assertEqual(result["debug_summary"]["source_channel"], "blog")
+        self.assertEqual(result["debug_summary"]["raw_result_count"], 3)
+        self.assertEqual(result["debug_summary"]["location_matched_count"], 0)
+        self.assertEqual(result["debug_summary"]["filtered_out_count"], 3)
+        self.assertIn("부산", result["debug_summary"]["location_terms"])
+        self.assertIn("사상", result["debug_summary"]["location_terms"])
+        self.assertIn("사상구", result["debug_summary"]["location_terms"])
+
+    @override_settings(
+        AI_WEB_SEARCH_ENABLED=True,
+        AI_WEB_SEARCH_PROVIDER="naver_search",
+        NAVER_SEARCH_CLIENT_ID="fake-id",
+        NAVER_SEARCH_CLIENT_SECRET="fake-secret",
+        GMS_API_KEY="",
+        GMS_API_URL="",
+    )
+    @patch("recommendations.services.naver_search_provider.requests.get")
+    def test_naver_search_builds_blog_candidate_when_location_matches(self, mock_get):
+        mock_get.side_effect = [
+            self._make_naver_response([]),
+            self._make_naver_response([
+                {
+                    "title": "부산 사상구 소금빵 후기",
+                    "link": "https://example.com/sasang",
+                    "description": "부산 사상구 소금빵 카페 후기입니다.",
+                },
+            ]),
+        ]
+
+        result = get_ai_web_search_result(
+            query="소금빵 맛집",
+            location_hint="부산 사상구",
+            search_plan={"targetQuery": "소금빵 맛집"},
+            manual=True,
+        )
+
+        self.assertEqual(result["reason"], "search_api_reference")
+        self.assertEqual(result["candidates"][0]["source_channel"], "blog")
+        self.assertEqual(result["candidates"][0]["source_url"], "https://example.com/sasang")
+
+    @override_settings(
+        AI_WEB_SEARCH_ENABLED=True,
+        AI_WEB_SEARCH_PROVIDER="naver_search",
+        NAVER_SEARCH_CLIENT_ID="fake-id",
+        NAVER_SEARCH_CLIENT_SECRET="fake-secret",
+        GMS_API_KEY="",
+        GMS_API_URL="",
+    )
+    @patch("recommendations.services.naver_search_provider.requests.get")
+    def test_naver_search_limits_blog_fallback_without_location_hint(self, mock_get):
+        mock_get.return_value = self._make_naver_response([])
+
+        result = get_ai_web_search_result(
+            query="소금빵 맛집",
+            manual=True,
+        )
+
+        self.assertEqual(result["candidates"], [])
+        self.assertEqual(result["error"], "")
+        self.assertEqual(result["reason"], "missing_location_hint_for_broad_search")
+        self.assertEqual(mock_get.call_count, 1)
+
+    @override_settings(
+        AI_WEB_SEARCH_ENABLED=True,
+        AI_WEB_SEARCH_PROVIDER="naver_search",
+        NAVER_SEARCH_CLIENT_ID="fake-id",
+        NAVER_SEARCH_CLIENT_SECRET="fake-secret",
+        GMS_API_KEY="",
+        GMS_API_URL="",
+    )
+    @patch("recommendations.services.naver_search_provider.requests.get")
+    def test_naver_search_returns_sanitized_api_error(self, mock_get):
+        response = Mock()
+        response.status_code = 400
+        response.json.return_value = {"errorMessage": "Bad <b>request</b>"}
+        error = requests.HTTPError("bad request")
+        error.response = response
+        response.raise_for_status.side_effect = error
+        mock_get.return_value = response
+
+        result = get_ai_web_search_result(
+            query="소금빵 맛집",
+            manual=True,
+        )
+
+        self.assertEqual(result["error"], "api_error")
+        self.assertEqual(result["reason"], "request_failed")
+        self.assertEqual(result["error_detail"]["status_code"], 400)
+        self.assertEqual(result["error_detail"]["type"], "bad_request")
+        self.assertEqual(result["error_detail"]["message"], "Bad request")
+
+    @override_settings(
+        AI_WEB_SEARCH_ENABLED=True,
+        AI_WEB_SEARCH_PROVIDER="naver_search",
+        NAVER_SEARCH_CLIENT_ID="fake-id",
+        NAVER_SEARCH_CLIENT_SECRET="fake-secret",
+        GMS_API_KEY="",
+        GMS_API_URL="",
+    )
+    @patch("recommendations.services.naver_search_provider.requests.get")
+    def test_naver_search_strips_html_tags(self, mock_get):
+        mock_get.return_value = self._make_naver_response([
+            {
+                "title": "<b>태그</b> 제거 카페",
+                "link": "https://example.com/local",
+                "description": "<b>설명</b> 요약",
+                "roadAddress": "부산 테스트로 1",
+            }
+        ])
+
+        result = get_ai_web_search_result(
+            query="태그 제거 카페",
+            manual=True,
+        )
+
+        candidate = result["candidates"][0]
+        self.assertEqual(candidate["name"], "태그 제거 카페")
+        self.assertEqual(candidate["source_title"], "태그 제거 카페")
+        self.assertEqual(candidate["evidence_summary"], "설명 요약")
+
+    @override_settings(
+        AI_WEB_SEARCH_ENABLED=True,
+        AI_WEB_SEARCH_PROVIDER="naver_search",
+        NAVER_SEARCH_CLIENT_ID="fake-id",
+        NAVER_SEARCH_CLIENT_SECRET="fake-secret",
+        GMS_API_KEY="",
+        GMS_API_URL="",
+    )
+    @patch("recommendations.services.naver_search_provider.requests.get")
+    def test_naver_search_target_condition_query_uses_target_not_condition_fallback(self, mock_get):
+        mock_get.return_value = self._make_naver_response([
+            {
+                "title": "맥도날드 서면점",
+                "link": "https://example.com/mcdonalds",
+                "description": "검색 API 참고 결과입니다.",
+                "roadAddress": "부산 부산진구 테스트로 2",
+            }
+        ])
+
+        search_plan = {
+            "targetQuery": "맥도날드",
+            "requestedConditions": ["흡연 가능 여부"],
+        }
+        self.assertEqual(
+            build_naver_search_query(
+                "흡연 가능한 맥도날드",
+                location_hint="부산 사상구",
+                search_plan=search_plan,
+            ),
+            "부산 사상구 맥도날드",
+        )
+
+        result = get_ai_web_search_result(
+            query="흡연 가능한 맥도날드",
+            location_hint="부산 사상구",
+            search_plan=search_plan,
+            manual=True,
+        )
+
+        request_params = mock_get.call_args.kwargs["params"]
+        self.assertEqual(request_params["query"], "부산 사상구 맥도날드")
+        self.assertNotIn("흡연", request_params["query"])
+        self.assertEqual(result["candidates"][0]["requested_conditions"], ["흡연 가능 여부"])
+        self.assertIn("확인", result["candidates"][0]["condition_notice"])
+
+    @override_settings(
+        AI_WEB_SEARCH_ENABLED=True,
+        AI_WEB_SEARCH_PROVIDER="naver_search",
+        NAVER_SEARCH_CLIENT_ID="fake-id",
+        NAVER_SEARCH_CLIENT_SECRET="fake-secret",
+        NAVER_SEARCH_DISPLAY=7,
+        GMS_API_KEY="fake-gms",
+        GMS_API_URL="https://example.invalid/summary",
+        AI_INTENT_MODEL="gpt-5-nano",
+    )
+    @patch("recommendations.services.naver_search_provider.requests.post")
+    @patch("recommendations.services.naver_search_provider.requests.get")
+    def test_naver_search_adds_ai_summary_from_search_candidates(self, mock_get, mock_post):
+        mock_get.return_value = self._make_naver_response([
+            {
+                "title": f"부산 강서구 소금빵 카페 {index}",
+                "link": f"https://example.com/local-{index}",
+                "description": "부산 강서구 소금빵 관련 검색 결과입니다.",
+                "category": "카페",
+                "roadAddress": f"부산 강서구 테스트로 {index}",
+            }
+            for index in range(6)
+        ])
+        post_response = Mock()
+        post_response.raise_for_status.return_value = None
+        post_response.json.return_value = {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps(
+                            {
+                                "summary": {
+                                    "title": "AI 웹 검색 요약",
+                                    "main_text": "웹 검색 결과에서 부산 강서구의 소금빵 관련 글이 확인됩니다.",
+                                    "keywords": ["부산 강서구", "소금빵", "카페"],
+                                    "caution": "웹 검색 출처 기반 참고 정보이며, 실제 메뉴와 운영 정보는 방문 전 확인이 필요합니다.",
+                                }
+                            },
+                            ensure_ascii=False,
+                        )
+                    }
+                }
+            ]
+        }
+        mock_post.return_value = post_response
+
+        result = get_ai_web_search_result(
+            query="소금빵 맛집 찾아줘",
+            location_hint="부산 강서구",
+            search_plan={"targetQuery": "소금빵 맛집"},
+            manual=True,
+        )
+
+        self.assertEqual(result["reason"], "search_api_reference")
+        self.assertEqual(len(result["candidates"]), 5)
+        self.assertEqual(result["summary"]["summary_source"], "ai")
+        self.assertEqual(
+            result["summary"]["main_text"],
+            "웹 검색 결과에서 부산 강서구의 소금빵 관련 글이 확인됩니다.",
+        )
+        self.assertEqual(result["summary"]["keywords"], ["부산 강서구", "소금빵", "카페"])
+
+        mock_post.assert_called_once()
+        post_payload = mock_post.call_args.kwargs["json"]
+        user_payload = json.loads(post_payload["messages"][1]["content"])
+        self.assertEqual(len(user_payload["candidates"]), 5)
+        self.assertEqual(user_payload["candidates"][0]["source_title"], "부산 강서구 소금빵 카페 0")
+        self.assertNotIn("fake-secret", post_payload["messages"][1]["content"])
+        self.assertNotIn("X-Naver", post_payload["messages"][1]["content"])
+
+    @override_settings(
+        AI_WEB_SEARCH_ENABLED=True,
+        AI_WEB_SEARCH_PROVIDER="naver_search",
+        NAVER_SEARCH_CLIENT_ID="fake-id",
+        NAVER_SEARCH_CLIENT_SECRET="fake-secret",
+        GMS_API_KEY="fake-gms",
+        GMS_API_URL="https://example.invalid/summary",
+    )
+    @patch("recommendations.services.naver_search_provider.requests.post")
+    @patch("recommendations.services.naver_search_provider.requests.get")
+    def test_naver_search_keeps_candidates_when_ai_summary_fails(self, mock_get, mock_post):
+        mock_get.return_value = self._make_naver_response([
+            {
+                "title": "부산 강서구 브런치 카페",
+                "link": "https://example.com/brunch",
+                "description": "부산 강서구 브런치 관련 검색 결과입니다.",
+                "category": "카페",
+                "roadAddress": "부산 강서구 테스트로 1",
+            }
+        ])
+        mock_post.side_effect = requests.Timeout("summary timeout")
+
+        result = get_ai_web_search_result(
+            query="브런치 카페 추천해줘",
+            location_hint="부산 강서구",
+            search_plan={"targetQuery": "브런치 카페"},
+            manual=True,
+        )
+
+        self.assertEqual(result["reason"], "search_api_reference")
+        self.assertEqual(len(result["candidates"]), 1)
+        self.assertEqual(result["summary"]["summary_source"], "fallback")
+        self.assertEqual(
+            result["summary"]["main_text"],
+            "웹 검색 결과에서 요청과 관련된 참고 링크가 확인되었습니다.",
+        )
+
+    @override_settings(
+        AI_WEB_SEARCH_ENABLED=True,
+        AI_WEB_SEARCH_PROVIDER="naver_search",
+        NAVER_SEARCH_CLIENT_ID="fake-id",
+        NAVER_SEARCH_CLIENT_SECRET="fake-secret",
+        GMS_API_KEY="fake-gms",
+        GMS_API_URL="https://example.invalid/summary",
+    )
+    @patch("recommendations.services.naver_search_provider.requests.post")
+    @patch("recommendations.services.naver_search_provider.requests.get")
+    def test_naver_search_sanitizes_assertive_ai_summary(self, mock_get, mock_post):
+        mock_get.return_value = self._make_naver_response([
+            {
+                "title": "부산 강서구 쌀국수 식당",
+                "link": "https://example.com/pho",
+                "description": "부산 강서구 쌀국수 관련 검색 결과입니다.",
+                "category": "음식점",
+                "roadAddress": "부산 강서구 테스트로 2",
+            }
+        ])
+        post_response = Mock()
+        post_response.raise_for_status.return_value = None
+        post_response.json.return_value = {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps(
+                            {
+                                "summary": {
+                                    "title": "AI 웹 검색 요약",
+                                    "main_text": "이곳은 맛집입니다. 쌀국수를 판매합니다.",
+                                    "keywords": ["부산 강서구", "쌀국수"],
+                                    "caution": "",
+                                }
+                            },
+                            ensure_ascii=False,
+                        )
+                    }
+                }
+            ]
+        }
+        mock_post.return_value = post_response
+
+        result = get_ai_web_search_result(
+            query="쌀국수 먹고 싶어",
+            location_hint="부산 강서구",
+            search_plan={"targetQuery": "쌀국수"},
+            manual=True,
+        )
+
+        self.assertEqual(result["summary"]["summary_source"], "ai")
+        self.assertEqual(
+            result["summary"]["main_text"],
+            "웹 검색 결과에서 요청과 관련된 참고 링크가 확인되었습니다.",
+        )
+        self.assertNotIn("판매합니다", result["summary"]["main_text"])
+        self.assertNotIn("맛집입니다", result["summary"]["main_text"])
+
+    def test_naver_search_query_uses_location_hint_and_target_query(self):
+        self.assertEqual(
+            build_naver_search_query(
+                "소금빵 맛집 찾아줘",
+                location_hint="부산 사상구",
+                search_plan={"targetQuery": "소금빵 맛집"},
+            ),
+            "부산 사상구 소금빵 맛집",
+        )
+
+    def test_naver_search_query_prefers_search_plan_location_query(self):
+        self.assertEqual(
+            build_naver_search_query(
+                "서면역 소금빵 맛집",
+                location_hint="부산 사상구",
+                search_plan={
+                    "locationQuery": "서면역",
+                    "targetQuery": "소금빵 맛집",
+                },
+            ),
+            "서면역 소금빵 맛집",
+        )
 
     @override_settings(
         AI_WEB_SEARCH_ENABLED=True,
@@ -1250,9 +1774,24 @@ class RecommendationSearchTests(TestCase):
     )
     @patch("recommendations.services.ai_situation_parser.requests.post")
     def test_ai_parser_corrects_food_query_misclassified_as_waiting_place(self, mock_post):
-        mock_response = Mock()
-        mock_response.raise_for_status.return_value = None
-        mock_response.json.return_value = {
+        safety_response = Mock()
+        safety_response.raise_for_status.return_value = None
+        safety_response.json.return_value = {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps({
+                            "is_searchable": True,
+                            "safety_reason": "",
+                            "user_message": "",
+                        }, ensure_ascii=False)
+                    }
+                }
+            ]
+        }
+        parser_response = Mock()
+        parser_response.raise_for_status.return_value = None
+        parser_response.json.return_value = {
             "choices": [
                 {
                     "message": {
@@ -1268,7 +1807,7 @@ class RecommendationSearchTests(TestCase):
                 }
             ]
         }
-        mock_post.return_value = mock_response
+        mock_post.side_effect = [safety_response, parser_response]
 
         parsed = parse_situation("소금빵 맛집 찾아줘")
 
@@ -1277,6 +1816,102 @@ class RecommendationSearchTests(TestCase):
         self.assertIn("베이커리", parsed.get("place_type_keywords", []))
         self.assertIn("cafe", parsed.get("categories", []))
         self.assertNotIn("city_park", parsed.get("categories", []))
+        self.assertEqual(mock_post.call_count, 2)
+
+    @override_settings(
+        AI_PROVIDER="gms",
+        GMS_API_KEY="fake-key",
+        GMS_API_URL="https://example.invalid/parser",
+    )
+    @patch("recommendations.services.ai_situation_parser.requests.post")
+    def test_ai_parser_can_block_inappropriate_place_use(self, mock_post):
+        mock_response = Mock()
+        mock_response.raise_for_status.return_value = None
+        mock_response.json.return_value = {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps({
+                            "is_searchable": False,
+                            "safety_reason": "영업장과 공공장소의 비정상적 이용 목적입니다.",
+                            "user_message": "요청하신 목적은 장소 추천으로 도와드리기 어렵습니다.",
+                        }, ensure_ascii=False)
+                    }
+                }
+            ]
+        }
+        mock_post.return_value = mock_response
+
+        parsed = parse_situation("영업장을 더럽히는 장소를 찾아줘")
+
+        self.assertFalse(parsed["is_searchable"])
+        self.assertTrue(parsed["blocked"])
+        self.assertEqual(parsed["block_reason"], "inappropriate_place_use")
+        self.assertFalse(parsed["fallback_enabled"])
+        self.assertEqual(mock_post.call_count, 1)
+
+    @patch("recommendations.views.parse_situation")
+    def test_ai_search_returns_empty_when_parser_blocks_query(self, mock_parse):
+        mock_parse.return_value = {
+            "scenario": "restaurant",
+            "situation_summary": "부적절한 장소 이용 요청",
+            "is_searchable": False,
+            "blocked": True,
+            "block_reason": "inappropriate_place_use",
+            "user_message": "요청하신 목적은 장소 추천으로 도와드리기 어렵습니다.",
+            "fallback_enabled": False,
+        }
+
+        response = self.client.post(
+            "/api/recommendations/ai-search/",
+            data=json.dumps({
+                "query": "부적절한 장소 이용 요청",
+                "lat": 35.1556,
+                "lng": 129.0641,
+                "limit": 10,
+            }),
+            content_type="application/json",
+            HTTP_HOST="localhost",
+        )
+
+        data = response.json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["blocked"])
+        self.assertEqual(data["results"], [])
+        self.assertEqual(data["reason"], "inappropriate_place_use")
+        self.assertFalse(data["ai_parse"]["is_searchable"])
+
+    @patch("recommendations.views.parse_situation")
+    def test_search_safety_endpoint_blocks_without_running_search(self, mock_parse):
+        mock_parse.return_value = {
+            "scenario": "restaurant",
+            "situation_summary": "부적절한 장소 이용 요청",
+            "is_searchable": False,
+            "blocked": True,
+            "block_reason": "inappropriate_place_use",
+            "user_message": "요청하신 목적은 장소 추천으로 도와드리기 어렵습니다.",
+        }
+
+        response = self.client.post(
+            "/api/recommendations/search-safety/",
+            data=json.dumps({
+                "query": "부적절한 장소 이용 요청",
+            }),
+            content_type="application/json",
+            HTTP_HOST="localhost",
+        )
+
+        data = response.json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["blocked"])
+        self.assertFalse(data["is_searchable"])
+        self.assertEqual(data["reason"], "inappropriate_place_use")
+        self.assertEqual(
+            data["message"],
+            "요청하신 목적은 장소 추천으로 도와드리기 어렵습니다.",
+        )
 
     @override_settings(
         AI_PROVIDER="gms",
@@ -1285,10 +1920,42 @@ class RecommendationSearchTests(TestCase):
     )
     @patch("recommendations.services.ai_situation_parser.requests.post")
     def test_ai_parser_falls_back_when_gms_fails(self, mock_post):
-        mock_post.side_effect = RuntimeError("network unavailable")
+        safety_response = Mock()
+        safety_response.raise_for_status.return_value = None
+        safety_response.json.return_value = {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps({
+                            "is_searchable": True,
+                            "safety_reason": "",
+                            "user_message": "",
+                        }, ensure_ascii=False)
+                    }
+                }
+            ]
+        }
+        mock_post.side_effect = [safety_response, RuntimeError("network unavailable")]
 
         parsed = parse_situation("비 오는데 잠깐 실내에서 쉴 곳")
 
         self.assertEqual(parsed["scenario"], "waiting_place")
         self.assertEqual(parsed["parser_provider"], "rule")
         self.assertTrue(parsed["parser_fallback"])
+
+    @override_settings(
+        AI_PROVIDER="gms",
+        GMS_API_KEY="fake-key",
+        GMS_API_URL="https://example.invalid/parser",
+    )
+    @patch("recommendations.services.ai_situation_parser.requests.post")
+    def test_ai_parser_blocks_when_gms_safety_check_fails(self, mock_post):
+        mock_post.side_effect = RuntimeError("safety unavailable")
+
+        parsed = parse_situation("정상 이용 범위를 벗어난 장소 요청")
+
+        self.assertFalse(parsed["is_searchable"])
+        self.assertTrue(parsed["blocked"])
+        self.assertEqual(parsed["block_reason"], "safety_check_unavailable")
+        self.assertEqual(parsed["parser_provider"], "gms")
+        self.assertFalse(parsed["parser_fallback"])

@@ -20,10 +20,20 @@ export const aiSearchRecommendations = async ({
   return response.data
 }
 
+export const checkSearchSafety = async ({ query }) => {
+  const response = await axios.post(`${API_BASE_URL}/recommendations/search-safety/`, {
+    query,
+  })
+
+  return response.data
+}
+
 export const runAiWebSearch = async ({
   query,
   lat = null,
   lng = null,
+  locationHint = '',
+  searchPlan = {},
   condition = {},
   existingResultsSummary = {},
 }) => {
@@ -31,6 +41,8 @@ export const runAiWebSearch = async ({
     query,
     lat,
     lng,
+    location_hint: locationHint,
+    search_plan: searchPlan,
     condition,
     existing_results_summary: existingResultsSummary,
   })

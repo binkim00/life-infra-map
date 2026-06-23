@@ -312,6 +312,24 @@ def recommendation_search(request):
 
 
 @api_view(["POST"])
+def search_safety_check(request):
+    query = request.data.get("query", "")
+    parsed = parse_situation(query)
+    blocked = parsed.get("blocked") or parsed.get("is_searchable") is False
+
+    return Response({
+        "blocked": bool(blocked),
+        "is_searchable": not blocked,
+        "reason": parsed.get("block_reason", "") if blocked else "",
+        "message": parsed.get(
+            "user_message",
+            "요청하신 목적은 장소 추천으로 도와드리기 어렵습니다.",
+        ) if blocked else "",
+        "ai_parse": parsed,
+    })
+
+
+@api_view(["POST"])
 def ai_recommendation_search(request):
     query = request.data.get("query", "")
     lat = request.data.get("lat")
@@ -320,6 +338,22 @@ def ai_recommendation_search(request):
     radius = request.data.get("radius")
 
     parsed = parse_situation(query)
+
+    if parsed.get("blocked") or parsed.get("is_searchable") is False:
+        return Response({
+            "scenario": parsed.get("scenario", "blocked"),
+            "results": [],
+            "count": 0,
+            "blocked": True,
+            "reason": parsed.get("block_reason", "inappropriate_place_use"),
+            "message": parsed.get(
+                "user_message",
+                "요청하신 목적은 장소 추천으로 도와드리기 어렵습니다.",
+            ),
+            "ai_parse": parsed,
+            "ai_web_search": get_ai_web_search_status(),
+        })
+
     data = search_db_recommendations(
         scenario=parsed["scenario"],
         condition=parsed,
@@ -341,6 +375,8 @@ def ai_web_search(request):
     query = request.data.get("query", "")
     lat = request.data.get("lat")
     lng = request.data.get("lng")
+    location_hint = request.data.get("location_hint", "")
+    search_plan = request.data.get("search_plan") or {}
     condition = request.data.get("condition") or {}
     existing_results_summary = request.data.get("existing_results_summary") or {}
 
@@ -348,6 +384,8 @@ def ai_web_search(request):
         query=query,
         lat=lat,
         lng=lng,
+        location_hint=location_hint,
+        search_plan=search_plan,
         condition=condition,
         existing_results_summary=existing_results_summary,
         manual=True,

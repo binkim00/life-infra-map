@@ -175,14 +175,18 @@ def _log_safe_result(
 
 
 def _base_response(enabled=None, executed=False, candidates=None, error="", reason=""):
+    provider = getattr(settings, "AI_WEB_SEARCH_PROVIDER", "gms")
     if enabled is None:
         enabled = bool(getattr(settings, "AI_WEB_SEARCH_AVAILABLE", False))
 
     return {
         "enabled": enabled,
         "executed": executed,
-        "supported": bool(getattr(settings, "AI_WEB_SEARCH_GROUNDING_SUPPORTED", False)),
-        "provider": getattr(settings, "AI_WEB_SEARCH_PROVIDER", "gms"),
+        "supported": (
+            provider == "naver_search"
+            or bool(getattr(settings, "AI_WEB_SEARCH_GROUNDING_SUPPORTED", False))
+        ),
+        "provider": provider,
         "candidates": candidates or [],
         "error": error,
         "reason": reason,
@@ -1115,6 +1119,8 @@ def get_ai_web_search_result(
     lng=None,
     condition=None,
     existing_results_summary=None,
+    location_hint="",
+    search_plan=None,
     manual=False,
 ):
     provider = getattr(settings, "AI_WEB_SEARCH_PROVIDER", "gms")
@@ -1123,6 +1129,16 @@ def get_ai_web_search_result(
         return _base_response(
             enabled=False,
             reason="disabled",
+        )
+
+    if provider == "naver_search":
+        from recommendations.services.naver_search_provider import get_naver_search_result
+
+        return get_naver_search_result(
+            query=query,
+            location_hint=location_hint,
+            search_plan=search_plan or {},
+            manual=manual,
         )
 
     if provider != "gms":
