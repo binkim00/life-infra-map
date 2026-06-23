@@ -1,15 +1,22 @@
 import logging
 import math
 
+from django.db import transaction
 from django.shortcuts import get_object_or_404
 from django.db.models import Q
+from django.utils import timezone
 from rest_framework import status
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.decorators import api_view, parser_classes, permission_classes
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
+from rest_framework.permissions import IsAdminUser, IsAuthenticated
 from rest_framework.response import Response
 
-from .models import Place, Tag, UserPreference, UserSearchLog
+from .models import Place, PlaceReport, PlaceTag, Tag, UserPreference, UserSearchLog
 from .serializers import (
+    PlaceReportAdminReviewSerializer,
+    PlaceReportCreateSerializer,
+    PlaceReportDetailSerializer,
+    PlaceReportListSerializer,
     UserPreferenceSerializer,
     UserSearchLogListSerializer,
     UserSearchLogSerializer,
@@ -36,6 +43,7 @@ from .services.user_preferences import (
     create_or_update_user_selected_preference,
     create_or_update_user_selected_tag_preference,
     rebuild_user_preferences,
+    unique_valid_labels,
     update_user_preferences_from_search_log,
 )
 
@@ -300,6 +308,170 @@ def rebuild_preferences(request):
         "message": "preferences rebuilt",
         "count": rebuilt_count,
     })
+
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+@parser_classes([MultiPartParser, FormParser, JSONParser])
+def place_reports(request):
+    if request.method == "GET":
+        reports = (
+            PlaceReport.objects
+            .filter(user=request.user)
+            .select_related("place", "reviewed_by")
+            .prefetch_related("images")
+            .order_by("-created_at")
+        )
+        return paginated_response(
+            reports,
+            PlaceReportListSerializer,
+            request,
+            default_page_size=5,
+            max_page_size=20,
+        )
+
+    serializer = PlaceReportCreateSerializer(
+        data=request.data,
+        context={"request": request},
+    )
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    report = serializer.save()
+    detail_serializer = PlaceReportDetailSerializer(
+        report,
+        context={"request": request},
+    )
+    return Response(
+        {
+            "message": "place report created",
+            "report": detail_serializer.data,
+        },
+        status=status.HTTP_201_CREATED,
+    )
+
+
+@api_view(["GET"])
+@permission_classes([IsAdminUser])
+def admin_place_reports(request):
+    reports = (
+        PlaceReport.objects
+        .select_related("user", "place", "reviewed_by")
+        .prefetch_related("images")
+        .order_by("-created_at")
+    )
+
+    report_status = request.GET.get("status", "").strip()
+    report_type = request.GET.get("report_type", "").strip()
+
+    if report_status:
+        reports = reports.filter(status=report_status)
+    if report_type:
+        reports = reports.filter(report_type=report_type)
+
+    return paginated_response(
+        reports,
+        PlaceReportListSerializer,
+        request,
+        default_page_size=10,
+        max_page_size=50,
+    )
+
+
+@api_view(["GET"])
+@permission_classes([IsAdminUser])
+def admin_place_report_detail(request, report_id):
+    report = get_object_or_404(
+        PlaceReport.objects
+        .select_related("user", "place", "reviewed_by")
+        .prefetch_related("images"),
+        id=report_id,
+    )
+    serializer = PlaceReportDetailSerializer(report, context={"request": request})
+    return Response(serializer.data)
+
+
+def apply_place_report_approval(report):
+    if report.report_type != "tag_suggestion" or not report.place or not report.suggested_tags:
+        return {
+            "created_place_tags": 0,
+            "skipped_tags": [],
+        }
+
+    created_count = 0
+    skipped_tags = []
+
+    for tag_label in unique_valid_labels(report.suggested_tags):
+        tag = Tag.objects.filter(name=tag_label).first()
+        if not tag:
+            skipped_tags.append(tag_label)
+            continue
+
+        if PlaceTag.objects.filter(place=report.place, tag=tag).exists():
+            continue
+
+        PlaceTag.objects.create(
+            place=report.place,
+            tag=tag,
+            source="user_verified",
+            status="confirmed",
+            confidence=80,
+            evidence=f"사용자 제보 #{report.id} 관리자 승인",
+            is_verified=True,
+            verified_at=timezone.now(),
+        )
+        created_count += 1
+
+    return {
+        "created_place_tags": created_count,
+        "skipped_tags": skipped_tags,
+    }
+
+
+def review_place_report(request, report_id, review_status):
+    report = get_object_or_404(PlaceReport, id=report_id)
+    serializer = PlaceReportAdminReviewSerializer(data=request.data)
+
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    with transaction.atomic():
+        approval_result = {}
+        if review_status == "approved":
+            approval_result = apply_place_report_approval(report)
+
+        report.status = review_status
+        report.admin_note = serializer.validated_data.get("admin_note", "")
+        report.reviewed_by = request.user
+        report.reviewed_at = timezone.now()
+        report.save(
+            update_fields=[
+                "status",
+                "admin_note",
+                "reviewed_by",
+                "reviewed_at",
+                "updated_at",
+            ],
+        )
+
+    detail_serializer = PlaceReportDetailSerializer(report, context={"request": request})
+    return Response({
+        "message": f"place report {review_status}",
+        "report": detail_serializer.data,
+        **approval_result,
+    })
+
+
+@api_view(["POST"])
+@permission_classes([IsAdminUser])
+def admin_place_report_approve(request, report_id):
+    return review_place_report(request, report_id, "approved")
+
+
+@api_view(["POST"])
+@permission_classes([IsAdminUser])
+def admin_place_report_reject(request, report_id):
+    return review_place_report(request, report_id, "rejected")
 
 
 def get_matching_categories(keyword):

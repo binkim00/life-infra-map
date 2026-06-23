@@ -151,3 +151,60 @@ export const rebuildUserPreferences = async () => {
 
   return response.data
 }
+
+export const createPlaceReport = async (formData) => {
+  const response = await api.post('/recommendations/place-reports/', formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  })
+
+  return response.data
+}
+
+export const fetchMyPlaceReports = async ({ page = 1, pageSize = 5 } = {}) => {
+  const response = await api.get('/recommendations/place-reports/', {
+    params: {
+      page,
+      page_size: pageSize,
+    },
+  })
+
+  return response.data
+}
+
+export const fetchAdminPlaceReports = async ({
+  status = '',
+  reportType = '',
+  page = 1,
+  pageSize = 10,
+} = {}) => {
+  const response = await api.get('/recommendations/admin/place-reports/', {
+    params: {
+      page,
+      page_size: pageSize,
+      ...(status ? { status } : {}),
+      ...(reportType ? { report_type: reportType } : {}),
+    },
+  })
+
+  return response.data
+}
+
+export const fetchAdminPlaceReportDetail = async (reportId) => {
+  const response = await api.get(`/recommendations/admin/place-reports/${reportId}/`)
+
+  return response.data
+}
+
+export const approvePlaceReport = async (reportId, payload = {}) => {
+  const response = await api.post(`/recommendations/admin/place-reports/${reportId}/approve/`, payload)
+
+  return response.data
+}
+
+export const rejectPlaceReport = async (reportId, payload = {}) => {
+  const response = await api.post(`/recommendations/admin/place-reports/${reportId}/reject/`, payload)
+
+  return response.data
+}

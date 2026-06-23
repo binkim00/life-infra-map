@@ -232,3 +232,79 @@ class UserPreference(models.Model):
 
     def __str__(self):
         return f"{self.user} - {self.preference_type}:{self.label}"
+
+
+class PlaceReport(models.Model):
+    REPORT_TYPE_CHOICES = [
+        ("new_place", "장소 추가 제보"),
+        ("edit_place", "장소 정보 수정 제보"),
+        ("tag_suggestion", "태그 추가 제보"),
+        ("wrong_info", "잘못된 정보 제보"),
+    ]
+
+    STATUS_CHOICES = [
+        ("pending", "검토 대기"),
+        ("approved", "승인"),
+        ("rejected", "반려"),
+    ]
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="place_reports",
+    )
+    place = models.ForeignKey(
+        "Place",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="reports",
+    )
+
+    report_type = models.CharField(max_length=30, choices=REPORT_TYPE_CHOICES)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
+
+    suggested_name = models.CharField(max_length=255, blank=True)
+    suggested_category = models.CharField(max_length=50, blank=True)
+    suggested_address = models.CharField(max_length=255, blank=True)
+    suggested_lat = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    suggested_lng = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    suggested_tags = models.JSONField(default=list, blank=True)
+    description = models.TextField(blank=True)
+
+    admin_note = models.TextField(blank=True)
+    reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="reviewed_place_reports",
+    )
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["user", "-created_at"]),
+            models.Index(fields=["status", "-created_at"]),
+            models.Index(fields=["report_type"]),
+        ]
+
+    def __str__(self):
+        return f"{self.user} - {self.report_type} ({self.status})"
+
+
+class PlaceReportImage(models.Model):
+    report = models.ForeignKey(
+        PlaceReport,
+        on_delete=models.CASCADE,
+        related_name="images",
+    )
+    image = models.ImageField(upload_to="place_reports/%Y/%m/")
+    original_name = models.CharField(max_length=255, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.original_name or f"report-image-{self.id}"

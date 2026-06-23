@@ -298,8 +298,16 @@ onBeforeUnmount(() => {
           <span class="nav-text">고객센터</span>
         </RouterLink>
 
+        <RouterLink v-if="authStore.isLoggedIn" to="/place-report" class="nav-link">
+          <span class="nav-text">장소 제보</span>
+        </RouterLink>
+
         <RouterLink v-if="authStore.user?.is_staff" to="/admin/reports" class="nav-link">
           <span class="nav-text">신고 내역</span>
+        </RouterLink>
+
+        <RouterLink v-if="authStore.user?.is_staff" to="/admin/place-reports" class="nav-link">
+          <span class="nav-text">장소 제보 검증</span>
         </RouterLink>
 
         <RouterLink v-if="authStore.user?.is_staff" to="/admin/users" class="nav-link">

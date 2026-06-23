@@ -10,6 +10,9 @@ import ReportListView from '@/views/ReportListView.vue'
 import MypageView from '@/views/MypageView.vue'
 import PreferenceSettingsView from '@/views/PreferenceSettingsView.vue'
 import SearchHistoryView from '@/views/SearchHistoryView.vue'
+import PlaceReportView from '@/views/PlaceReportView.vue'
+import MyPlaceReportsView from '@/views/MyPlaceReportsView.vue'
+import AdminPlaceReportsView from '@/views/AdminPlaceReportsView.vue'
 import InquiryCreateView from '@/views/InquiryCreateView.vue'
 import MyInquiryView from '@/views/MyInquiryView.vue'
 import AdminInquiryView from '@/views/AdminInquiryView.vue'
@@ -30,6 +33,11 @@ const router = createRouter({
       path: '/admin/reports',
       name: 'admin-reports',
       component: ReportListView,
+    },
+    {
+      path: '/admin/place-reports',
+      name: 'admin-place-reports',
+      component: AdminPlaceReportsView,
     },
     {
       path: '/admin/users',
@@ -60,6 +68,16 @@ const router = createRouter({
       path: '/mypage/search-history',
       name: 'mypage-search-history',
       component: SearchHistoryView,
+    },
+    {
+      path: '/mypage/reports',
+      name: 'mypage-place-reports',
+      component: MyPlaceReportsView,
+    },
+    {
+      path: '/place-report',
+      name: 'place-report',
+      component: PlaceReportView,
     },
     {
       path: '/settings',

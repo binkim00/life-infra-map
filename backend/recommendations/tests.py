@@ -1,14 +1,25 @@
 from datetime import timedelta
 import json
+import shutil
+import tempfile
 from unittest.mock import Mock, patch
 
 import requests
 from django.contrib.auth import get_user_model
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client, TestCase, override_settings
 from django.utils import timezone
 from rest_framework.authtoken.models import Token
 
-from recommendations.models import Place, PlaceTag, Tag, UserPreference, UserSearchLog
+from recommendations.models import (
+    Place,
+    PlaceReport,
+    PlaceReportImage,
+    PlaceTag,
+    Tag,
+    UserPreference,
+    UserSearchLog,
+)
 from recommendations.services.ai_situation_parser import parse_situation
 from recommendations.services.ai_web_search_provider import (
     clear_ai_web_search_cache,
@@ -20,6 +31,9 @@ from recommendations.services.naver_search_provider import build_naver_search_qu
 @override_settings(ALLOWED_HOSTS=["localhost", "testserver"])
 class RecommendationSearchTests(TestCase):
     def setUp(self):
+        self._media_root = tempfile.mkdtemp()
+        self._media_override = override_settings(MEDIA_ROOT=self._media_root)
+        self._media_override.enable()
         clear_ai_web_search_cache()
         self.client = Client(HTTP_HOST="localhost")
         self.user = get_user_model().objects.create_user(
@@ -59,6 +73,10 @@ class RecommendationSearchTests(TestCase):
             is_verified=True,
         )
 
+    def tearDown(self):
+        self._media_override.disable()
+        shutil.rmtree(self._media_root, ignore_errors=True)
+
     def _make_naver_response(self, items):
         response = Mock()
         response.raise_for_status.return_value = None
@@ -68,6 +86,20 @@ class RecommendationSearchTests(TestCase):
     def _auth_headers(self):
         return {
             "HTTP_AUTHORIZATION": f"Token {self.token.key}",
+            "HTTP_HOST": "localhost",
+        }
+
+    def _staff_headers(self):
+        if not hasattr(self, "staff_user"):
+            self.staff_user = get_user_model().objects.create_user(
+                username="staff-user",
+                password="pass",
+                is_staff=True,
+            )
+            self.staff_token = Token.objects.create(user=self.staff_user)
+
+        return {
+            "HTTP_AUTHORIZATION": f"Token {self.staff_token.key}",
             "HTTP_HOST": "localhost",
         }
 
@@ -1087,6 +1119,271 @@ class RecommendationSearchTests(TestCase):
             "직접 선택한 선호 태그와 일치: 와이파이",
             first_result["personalization_reasons"],
         )
+
+    def test_authenticated_user_can_create_place_report(self):
+        response = self.client.post(
+            "/api/recommendations/place-reports/",
+            {
+                "report_type": "tag_suggestion",
+                "place": self.place.id,
+                "suggested_tags": json.dumps(["와이파이"], ensure_ascii=False),
+                "description": "태그가 맞는지 확인해 주세요.",
+            },
+            **self._auth_headers(),
+        )
+
+        self.assertEqual(response.status_code, 201)
+        report = PlaceReport.objects.get()
+        self.assertEqual(report.user, self.user)
+        self.assertEqual(report.status, "pending")
+        self.assertEqual(report.place, self.place)
+        self.assertEqual(report.suggested_tags, ["와이파이"])
+
+    def test_anonymous_user_cannot_create_place_report(self):
+        response = self.client.post(
+            "/api/recommendations/place-reports/",
+            {
+                "report_type": "wrong_info",
+                "description": "정보가 달라요.",
+            },
+            HTTP_HOST="localhost",
+        )
+
+        self.assertIn(response.status_code, [401, 403])
+        self.assertFalse(PlaceReport.objects.exists())
+
+    def test_place_report_can_save_images(self):
+        image = SimpleUploadedFile(
+            "evidence.jpg",
+            b"fake-image",
+            content_type="image/jpeg",
+        )
+
+        response = self.client.post(
+            "/api/recommendations/place-reports/",
+            {
+                "report_type": "wrong_info",
+                "place": self.place.id,
+                "description": "사진을 첨부합니다.",
+                "images": [image],
+            },
+            **self._auth_headers(),
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(PlaceReportImage.objects.count(), 1)
+        self.assertEqual(PlaceReportImage.objects.get().original_name, "evidence.jpg")
+
+    def test_place_report_rejects_unsupported_image_extension(self):
+        image = SimpleUploadedFile(
+            "evidence.gif",
+            b"fake-image",
+            content_type="image/gif",
+        )
+
+        response = self.client.post(
+            "/api/recommendations/place-reports/",
+            {
+                "report_type": "wrong_info",
+                "description": "gif는 안 됩니다.",
+                "images": [image],
+            },
+            **self._auth_headers(),
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(PlaceReport.objects.exists())
+
+    def test_place_report_rejects_more_than_three_images(self):
+        files = [
+            SimpleUploadedFile(
+                f"evidence-{index}.jpg",
+                b"fake-image",
+                content_type="image/jpeg",
+            )
+            for index in range(4)
+        ]
+
+        response = self.client.post(
+            "/api/recommendations/place-reports/",
+            {
+                "report_type": "wrong_info",
+                "description": "이미지가 너무 많습니다.",
+                "images": files,
+            },
+            **self._auth_headers(),
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(PlaceReport.objects.exists())
+
+    def test_place_report_list_returns_only_own_reports(self):
+        other_user = get_user_model().objects.create_user(
+            username="other-report-user",
+            password="pass",
+        )
+        PlaceReport.objects.create(
+            user=self.user,
+            place=self.place,
+            report_type="wrong_info",
+            description="내 제보",
+        )
+        PlaceReport.objects.create(
+            user=other_user,
+            place=self.place,
+            report_type="wrong_info",
+            description="다른 사용자 제보",
+        )
+
+        response = self.client.get(
+            "/api/recommendations/place-reports/",
+            **self._auth_headers(),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["count"], 1)
+        self.assertEqual(response.json()["results"][0]["place_name"], self.place.name)
+
+    def test_normal_user_cannot_access_admin_place_report_list(self):
+        response = self.client.get(
+            "/api/recommendations/admin/place-reports/",
+            **self._auth_headers(),
+        )
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_staff_user_can_access_admin_place_report_list(self):
+        PlaceReport.objects.create(
+            user=self.user,
+            place=self.place,
+            report_type="wrong_info",
+            description="검토 필요",
+        )
+
+        response = self.client.get(
+            "/api/recommendations/admin/place-reports/",
+            **self._staff_headers(),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["count"], 1)
+
+    def test_staff_user_can_approve_place_report(self):
+        report = PlaceReport.objects.create(
+            user=self.user,
+            place=self.place,
+            report_type="wrong_info",
+            description="승인 테스트",
+        )
+
+        response = self.client.post(
+            f"/api/recommendations/admin/place-reports/{report.id}/approve/",
+            data=json.dumps({"admin_note": "확인했습니다."}, ensure_ascii=False),
+            content_type="application/json",
+            **self._staff_headers(),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        report.refresh_from_db()
+        self.assertEqual(report.status, "approved")
+        self.assertEqual(report.admin_note, "확인했습니다.")
+        self.assertIsNotNone(report.reviewed_by)
+
+    def test_staff_user_can_reject_place_report(self):
+        report = PlaceReport.objects.create(
+            user=self.user,
+            place=self.place,
+            report_type="wrong_info",
+            description="반려 테스트",
+        )
+
+        response = self.client.post(
+            f"/api/recommendations/admin/place-reports/{report.id}/reject/",
+            data=json.dumps({"admin_note": "근거가 부족합니다."}, ensure_ascii=False),
+            content_type="application/json",
+            **self._staff_headers(),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        report.refresh_from_db()
+        self.assertEqual(report.status, "rejected")
+        self.assertEqual(report.admin_note, "근거가 부족합니다.")
+        self.assertIsNotNone(report.reviewed_at)
+
+    def test_tag_suggestion_approval_creates_existing_tag_place_tag(self):
+        tag = Tag.objects.create(name="조용함", tag_type="recommendation")
+        report = PlaceReport.objects.create(
+            user=self.user,
+            place=self.place,
+            report_type="tag_suggestion",
+            suggested_tags=["조용함", "없는태그"],
+            description="태그 제안",
+        )
+
+        response = self.client.post(
+            f"/api/recommendations/admin/place-reports/{report.id}/approve/",
+            data=json.dumps({"admin_note": "태그 확인"}, ensure_ascii=False),
+            content_type="application/json",
+            **self._staff_headers(),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["created_place_tags"], 1)
+        self.assertEqual(response.json()["skipped_tags"], ["없는태그"])
+        self.assertTrue(
+            PlaceTag.objects.filter(
+                place=self.place,
+                tag=tag,
+                source="user_verified",
+                status="confirmed",
+                is_verified=True,
+            ).exists()
+        )
+
+    def test_tag_suggestion_approval_does_not_duplicate_place_tag(self):
+        report = PlaceReport.objects.create(
+            user=self.user,
+            place=self.place,
+            report_type="tag_suggestion",
+            suggested_tags=["와이파이"],
+            description="이미 있는 태그",
+        )
+        before_count = PlaceTag.objects.filter(place=self.place, tag__name="와이파이").count()
+
+        response = self.client.post(
+            f"/api/recommendations/admin/place-reports/{report.id}/approve/",
+            data=json.dumps({"admin_note": "중복 확인"}, ensure_ascii=False),
+            content_type="application/json",
+            **self._staff_headers(),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["created_place_tags"], 0)
+        self.assertEqual(
+            PlaceTag.objects.filter(place=self.place, tag__name="와이파이").count(),
+            before_count,
+        )
+
+    def test_non_tag_report_approval_only_updates_status_and_note(self):
+        for report_type in ["new_place", "edit_place", "wrong_info"]:
+            report = PlaceReport.objects.create(
+                user=self.user,
+                report_type=report_type,
+                suggested_name=f"{report_type} 장소",
+                description="상태만 변경",
+            )
+
+            response = self.client.post(
+                f"/api/recommendations/admin/place-reports/{report.id}/approve/",
+                data=json.dumps({"admin_note": "후속 처리 예정"}, ensure_ascii=False),
+                content_type="application/json",
+                **self._staff_headers(),
+            )
+
+            self.assertEqual(response.status_code, 200)
+            report.refresh_from_db()
+            self.assertEqual(report.status, "approved")
+            self.assertEqual(report.admin_note, "후속 처리 예정")
 
     def test_recommendation_search_does_not_apply_personalization_for_anonymous_user(self):
         UserPreference.objects.create(

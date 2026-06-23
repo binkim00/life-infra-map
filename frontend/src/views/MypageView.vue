@@ -639,6 +639,23 @@ onMounted(() => {
               {{ preferenceMessage || '검색하거나 선호 태그를 선택하면 이곳에 표시됩니다.' }}
             </p>
           </section>
+
+          <section class="preference-section">
+            <div class="section-heading-row">
+              <div>
+                <h2>장소 정보 제보</h2>
+                <p>장소 정보나 태그 오류를 제보하고 검토 상태를 확인할 수 있습니다.</p>
+              </div>
+              <div class="section-action-row">
+                <RouterLink to="/place-report" class="refresh-history-button">
+                  제보 작성
+                </RouterLink>
+                <RouterLink to="/mypage/reports" class="refresh-history-button">
+                  내 제보 현황
+                </RouterLink>
+              </div>
+            </div>
+          </section>
         </section>
 
         <section v-else-if="selectedSection === 'posts'" class="panel">

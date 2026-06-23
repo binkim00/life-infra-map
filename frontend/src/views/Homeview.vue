@@ -1,6 +1,6 @@
 <script setup>
 import { computed, nextTick, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import {
   aiSearchRecommendations,
   checkSearchSafety,
@@ -25,6 +25,7 @@ const normalizeTab = (tab) => {
 }
 
 const route = useRoute()
+const router = useRouter()
 const activeTab = ref(normalizeTab(props.initialTab))
 const searchKeyword = ref('')
 
@@ -7551,6 +7552,37 @@ const selectPlaceFromList = (place) => {
   isPlaceDetailCollapsed.value = false
 }
 
+const getPlaceReportQuery = (place) => {
+  const query = {
+    reportType: 'tag_suggestion',
+  }
+
+  if (isDbPlace(place) && place?.id) {
+    query.placeId = place.id
+  }
+
+  const name = getTextValue(place?.name)
+  const category = getTextValue(place?.category)
+  const address = getTextValue(place?.address || place?.detailLocation || place?.roadAddress)
+  const lat = Number(place?.lat)
+  const lng = Number(place?.lng)
+
+  if (name) query.name = name
+  if (category) query.category = category
+  if (address) query.address = address
+  if (Number.isFinite(lat)) query.lat = lat.toFixed(6)
+  if (Number.isFinite(lng)) query.lng = lng.toFixed(6)
+
+  return query
+}
+
+const goToPlaceReport = (place) => {
+  router.push({
+    name: 'place-report',
+    query: getPlaceReportQuery(place),
+  })
+}
+
 const closePlaceCard = () => {
   selectedPlace.value = null
   detailFrameError.value = false
@@ -8195,6 +8227,13 @@ const handleDetailFrameError = () => {
 
                   </span>
                 </button>
+                <button
+                  type="button"
+                  class="place-report-link-button"
+                  @click.stop="goToPlaceReport(place)"
+                >
+                  정보 제보
+                </button>
               </article>
             </template>
           </div>
@@ -8457,6 +8496,14 @@ const handleDetailFrameError = () => {
               </div>
 
               <div class="detail-action-row">
+                <button
+                  type="button"
+                  class="detail-action-button report"
+                  @click="goToPlaceReport(selectedPlace)"
+                >
+                  정보 제보
+                </button>
+
                 <a
                   v-if="getPlaceDetailUrl(selectedPlace)"
                   :href="getPlaceDetailUrl(selectedPlace)"
@@ -9685,6 +9732,24 @@ h1 {
   cursor: pointer;
 }
 
+.place-report-link-button {
+  margin: 0 8px 10px 46px;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid #d0d5dd;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #475467;
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.place-report-link-button:hover {
+  border-color: #2563eb;
+  color: #1d4ed8;
+}
+
 .place-list-marker {
   width: 28px;
   height: 28px;
@@ -10424,11 +10489,13 @@ h1 {
   width: 100%;
   padding: 12px 16px;
   display: block;
+  border: 0;
   border-radius: 14px;
   font-size: 14px;
   font-weight: 900;
   text-align: center;
   text-decoration: none;
+  cursor: pointer;
 }
 
 .detail-action-button.primary {
@@ -10439,6 +10506,11 @@ h1 {
 .detail-action-button.secondary {
   background: #f2f4f7;
   color: #344054;
+}
+
+.detail-action-button.report {
+  background: #eef2ff;
+  color: #3730a3;
 }
 
 .iframe-fallback {
