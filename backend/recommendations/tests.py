@@ -3591,6 +3591,95 @@ class RecommendationSearchTests(TestCase):
         self.assertIn("조용함", plan["conditions"])
 
     @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=False)
+    def test_intent_router_normalizes_location_suffix_for_work_cafe_query(self):
+        plan = build_conversational_search_plan("하단 쪽에서 노트북 펴도 눈치 안 보이는 곳")
+
+        self.assertEqual(plan["action"], "search")
+        self.assertEqual(plan["search_plan"]["scenario"], "work_cafe")
+        self.assertEqual(plan["search_plan"]["locationQuery"], "하단")
+        self.assertEqual(plan["search_plan"]["targetQuery"], "카페")
+        self.assertNotIn("카페", plan["conditions"])
+        self.assertIn("노트북 작업 가능", plan["conditions"])
+        self.assertIn("혼자 이용하기 좋음", plan["conditions"])
+
+    @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=False)
+    def test_intent_router_normalizes_location_suffix_for_walk_healing_query(self):
+        plan = build_conversational_search_plan("광안리 쪽에서 바람 쐬면서 걷기 좋은 곳")
+
+        self.assertEqual(plan["action"], "search")
+        self.assertEqual(plan["search_plan"]["scenario"], "walk_healing")
+        self.assertEqual(plan["search_plan"]["locationQuery"], "광안리")
+        self.assertEqual(plan["search_plan"]["targetQuery"], "산책할 곳")
+        self.assertNotEqual(plan["search_plan"]["targetQuery"], "공원")
+        self.assertIn("산책하기 좋음", plan["conditions"])
+        self.assertIn("걷기 좋음", plan["conditions"])
+        self.assertIn("바람 쐬기 좋음", plan["conditions"])
+
+    @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=False)
+    def test_intent_router_treats_outside_negative_as_waiting_place_not_refinement(self):
+        plan = build_conversational_search_plan("비 와서 밖 말고 앉아있을 데")
+
+        self.assertEqual(plan["action"], "ask_clarification")
+        self.assertNotEqual(plan["action"], "refine_previous_search")
+        self.assertEqual(plan["search_plan"]["scenario"], "waiting_place")
+        self.assertEqual(plan["search_plan"]["locationQuery"], "")
+        self.assertFalse(plan["search_plan"]["location_resolution_required"])
+        self.assertNotEqual(plan["search_plan"]["scenario"], "work_cafe")
+        self.assertIn("비를 피하면서", plan["clarification_question"])
+        self.assertNotIn("이전 검색 결과가 없어서", f"{plan['message']} {plan['clarification_question']}")
+        self.assertIn("실내", plan["conditions"])
+        self.assertIn("비 피하기 좋음", plan["conditions"])
+        self.assertIn("앉을 수 있음", plan["conditions"])
+
+    @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=False)
+    def test_intent_router_treats_crowd_negative_as_waiting_place_not_refinement(self):
+        plan = build_conversational_search_plan("사람 너무 많은 데 말고 혼자 좀 쉬고 싶다")
+
+        self.assertEqual(plan["action"], "ask_clarification")
+        self.assertNotEqual(plan["action"], "refine_previous_search")
+        self.assertEqual(plan["search_plan"]["scenario"], "waiting_place")
+        self.assertEqual(plan["search_plan"]["locationQuery"], "")
+        self.assertFalse(plan["search_plan"]["location_resolution_required"])
+        self.assertNotEqual(plan["search_plan"]["targetQuery"], "카페")
+        self.assertIn("혼자 조용히 쉴 곳", plan["clarification_question"])
+        self.assertIn("혼자 이용하기 좋음", plan["conditions"])
+        self.assertIn("붐비지 않음", plan["conditions"])
+
+    @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=False)
+    def test_intent_router_uses_current_context_without_location_resolution_for_crowd_negative(self):
+        plan = build_conversational_search_plan(
+            "사람 너무 많은 데 말고 혼자 좀 쉬고 싶다",
+            lat=35.1,
+            lng=129.0,
+        )
+
+        self.assertEqual(plan["action"], "search")
+        self.assertEqual(plan["search_plan"]["scenario"], "waiting_place")
+        self.assertEqual(plan["search_plan"]["locationQuery"], "")
+        self.assertFalse(plan["search_plan"]["has_explicit_location"])
+        self.assertFalse(plan["search_plan"]["location_resolution_required"])
+        self.assertEqual(plan["search_plan"]["targetQuery"], "쉴 곳")
+        self.assertIn("혼자 이용하기 좋음", plan["conditions"])
+        self.assertIn("붐비지 않음", plan["conditions"])
+
+    @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=False)
+    def test_intent_router_treats_cafe_negative_as_waiting_place(self):
+        plan = build_conversational_search_plan("서면에서 조용히 있고 싶은데 너무 카페 느낌은 아니었으면 좋겠어")
+
+        self.assertEqual(plan["action"], "search")
+        self.assertEqual(plan["search_plan"]["scenario"], "waiting_place")
+        self.assertEqual(plan["search_plan"]["locationQuery"], "서면")
+        self.assertEqual(plan["search_plan"]["targetQuery"], "쉴 곳")
+        self.assertNotEqual(plan["search_plan"]["targetQuery"], "카페")
+        self.assertTrue(plan["search_plan"]["location_resolution_required"])
+        self.assertIn("조용함", plan["conditions"])
+        self.assertTrue(
+            "카페 느낌 아님" in plan["conditions"]
+            or "카페 제외" in plan["conditions"]
+        )
+        self.assertIn("카페", plan["search_plan"].get("excluded_categories", []))
+
+    @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=False)
     def test_intent_router_search_regression_cases(self):
         cases = [
             {
@@ -3838,6 +3927,160 @@ class RecommendationSearchTests(TestCase):
             with self.subTest(action=plan["action"]):
                 self.assertTrue(required_keys.issubset(plan.keys()))
                 self.assertIn(plan["action"], allowed_actions)
+
+    @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=True, AI_PROVIDER="gms")
+    @patch("recommendations.services.conversational_search_planner._call_gms_chat_json")
+    def test_ai_intent_classifier_fallback_interprets_work_cafe_query(self, mock_ai):
+        mock_ai.return_value = {
+            "action": "search",
+            "scenario": "work_cafe",
+            "locationQuery": "하단",
+            "targetQuery": "카페",
+            "conditions": ["노트북 작업 가능", "혼자 이용하기 좋음"],
+            "confidence": 0.88,
+        }
+
+        plan = build_conversational_search_plan("하단 쪽에서 노트북 펴도 눈치 안 보이는 곳")
+
+        self.assertEqual(plan["action"], "search")
+        self.assertEqual(plan["search_plan"]["scenario"], "work_cafe")
+        self.assertEqual(plan["search_plan"]["locationQuery"], "하단")
+        self.assertEqual(plan["search_plan"]["targetQuery"], "카페")
+        self.assertIn("노트북 작업 가능", plan["conditions"])
+        mock_ai.assert_called_once()
+
+    @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=True, AI_PROVIDER="gms")
+    @patch("recommendations.services.conversational_search_planner._call_gms_chat_json")
+    def test_ai_intent_classifier_fallback_interprets_walk_healing_query(self, mock_ai):
+        mock_ai.return_value = {
+            "action": "search",
+            "search_plan": {
+                "scenario": "walk_healing",
+                "locationQuery": "광안리",
+                "targetQuery": "걷기 좋은 곳",
+                "conditions": ["산책하기 좋음", "힐링하기 좋음"],
+            },
+            "confidence": 0.86,
+        }
+
+        plan = build_conversational_search_plan("광안리 쪽에서 바람 쐬면서 걷기 좋은 곳")
+
+        self.assertEqual(plan["action"], "search")
+        self.assertEqual(plan["search_plan"]["scenario"], "walk_healing")
+        self.assertEqual(plan["search_plan"]["locationQuery"], "광안리")
+        self.assertEqual(plan["search_plan"]["targetQuery"], "산책할 곳")
+        self.assertIn("산책하기 좋음", plan["conditions"])
+        mock_ai.assert_called_once()
+
+    @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=True, AI_PROVIDER="gms")
+    @patch("recommendations.services.conversational_search_planner._call_gms_chat_json")
+    def test_ai_intent_classifier_validator_normalizes_location_suffix_and_walk_target(self, mock_ai):
+        mock_ai.return_value = {
+            "action": "search",
+            "search_plan": {
+                "scenario": "walk_healing",
+                "locationQuery": "광안리 쪽",
+                "targetQuery": "공원",
+                "conditions": ["걷기 좋음"],
+            },
+            "confidence": 0.84,
+        }
+
+        plan = build_conversational_search_plan("광안리 쪽에서 바람 쐬면서 걷기 좋은 곳")
+
+        self.assertEqual(plan["action"], "search")
+        self.assertEqual(plan["search_plan"]["scenario"], "walk_healing")
+        self.assertEqual(plan["search_plan"]["locationQuery"], "광안리")
+        self.assertEqual(plan["search_plan"]["targetQuery"], "산책할 곳")
+        self.assertIn("바람 쐬기 좋음", plan["conditions"])
+
+    @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=True, AI_PROVIDER="gms")
+    @patch("recommendations.services.conversational_search_planner._call_gms_chat_json")
+    def test_ai_intent_classifier_validator_does_not_turn_cafe_negative_into_cafe_search(self, mock_ai):
+        mock_ai.return_value = {
+            "action": "search",
+            "search_plan": {
+                "scenario": "work_cafe",
+                "locationQuery": "서면에서",
+                "targetQuery": "카페",
+                "categories": ["cafe"],
+                "conditions": ["카페", "조용함"],
+            },
+            "confidence": 0.82,
+        }
+
+        plan = build_conversational_search_plan("서면에서 조용히 있고 싶은데 너무 카페 느낌은 아니었으면 좋겠어")
+
+        self.assertEqual(plan["action"], "search")
+        self.assertEqual(plan["search_plan"]["scenario"], "waiting_place")
+        self.assertEqual(plan["search_plan"]["locationQuery"], "서면")
+        self.assertEqual(plan["search_plan"]["targetQuery"], "쉴 곳")
+        self.assertNotEqual(plan["search_plan"]["targetQuery"], "카페")
+        self.assertNotIn("카페", plan["conditions"])
+        self.assertIn("카페 제외", plan["conditions"])
+        self.assertIn("카페", plan["search_plan"].get("excluded_categories", []))
+
+    @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=True, AI_PROVIDER="gms")
+    @patch("recommendations.services.conversational_search_planner._call_gms_chat_json")
+    def test_ai_intent_classifier_validator_corrects_disallowed_scenario(self, mock_ai):
+        mock_ai.return_value = {
+            "action": "search",
+            "search_plan": {
+                "scenario": "study_room",
+                "locationQuery": "서면",
+                "targetQuery": "스터디룸",
+                "conditions": ["조용함"],
+            },
+            "confidence": 0.8,
+        }
+
+        plan = build_conversational_search_plan("서면 스터디룸 조용하게 쓰고 싶다")
+
+        self.assertEqual(plan["action"], "search")
+        self.assertNotEqual(plan["search_plan"]["scenario"], "study_room")
+        self.assertEqual(plan["search_plan"]["scenario"], "work_cafe")
+        self.assertEqual(plan["search_plan"]["targetQuery"], "카페")
+
+    @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=True, AI_PROVIDER="gms")
+    @patch("recommendations.services.conversational_search_planner._call_gms_chat_json")
+    def test_ai_intent_classifier_validator_unknown_action_asks_clarification(self, mock_ai):
+        mock_ai.return_value = {
+            "action": "unknown",
+            "search_plan": {},
+        }
+
+        plan = build_conversational_search_plan("서면에서 오래 머물 곳 느낌 봐줘")
+
+        self.assertEqual(plan["action"], "ask_clarification")
+        self.assertTrue(plan["needs_clarification"])
+
+    @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=True, AI_PROVIDER="gms")
+    @patch("recommendations.services.conversational_search_planner._call_gms_chat_json")
+    def test_ai_intent_classifier_keeps_rule_priority_for_clear_cases(self, mock_ai):
+        mock_ai.return_value = {
+            "action": "search",
+            "search_plan": {
+                "scenario": "work_cafe",
+                "targetQuery": "카페",
+            },
+        }
+
+        cases = [
+            ("흡연구역 찾아줘", "search", "smoking_area"),
+            ("비트코인 지금 살까?", "out_of_scope", ""),
+            ("불법적인 장소 알려줘", "blocked", ""),
+            ("좋은 곳 추천해줘", "ask_clarification", ""),
+        ]
+
+        for query, expected_action, expected_scenario in cases:
+            with self.subTest(query=query):
+                plan = build_conversational_search_plan(query)
+
+                self.assertEqual(plan["action"], expected_action)
+                if expected_scenario:
+                    self.assertEqual(plan["search_plan"]["scenario"], expected_scenario)
+
+        mock_ai.assert_not_called()
 
     @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=False)
     def test_conversational_search_planner_uses_current_location_when_location_missing(self):

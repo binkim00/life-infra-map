@@ -562,6 +562,8 @@ const aiWebSearchCandidates = ref([])
 const aiWebSearchClientCache = ref({})
 const aiWebSearchLastResult = ref(null)
 const activeSearchPlan = ref(null)
+const pendingClarification = ref(null)
+const clarificationThread = ref([])
 const activeMenuSearchProfile = ref(null)
 
 const showDetailPanel = ref(false)
@@ -692,6 +694,10 @@ const beginMainSearch = () => {
   mainResults.value = []
   fallbackResults.value = []
   webReferenceResults.value = []
+  pendingClarification.value = null
+  clarificationThread.value = []
+  baseLocationCandidates.value = []
+  pendingBaseLocationSearch.value = null
   syncLegacySearchResults()
   searchResultStatus.value = 'loading'
   clearMainSearchErrorState()
@@ -1089,11 +1095,44 @@ const hasMapExperienceContent = computed(() => {
   )
 })
 
+const setClarificationThread = (query, plan, message) => {
+  const userText = String(query || '').trim()
+  const assistantText = String(
+    message ||
+    plan?.clarification_question ||
+    plan?.message ||
+    '지역과 목적을 함께 입력해 주세요.',
+  ).trim()
+
+  pendingClarification.value = {
+    query: userText,
+    plan,
+    message: assistantText,
+  }
+  clarificationThread.value = [
+    userText ? { role: 'user', label: '사용자', text: userText } : null,
+    assistantText ? { role: 'assistant', label: 'AI', text: assistantText } : null,
+  ].filter(Boolean).slice(-3)
+}
+
+const clearPendingClarification = () => {
+  pendingClarification.value = null
+  clarificationThread.value = []
+}
+
+const shouldShowClarificationThread = computed(() => {
+  return clarificationThread.value.length > 0
+})
+
 const searchConversationTitle = computed(() => {
   const query = mapSearchKeyword.value.trim() || searchKeyword.value.trim()
 
   if (isSearchingMap.value) {
     return query ? `“${query}”에 맞는 장소를 찾는 중이에요.` : '필요한 장소를 찾는 중이에요.'
+  }
+
+  if (pendingClarification.value) {
+    return '검색 조건을 조금 더 알려주세요.'
   }
 
   if (displayResults.value.length && query) {
@@ -1139,14 +1178,16 @@ const searchConversationChips = computed(() => {
   const chips = []
   const query = mapSearchKeyword.value.trim()
   const target = getTextValue(activeSearchPlan.value?.targetQuery || activeSearchPlan.value?.targetKeyword)
-  const category = getTextValue(activeSearchPlan.value?.categoryKeyword || activeSearchPlan.value?.categoryHint)
+  const scenarioLabel = getScenarioDisplayLabel(activeSearchPlan.value?.recommendationIntent || '')
+  const category = scenarioLabel ||
+    getTextValue(activeSearchPlan.value?.categoryKeyword || activeSearchPlan.value?.categoryHint)
 
   if (query) {
     chips.push({ label: '검색어', value: query })
   }
 
   if (target && target !== query) {
-    chips.push({ label: '조건', value: target })
+    chips.push({ label: '대상', value: target })
   }
 
   if (category) {
@@ -1800,6 +1841,11 @@ const NON_REGION_LOCATION_WORDS = [
   '가까이',
   '혼자',
   '혼밥',
+  '사람',
+  '사람많은',
+  '붐비는',
+  '밖',
+  '실외',
   '노트북',
   '작업',
   '공부',
@@ -2302,12 +2348,24 @@ const getPlannerList = (value = []) => {
 const getSearchPlanValue = (searchPlan = {}, ...keys) => {
   for (const key of keys) {
     const value = searchPlan?.[key]
+    if (value === true || value === false) {
+      return value
+    }
     if (Array.isArray(value) ? value.length : getPlannerText(value)) {
       return value
     }
   }
 
   return ''
+}
+
+const getPlannerBoolean = (value, fallback = null) => {
+  if (value === true || value === false) return value
+  if (value === 'true') return true
+  if (value === 'false') return false
+  if (value === 1 || value === '1') return true
+  if (value === 0 || value === '0') return false
+  return fallback
 }
 
 const getConversationalPreviousContext = () => {
@@ -2371,6 +2429,15 @@ const adaptConversationalSearchPlan = (conversationalPlan, originalQuery) => {
   }
 
   const locationQuery = getPlannerText(getSearchPlanValue(plan, 'locationQuery', 'location_query'))
+  const hasExplicitLocation = getPlannerBoolean(
+    getSearchPlanValue(plan, 'has_explicit_location'),
+    Boolean(locationQuery),
+  )
+  const locationResolutionRequired = getPlannerBoolean(
+    getSearchPlanValue(plan, 'location_resolution_required'),
+    Boolean(locationQuery),
+  )
+  const shouldUseLocationQuery = Boolean(locationQuery && hasExplicitLocation && locationResolutionRequired)
   const targetQuery = getPlannerText(
     getSearchPlanValue(plan, 'targetQuery', 'target_query') ||
     basePlan.targetQuery ||
@@ -2405,12 +2472,14 @@ const adaptConversationalSearchPlan = (conversationalPlan, originalQuery) => {
     ...basePlan,
     originalQuery,
     normalizedQuery: originalQuery,
-    locationQuery,
-    baseLocationQuery: locationQuery,
-    hasBaseLocation: Boolean(locationQuery),
-    explicitCurrentContext: !locationQuery,
-    searchMode: locationQuery ? 'region_search' : basePlan.searchMode,
-    baseKeyword: locationQuery,
+    locationQuery: shouldUseLocationQuery ? locationQuery : '',
+    baseLocationQuery: shouldUseLocationQuery ? locationQuery : '',
+    hasBaseLocation: shouldUseLocationQuery,
+    hasExplicitLocation: shouldUseLocationQuery,
+    locationResolutionRequired: shouldUseLocationQuery,
+    explicitCurrentContext: !shouldUseLocationQuery,
+    searchMode: shouldUseLocationQuery ? 'region_search' : 'current_context',
+    baseKeyword: shouldUseLocationQuery ? locationQuery : '',
     targetQuery,
     targetKeyword: kakaoKeywordCandidates[0] || categoryKeyword || targetQuery,
     targetType,
@@ -7079,6 +7148,35 @@ const getSearchPlanLocationQuery = (searchPlan = {}) => {
   )
 }
 
+const shouldResolveBaseLocation = (plan = {}, response = null) => {
+  const responsePlan = response?.search_plan || plan?.conversationalSearchPlan?.search_plan || {}
+  const locationQuery = getPlannerText(
+    getSearchPlanValue(responsePlan, 'locationQuery', 'location_query', 'baseLocationQuery', 'base_location_query') ||
+    getSearchPlanValue(plan, 'locationQuery', 'baseLocationQuery'),
+  )
+
+  if (!locationQuery) return false
+
+  const hasExplicitLocation = getPlannerBoolean(
+    getSearchPlanValue(responsePlan, 'has_explicit_location'),
+    getPlannerBoolean(plan.hasExplicitLocation, Boolean(locationQuery)),
+  )
+  const locationResolutionRequired = getPlannerBoolean(
+    getSearchPlanValue(responsePlan, 'location_resolution_required'),
+    getPlannerBoolean(plan.locationResolutionRequired, Boolean(locationQuery)),
+  )
+
+  if (hasExplicitLocation === false || locationResolutionRequired === false) {
+    return false
+  }
+
+  if (isNonRegionLocationText(locationQuery) || isRecommendationQueryText(locationQuery)) {
+    return false
+  }
+
+  return true
+}
+
 const resolveSearchPlanLocationQuery = async ({
   placesService,
   geocoder,
@@ -7086,6 +7184,10 @@ const resolveSearchPlanLocationQuery = async ({
   originalQuery,
   pendingType = 'ai',
 }) => {
+  if (!shouldResolveBaseLocation(parsedIntent)) {
+    return null
+  }
+
   const locationQuery = getSearchPlanLocationQuery(parsedIntent)
 
   if (!locationQuery) {
@@ -8122,7 +8224,7 @@ const searchKakaoPlaces = async ({ useMapBounds = false, searchPlanOverride = nu
     baseLocationCandidates.value = []
     pendingBaseLocationSearch.value = null
 
-    if (!parsedKeyword.hasBaseLocation) {
+    if (!parsedKeyword.hasBaseLocation || !shouldResolveBaseLocation(parsedKeyword)) {
       const currentContext = await getSearchCenterForRecommendation()
       await searchAroundCenter({
         placesService,
@@ -8203,7 +8305,9 @@ const searchAiRecommendationsOnMap = async (searchPlanOverride = null) => {
     baseLocationCandidates.value = []
     pendingBaseLocationSearch.value = null
 
-    const explicitLocationQuery = getSearchPlanLocationQuery(parsedQuery)
+    const explicitLocationQuery = shouldResolveBaseLocation(parsedQuery)
+      ? getSearchPlanLocationQuery(parsedQuery)
+      : ''
 
     if (explicitLocationQuery) {
       const shouldRunAiRecommendation = Boolean(parsedQuery.recommendationIntent)
@@ -8251,7 +8355,7 @@ const searchAiRecommendationsOnMap = async (searchPlanOverride = null) => {
       return
     }
 
-    if (parsedQuery.searchMode === 'region_search') {
+    if (parsedQuery.searchMode === 'region_search' && shouldResolveBaseLocation(parsedQuery)) {
       await runRegionMapSearch({
         placesService,
         originalQuery: query,
@@ -8268,7 +8372,7 @@ const searchAiRecommendationsOnMap = async (searchPlanOverride = null) => {
       baseLabel = currentContext.baseLabel
     }
 
-    if (parsedQuery.hasBaseLocation) {
+    if (parsedQuery.hasBaseLocation && shouldResolveBaseLocation(parsedQuery)) {
       pendingBaseLocationSearch.value = {
         type: 'ai',
         originalQuery: query,
@@ -8341,7 +8445,10 @@ const performUnifiedMapSearch = async ({ useMapBounds = false } = {}) => {
     conversationalPlan?.action &&
     conversationalPlan.action !== 'search'
   ) {
-    if (conversationalPlan.action === 'refine_previous_search' && previousContext) {
+    if (
+      conversationalPlan.action === 'ask_clarification' ||
+      (conversationalPlan.action === 'refine_previous_search' && previousContext)
+    ) {
       mainResults.value = previousMainResults
       fallbackResults.value = previousFallbackResults
       webReferenceResults.value = previousWebReferenceResults
@@ -8359,12 +8466,18 @@ const performUnifiedMapSearch = async ({ useMapBounds = false } = {}) => {
     locationMessage.value = conversationalPlan.message ||
       conversationalPlan.clarification_question ||
       fallbackMessage
+    if (conversationalPlan.action === 'ask_clarification') {
+      setClarificationThread(keyword, conversationalPlan, locationMessage.value)
+    } else {
+      clearPendingClarification()
+    }
     searchResultStatus.value = displayResults.value.length ? 'success' : 'idle'
     loadingMessage.value = ''
     isSearchingMap.value = false
     return
   }
 
+  clearPendingClarification()
   const parsedKeyword = conversationalPlan
     ? adaptConversationalSearchPlan(conversationalPlan, keyword)
     : buildSearchPlan(keyword)
@@ -8494,6 +8607,7 @@ const resetMapSearch = () => {
   aiSearchKeyword.value = ''
   mapAiParse.value = null
   activeSearchPlan.value = null
+  clearPendingClarification()
   baseLocationCandidates.value = []
   pendingBaseLocationSearch.value = null
   loadingMessage.value = ''
@@ -8732,6 +8846,22 @@ const handleDetailFrameError = () => {
           <div>
             <strong>{{ searchConversationTitle }}</strong>
             <p>{{ searchConversationDetail }}</p>
+          </div>
+
+          <div
+            v-if="shouldShowClarificationThread"
+            class="clarification-thread"
+            aria-live="polite"
+          >
+            <div
+              v-for="item in clarificationThread"
+              :key="`${item.role}-${item.text}`"
+              class="clarification-bubble"
+              :class="`is-${item.role}`"
+            >
+              <span>{{ item.label }}</span>
+              <p>{{ item.text }}</p>
+            </div>
           </div>
 
           <div
@@ -9968,6 +10098,44 @@ h1 {
 
 .conversation-status .conversation-notice {
   color: #92400e;
+}
+
+.clarification-thread {
+  display: grid;
+  gap: 8px;
+}
+
+.clarification-bubble {
+  max-width: min(520px, 100%);
+  padding: 8px 10px;
+  border: 1px solid #e5e8f0;
+  border-radius: 12px;
+  background: #ffffff;
+}
+
+.clarification-bubble.is-user {
+  justify-self: end;
+  background: #e0f2fe;
+  border-color: #bae6fd;
+}
+
+.clarification-bubble.is-assistant {
+  justify-self: start;
+}
+
+.clarification-bubble span {
+  display: block;
+  margin-bottom: 3px;
+  color: #475467;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.conversation-status .clarification-bubble p {
+  display: block;
+  overflow: visible;
+  color: #1f2937;
+  -webkit-line-clamp: unset;
 }
 
 .view-switch {

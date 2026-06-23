@@ -34,6 +34,20 @@ ROUTER_ACTIONS = {
     "refine_previous_search",
 }
 
+AI_SCENARIO_ALIASES = {
+    "study_room": "work_cafe",
+    "study_cafe": "work_cafe",
+    "workspace": "work_cafe",
+    "work_space": "work_cafe",
+    "cafe_work": "work_cafe",
+    "rest": "waiting_place",
+    "rest_place": "waiting_place",
+    "walking": "walk_healing",
+    "walk": "walk_healing",
+    "smoking": "smoking_area",
+    "smoking_zone": "smoking_area",
+}
+
 LOCATION_SUFFIXES = (
     "특별자치시",
     "특별자치도",
@@ -132,12 +146,27 @@ SCENARIO_RULES = [
 CONDITION_RULES = [
     ("혼자", "혼자 이용하기 좋음", "혼자이용좋음"),
     ("혼밥", "혼자 이용하기 좋음", "혼자이용좋음"),
+    ("눈치", "혼자 이용하기 좋음", "혼자이용좋음"),
     ("조용", "조용함", "조용한"),
+    ("노트북", "노트북 작업 가능", "노트북작업"),
+    ("작업", "노트북 작업 가능", "노트북작업"),
+    ("사람", "붐비지 않음", "조용한"),
+    ("붐비", "붐비지 않음", "조용한"),
     ("콘센트", "콘센트 있음", "콘센트있음"),
     ("와이파이", "와이파이 있음", "와이파이"),
     ("wifi", "와이파이 있음", "와이파이"),
+    ("비", "비 피하기 좋음", "실내쉼터"),
+    ("밖 말고", "실내", "실내쉼터"),
+    ("실외 말고", "실내", "실내쉼터"),
+    ("앉", "앉을 수 있음", "잠깐쉬기좋음"),
+    ("쉬", "잠깐 쉬기 좋음", "잠깐쉬기좋음"),
     ("실내", "실내 이용 가능", "실내쉼터"),
     ("산책", "산책하기 좋음", "산책좋음"),
+    ("걷", "걷기 좋음", "산책좋음"),
+    ("바람", "바람 쐬기 좋음", "힐링"),
+    ("힐링", "힐링하기 좋음", "힐링"),
+    ("카페 말고", "카페 제외", ""),
+    ("카페 느낌", "카페 느낌 아님", ""),
     ("야경", "야경 보기 좋음", "야경"),
     ("흡연", "흡연 가능", "실외흡연구역"),
 ]
@@ -152,7 +181,6 @@ AMBIGUOUS_REFERENCE_KEYWORDS = [
 ]
 
 REFINEMENT_KEYWORDS = [
-    "말고",
     "대신",
     "더",
     "다른",
@@ -163,6 +191,54 @@ REFINEMENT_KEYWORDS = [
     "제외",
     "보여줘",
 ]
+
+REFINEMENT_CONTEXT_PHRASES = [
+    "거기 말고",
+    "아까 거 말고",
+    "아까거 말고",
+    "이전 결과 말고",
+    "그중에서",
+    "다른 데",
+    "다른데",
+    "다른 곳",
+    "다른곳",
+    "좀 더 가까운 데",
+    "더 가까운 데",
+    "더 조용한 데",
+    "카페만",
+    "공원은 빼",
+    "와이파이 되는 곳만",
+]
+
+NEGATIVE_PREFERENCE_PHRASES = [
+    "밖 말고",
+    "실외 말고",
+    "사람 많은 데 말고",
+    "사람 너무 많은 데 말고",
+    "붐비는 데 말고",
+    "붐비지 않는",
+    "카페 말고",
+    "카페 느낌은 아니",
+    "카페 같지 않은",
+    "카페느낌은아니",
+    "카페는 싫",
+    "카페 싫",
+    "카페 빼고",
+]
+
+CATEGORY_LIKE_CONDITION_VALUES = {
+    "카페",
+    "공원",
+    "맛집",
+    "쉴 곳",
+    "쉴곳",
+    "산책할 곳",
+    "산책할곳",
+    "흡연구역",
+    "식당",
+    "음식점",
+    "쉼터",
+}
 
 OUT_OF_SCOPE_KEYWORDS = [
     "비트코인",
@@ -228,6 +304,29 @@ PLACE_RECOMMENDATION_HINTS = [
     "역",
 ]
 
+AI_INTENT_FALLBACK_HINTS = [
+    "눈치",
+    "바람쐬",
+    "바람 쐬",
+    "펴도",
+    "많은 데 말고",
+    "많은데 말고",
+    "카페 느낌",
+    "밖 말고",
+    "앉아있",
+    "있고 싶은데",
+    "카페 말고",
+    "실외 말고",
+    "붐비지",
+]
+
+SEARCH_COMMAND_HINTS = [
+    "추천",
+    "찾아",
+    "알려",
+    "어디",
+]
+
 
 def build_conversational_search_plan(
     query,
@@ -248,6 +347,16 @@ def build_conversational_search_plan(
         map_center=map_center,
         previous_context=previous_context,
     )
+    if not _should_use_ai_intent_fallback(
+        normalized_query,
+        rule_plan,
+        lat=lat,
+        lng=lng,
+        map_center=map_center,
+        previous_context=previous_context,
+    ):
+        return _finalize_router_plan(rule_plan)
+
     ai_plan = _build_ai_plan(normalized_query, rule_plan)
 
     if not ai_plan:
@@ -330,6 +439,13 @@ def _build_rule_plan(query, lat=None, lng=None, map_center=None, previous_contex
         )
 
     scenario, categories, kakao_keywords, preferred_tags = _pick_scenario(query, target_query)
+    scenario, categories, kakao_keywords, preferred_tags = _apply_query_intent_overrides(
+        query,
+        scenario,
+        categories,
+        kakao_keywords,
+        preferred_tags,
+    )
     if _is_vague_place_request(query, scenario, target_query):
         return _clarification_plan(
             query,
@@ -342,9 +458,9 @@ def _build_rule_plan(query, lat=None, lng=None, map_center=None, previous_contex
     if not has_location_context and _requires_location_before_search(query, scenario, target_query):
         return _clarification_plan(
             query,
-            question=CLARIFICATION_MESSAGE,
+            question=_missing_location_question(query, scenario),
             reason="missing_location_context",
-            target_query=target_query,
+            target_query=_target_query_for_scenario(scenario),
             fallback_location=fallback_location,
         )
 
@@ -354,10 +470,20 @@ def _build_rule_plan(query, lat=None, lng=None, map_center=None, previous_contex
     conditions = [] if scenario == "smoking_area" else _extract_conditions(query)
     menu_keywords = _extract_menu_keywords(query)
     place_type_keywords = _extract_place_type_keywords(query, menu_keywords, scenario)
+    if _has_cafe_negative_preference(query):
+        place_type_keywords = [
+            keyword
+            for keyword in place_type_keywords
+            if "카페" not in keyword
+        ]
     target_query = _clean_target_query(target_query or _derive_target_query(query, scenario, menu_keywords))
     target_query = _fallback_target_query(target_query, scenario, menu_keywords)
     if scenario == "smoking_area":
         target_query = "흡연구역"
+    elif scenario == "walk_healing" and _has_any(query, ["바람", "걷", "산책", "힐링"]):
+        target_query = "산책할 곳"
+    elif scenario == "waiting_place" and _has_waiting_place_natural_intent(query):
+        target_query = "쉴 곳"
     elif scenario == "work_cafe" and _has_any(
         query,
         ["작업", "노트북", "공부", "카공", "콘센트", "와이파이", "조용"],
@@ -369,6 +495,7 @@ def _build_rule_plan(query, lat=None, lng=None, map_center=None, previous_contex
         *[tag for _, _, tag in _matched_condition_rules(query) if tag],
     ])
     preferred_tags = [tag for tag in preferred_tags if tag in ALLOWED_TAGS or tag]
+    conditions = _sanitize_requested_conditions(conditions)
 
     return {
         "action": "search",
@@ -378,7 +505,8 @@ def _build_rule_plan(query, lat=None, lng=None, map_center=None, previous_contex
         "conditions": conditions,
         "preferences": preferred_tags,
         "avoid": _extract_avoid_terms(query),
-        "search_plan": _search_plan_payload(
+        "search_plan": {
+            **_search_plan_payload(
             original_query=query,
             location_query=location_query,
             target_query=target_query,
@@ -390,7 +518,9 @@ def _build_rule_plan(query, lat=None, lng=None, map_center=None, previous_contex
             preferred_tags=preferred_tags,
             requested_conditions=conditions,
             kakao_keyword_candidates=_unique([*kakao_keywords, target_query, *place_type_keywords]),
-        ),
+            ),
+            "excluded_categories": _extract_excluded_categories(query),
+        },
         "execution_policy": _execution_policy(True, has_explicit_location),
         "needs_clarification": False,
         "clarification_question": "",
@@ -415,7 +545,7 @@ def _clarification_plan(
         "message": question,
         "location": _location_payload("", False, fallback_location),
         "targets": [],
-        "conditions": conditions,
+        "conditions": _sanitize_requested_conditions(conditions),
         "preferences": [],
         "avoid": [],
         "search_plan": _search_plan_payload(
@@ -428,7 +558,7 @@ def _clarification_plan(
             place_type_keywords=[],
             required_tags=[],
             preferred_tags=[],
-            requested_conditions=conditions,
+            requested_conditions=_sanitize_requested_conditions(conditions),
         ),
         "execution_policy": _execution_policy(False, False),
         "needs_clarification": True,
@@ -494,7 +624,7 @@ def _refine_previous_search_plan(query, previous_context):
     if not isinstance(previous_search_plan, dict):
         previous_search_plan = {}
 
-    additional_conditions = _extract_conditions(query)
+    additional_conditions = _sanitize_requested_conditions(_extract_conditions(query))
     location_query = _clean_text(
         previous_search_plan.get("locationQuery")
         or previous_search_plan.get("location_query")
@@ -606,6 +736,106 @@ def _finalize_router_plan(plan):
     return plan
 
 
+def _should_use_ai_intent_fallback(query, rule_plan, lat=None, lng=None, map_center=None, previous_context=None):
+    if getattr(settings, "CONVERSATIONAL_SEARCH_AI_ENABLED", False) is not True:
+        return False
+
+    if getattr(settings, "AI_PROVIDER", "gms").lower() != "gms":
+        return False
+
+    action = rule_plan.get("action")
+    search_plan = rule_plan.get("search_plan") if isinstance(rule_plan.get("search_plan"), dict) else {}
+    scenario = search_plan.get("scenario")
+
+    if action in {"blocked", "out_of_scope", "refine_previous_search"}:
+        return False
+
+    if action == "ask_clarification" and rule_plan.get("fallback_reason") in {
+        "missing_purpose",
+        "refinement_without_context",
+        "ambiguous_reference_without_context",
+    }:
+        return False
+
+    if scenario == "smoking_area":
+        return False
+
+    if _has_any(query, AI_INTENT_FALLBACK_HINTS):
+        return True
+
+    if action == "search" and not _has_any(query, SEARCH_COMMAND_HINTS):
+        return True
+
+    return False
+
+
+def _categories_for_scenario(scenario):
+    for rule_scenario, _, categories, _, _ in SCENARIO_RULES:
+        if rule_scenario == scenario:
+            return list(categories)
+    return ["cafe", "shelter"] if scenario == "waiting_place" else ["cafe"]
+
+
+def _normalize_ai_scenario(value, target_query="", fallback="waiting_place"):
+    scenario = _clean_text(value)
+    if scenario in ALLOWED_SCENARIOS:
+        return scenario
+
+    scenario = AI_SCENARIO_ALIASES.get(scenario, scenario)
+    if scenario in ALLOWED_SCENARIOS:
+        return scenario
+
+    target_text = _compact(target_query)
+    if any(keyword in target_text for keyword in ["스터디", "작업", "노트북", "카페"]):
+        return "work_cafe"
+    if any(keyword in target_text for keyword in ["산책", "걷", "바람", "공원"]):
+        return "walk_healing"
+    if any(keyword in target_text for keyword in ["흡연", "담배"]):
+        return "smoking_area"
+
+    return fallback if fallback in ALLOWED_SCENARIOS else "waiting_place"
+
+
+def _looks_like_ai_generated_address_or_coordinate(value):
+    text = _clean_text(value)
+    if not text:
+        return False
+    if re.search(r"\d+\.\d+\s*,\s*\d+\.\d+", text):
+        return True
+    if re.search(r"\d{2,}\s*(?:번길|길|로|번지)", text):
+        return True
+    return any(keyword in text for keyword in ["위도", "경도", "주소:", "도로명"])
+
+
+def _sanitize_ai_location_query(value):
+    text = _clean_location_text(value)
+    if not text or _looks_like_ai_generated_address_or_coordinate(text):
+        return ""
+    if len(text) > 30:
+        return ""
+    return text
+
+
+def _sanitize_ai_target_query(value, scenario, fallback_target=""):
+    text = _clean_target_query(value)
+    if _looks_like_ai_generated_address_or_coordinate(text):
+        text = ""
+
+    if scenario == "work_cafe":
+        if not text or any(keyword in _compact(text) for keyword in ["스터디", "작업", "노트북", "카페"]):
+            return "카페"
+    if scenario == "walk_healing":
+        if not text or any(keyword in _compact(text) for keyword in ["산책", "걷", "바람", "공원"]):
+            return "산책할 곳"
+    if scenario == "waiting_place":
+        if not text or any(keyword in _compact(text) for keyword in ["쉬", "쉴", "앉", "쉼"]):
+            return "쉴 곳"
+    if scenario == "smoking_area":
+        return "흡연구역"
+
+    return text or fallback_target or _derive_target_query("", scenario, [])
+
+
 def _build_ai_plan(query, fallback_plan):
     if getattr(settings, "CONVERSATIONAL_SEARCH_AI_ENABLED", False) is not True:
         return None
@@ -640,6 +870,10 @@ CONVERSATIONAL_SEARCH_SYSTEM_PROMPT = """
 - 사용자가 명시한 지역/역/장소명은 현재 위치나 지도 중심으로 덮어쓰지 않는다.
 - 위치가 명시되지 않으면 location.fallback에 current_location 또는 map_center를 넣고 location.text는 비워둔다.
 - "거기", "아까", "그곳"처럼 이전 맥락이 필요한 표현인데 previous_context가 없으면 action은 ask_clarification으로 둔다.
+- "밖 말고", "실외 말고", "사람 많은 데 말고", "붐비는 데 말고"는 이전 결과 refine이 아니라 신규 검색의 부정/선호 조건으로 본다.
+- "카페 말고", "카페 느낌은 아니었으면", "카페 같지 않은"은 카페 검색이 아니라 waiting_place의 카페 제외 의도로 본다.
+- "쪽에서", "쪽", "근처", "주변", "앞" 같은 위치 접미사는 locationQuery에서 제거한다.
+- walk_healing은 targetQuery를 "공원"으로 좁히지 말고 "산책할 곳"처럼 넓게 유지한다.
 - 장소 추천과 무관한 일반 질문은 out_of_scope로 둔다.
 - 불법적이거나 위험한 장소 이용 요청은 blocked로 둔다.
 - SearchPlan 전체 구조를 새로 설계하지 말고 아래 스키마에 맞춘다.
@@ -692,7 +926,13 @@ def _normalize_ai_plan(raw_plan, query, fallback_plan, lat=None, lng=None, map_c
 
     action = raw_plan.get("action")
     if action not in ROUTER_ACTIONS:
-        action = fallback_plan["action"]
+        return _clarification_plan(
+            query,
+            question=PURPOSE_CLARIFICATION_MESSAGE,
+            reason="invalid_ai_action",
+            target_query="",
+            fallback_location="current_location",
+        )
 
     if action == "blocked":
         plan = _blocked_plan(query)
@@ -716,8 +956,25 @@ def _normalize_ai_plan(raw_plan, query, fallback_plan, lat=None, lng=None, map_c
     if not isinstance(search_plan, dict):
         search_plan = {}
 
+    top_level_plan_keys = {
+        "scenario": "scenario",
+        "locationQuery": "locationQuery",
+        "location_query": "locationQuery",
+        "targetQuery": "targetQuery",
+        "target_query": "targetQuery",
+        "conditions": "requestedConditions",
+    }
+    search_plan = {
+        **search_plan,
+        **{
+            target_key: raw_plan.get(source_key)
+            for source_key, target_key in top_level_plan_keys.items()
+            if raw_plan.get(source_key) not in (None, "", [])
+        },
+    }
+
     fallback_search_plan = fallback_plan["search_plan"]
-    location_text = _clean_text(
+    location_text = _sanitize_ai_location_query(
         _first_text(
             search_plan.get("locationQuery"),
             search_plan.get("location_query"),
@@ -725,20 +982,82 @@ def _normalize_ai_plan(raw_plan, query, fallback_plan, lat=None, lng=None, map_c
             fallback_search_plan.get("locationQuery"),
         )
     )
-    target_query = _clean_target_query(
+    raw_target_query = _clean_target_query(
         _first_text(
             search_plan.get("targetQuery"),
             search_plan.get("target_query"),
             fallback_search_plan.get("targetQuery"),
         )
     )
-    scenario = _normalize_scenario(_first_text(search_plan.get("scenario"), fallback_search_plan.get("scenario")))
-    categories = _normalize_categories(search_plan.get("categories") or fallback_search_plan.get("categories") or [])
+    fallback_scenario = _normalize_scenario(fallback_search_plan.get("scenario"))
+    scenario = _normalize_ai_scenario(
+        _first_text(search_plan.get("scenario"), raw_plan.get("scenario")),
+        target_query=raw_target_query,
+        fallback=fallback_scenario,
+    )
+    force_query_policy = _should_force_query_intent_policy(query)
+    scenario, policy_categories, policy_kakao_keywords, policy_preferred_tags = _apply_query_intent_overrides(
+        query,
+        scenario,
+        _categories_for_scenario(scenario),
+        [],
+        [],
+    )
+    target_query = _sanitize_ai_target_query(
+        raw_target_query,
+        scenario,
+        fallback_target=fallback_search_plan.get("targetQuery"),
+    )
+    if scenario == "waiting_place" and _has_waiting_place_natural_intent(query):
+        target_query = "쉴 곳"
+    elif scenario == "walk_healing" and _has_walk_healing_natural_intent(query):
+        target_query = "산책할 곳"
+    elif scenario == "work_cafe" and not _has_cafe_negative_preference(query):
+        target_query = "카페"
+
+    categories = _normalize_categories(search_plan.get("categories") or [])
+    if force_query_policy or not categories or any(category not in ALLOWED_CATEGORIES for category in categories):
+        categories = policy_categories or _categories_for_scenario(scenario)
     menu_keywords = _normalize_text_list(search_plan.get("menu_keywords") or fallback_search_plan.get("menu_keywords") or [])
     place_type_keywords = _normalize_text_list(search_plan.get("place_type_keywords") or fallback_search_plan.get("place_type_keywords") or [])
-    conditions = _normalize_text_list(raw_plan.get("conditions") or search_plan.get("requestedConditions") or fallback_plan.get("conditions") or [])
+    conditions = _normalize_text_list(
+        raw_plan.get("conditions")
+        or search_plan.get("conditions")
+        or search_plan.get("requestedConditions")
+        or search_plan.get("requested_conditions")
+        or []
+    )
+    conditions = _sanitize_requested_conditions([*conditions, *_extract_conditions(query)])
     preferred_tags = _normalize_tags(search_plan.get("preferred_tags") or raw_plan.get("preferences") or fallback_search_plan.get("preferred_tags") or [])
+    preferred_tags = _unique([
+        *preferred_tags,
+        *policy_preferred_tags,
+        *[tag for _, _, tag in _matched_condition_rules(query) if tag],
+    ])
     required_tags = _normalize_tags(search_plan.get("required_tags") or fallback_search_plan.get("required_tags") or [])
+
+    if action == "search" and not target_query:
+        return _clarification_plan(
+            query,
+            question=PURPOSE_CLARIFICATION_MESSAGE,
+            reason="ai_missing_target",
+            target_query="",
+            fallback_location="current_location",
+        )
+
+    if (
+        action == "search"
+        and not location_text
+        and not _has_coordinate_context(lat, lng, map_center)
+        and _requires_location_before_search(query, scenario, target_query)
+    ):
+        return _clarification_plan(
+            query,
+            question=_missing_location_question(query, scenario),
+            reason="ai_missing_location_context",
+            target_query=target_query,
+            fallback_location="current_location",
+        )
 
     normalized_search_plan = _search_plan_payload(
         original_query=query,
@@ -752,12 +1071,19 @@ def _normalize_ai_plan(raw_plan, query, fallback_plan, lat=None, lng=None, map_c
         preferred_tags=preferred_tags,
         requested_conditions=conditions,
         kakao_keyword_candidates=_normalize_text_list(
-            search_plan.get("kakaoKeywordCandidates")
+            (
+                [*policy_kakao_keywords, target_query]
+                if force_query_policy
+                else search_plan.get("kakaoKeywordCandidates")
+            )
             or search_plan.get("kakao_keyword_candidates")
             or fallback_search_plan.get("kakaoKeywordCandidates")
             or []
         ),
     )
+    excluded_categories = _extract_excluded_categories(query)
+    if excluded_categories:
+        normalized_search_plan["excluded_categories"] = excluded_categories
 
     needs_clarification = bool(raw_plan.get("needs_clarification")) or action == "ask_clarification"
     return {
@@ -790,8 +1116,8 @@ def _normalize_ai_plan(raw_plan, query, fallback_plan, lat=None, lng=None, map_c
 def _extract_location_and_target(query):
     text = _clean_text(query)
     explicit_patterns = [
-        rf"^(.+?({'|'.join(LOCATION_SUFFIXES)}))\s*(?:근처|주변|인근|에서|쪽|일대|지역)?\s+(.+)$",
-        rf"^(.+?)\s*(?:근처|주변|인근)(?:에서|의)?\s+(.+)$",
+        rf"^(.+?({'|'.join(LOCATION_SUFFIXES)}))\s*(?:근처에서|주변에서|인근에서|앞에서|쪽에서|근처|주변|인근|에서|쪽|앞|일대|지역)?\s+(.+)$",
+        rf"^(.+?)\s*(?:근처에서|주변에서|인근에서|앞에서|근처|주변|인근|앞)(?:에서|의)?\s+(.+)$",
         rf"^(.+?)에서\s+(.+)$",
     ]
 
@@ -809,7 +1135,28 @@ def _extract_location_and_target(query):
 
 
 def _clean_location_text(value):
-    return _clean_text(value).strip(" ,.?!")
+    return _normalize_location_query(value)
+
+
+def _normalize_location_query(value):
+    text = _clean_text(value)
+    text = re.sub(r"\s+", " ", text).strip(" ,.?!")
+    if not text:
+        return ""
+
+    suffix_pattern = (
+        r"(?:근처에서|주변에서|인근에서|앞에서|쪽에서|"
+        r"근처|주변|인근|앞|쪽|에서|일대|지역)$"
+    )
+    previous_text = None
+    while text and previous_text != text:
+        previous_text = text
+        text = re.sub(suffix_pattern, "", text).strip(" ,.?!")
+
+    if _looks_like_non_location(text):
+        return ""
+
+    return text
 
 
 def _clean_target_query(value):
@@ -877,7 +1224,9 @@ def _is_out_of_scope_query(query):
 
 
 def _is_refinement_request(query):
-    return _has_any(query, REFINEMENT_KEYWORDS)
+    if _is_negative_preference(query):
+        return False
+    return _has_any(query, REFINEMENT_CONTEXT_PHRASES)
 
 
 def _scenario_keyword_score(query):
@@ -906,6 +1255,8 @@ def _is_vague_place_request(query, scenario, target_query):
 
 
 def _requires_location_before_search(query, scenario, target_query):
+    if scenario == "waiting_place" and _has_waiting_place_natural_intent(query):
+        return True
     return _has_any(query, ["근처", "주변", "가까운", "가까이", "인근"])
 
 
@@ -921,7 +1272,157 @@ def _extract_category_filter(query):
 
 def _looks_like_non_location(text):
     compact = _compact(text)
-    return any(keyword in compact for keyword in ["조용", "혼자", "잠깐", "추천", "산책", "먹고", "맛집", "흡연", "담배"])
+    if compact in {"비", "비와서", "쉴곳", "쉴데", "산책할곳"}:
+        return True
+    return any(keyword in compact for keyword in [
+        "조용",
+        "혼자",
+        "잠깐",
+        "추천",
+        "산책",
+        "먹고",
+        "맛집",
+        "흡연",
+        "담배",
+        "카페",
+        "공원",
+        "쉴곳",
+        "쉴데",
+        "산책할곳",
+        "밖말고",
+    ])
+
+
+def _scenario_rule_payload(scenario):
+    for rule_scenario, _, categories, kakao_keywords, preferred_tags in SCENARIO_RULES:
+        if rule_scenario == scenario:
+            return (
+                rule_scenario,
+                list(categories),
+                list(kakao_keywords),
+                list(preferred_tags),
+            )
+    return (
+        scenario,
+        _categories_for_scenario(scenario),
+        [_derive_target_query("", scenario, [])],
+        [],
+    )
+
+
+def _apply_query_intent_overrides(query, scenario, categories, kakao_keywords, preferred_tags):
+    if _has_cafe_negative_preference(query):
+        rule_scenario, rule_categories, rule_kakao_keywords, rule_preferred_tags = _scenario_rule_payload("waiting_place")
+        return (
+            rule_scenario,
+            rule_categories,
+            [keyword for keyword in rule_kakao_keywords if "카페" not in keyword],
+            rule_preferred_tags,
+        )
+
+    if _has_rain_indoor_intent(query) or _has_crowd_solo_waiting_intent(query):
+        return _scenario_rule_payload("waiting_place")
+
+    if _has_walk_healing_natural_intent(query):
+        return _scenario_rule_payload("walk_healing")
+
+    return (
+        scenario,
+        list(categories or []),
+        list(kakao_keywords or []),
+        list(preferred_tags or []),
+    )
+
+
+def _should_force_query_intent_policy(query):
+    return (
+        _has_cafe_negative_preference(query)
+        or _has_rain_indoor_intent(query)
+        or _has_crowd_solo_waiting_intent(query)
+        or _has_walk_healing_natural_intent(query)
+    )
+
+
+def _is_negative_preference(query):
+    return _has_any(query, NEGATIVE_PREFERENCE_PHRASES)
+
+
+def _has_rain_indoor_intent(query):
+    return (
+        _has_any(query, ["밖 말고", "실외 말고", "비 피", "비피", "비 와서", "비와서"])
+        or (_has_any(query, ["비"]) and _has_any(query, ["앉", "쉬", "쉴", "있을 데", "있을 곳"]))
+    )
+
+
+def _has_crowd_solo_waiting_intent(query):
+    if _has_any(query, ["혼밥", "밥", "먹", "식사", "맛집"]):
+        return False
+
+    has_crowd_negative = _has_any(query, [
+        "사람 많은 데 말고",
+        "사람 너무 많은 데 말고",
+        "사람많은데말고",
+        "붐비는 데 말고",
+        "붐비지",
+    ])
+    has_solo_rest = _has_any(query, ["혼자"]) and _has_any(query, ["쉬", "쉴", "있고 싶", "있을 곳", "있을 데"])
+    return has_crowd_negative or has_solo_rest
+
+
+def _has_cafe_negative_preference(query):
+    return _has_any(query, [
+        "카페 말고",
+        "카페 느낌은 아니",
+        "카페 느낌 아니",
+        "카페느낌은아니",
+        "카페 같지 않은",
+        "카페는 아니",
+        "카페는 싫",
+        "카페 싫",
+        "카페 빼고",
+    ])
+
+
+def _has_walk_healing_natural_intent(query):
+    return _has_any(query, [
+        "바람 쐬",
+        "바람쐬",
+        "걷기 좋은",
+        "걷기좋은",
+        "산책하면서",
+        "산책할 곳",
+        "힐링할 곳",
+    ])
+
+
+def _has_waiting_place_natural_intent(query):
+    return (
+        _has_rain_indoor_intent(query)
+        or _has_crowd_solo_waiting_intent(query)
+        or _has_cafe_negative_preference(query)
+        or _has_any(query, ["잠깐", "잠시", "앉", "쉴 곳", "쉴곳", "쉬고 싶", "있고 싶"])
+    )
+
+
+def _missing_location_question(query, scenario):
+    if scenario == "waiting_place":
+        if _has_rain_indoor_intent(query):
+            return "어느 지역에서 비를 피하면서 앉아 있을 곳을 찾아드릴까요? 예: 서면, 하단역, 광안리"
+        if _has_crowd_solo_waiting_intent(query):
+            return "어느 지역에서 혼자 조용히 쉴 곳을 찾아드릴까요? 예: 서면, 하단역, 광안리"
+        if _has_cafe_negative_preference(query):
+            return "어느 지역에서 조용히 쉴 곳을 찾아드릴까요? 예: 서면, 하단역, 광안리"
+    return CLARIFICATION_MESSAGE
+
+
+def _target_query_for_scenario(scenario):
+    return _derive_target_query("", scenario, [])
+
+
+def _extract_excluded_categories(query):
+    if _has_cafe_negative_preference(query):
+        return ["카페"]
+    return []
 
 
 def _pick_scenario(query, target_query):
@@ -948,7 +1449,50 @@ def _matched_condition_rules(query):
 
 
 def _extract_conditions(query):
-    return _unique([label for _, label, _ in _matched_condition_rules(query)])
+    return _sanitize_requested_conditions([
+        *[label for _, label, _ in _matched_condition_rules(query)],
+        *_inferred_natural_conditions(query),
+    ])
+
+
+def _sanitize_requested_conditions(items):
+    sanitized = []
+    for item in _normalize_text_list(items):
+        compact = _compact(item)
+        if not compact:
+            continue
+        if compact in {_compact(value) for value in CATEGORY_LIKE_CONDITION_VALUES}:
+            continue
+        sanitized.append(item)
+    return _unique(sanitized)
+
+
+def _inferred_natural_conditions(query):
+    conditions = []
+
+    if _has_rain_indoor_intent(query):
+        conditions.extend(["실내", "앉을 수 있음", "비 피하기 좋음", "잠깐 쉬기 좋음"])
+
+    if _has_crowd_solo_waiting_intent(query):
+        conditions.extend(["혼자 이용하기 좋음", "조용함", "붐비지 않음", "잠깐 쉬기 좋음"])
+
+    if _has_cafe_negative_preference(query):
+        if _has_any(query, ["조용"]):
+            conditions.append("조용함")
+        if _has_any(query, ["앉", "쉬", "쉴", "있고 싶"]):
+            conditions.append("잠깐 쉬기 좋음")
+        conditions.append("카페 제외")
+
+    if _has_walk_healing_natural_intent(query):
+        conditions.append("산책하기 좋음")
+        if _has_any(query, ["걷"]):
+            conditions.append("걷기 좋음")
+        if _has_any(query, ["바람"]):
+            conditions.append("바람 쐬기 좋음")
+        if _has_any(query, ["힐링"]):
+            conditions.append("힐링하기 좋음")
+
+    return conditions
 
 
 def _extract_menu_keywords(query):
@@ -1051,6 +1595,8 @@ def _search_plan_payload(
         "originalQuery": original_query,
         "locationQuery": location_query or "",
         "baseLocationQuery": location_query or "",
+        "has_explicit_location": bool(location_query),
+        "location_resolution_required": bool(location_query),
         "targetQuery": target_query or "",
         "targetType": "category" if category_hint else "",
         "scenario": scenario,
