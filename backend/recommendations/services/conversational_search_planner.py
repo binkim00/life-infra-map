@@ -178,7 +178,10 @@ OUT_OF_SCOPE_KEYWORDS = [
     "뉴스",
     "연애",
     "의료",
+    "감기약",
     "법률",
+    "법적",
+    "계약서",
     "소송",
     "진단",
 ]
@@ -186,6 +189,7 @@ OUT_OF_SCOPE_KEYWORDS = [
 BLOCKED_KEYWORDS = [
     "불법",
     "위험한 요청",
+    "위험한 행동",
     "마약",
     "도박",
     "폭탄",
@@ -354,6 +358,11 @@ def _build_rule_plan(query, lat=None, lng=None, map_center=None, previous_contex
     target_query = _fallback_target_query(target_query, scenario, menu_keywords)
     if scenario == "smoking_area":
         target_query = "흡연구역"
+    elif scenario == "work_cafe" and _has_any(
+        query,
+        ["작업", "노트북", "공부", "카공", "콘센트", "와이파이", "조용"],
+    ):
+        target_query = "카페"
 
     preferred_tags = _unique([
         *preferred_tags,
@@ -846,7 +855,22 @@ def _is_out_of_scope_query(query):
     if not _has_any(query, OUT_OF_SCOPE_KEYWORDS):
         return False
 
-    if _has_any(query, ["숙제", "과제", "비트코인", "주식", "코인", "투자", "정치", "뉴스", "의료", "법률", "연애"]):
+    if _has_any(query, [
+        "숙제",
+        "과제",
+        "비트코인",
+        "주식",
+        "코인",
+        "투자",
+        "정치",
+        "뉴스",
+        "의료",
+        "감기약",
+        "법률",
+        "법적",
+        "계약서",
+        "연애",
+    ]):
         return True
 
     return not _has_place_recommendation_hint(query)
@@ -874,10 +898,11 @@ def _is_vague_place_request(query, scenario, target_query):
             "괜찮은곳",
             "괜찮은데",
             "어디좋",
+            "어디갈까",
+            "어디가",
         ]
     )
-    has_command = _has_any(query, ["추천", "찾아", "알려"])
-    return has_vague_phrase and has_command and _scenario_keyword_score(query) <= 0 and not _extract_menu_keywords(query)
+    return has_vague_phrase and _scenario_keyword_score(query) <= 0 and not _extract_menu_keywords(query)
 
 
 def _requires_location_before_search(query, scenario, target_query):
