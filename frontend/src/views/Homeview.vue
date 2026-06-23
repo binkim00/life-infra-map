@@ -3,6 +3,8 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { aiSearchRecommendations, getKakaoPlaceTags, getSavedPlaces, runAiWebSearch } from '@/api/recommendation'
 import KakaoMap from '@/components/KakaoMap.vue'
 
+const IS_DEV = import.meta.env.DEV
+
 const props = defineProps({
   initialTab: {
     type: String,
@@ -342,6 +344,49 @@ const ANCILLARY_INTENT_CATEGORIES = [
   'toilet',
   'freewifi',
 ]
+const REQUEST_CONDITION_RULES = [
+  {
+    id: 'smoking',
+    matchLabel: '흡연 가능',
+    missingLabel: '흡연 가능 여부',
+    keywords: ['흡연가능', '흡연 가능', '담배'],
+    cleanupPatterns: [/흡연\s*가능(?:한|함)?/g, /담배\s*(?:피울|필)\s*수\s*있는/g],
+    evidenceKeywords: ['흡연가능', '흡연 가능', '흡연구역', '흡연실', '실내흡연실', '실외흡연구역', '개방형흡연구역', '부스형흡연구역'],
+  },
+  {
+    id: 'outlet',
+    matchLabel: '콘센트 있음',
+    missingLabel: '콘센트 여부',
+    keywords: ['콘센트', '전원', '충전'],
+    cleanupPatterns: [/콘센트\s*(?:있는|있음|가능(?:한)?|사용\s*가능(?:한)?|이용\s*가능(?:한)?)/g, /전원\s*(?:있는|있음|사용\s*가능(?:한)?)/g, /충전\s*(?:가능(?:한)?|할\s*수\s*있는)/g],
+    evidenceKeywords: ['콘센트있음', '콘센트', '전원', '충전가능', '충전 가능'],
+  },
+  {
+    id: 'parking',
+    matchLabel: '주차 가능',
+    missingLabel: '주차 가능 여부',
+    keywords: ['주차가능', '주차 가능', '주차되는', '주차 되는', '주차할 수', '주차 가능한'],
+    cleanupPatterns: [/주차\s*(?:가능(?:한|함)?|되는|할\s*수\s*있는|있는|있음)/g],
+    evidenceKeywords: ['주차가능', '주차 가능', '주차장', '공영주차장', '주차'],
+  },
+  {
+    id: 'indoor',
+    matchLabel: '실내 이용 가능',
+    missingLabel: '실내 이용 가능 여부',
+    keywords: ['실내', '실내에서'],
+    cleanupPatterns: [/실내에서/g, /실내/g, /쉴\s*수\s*있는/g],
+    evidenceKeywords: ['실내쉼터', '실내', '실내공간', '실내 이용', '실내시설'],
+  },
+  {
+    id: 'quiet',
+    matchLabel: '조용함',
+    missingLabel: '조용함',
+    keywords: ['조용한', '조용히', '조용함'],
+    cleanupPatterns: [/조용한/g, /조용히/g, /조용함/g],
+    evidenceKeywords: ['조용한', '조용함', '조용', '집중하기좋음', '작업가능후보'],
+  },
+]
+const GENERIC_CONDITION_TARGETS = ['곳', '장소', '데', '근처', '주변', '추천', '찾아줘', '찾아', '갈만한곳', '갈만한 곳']
 
 const mapCenter = ref(DEFAULT_CENTER)
 const mapViewportBounds = ref(null)
@@ -1431,6 +1476,132 @@ const getKakaoKeywordCandidates = ({
   return [...new Set(candidates.map((candidate) => candidate.trim()).filter(Boolean))]
 }
 
+const hasRequestedConditionKeyword = (text = '', rule) => {
+  const normalizedText = normalizeLocationText(text)
+  return rule.keywords.some((keyword) => {
+    return normalizedText.includes(normalizeLocationText(keyword))
+  })
+}
+
+const cleanupConditionTargetText = (text = '', conditions = []) => {
+  let cleaned = text
+
+  conditions.forEach((condition) => {
+    condition.cleanupPatterns.forEach((pattern) => {
+      cleaned = cleaned.replace(pattern, ' ')
+    })
+  })
+
+  return cleaned
+    .replace(/\s+/g, ' ')
+    .replace(/^(?:에서|에|의)\s+/, '')
+    .replace(/\s*(?:인|인 곳|인 장소|인 데)$/g, '')
+    .replace(/\s*(?:있는|가능한|추천해줘|추천|찾아줘|찾아)$/g, '')
+    .trim()
+}
+
+const isGenericConditionTarget = (target = '') => {
+  const normalizedTarget = normalizeLocationText(target)
+  if (!normalizedTarget) return true
+
+  return GENERIC_CONDITION_TARGETS.some((keyword) => {
+    const normalizedKeyword = normalizeLocationText(keyword)
+    return normalizedTarget === normalizedKeyword || normalizedTarget.endsWith(normalizedKeyword)
+  })
+}
+
+const extractRequestedConditions = (query = '', rawTargetQuery = '') => {
+  const matchedConditions = REQUEST_CONDITION_RULES.filter((rule) => {
+    return hasRequestedConditionKeyword(query, rule) || hasRequestedConditionKeyword(rawTargetQuery, rule)
+  })
+
+  if (!matchedConditions.length) {
+    return {
+      requestedConditions: [],
+      targetQuery: rawTargetQuery,
+      hasExplicitConditionTarget: false,
+    }
+  }
+
+  const cleanedTargetQuery = cleanupConditionTargetText(rawTargetQuery, matchedConditions)
+  const hasExplicitConditionTarget = Boolean(cleanedTargetQuery) && !isGenericConditionTarget(cleanedTargetQuery)
+
+  return {
+    requestedConditions: matchedConditions,
+    targetQuery: hasExplicitConditionTarget ? cleanedTargetQuery : rawTargetQuery,
+    hasExplicitConditionTarget,
+  }
+}
+
+const getRequestedConditionEvidenceText = (place = {}) => {
+  const tagDetails = toDisplayList((place.tagDetails || place.tag_details || []).map((tag) => tag?.name))
+  return [
+    place.name,
+    place.category,
+    place.rawCategory,
+    ...(place.tags || []).map((tag) => getTagName(tag)),
+    ...(place.suggestedTags || place.suggested_tags || []),
+    ...(place.verifiedTags || place.verified_tags || []),
+    ...(place.warningTags || place.warning_tags || []),
+    ...(place.matchedTags || place.matched_tags || []),
+    ...(place.matchedTagLabels || place.matched_tag_labels || []),
+    ...tagDetails,
+  ].filter(Boolean).join(' ')
+}
+
+const getRequestedConditionReview = (place = {}, requestedConditions = []) => {
+  const evidenceText = normalizeLocationText(getRequestedConditionEvidenceText(place))
+  const matchedLabels = []
+  const missingLabels = []
+
+  requestedConditions.forEach((condition) => {
+    const hasEvidence = condition.evidenceKeywords.some((keyword) => {
+      const evidenceKeyword = normalizeLocationText(keyword)
+      return evidenceText.includes(evidenceKeyword)
+    })
+
+    if (hasEvidence) {
+      matchedLabels.push(condition.matchLabel)
+      return
+    }
+
+    missingLabels.push(condition.missingLabel)
+  })
+
+  return {
+    matchedLabels: [...new Set(matchedLabels)],
+    missingLabels: [...new Set(missingLabels)],
+  }
+}
+
+const mergeRequestedConditionReview = (place = {}, requestedConditions = []) => {
+  if (!requestedConditions.length) return place
+
+  const review = getRequestedConditionReview(place, requestedConditions)
+  const missingLabels = [...new Set([
+    ...toDisplayList(place.missingTagLabels || place.missing_tag_labels),
+    ...review.missingLabels,
+  ])]
+  const matchedLabels = [...new Set([
+    ...toDisplayList(place.matchedTagLabels || place.matched_tag_labels),
+    ...review.matchedLabels,
+  ])]
+  const caution = missingLabels.length
+    ? '요청한 조건은 현재 데이터로 확인되지 않았습니다. 방문 전 확인이 필요합니다.'
+    : getTextValue(place.recommendationCaution || place.caution_message || place.caution)
+
+  return {
+    ...place,
+    requestedConditionIds: requestedConditions.map((condition) => condition.id),
+    matchedTagLabels: matchedLabels,
+    matched_tag_labels: matchedLabels,
+    missingTagLabels: missingLabels,
+    missing_tag_labels: missingLabels,
+    recommendationCaution: caution,
+    caution_message: caution,
+  }
+}
+
 const getMainPlaceFallbackKeyword = (query = '') => {
   let keyword = query.trim()
 
@@ -1475,9 +1646,13 @@ const getMainPlaceFallbackKeywordsFromResults = (places = [], fallbackKeyword = 
 const buildSearchPlan = (query) => {
   const correction = normalizeSearchQuery(query)
   const parsed = parseMapSearchInput(correction.normalizedQuery)
-  const targetQuery = parsed.targetQuery || parsed.targetKeyword || correction.normalizedQuery
+  const rawTargetQuery = parsed.targetQuery || parsed.targetKeyword || correction.normalizedQuery
+  const conditionPlan = extractRequestedConditions(correction.normalizedQuery, rawTargetQuery)
+  const targetQuery = conditionPlan.targetQuery || rawTargetQuery
   const categoryHint = getCategoryHint(targetQuery)
-  const recommendationIntent = getRecommendationIntent(`${correction.normalizedQuery} ${targetQuery}`)
+  const recommendationIntent = conditionPlan.hasExplicitConditionTarget
+    ? getRecommendationIntent(targetQuery)
+    : getRecommendationIntent(`${correction.normalizedQuery} ${targetQuery}`)
   const preferredTags = getPreferredTagsForIntent(recommendationIntent)
   const negativeTags = getNegativeTagsForIntent(recommendationIntent)
   const targetType = getTargetType({
@@ -1505,6 +1680,8 @@ const buildSearchPlan = (query) => {
     categoryHint: categoryHint.category,
     categoryKeyword: categoryHint.keyword,
     recommendationIntent,
+    requestedConditions: conditionPlan.requestedConditions,
+    hasExplicitConditionTarget: conditionPlan.hasExplicitConditionTarget,
     preferredTags,
     negativeTags,
     isAncillaryIntent: ANCILLARY_INTENT_CATEGORIES.includes(categoryHint.category),
@@ -3188,6 +3365,7 @@ const getPlaceListTags = (place) => {
 
 const isRecommendationPlace = (place) => {
   return (
+    toDisplayList(place?.requestedConditionIds).length > 0 ||
     place?.sourceLabel === 'DB추천' ||
     place?.sourceLabel === '카카오+DB' ||
     place?.recommendationSourceType === 'kakao_candidate' ||
@@ -3335,6 +3513,10 @@ const getRecommendationReasonSummary = (place) => {
 
   if (menuDisplayLabels.length && !rawMatchedLabels.length) {
     return `${menuDisplayLabels.join(', ')} 조건과 일치 · 세부 정보는 방문 전 확인 필요`
+  }
+
+  if (missingLabels.length && !matchedLabels.length) {
+    return '요청한 조건은 현재 데이터로 확인되지 않았습니다. 방문 전 확인이 필요합니다.'
   }
 
   if (matchedLabels.length) {
@@ -3722,6 +3904,7 @@ const convertKakaoPlaces = (
     categoryHint = '',
     isAncillaryIntent = false,
     fallbackCandidate = false,
+    requestedConditions = [],
   } = {},
 ) => {
   return places.map((place) => {
@@ -3757,7 +3940,7 @@ const convertKakaoPlaces = (
     })
     const fallbackReason = 'DB 추천 결과가 부족해 카카오 검색 결과를 낮은 신뢰도 후보로 함께 표시합니다. 외부 검색 결과이므로 방문 전 세부 조건 확인이 필요합니다.'
 
-    return {
+    return mergeRequestedConditionReview({
       id: `kakao-${place.id}`,
       kakaoPlaceId: place.id,
       savedPlaceId: savedTagData.saved_place_id || null,
@@ -3871,7 +4054,7 @@ const convertKakaoPlaces = (
             ? 'kakao_unsuitable_waiting_place'
             : (takeoutHeavy ? 'kakao_takeout_untagged' : 'kakao_only')
         ),
-    }
+    }, requestedConditions)
   }).filter((place) => {
     return !(recommendationIntent === 'waiting_place' && place.waitingPlaceExcluded)
   })
@@ -4355,6 +4538,7 @@ const runKakaoRecommendationFallbackSearch = async ({
   recommendationIntent = '',
   categoryHint = '',
   isAncillaryIntent = false,
+  requestedConditions = [],
   radius = SEARCH_RADIUS,
 } = {}) => {
   const fallbackSearchQueries = Array.isArray(fallbackQueries)
@@ -4447,6 +4631,7 @@ const runKakaoRecommendationFallbackSearch = async ({
       categoryHint,
       isAncillaryIntent,
       fallbackCandidate: true,
+      requestedConditions,
     }),
     rawCount,
     dedupedCount: dedupedRawPlaces.length,
@@ -4491,7 +4676,7 @@ const makeDbTags = (place) => {
   return tags
 }
 
-const convertDbPlaces = (places) => {
+const convertDbPlaces = (places, { requestedConditions = [] } = {}) => {
   return places.map((place) => {
     const externalId = place.external_id || place.externalId || null
     const isKakaoLocal = place.source === 'kakao_local'
@@ -4511,7 +4696,7 @@ const convertDbPlaces = (places) => {
       query: place.name || '',
     })
 
-    return {
+    return mergeRequestedConditionReview({
       id: `db-${place.id}`,
       savedPlaceId: place.id,
       source: place.source,
@@ -4563,7 +4748,7 @@ const convertDbPlaces = (places) => {
       ancillaryPlacePenalty: ancillaryAdjustment.ancillaryPlacePenalty,
       intentMismatchPenalty: ancillaryAdjustment.intentMismatchPenalty,
       isAncillaryPlace: ancillaryAdjustment.isAncillaryPlace,
-    }
+    }, requestedConditions)
   })
 }
 
@@ -4612,6 +4797,7 @@ const convertRecommendationPlaces = (
   {
     preferredTags = [],
     recommendationIntent = '',
+    requestedConditions = [],
   } = {},
 ) => {
   return places.map((place) => {
@@ -4643,7 +4829,7 @@ const convertRecommendationPlaces = (
       preferredTags,
     )
 
-    return {
+    return mergeRequestedConditionReview({
       id: `recommendation-${place.id}`,
       savedPlaceId: place.id,
       source: place.source,
@@ -4706,7 +4892,7 @@ const convertRecommendationPlaces = (
       ancillaryPlacePenalty: ancillaryAdjustment.ancillaryPlacePenalty,
       intentMismatchPenalty: ancillaryAdjustment.intentMismatchPenalty,
       isAncillaryPlace: ancillaryAdjustment.isAncillaryPlace,
-    }
+    }, requestedConditions)
   })
 }
 
@@ -4789,6 +4975,7 @@ const searchSavedPlaces = async ({
   targetKeyword,
   center,
   radius = SEARCH_RADIUS,
+  requestedConditions = [],
 }) => {
   const data = await getSavedPlaces({
     q: targetKeyword,
@@ -4802,7 +4989,7 @@ const searchSavedPlaces = async ({
     return DB_MARKER_ALLOWED_CATEGORIES.includes(place.category)
   })
 
-  return convertDbPlaces(allowedPlaces)
+  return convertDbPlaces(allowedPlaces, { requestedConditions })
 }
 
 const searchAroundCenter = async ({
@@ -4834,6 +5021,7 @@ const searchAroundCenter = async ({
     : [targetKeyword]
   const categoryHint = activeSearchPlan.value?.categoryHint || ''
   const isAncillaryIntent = activeSearchPlan.value?.isAncillaryIntent || false
+  const requestedConditions = activeSearchPlan.value?.requestedConditions || []
   let kakaoPlaces = await runKakaoKeywordCandidateSearch(
     placesService,
     searchKeywords,
@@ -4861,6 +5049,7 @@ const searchAroundCenter = async ({
         targetKeyword,
         center,
         radius,
+        requestedConditions,
       })
       : Promise.resolve([]),
   ])
@@ -4874,6 +5063,7 @@ const searchAroundCenter = async ({
       recommendationIntent,
       categoryHint,
       isAncillaryIntent,
+      requestedConditions,
     },
   )
   const dedupedResults = shouldUseDbPlaces
@@ -5418,6 +5608,7 @@ const runAiMapSearchAtCenter = async ({
   sortMode.value = 'recommendation'
   const recommendationIntent = parsedIntent?.recommendationIntent || getRecommendationIntent(`${originalQuery} ${targetQuery}`)
   const preferredTags = parsedIntent?.preferredTags || getPreferredTagsForIntent(recommendationIntent)
+  const requestedConditions = parsedIntent?.requestedConditions || []
   const categoryHint = parsedIntent?.categoryHint || ''
   const isAncillaryIntent = parsedIntent?.isAncillaryIntent || false
   const data = await aiSearchRecommendations({
@@ -5431,6 +5622,7 @@ const runAiMapSearchAtCenter = async ({
   const recommendationResults = convertRecommendationPlaces(data.results || [], {
     preferredTags,
     recommendationIntent,
+    requestedConditions,
   })
   let kakaoResults = []
   let kakaoFallbackQueries = []
@@ -5513,6 +5705,7 @@ const runAiMapSearchAtCenter = async ({
       recommendationIntent,
       categoryHint,
       isAncillaryIntent,
+      requestedConditions,
     })
     kakaoResults = fallbackData.results
     kakaoFallbackQueries = fallbackData.queries
@@ -5886,6 +6079,7 @@ const runRegionMapSearch = async ({
   loadingMessage.value = '지역 장소 검색 중'
   const recommendationIntent = parsedIntent?.recommendationIntent || getRecommendationIntent(`${originalQuery} ${targetQuery}`)
   const preferredTags = parsedIntent?.preferredTags || getPreferredTagsForIntent(recommendationIntent)
+  const requestedConditions = parsedIntent?.requestedConditions || []
   const categoryHint = parsedIntent?.categoryHint || ''
   const isAncillaryIntent = parsedIntent?.isAncillaryIntent || false
   sortMode.value = recommendationIntent ? 'recommendation' : 'distance'
@@ -5926,6 +6120,7 @@ const runRegionMapSearch = async ({
     recommendationIntent,
     categoryHint,
     isAncillaryIntent,
+    requestedConditions,
   })
   const groups = groupKakaoPlacesByRegion(kakaoPlaces)
 
@@ -6605,7 +6800,7 @@ const handleDetailFrameError = () => {
             </p>
 
             <p
-              v-if="aiWebSearchDebugText"
+              v-if="IS_DEV && aiWebSearchDebugText"
               class="ai-web-search-message ai-web-search-debug"
             >
               {{ aiWebSearchDebugText }}
@@ -7291,6 +7486,7 @@ h1 {
 
 .map-parser-status span {
   font-size: 13px;
+  white-space: pre-line;
 }
 
 .map-parser-status.ai {
@@ -7486,6 +7682,7 @@ h1 {
 }
 
 .map-content {
+  position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: clamp(16px, 1.4vw, 24px);
@@ -7493,7 +7690,7 @@ h1 {
 }
 
 .map-content.has-result-list {
-  grid-template-columns: clamp(300px, 22vw, 380px) minmax(0, 1fr);
+  grid-template-columns: clamp(340px, 26vw, 420px) minmax(0, 1fr);
 }
 
 .map-content.has-result-list.is-list-collapsed {
@@ -7501,7 +7698,7 @@ h1 {
 }
 
 .map-content.has-result-list.has-selected-place {
-  grid-template-columns: clamp(300px, 22vw, 380px) minmax(0, 1fr);
+  grid-template-columns: clamp(340px, 26vw, 420px) minmax(0, 1fr);
 }
 
 .map-content.has-result-list.has-selected-place.is-list-collapsed {
@@ -7513,8 +7710,10 @@ h1 {
 }
 
 .place-list-panel {
-  height: calc(100vh - clamp(200px, 20vh, 230px));
-  min-height: 520px;
+  position: relative;
+  z-index: 10;
+  height: min(620px, calc(100vh - clamp(220px, 24vh, 270px)));
+  min-height: 420px;
   padding: clamp(12px, 1vw, 16px);
   display: flex;
   flex-direction: column;
@@ -7556,9 +7755,14 @@ h1 {
 
 .place-list-top h2 {
   margin: 0;
+  display: -webkit-box;
+  overflow: hidden;
   color: #111827;
   font-size: 16px;
+  line-height: 1.35;
   letter-spacing: 0;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .result-controls {
@@ -7567,14 +7771,17 @@ h1 {
   justify-content: space-between;
   gap: 10px;
   align-items: center;
+  flex-wrap: nowrap;
   border-bottom: 1px solid #eef0f4;
 }
 
 .result-filter-buttons {
   min-width: 0;
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: thin;
 }
 
 .result-filter-button {
@@ -7619,8 +7826,11 @@ h1 {
 .ai-web-search-panel {
   margin: 10px 0;
   padding: 12px;
+  flex-shrink: 0;
+  max-height: 180px;
   display: grid;
   gap: 10px;
+  overflow-y: auto;
   border: 1px solid #e5e8f0;
   border-radius: 12px;
   background: #f8fafc;
@@ -8134,6 +8344,7 @@ h1 {
 .map-area {
   min-width: 0;
   position: relative;
+  z-index: 1;
 }
 
 .map-loading-overlay {
@@ -8198,7 +8409,7 @@ h1 {
 }
 
 :deep(.map) {
-  height: calc(100vh - clamp(200px, 20vh, 230px));
+  height: min(720px, calc(100vh - clamp(190px, 20vh, 230px)));
   min-height: 520px;
   border: 0;
   box-shadow: 0 18px 48px rgba(20, 35, 70, 0.12);
@@ -8210,7 +8421,7 @@ h1 {
   right: clamp(14px, 1.2vw, 20px);
   bottom: clamp(14px, 1.2vw, 20px);
   z-index: 8;
-  width: min(clamp(360px, 28vw, 520px), calc(100% - 28px));
+  width: min(clamp(340px, 26vw, 480px), calc(100% - 28px));
   min-height: 0;
   overflow-y: auto;
 }
@@ -8635,8 +8846,22 @@ h1 {
   }
 
   .place-list-panel {
-    height: auto;
-    min-height: auto;
+    position: relative;
+    right: auto;
+    bottom: auto;
+    left: auto;
+    z-index: 10;
+    width: 100%;
+    height: clamp(260px, 38vh, 360px);
+    max-height: clamp(260px, 38vh, 360px);
+    min-height: 0;
+    border-radius: 18px;
+  }
+
+  .map-content.has-selected-place .place-list-panel {
+    height: clamp(220px, 32vh, 320px);
+    max-height: clamp(220px, 32vh, 320px);
+    min-height: 0;
   }
 
   .place-list-panel.is-collapsed {
@@ -8654,7 +8879,7 @@ h1 {
   }
 
   .place-list {
-    max-height: 240px;
+    max-height: none;
   }
 
 }
@@ -8738,8 +8963,24 @@ h1 {
   }
 
   :deep(.map) {
-    height: calc(100vh - 270px);
+    height: min(680px, calc(100vh - 230px));
     min-height: 440px;
+  }
+
+  .place-list-panel {
+    position: relative;
+    right: auto;
+    bottom: auto;
+    left: auto;
+    z-index: 10;
+    width: 100%;
+    height: clamp(260px, 42vh, 360px);
+    max-height: clamp(260px, 42vh, 360px);
+  }
+
+  .map-content.has-selected-place .place-list-panel {
+    height: clamp(220px, 32vh, 300px);
+    max-height: clamp(220px, 32vh, 300px);
   }
 
   .place-detail-panel {
