@@ -8,8 +8,10 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
+from accounts.serializers import get_or_create_profile
 from .models import (
     Comment,
+    CommentDislike,
     CommentLike,
     Inquiry,
     Notification,
@@ -20,6 +22,7 @@ from .models import (
 )
 from .serializers import (
     AdminUserSerializer,
+    AdminInquirySerializer,
     CommentSerializer,
     InquiryAdminUpdateSerializer,
     InquirySerializer,
@@ -87,17 +90,48 @@ def blocked_response(user):
     )
 
 
-def create_notification(recipient, title, message, notification_type="system", sender=None):
+def get_display_name(user):
+    return get_or_create_profile(user).nickname if user else "알 수 없는 사용자"
+
+
+def truncate_notification_content(content, limit=60):
+    text = " ".join((content or "").split())
+
+    if len(text) <= limit:
+        return text
+
+    return f"{text[:limit]}..."
+
+
+def create_notification(
+    recipient,
+    title,
+    message,
+    notification_type="system",
+    sender=None,
+    target_post=None,
+    target_comment=None,
+):
     return Notification.objects.create(
         recipient=recipient,
         sender=sender,
         notification_type=notification_type,
+        target_post=target_post,
+        target_comment=target_comment,
         title=title,
         message=message,
     )
 
 
-def notify_if_not_self(recipient, sender, title, message, notification_type="system"):
+def notify_if_not_self(
+    recipient,
+    sender,
+    title,
+    message,
+    notification_type="system",
+    target_post=None,
+    target_comment=None,
+):
     if recipient == sender:
         return None
 
@@ -105,6 +139,8 @@ def notify_if_not_self(recipient, sender, title, message, notification_type="sys
         recipient=recipient,
         sender=sender,
         notification_type=notification_type,
+        target_post=target_post,
+        target_comment=target_comment,
         title=title,
         message=message,
     )
@@ -166,7 +202,13 @@ def post_list_create(request):
     if request.method == "GET":
         board_type = request.GET.get("board_type", "free")
 
-        posts = Post.objects.filter(board_type=board_type)
+        if board_type == "free":
+            posts = Post.objects.filter(
+                Q(board_type="free") | Q(board_type="notice", is_pinned=True)
+            )
+        else:
+            posts = Post.objects.filter(board_type=board_type)
+
         serializer = PostListSerializer(
             posts,
             many=True,
@@ -197,7 +239,10 @@ def post_list_create(request):
         serializer = PostDetailSerializer(data=request.data)
 
         if serializer.is_valid():
-            post = serializer.save(author=request.user)
+            post = serializer.save(
+                author=request.user,
+                is_pinned=board_type == "notice",
+            )
             result_serializer = PostDetailSerializer(
                 post,
                 context={"request": request},
@@ -294,18 +339,50 @@ def comment_create(request, post_id):
     serializer = CommentSerializer(data=request.data)
 
     if serializer.is_valid():
+        parent = None
+        parent_id = request.data.get("parent")
+
+        if parent_id:
+            try:
+                parent = Comment.objects.get(id=parent_id, post=post, parent__isnull=True)
+            except Comment.DoesNotExist:
+                return Response(
+                    {"detail": "답글을 달 댓글을 찾을 수 없습니다."},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+
         comment = serializer.save(
             post=post,
             author=request.user,
+            parent=parent,
         )
 
-        notify_if_not_self(
-            recipient=post.author,
-            sender=request.user,
-            notification_type="post_commented",
-            title="내 게시글에 댓글이 달렸습니다.",
-            message=f"{request.user.username}님이 '{post.title}' 글에 댓글을 남겼습니다.",
-        )
+        if parent:
+            notify_if_not_self(
+                recipient=parent.author,
+                sender=request.user,
+                notification_type="post_commented",
+                title="내 댓글에 답글이 달렸습니다.",
+                message=(
+                    f"{get_display_name(request.user)}님이 남긴 답글: "
+                    f"{truncate_notification_content(comment.content)}"
+                ),
+                target_post=post,
+                target_comment=comment,
+            )
+        else:
+            notify_if_not_self(
+                recipient=post.author,
+                sender=request.user,
+                notification_type="post_commented",
+                title="내 게시글에 댓글이 달렸습니다.",
+                message=(
+                    f"{get_display_name(request.user)}님이 남긴 댓글: "
+                    f"{truncate_notification_content(comment.content)}"
+                ),
+                target_post=post,
+                target_comment=comment,
+            )
 
         result_serializer = CommentSerializer(
             comment,
@@ -391,7 +468,8 @@ def toggle_post_like(request, post_id):
             sender=request.user,
             notification_type="post_liked",
             title="내 게시글에 좋아요가 달렸습니다.",
-            message=f"{request.user.username}님이 '{post.title}' 글을 좋아합니다.",
+            message=f"{get_display_name(request.user)}님이 내 게시글에 좋아요를 보냈습니다.",
+            target_post=post,
         )
 
     return Response({
@@ -425,17 +503,57 @@ def toggle_comment_like(request, comment_id):
         liked = False
     else:
         liked = True
+        CommentDislike.objects.filter(comment=comment, user=request.user).delete()
         notify_if_not_self(
             recipient=comment.author,
             sender=request.user,
             notification_type="comment_liked",
             title="내 댓글에 좋아요가 달렸습니다.",
-            message=f"{request.user.username}님이 내 댓글을 좋아합니다.",
+            message=f"{get_display_name(request.user)}님이 내 댓글에 좋아요를 보냈습니다.",
+            target_post=comment.post,
+            target_comment=comment,
         )
 
     return Response({
         "liked": liked,
+        "disliked": False,
         "likes_count": comment.comment_likes.count(),
+        "dislikes_count": comment.comment_dislikes.count(),
+    })
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def toggle_comment_dislike(request, comment_id):
+    penalty_response = blocked_response(request.user)
+    if penalty_response:
+        return penalty_response
+
+    try:
+        comment = Comment.objects.get(id=comment_id)
+    except Comment.DoesNotExist:
+        return Response(
+            {"detail": "댓글을 찾을 수 없습니다."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    dislike, created = CommentDislike.objects.get_or_create(
+        comment=comment,
+        user=request.user,
+    )
+
+    if not created:
+        dislike.delete()
+        disliked = False
+    else:
+        disliked = True
+        CommentLike.objects.filter(comment=comment, user=request.user).delete()
+
+    return Response({
+        "liked": False,
+        "disliked": disliked,
+        "likes_count": comment.comment_likes.count(),
+        "dislikes_count": comment.comment_dislikes.count(),
     })
 
 
@@ -623,7 +741,12 @@ def notification_list(request):
         recipient=request.user,
         created_at__lt=timezone.now() - timedelta(days=3),
     ).delete()
-    notifications = Notification.objects.filter(recipient=request.user)
+    notifications = Notification.objects.filter(recipient=request.user).select_related(
+        "sender",
+        "target_post",
+        "target_comment",
+        "target_comment__post",
+    )
     serializer = NotificationSerializer(notifications, many=True)
     return Response(serializer.data)
 
@@ -703,7 +826,10 @@ def admin_inquiry_list(request):
     if not request.user.is_staff:
         return admin_only_response()
 
-    serializer = InquirySerializer(Inquiry.objects.all(), many=True)
+    serializer = AdminInquirySerializer(
+        Inquiry.objects.select_related("author", "replied_by").all(),
+        many=True,
+    )
     return Response(serializer.data)
 
 
@@ -714,7 +840,7 @@ def admin_inquiry_update(request, inquiry_id):
         return admin_only_response()
 
     try:
-        inquiry = Inquiry.objects.get(id=inquiry_id)
+        inquiry = Inquiry.objects.select_related("author", "replied_by").get(id=inquiry_id)
     except Inquiry.DoesNotExist:
         return Response(
             {"detail": "문의를 찾을 수 없습니다."},
@@ -738,7 +864,7 @@ def admin_inquiry_update(request, inquiry_id):
                 message=updated.admin_reply,
             )
 
-        return Response(InquirySerializer(updated).data)
+        return Response(AdminInquirySerializer(updated).data)
 
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 

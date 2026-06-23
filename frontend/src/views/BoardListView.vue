@@ -18,18 +18,36 @@ const boardTitle = computed(() => {
   return '자유게시판'
 })
 
-const formatDateTime = (value) => {
+const canWritePost = computed(() => {
+  if (!authStore.isLoggedIn) {
+    return false
+  }
+
+  return boardType.value !== 'notice' || authStore.user?.is_staff
+})
+
+const formatBoardDate = (value) => {
   if (!value) {
     return ''
   }
 
-  return new Date(value).toLocaleString('ko-KR', {
-    year: 'numeric',
+  const date = new Date(value)
+  const now = new Date()
+  const isToday = date.toDateString() === now.toDateString()
+
+  if (isToday) {
+    return date.toLocaleTimeString('ko-KR', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    })
+  }
+
+  return date.toLocaleDateString('ko-KR', {
+    year: '2-digit',
     month: '2-digit',
     day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
+  }).replace(/\. /g, '.').replace(/\.$/, '')
 }
 
 const fetchPosts = async () => {
@@ -64,16 +82,8 @@ onMounted(() => {
         </div>
 
         <div class="board-actions">
-          <RouterLink to="/boards/free" class="sub-button">
-            자유게시판
-          </RouterLink>
-
-          <RouterLink to="/boards/notice" class="sub-button">
-            공지사항
-          </RouterLink>
-
           <RouterLink
-            v-if="authStore.isLoggedIn"
+            v-if="canWritePost"
             :to="`/boards/${boardType}/write`"
             class="write-button"
           >
@@ -81,7 +91,7 @@ onMounted(() => {
           </RouterLink>
 
           <RouterLink
-            v-else
+            v-else-if="boardType !== 'notice'"
             to="/login"
             class="write-button"
           >
@@ -98,47 +108,69 @@ onMounted(() => {
         {{ errorMessage }}
       </p>
 
-      <section v-else class="post-list">
-        <article
-          v-for="post in posts"
-          :key="post.id"
-          class="post-card"
-        >
-          <RouterLink
-            :to="`/boards/${post.board_type}/${post.id}`"
-            class="post-link"
-          >
-            <div class="post-top">
-              <span class="board-badge">
-                {{ post.board_type === 'notice' ? '공지' : '자유' }}
-              </span>
+      <section v-else class="board-table-wrap">
+        <table class="board-table">
+          <colgroup>
+            <col class="col-number" />
+            <col class="col-category" />
+            <col class="col-title" />
+            <col class="col-author" />
+            <col class="col-date" />
+            <col class="col-count" />
+            <col class="col-count" />
+          </colgroup>
 
-              <span v-if="post.is_pinned" class="pin-badge">
-                고정
-              </span>
-            </div>
+          <thead>
+            <tr>
+              <th>번호</th>
+              <th>말머리</th>
+              <th>제목</th>
+              <th>글쓴이</th>
+              <th>작성일</th>
+              <th>조회</th>
+              <th>추천</th>
+            </tr>
+          </thead>
 
-            <h2>{{ post.title }}</h2>
-
-            <div class="post-meta">
-              <span class="author-chip">
-                <span class="author-avatar">
-                  <img
-                    v-if="post.author_profile_image_url"
-                    :src="post.author_profile_image_url"
-                    :alt="post.author_nickname"
-                  />
-                  <span v-else class="default-avatar" aria-hidden="true"></span>
+          <tbody>
+            <tr
+              v-for="post in posts"
+              :key="post.id"
+              :class="{ pinned: post.is_pinned }"
+            >
+              <td class="number-cell">{{ post.is_pinned ? '-' : post.id }}</td>
+              <td>
+                <span class="category-label" :class="post.board_type">
+                  <span v-if="post.is_pinned" class="pin-dot">!</span>
+                  {{ post.board_type === 'notice' ? '공지' : '일반' }}
                 </span>
-                {{ post.author_nickname }}
-              </span>
-              <span>{{ formatDateTime(post.created_at) }} <template v-if="post.is_edited">(수정됨)</template></span>
-              <span>댓글 {{ post.comments_count }}</span>
-              <span>좋아요 {{ post.likes_count }}</span>
-              <span>조회 {{ post.view_count }}</span>
-            </div>
-          </RouterLink>
-        </article>
+              </td>
+              <td class="title-cell">
+                <RouterLink :to="`/boards/${post.board_type}/${post.id}`" class="title-link">
+                  <span class="title-text">{{ post.title }}</span>
+                  <span v-if="post.comments_count" class="comment-count">[{{ post.comments_count }}]</span>
+                  <span v-if="post.is_edited" class="edited-mark">수정됨</span>
+                </RouterLink>
+              </td>
+              <td class="author-cell">
+                <span class="author-chip">
+                  <span class="author-avatar">
+                    <img
+                      v-if="post.author_profile_image_url"
+                      :src="post.author_profile_image_url"
+                      :alt="post.author_nickname"
+                    />
+                    <span v-else class="default-avatar" aria-hidden="true"></span>
+                  </span>
+                  {{ post.author_nickname }}
+                </span>
+              </td>
+              <td>{{ formatBoardDate(post.created_at) }}</td>
+              <td>{{ post.view_count }}</td>
+              <td>{{ post.likes_count }}</td>
+            </tr>
+          </tbody>
+        </table>
 
         <p v-if="posts.length === 0" class="empty-text">
           아직 등록된 글이 없습니다.
@@ -156,7 +188,7 @@ onMounted(() => {
 }
 
 .board-container {
-  max-width: 960px;
+  max-width: 1120px;
   margin: 0 auto;
 }
 
@@ -189,7 +221,6 @@ onMounted(() => {
   justify-content: flex-end;
 }
 
-.sub-button,
 .write-button {
   padding: 10px 14px;
   border-radius: 999px;
@@ -198,90 +229,164 @@ onMounted(() => {
   text-decoration: none;
 }
 
-.sub-button {
-  border: 1px solid #d0d5dd;
-  background: #ffffff;
-  color: #344054;
-}
-
 .write-button {
   border: 1px solid #2563eb;
   background: #2563eb;
   color: #ffffff;
 }
 
-.post-list {
-  display: grid;
-  gap: 12px;
-}
-
-.post-card {
+.board-table-wrap {
   overflow: hidden;
-  border: 1px solid #e5e8f0;
-  border-radius: 18px;
+  border: 1px solid #d7dce5;
+  border-radius: 8px;
   background: #ffffff;
-  box-shadow: 0 10px 28px rgba(20, 35, 70, 0.08);
+  box-shadow: 0 10px 28px rgba(20, 35, 70, 0.06);
 }
 
-.post-link {
-  display: block;
-  padding: 20px;
-  color: inherit;
+.board-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  color: #111827;
+  font-size: 13px;
+}
+
+.board-table th,
+.board-table td {
+  height: 30px;
+  padding: 0 8px;
+  border-bottom: 1px solid #edf0f4;
+  vertical-align: middle;
+}
+
+.board-table th {
+  border-bottom-color: #cfd6e2;
+  background: #fbfcfe;
+  color: #111827;
+  font-size: 12px;
+  font-weight: 900;
+  text-align: center;
+}
+
+.board-table tbody tr:hover {
+  background: #f4f7fb;
+}
+
+.board-table tbody tr.pinned {
+  background: #f8fafc;
+}
+
+.board-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.col-number { width: 64px; }
+.col-category { width: 86px; }
+.col-author { width: 150px; }
+.col-date { width: 90px; }
+.col-count { width: 60px; }
+
+.board-table td:not(.title-cell) {
+  text-align: center;
+  white-space: nowrap;
+}
+
+.number-cell {
+  color: #667085;
+}
+
+.title-cell {
+  min-width: 0;
+  text-align: left;
+}
+
+.title-link {
+  min-width: 0;
+  display: inline-flex;
+  max-width: 100%;
+  gap: 4px;
+  align-items: center;
+  color: #111827;
+  font-weight: 800;
   text-decoration: none;
 }
 
-.post-top {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 10px;
+.title-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.board-badge,
-.pin-badge {
-  padding: 5px 9px;
-  border-radius: 999px;
-  font-size: 12px;
+.title-link:hover {
+  color: #dc2626;
+  text-decoration: underline;
+}
+
+.title-link::first-letter {
+  text-transform: none;
+}
+
+.comment-count {
+  flex: 0 0 auto;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.edited-mark {
+  flex: 0 0 auto;
+  color: #94a3b8;
+  font-size: 11px;
+}
+
+.category-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #344054;
+  font-weight: 800;
+}
+
+.category-label.notice {
+  color: #dc2626;
+}
+
+.category-label.free {
+  color: #344054;
+}
+
+.pin-dot {
+  width: 16px;
+  height: 16px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #f97316;
+  color: #ffffff;
+  font-size: 11px;
   font-weight: 900;
 }
 
-.board-badge {
-  background: #eff6ff;
-  color: #2563eb;
-}
-
-.pin-badge {
-  background: #fff7ed;
-  color: #f97316;
-}
-
-.post-card h2 {
-  margin: 0 0 12px;
-  color: #111827;
-  font-size: 20px;
-}
-
-.post-meta {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 12px;
-  color: #667085;
-  font-size: 14px;
+.author-cell {
+  color: #344054;
 }
 
 .author-chip {
+  min-width: 0;
   display: inline-flex;
+  max-width: 100%;
   align-items: center;
-  gap: 6px;
-  color: #344054;
+  gap: 5px;
   font-weight: 800;
 }
 
 .author-avatar {
   position: relative;
   display: inline-flex;
-  width: 28px;
-  height: 28px;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
   overflow: hidden;
   border-radius: 50%;
   background: #8fb8cc;
@@ -344,6 +449,14 @@ onMounted(() => {
 
   .board-actions {
     justify-content: flex-start;
+  }
+
+  .board-table-wrap {
+    overflow-x: auto;
+  }
+
+  .board-table {
+    min-width: 760px;
   }
 }
 </style>

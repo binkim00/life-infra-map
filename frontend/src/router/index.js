@@ -13,7 +13,8 @@ import MyInquiryView from '@/views/MyInquiryView.vue'
 import AdminInquiryView from '@/views/AdminInquiryView.vue'
 import AdminUserView from '@/views/AdminUserView.vue'
 import AdminUserProfileView from '@/views/AdminUserProfileView.vue'
-import NotificationView from '@/views/NotificationView.vue'
+import SettingsView from '@/views/SettingsView.vue'
+import GuideView from '@/views/GuideView.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -49,9 +50,14 @@ const router = createRouter({
       component: MypageView,
     },
     {
-      path: '/notifications',
-      name: 'notifications',
-      component: NotificationView,
+      path: '/settings',
+      name: 'settings',
+      component: SettingsView,
+    },
+    {
+      path: '/guide',
+      name: 'guide',
+      component: GuideView,
     },
     {
       path: '/inquiries/new',

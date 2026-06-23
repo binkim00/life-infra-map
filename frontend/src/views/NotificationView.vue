@@ -1,6 +1,6 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { onBeforeRouteLeave, useRouter } from 'vue-router'
+import { computed, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { getNotifications, markAllNotificationsRead } from '@/api/boards'
 import { useAuthStore } from '@/stores/auth'
 
@@ -10,7 +10,6 @@ const authStore = useAuthStore()
 const notifications = ref([])
 const isLoading = ref(false)
 const errorMessage = ref('')
-const hasMarkedRead = ref(false)
 
 const unreadCount = computed(() => notifications.value.filter((item) => !item.is_read).length)
 
@@ -33,29 +32,26 @@ const fetchNotifications = async () => {
 }
 
 const markVisibleNotificationsRead = async () => {
-  if (hasMarkedRead.value || unreadCount.value === 0) {
+  if (unreadCount.value === 0) {
     return
   }
 
-  hasMarkedRead.value = true
   notifications.value.forEach((notification) => {
     notification.is_read = true
   })
   await markAllNotificationsRead()
 }
 
+const handleNotificationClick = async (notification) => {
+  if (!notification.is_read) {
+    notification.is_read = true
+  }
+
+  await router.push(notification.target_route || '/notifications')
+}
+
 onMounted(() => {
-  fetchNotifications()
-  window.addEventListener('beforeunload', markVisibleNotificationsRead)
-})
-
-onBeforeRouteLeave(async () => {
-  await markVisibleNotificationsRead()
-})
-
-onBeforeUnmount(() => {
-  window.removeEventListener('beforeunload', markVisibleNotificationsRead)
-  markVisibleNotificationsRead()
+  fetchNotifications().then(markVisibleNotificationsRead)
 })
 </script>
 
@@ -78,7 +74,11 @@ onBeforeUnmount(() => {
 
       <section v-else class="notification-list">
         <article v-for="notification in notifications" :key="notification.id" class="notification-card"
-          :class="{ unread: !notification.is_read }">
+          :class="{ unread: !notification.is_read, clickable: notification.target_route }"
+          role="button"
+          tabindex="0"
+          @click="handleNotificationClick(notification)"
+          @keyup.enter="handleNotificationClick(notification)">
           <div>
             <span class="type-badge">{{ notification.notification_type }}</span>
             <h2>{{ notification.title }}</h2>
@@ -103,6 +103,8 @@ h1, h2 { margin: 0; color: #111827; }
 .notification-list { display: grid; gap: 12px; }
 .notification-card, .status-card { padding: 18px; border: 1px solid #e5e8f0; border-radius: 18px; background: #fff; box-shadow: 0 10px 28px rgba(20,35,70,.08); }
 .notification-card { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; }
+.notification-card.clickable { cursor: pointer; }
+.notification-card.clickable:hover, .notification-card.clickable:focus-visible { border-color: #2563eb; outline: none; }
 .notification-card.unread { border-color: #93c5fd; background: #eff6ff; }
 .type-badge { display: inline-flex; margin-bottom: 8px; padding: 5px 9px; border-radius: 999px; background: #dbeafe; color: #2563eb; font-size: 12px; font-weight: 900; }
 .notification-card p { color: #344054; line-height: 1.6; white-space: pre-wrap; }
