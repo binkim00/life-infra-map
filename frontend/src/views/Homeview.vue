@@ -453,6 +453,7 @@ const baseLocationCandidates = ref([])
 const pendingBaseLocationSearch = ref(null)
 const isResultListCollapsed = ref(false)
 const isPlaceDetailCollapsed = ref(false)
+const activeResultView = ref('results')
 
 const isLocating = ref(false)
 const isSearchingMap = ref(false)
@@ -848,6 +849,111 @@ const shouldShowAiWebSearchPanel = computed(() => {
   )
 })
 
+const hasSearchExperienceContent = computed(() => {
+  return Boolean(
+    mapSearchKeyword.value.trim() ||
+    allSearchResults.value.length ||
+    isSearchingMap.value ||
+    shouldShowAiWebSearchPanel.value ||
+    baseLocationCandidates.value.length,
+  )
+})
+
+const hasMapExperienceContent = computed(() => {
+  return Boolean(
+    (activeTab.value === 'map' || activeTab.value === 'search') &&
+    (
+      hasSearchExperienceContent.value ||
+      currentLocationPlace.value.length
+    ),
+  )
+})
+
+const searchConversationTitle = computed(() => {
+  const query = mapSearchKeyword.value.trim() || searchKeyword.value.trim()
+
+  if (isSearchingMap.value) {
+    return query ? `“${query}”에 맞는 장소를 찾는 중이에요.` : '필요한 장소를 찾는 중이에요.'
+  }
+
+  if (allSearchResults.value.length && query) {
+    return `현재 위치 기준으로 “${query}” 결과를 찾았어요.`
+  }
+
+  if (query) {
+    return `“${query}” 검색을 준비했어요.`
+  }
+
+  return '상황을 입력하면 지도와 결과를 함께 정리해드려요.'
+})
+
+const searchConversationDetail = computed(() => {
+  if (isSearchingMap.value) {
+    return loadingMessage.value || '검색 조건을 확인하고 있습니다.'
+  }
+
+  if (locationMessage.value) {
+    return locationMessage.value
+  }
+
+  if (allSearchResults.value.length) {
+    return `${resultSourceLabel.value} ${filteredSearchResults.value.length}개를 확인했습니다.`
+  }
+
+  return '검색 결과가 부족하면 웹 검색 참고 링크를 보조로 확인할 수 있어요.'
+})
+
+const searchConversationChips = computed(() => {
+  const chips = []
+  const query = mapSearchKeyword.value.trim()
+  const target = getTextValue(activeSearchPlan.value?.targetQuery || activeSearchPlan.value?.targetKeyword)
+  const category = getTextValue(activeSearchPlan.value?.categoryKeyword || activeSearchPlan.value?.categoryHint)
+
+  if (query) {
+    chips.push({ label: '검색어', value: query })
+  }
+
+  if (target && target !== query) {
+    chips.push({ label: '조건', value: target })
+  }
+
+  if (category) {
+    chips.push({ label: '분류', value: category })
+  }
+
+  if (allSearchResults.value.length) {
+    chips.push({ label: '결과', value: `${filteredSearchResults.value.length}개` })
+  }
+
+  return chips.slice(0, 4)
+})
+
+const searchConversationNotice = computed(() => {
+  const missingLabels = [
+    ...new Set(allSearchResults.value.flatMap((place) => getRecommendationMissingLabels(place))),
+  ]
+
+  if (missingLabels.length) {
+    return `“${missingLabels.slice(0, 2).join(', ')}”는 현재 데이터로 확인되지 않아 방문 전 확인이 필요합니다.`
+  }
+
+  if (shouldShowAiWebSearchPanel.value) {
+    return '웹 검색 참고 결과도 함께 확인할 수 있어요.'
+  }
+
+  return ''
+})
+
+const setResultViewMode = (mode) => {
+  activeResultView.value = mode === 'map' ? 'map' : 'results'
+  isResultListCollapsed.value = activeResultView.value === 'map'
+}
+
+const toggleResultListPanel = () => {
+  isResultListCollapsed.value = !isResultListCollapsed.value
+  activeResultView.value = isResultListCollapsed.value ? 'map' : 'results'
+}
+
 const aiWebSearchButtonDisabled = computed(() => {
   return (
     aiWebSearchStatus.value === 'loading' ||
@@ -1200,7 +1306,9 @@ const handleSearch = async () => {
   }
 
   mapSearchKeyword.value = searchKeyword.value.trim()
-  activeTab.value = 'map'
+  activeTab.value = 'search'
+  activeResultView.value = 'results'
+  isResultListCollapsed.value = false
 
   await nextTick()
 
@@ -1303,6 +1411,8 @@ const getSearchCenterForRecommendation = async ({ updateMessage = true } = {}) =
 
 const openMapWithCurrentLocation = () => {
   activeTab.value = 'map'
+  activeResultView.value = 'map'
+  isResultListCollapsed.value = true
 
   isLocating.value = true
   locationMessage.value = '현재 위치를 확인하는 중입니다.'
@@ -3705,6 +3815,8 @@ const setResultFilterMode = (filterMode) => {
 
 const useDefaultMapLocation = () => {
   activeTab.value = 'map'
+  activeResultView.value = 'map'
+  isResultListCollapsed.value = true
   mapCenter.value = DEFAULT_CENTER
   currentLocationPlace.value = [
     {
@@ -5299,6 +5411,8 @@ const setSearchResults = ({
   resultMessageSuffix.value = messageSuffix
   placeListItemRefs.value = {}
   mapFitBoundsKey.value += 1
+  activeResultView.value = results.length ? 'results' : activeResultView.value
+  isResultListCollapsed.value = false
 
   if (results.length > 0) {
     clearNoResultLocationMessage()
@@ -6934,8 +7048,16 @@ const performUnifiedMapSearch = async ({ useMapBounds = false } = {}) => {
 
 const runAiPresetSearch = async (query) => {
   mapSearchKeyword.value = query
+  activeResultView.value = 'results'
+  isResultListCollapsed.value = false
   await nextTick()
   await performUnifiedMapSearch()
+}
+
+const runLandingPresetSearch = async (query) => {
+  searchKeyword.value = query
+  await nextTick()
+  await handleSearch()
 }
 
 const searchCurrentMapView = () => {
@@ -7022,6 +7144,8 @@ const resetMapSearch = () => {
   selectedPlace.value = null
   showDetailPanel.value = false
   detailFrameError.value = false
+  activeResultView.value = 'results'
+  isResultListCollapsed.value = false
   clearSearchResults()
   locationMessage.value = '검색이 초기화되었습니다. 검색어를 입력하거나 지도를 이동한 뒤 다시 검색해보세요.'
 }
@@ -7065,26 +7189,41 @@ const handleDetailFrameError = () => {
 </script>
 
 <template>
-  <main class="home-page">
+  <main
+    class="home-page"
+    :class="{
+      'is-search-tab': activeTab === 'search',
+      'is-map-tab': activeTab === 'map',
+      'is-idle-experience': activeTab === 'search' && !hasSearchExperienceContent,
+      'has-search-results': activeTab === 'search' && hasSearchExperienceContent,
+    }"
+  >
     <header class="page-header">
       <div class="header-main">
         <div class="top-bar">
-          <button type="button" class="tab-button" :class="{ active: activeTab === 'search' }"
+          <button
+            type="button"
+            class="tab-button"
+            :class="{ active: activeTab === 'search' }"
             @click="activeTab = 'search'">
-            검색창
+            검색장
           </button>
 
-          <button type="button" class="tab-button" :class="{ active: activeTab === 'map' }"
+          <button
+            type="button"
+            class="tab-button"
+            :class="{ active: activeTab === 'map' }"
             @click="openMapWithCurrentLocation">
             지도
           </button>
         </div>
       </div>
-
-      
     </header>
 
-    <section v-if="activeTab === 'search'" class="search-section">
+    <section
+      v-if="activeTab === 'search' && !hasSearchExperienceContent"
+      class="search-section search-experience is-idle"
+    >
       <div class="intro">
         <p class="eyebrow">상황 기반 장소 추천 지도 서비스</p>
         <h1>지금 필요한 장소를 검색해보세요</h1>
@@ -7094,52 +7233,161 @@ const handleDetailFrameError = () => {
       </div>
 
       <div class="search-box">
-        <input v-model="searchKeyword" type="text" placeholder="지금 어떤 장소가 필요하신가요?" @keyup.enter="handleSearch" />
+        <input
+          v-model="searchKeyword"
+          type="text"
+          placeholder="지금 어떤 장소가 필요하신가요?"
+          @keyup.enter="handleSearch"
+        />
 
         <button type="button" @click="handleSearch">
           검색
         </button>
       </div>
+
+      <div class="landing-preset-buttons">
+        <button
+          v-for="preset in aiSearchPresets"
+          :key="`landing-${preset.label}`"
+          type="button"
+          @click="runLandingPresetSearch(preset.query)"
+        >
+          {{ preset.label }}
+        </button>
+      </div>
+
+      <p class="search-idle-hint">
+        검색하면 지도와 추천 결과를 한 화면에서 함께 보여드릴게요.
+      </p>
     </section>
 
-    <section v-else-if="activeTab === 'map'" class="map-section-wrap">
-      <div class="map-header">
-        <div>
-          <h1>상황 기반 추천 지도</h1>
-          <p>
-            {{ isLocating ? '현재 위치를 불러오는 중입니다...' : locationMessage }}
+    <section
+      v-else-if="activeTab === 'map' || (activeTab === 'search' && hasSearchExperienceContent)"
+      class="map-section-wrap search-experience"
+      :class="{
+        'has-results': activeTab === 'search' && hasSearchExperienceContent,
+        'is-map-tab-view': activeTab === 'map',
+      }"
+    >
+      <section
+        class="conversation-search-card search-hero-card"
+        :class="{ 'has-results': hasMapExperienceContent }"
+      >
+        <div class="conversation-card-top">
+          <div class="conversation-copy">
+            <p class="eyebrow">대화형 장소 추천 지도</p>
+            <h1>{{ hasMapExperienceContent ? '필요한 장소를 계속 찾아볼까요?' : '지도에서 바로 찾아볼까요?' }}</h1>
+          </div>
+
+          <div class="map-header-actions">
+            <button
+              type="button"
+              class="map-location-button"
+              :disabled="isSearchingMap || isLocating"
+              @click="openMapWithCurrentLocation"
+            >
+              {{ isLocating ? '확인 중...' : '현재 위치' }}
+            </button>
+
+            <button
+              type="button"
+              class="map-location-button"
+              :disabled="isSearchingMap"
+              @click="useDefaultMapLocation"
+            >
+              기본 위치
+            </button>
+
+            <button
+              type="button"
+              class="map-reset-button map-header-reset"
+              :disabled="isSearchingMap"
+              @click="resetMapSearch"
+            >
+              초기화
+            </button>
+          </div>
+        </div>
+
+        <form class="map-search-box ai-search-box" @submit.prevent="performUnifiedMapSearch">
+          <label for="map-keyword-search">상황을 입력해 주세요</label>
+          <input
+            id="map-keyword-search"
+            v-model="mapSearchKeyword"
+            type="text"
+            placeholder="예: 소금빵 맛집, 조용히 작업할 카페, 비 오는데 쉴 곳"
+          />
+
+          <button
+            type="submit"
+            class="map-ai-button"
+            :disabled="isSearchingMap || !mapSearchKeyword.trim()"
+          >
+            {{ isSearchingMap ? '검색 중...' : '검색' }}
+          </button>
+
+          <div class="ai-preset-buttons">
+            <button
+              v-for="preset in aiSearchPresets"
+              :key="preset.label"
+              type="button"
+              :disabled="isSearchingMap"
+              @click="runAiPresetSearch(preset.query)"
+            >
+              {{ preset.label }}
+            </button>
+          </div>
+        </form>
+
+        <div class="conversation-status">
+          <div>
+            <strong>{{ searchConversationTitle }}</strong>
+            <p>{{ searchConversationDetail }}</p>
+          </div>
+
+          <div
+            v-if="searchConversationChips.length"
+            class="conversation-chip-list"
+          >
+            <span
+              v-for="chip in searchConversationChips"
+              :key="`${chip.label}-${chip.value}`"
+            >
+              {{ chip.label }}: {{ chip.value }}
+            </span>
+          </div>
+
+          <p
+            v-if="searchConversationNotice"
+            class="conversation-notice"
+          >
+            {{ searchConversationNotice }}
           </p>
         </div>
 
-        <div class="map-header-actions">
+        <div
+          v-if="activeTab === 'search' && hasSearchExperienceContent"
+          class="view-switch"
+          :class="{ 'is-map-active': activeResultView === 'map' }"
+          aria-label="결과와 지도 보기 전환"
+        >
           <button
             type="button"
-            class="map-location-button"
-            :disabled="isSearchingMap || isLocating"
-            @click="openMapWithCurrentLocation"
+            :class="{ active: activeResultView === 'results' }"
+            @click="setResultViewMode('results')"
           >
-            {{ isLocating ? '확인 중...' : '현재 위치' }}
+            결과 보기
           </button>
 
           <button
             type="button"
-            class="map-location-button"
-            :disabled="isSearchingMap"
-            @click="useDefaultMapLocation"
+            :class="{ active: activeResultView === 'map' }"
+            @click="setResultViewMode('map')"
           >
-            기본 위치
-          </button>
-
-          <button
-            type="button"
-            class="map-reset-button map-header-reset"
-            :disabled="isSearchingMap"
-            @click="resetMapSearch"
-          >
-            검색 초기화
+            지도 보기
           </button>
         </div>
-      </div>
+      </section>
 
       <div v-if="mapParserStatus" class="map-parser-status" :class="mapParserStatus.className">
         <strong>{{ mapParserStatus.label }}</strong>
@@ -7154,36 +7402,6 @@ const handleDetailFrameError = () => {
         <strong>{{ searchPlanStatus.label }}</strong>
         <span>{{ searchPlanStatus.detail }}</span>
       </div>
-
-      <form class="map-search-box ai-search-box" @submit.prevent="performUnifiedMapSearch">
-        <label for="map-keyword-search">AI 추천 검색</label>
-        <input
-          id="map-keyword-search"
-          v-model="mapSearchKeyword"
-          type="text"
-          placeholder="예: 카페, 광주 카페, 서면역 근처 흡연 가능한 곳, 비 오는데 쉴 곳"
-        />
-
-        <button
-          type="submit"
-          class="map-ai-button"
-          :disabled="isSearchingMap || !mapSearchKeyword.trim()"
-        >
-          {{ isSearchingMap ? '검색 중...' : '검색' }}
-        </button>
-
-        <div class="ai-preset-buttons">
-          <button
-            v-for="preset in aiSearchPresets"
-            :key="preset.label"
-            type="button"
-            :disabled="isSearchingMap"
-            @click="runAiPresetSearch(preset.query)"
-          >
-            {{ preset.label }}
-          </button>
-        </div>
-      </form>
 
       <section
         v-if="baseLocationCandidates.length"
@@ -7225,11 +7443,13 @@ const handleDetailFrameError = () => {
       </section>
 
       <div
-        class="map-content"
+        class="map-content search-reveal-area"
         :class="{
-          'has-result-list': searchedPlaces.length,
+          'has-result-list': allSearchResults.length || isSearchingMap || shouldShowAiWebSearchPanel,
           'has-selected-place': selectedPlace,
           'is-list-collapsed': isResultListCollapsed,
+          'is-result-focused': activeResultView === 'results',
+          'is-map-focused': activeResultView === 'map',
         }"
       >
         <aside
@@ -7246,7 +7466,7 @@ const handleDetailFrameError = () => {
             <button
               type="button"
               class="panel-toggle-button"
-              @click="isResultListCollapsed = !isResultListCollapsed"
+              @click="toggleResultListPanel"
             >
               {{ isResultListCollapsed ? '펼치기' : '접기' }}
             </button>
@@ -7853,35 +8073,22 @@ const handleDetailFrameError = () => {
 </template>
 
 <style scoped>
+.home-page {
+  min-height: 100vh;
+  padding: clamp(18px, 2vw, 28px);
+  background:
+    radial-gradient(circle at top left, rgba(37, 99, 235, 0.12), transparent 28%),
+    radial-gradient(circle at bottom right, rgba(20, 184, 166, 0.12), transparent 30%),
+    linear-gradient(180deg, #ffffff 0%, #f6f7fb 100%);
+}
+
 .page-header {
-  margin-bottom: 24px;
+  margin-bottom: clamp(16px, 2vw, 24px);
 }
 
 .header-main {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-  gap: 16px;
-  align-items: center;
-}
-
-.top-bar {
-  grid-column: 2;
-}
-
-@media (max-width: 720px) {
-  .header-main {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-  }
-}
-
-.home-page {
-  min-height: 100vh;
-  padding: 24px;
-  background:
-    radial-gradient(circle at top left, rgba(80, 140, 255, 0.14), transparent 32%),
-    linear-gradient(180deg, #ffffff 0%, #f6f7fb 100%);
+  display: flex;
+  justify-content: center;
 }
 
 .top-bar {
@@ -7890,9 +8097,10 @@ const handleDetailFrameError = () => {
   padding: 6px;
   display: flex;
   gap: 6px;
-  background: #ffffff;
-  border: 1px solid #e5e8f0;
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid rgba(229, 232, 240, 0.9);
   border-radius: 999px;
+  backdrop-filter: blur(14px);
   box-shadow: 0 8px 24px rgba(20, 35, 70, 0.08);
 }
 
@@ -7906,11 +8114,13 @@ const handleDetailFrameError = () => {
   font-size: 15px;
   font-weight: 700;
   cursor: pointer;
+  transition: background 0.22s ease, color 0.22s ease, transform 0.22s ease;
 }
 
 .tab-button.active {
-  background: #2563eb;
+  background: #111827;
   color: #ffffff;
+  transform: translateY(-1px);
 }
 
 .search-section {
@@ -7919,11 +8129,22 @@ const handleDetailFrameError = () => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  padding: clamp(24px, 6vh, 72px) 0;
+  transition: transform 0.28s ease, opacity 0.28s ease;
+}
+
+.search-experience {
+  transition: opacity 0.28s ease, transform 0.28s ease;
+}
+
+.search-experience.is-idle {
+  animation: idleSearchEnter 0.28s ease both;
 }
 
 .intro {
-  margin-bottom: 32px;
+  margin-bottom: 28px;
   text-align: center;
+  transition: margin 0.25s ease, opacity 0.25s ease, transform 0.25s ease;
 }
 
 .eyebrow {
@@ -7938,7 +8159,7 @@ h1 {
   color: #111827;
   font-size: 42px;
   line-height: 1.25;
-  letter-spacing: -0.04em;
+  letter-spacing: 0;
 }
 
 .description {
@@ -7949,13 +8170,14 @@ h1 {
 
 .search-box {
   width: min(720px, 100%);
-  padding: 8px;
+  padding: 9px;
   display: flex;
   gap: 8px;
-  background: #ffffff;
-  border: 1px solid #e5e8f0;
-  border-radius: 22px;
-  box-shadow: 0 18px 48px rgba(20, 35, 70, 0.12);
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid rgba(229, 232, 240, 0.95);
+  border-radius: 24px;
+  box-shadow: 0 22px 56px rgba(20, 35, 70, 0.14);
+  transition: all 0.25s ease;
 }
 
 .search-box input {
@@ -7972,29 +8194,147 @@ h1 {
   padding: 0 28px;
   border: 0;
   border-radius: 16px;
-  background: #2563eb;
+  background: #111827;
   color: #ffffff;
   font-size: 16px;
   font-weight: 800;
   cursor: pointer;
 }
 
+.landing-preset-buttons {
+  width: min(720px, 100%);
+  margin-top: 16px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+.landing-preset-buttons button {
+  min-height: 38px;
+  padding: 0 14px;
+  border: 1px solid #e5e8f0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.8);
+  color: #344054;
+  font-size: 13px;
+  font-weight: 900;
+  cursor: pointer;
+  box-shadow: 0 8px 20px rgba(20, 35, 70, 0.07);
+  transition: transform 0.22s ease, border-color 0.22s ease, background 0.22s ease;
+}
+
+.landing-preset-buttons button:hover {
+  border-color: #14b8a6;
+  background: #f0fdfa;
+  transform: translateY(-1px);
+}
+
+.search-idle-hint {
+  margin: 14px 0 0;
+  color: #667085;
+  font-size: 13px;
+  font-weight: 800;
+}
+
 .map-section-wrap {
   width: 100%;
   max-width: none;
-  margin: 28px 0 0;
+  margin: 0;
 }
 
+.map-section-wrap.has-results {
+  animation: compactSearchEnter 0.28s ease both;
+}
+
+.conversation-search-card {
+  width: min(1180px, 100%);
+  margin: 0 auto 14px;
+  padding: clamp(14px, 1.6vw, 20px);
+  display: grid;
+  gap: 12px;
+  border: 1px solid rgba(229, 232, 240, 0.95);
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 18px 48px rgba(20, 35, 70, 0.11);
+  backdrop-filter: blur(14px);
+  transition: transform 0.25s ease, box-shadow 0.25s ease, padding 0.25s ease;
+}
+
+.conversation-search-card.has-results {
+  padding: 14px;
+  transform: translateY(-8px);
+}
+
+.search-experience.has-results .search-hero-card {
+  width: min(1040px, 100%);
+  margin-bottom: 6px;
+  padding: 12px;
+  border-radius: 20px;
+  box-shadow: 0 14px 38px rgba(20, 35, 70, 0.1);
+}
+
+.search-experience.has-results .conversation-card-top {
+  align-items: center;
+}
+
+.search-experience.has-results .conversation-copy h1 {
+  font-size: 20px;
+}
+
+.search-experience.has-results .conversation-copy .eyebrow {
+  margin-bottom: 3px;
+  font-size: 11px;
+}
+
+.search-experience.has-results .map-search-box {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.search-experience.has-results .map-search-box label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+}
+
+.search-experience.has-results .ai-preset-buttons {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  scrollbar-width: thin;
+}
+
+.search-experience.has-results .ai-preset-buttons button {
+  flex: 0 0 auto;
+  min-height: 32px;
+  font-size: 12px;
+}
+
+.conversation-card-top,
 .map-header {
   display: flex;
   justify-content: space-between;
   gap: 12px;
   align-items: flex-start;
-  margin-bottom: 12px;
 }
 
+.conversation-copy {
+  min-width: 0;
+}
+
+.conversation-copy .eyebrow {
+  margin-bottom: 5px;
+  font-size: 12px;
+}
+
+.conversation-copy h1,
 .map-header h1 {
+  margin: 0;
   font-size: 24px;
+  line-height: 1.3;
+  letter-spacing: 0;
 }
 
 .map-header p {
@@ -8014,16 +8354,22 @@ h1 {
 .map-location-button,
 .map-header-reset {
   padding: 10px 14px;
-  border: 0;
-  border-radius: 12px;
+  border: 1px solid transparent;
+  border-radius: 999px;
   font-size: 14px;
   font-weight: 800;
   cursor: pointer;
+  transition: transform 0.22s ease, background 0.22s ease, border-color 0.22s ease;
 }
 
 .map-location-button {
-  background: #eef6ff;
+  background: #eff6ff;
   color: #1d4ed8;
+}
+
+.map-location-button:hover:not(:disabled),
+.map-header-reset:hover:not(:disabled) {
+  transform: translateY(-1px);
 }
 
 .map-location-button:disabled {
@@ -8059,15 +8405,14 @@ h1 {
 }
 
 .map-search-box {
-  margin-bottom: 12px;
+  margin: 0;
   padding: 8px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
-  background: #ffffff;
+  background: #f8fafc;
   border: 1px solid #e5e8f0;
-  border-radius: 14px;
-  box-shadow: 0 10px 28px rgba(20, 35, 70, 0.08);
+  border-radius: 18px;
 }
 
 .map-search-box label {
@@ -8080,16 +8425,16 @@ h1 {
 
 .map-search-box input {
   min-width: 0;
-  padding: 12px 14px;
+  padding: 13px 15px;
   border: 0;
-  border-radius: 10px;
-  background: #f8fafc;
+  border-radius: 13px;
+  background: #ffffff;
   outline: none;
   font-size: 15px;
 }
 
 .ai-search-box {
-  border-color: #ddd6fe;
+  border-color: #dbeafe;
 }
 
 .map-search-actions {
@@ -8103,8 +8448,8 @@ h1 {
   min-height: 44px;
   padding: 0 16px;
   border: 0;
-  border-radius: 10px;
-  background: #ef4444;
+  border-radius: 13px;
+  background: #111827;
   color: #ffffff;
   font-size: 15px;
   font-weight: 800;
@@ -8122,7 +8467,7 @@ h1 {
 }
 
 .map-ai-button {
-  background: #7c3aed !important;
+  background: #111827 !important;
 }
 
 .ai-preset-buttons {
@@ -8135,7 +8480,8 @@ h1 {
 .ai-preset-buttons button {
   min-height: 36px;
   padding: 0 12px;
-  background: #f2f4f7 !important;
+  background: #ffffff !important;
+  border: 1px solid #e5e8f0;
   color: #344054 !important;
   font-size: 13px;
 }
@@ -8145,8 +8491,151 @@ h1 {
   color: #344054 !important;
 }
 
+.conversation-status {
+  padding: 12px 14px;
+  display: grid;
+  gap: 8px;
+  border-radius: 16px;
+  background: #f8fafc;
+}
+
+.conversation-status strong {
+  display: block;
+  margin-bottom: 4px;
+  color: #111827;
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.conversation-status p {
+  margin: 0;
+  display: -webkit-box;
+  overflow: hidden;
+  color: #667085;
+  font-size: 13px;
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.conversation-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.conversation-chip-list span {
+  max-width: 100%;
+  padding: 5px 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #344054;
+  font-size: 12px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.conversation-status .conversation-notice {
+  color: #92400e;
+}
+
+.view-switch {
+  position: relative;
+  width: min(360px, 100%);
+  padding: 4px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border: 1px solid #e5e8f0;
+  border-radius: 999px;
+  background: #f2f4f7;
+}
+
+.view-switch::before {
+  content: "";
+  position: absolute;
+  inset: 4px auto 4px 4px;
+  width: calc(50% - 4px);
+  border-radius: 999px;
+  background: #ffffff;
+  box-shadow: 0 8px 20px rgba(20, 35, 70, 0.12);
+  transition: transform 0.25s ease;
+}
+
+.view-switch.is-map-active::before {
+  transform: translateX(100%);
+}
+
+.view-switch button {
+  position: relative;
+  z-index: 1;
+  min-height: 34px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #667085;
+  font-size: 13px;
+  font-weight: 900;
+  cursor: pointer;
+  transition: color 0.22s ease;
+}
+
+.view-switch button.active {
+  color: #111827;
+}
+
+@keyframes fadeSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes compactSearchEnter {
+  from {
+    opacity: 0.96;
+    transform: translateY(18px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes revealWorkspace {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes idleSearchEnter {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .base-location-candidates {
-  margin-bottom: 12px;
+  width: min(1180px, 100%);
+  margin: 0 auto 12px;
   padding: 14px;
   display: grid;
   gap: 12px;
@@ -8241,11 +8730,21 @@ h1 {
 }
 
 .map-content {
+  width: min(1400px, 100%);
+  margin: 0 auto;
   position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: clamp(16px, 1.4vw, 24px);
   align-items: stretch;
+  animation: fadeSlideIn 0.3s ease both;
+  transition: grid-template-columns 0.25s ease;
+}
+
+.search-reveal-area {
+  opacity: 0;
+  transform: translateY(20px);
+  animation: revealWorkspace 0.34s ease 0.04s both;
 }
 
 .map-content.has-result-list {
@@ -8281,6 +8780,7 @@ h1 {
   border: 1px solid #e5e8f0;
   border-radius: 22px;
   box-shadow: 0 18px 48px rgba(20, 35, 70, 0.12);
+  transition: width 0.25s ease, height 0.25s ease, transform 0.25s ease, opacity 0.25s ease, padding 0.25s ease;
 }
 
 .place-list-panel.is-collapsed {
@@ -8386,13 +8886,14 @@ h1 {
   margin: 10px 0;
   padding: 12px;
   flex-shrink: 0;
-  max-height: 180px;
+  max-height: 220px;
   display: grid;
   gap: 10px;
   overflow-y: auto;
   border: 1px solid #e5e8f0;
   border-radius: 12px;
   background: #f8fafc;
+  animation: aiPanelReveal 0.25s ease both;
 }
 
 .ai-web-search-heading {
@@ -9003,6 +9504,7 @@ h1 {
   min-width: 0;
   position: relative;
   z-index: 1;
+  transition: transform 0.25s ease, opacity 0.25s ease;
 }
 
 .map-loading-overlay {
@@ -9069,8 +9571,24 @@ h1 {
 :deep(.map) {
   height: min(720px, calc(100vh - clamp(190px, 20vh, 230px)));
   min-height: 520px;
-  border: 0;
+  border: 1px solid #e5e8f0;
+  border-radius: 24px;
+  overflow: hidden;
   box-shadow: 0 18px 48px rgba(20, 35, 70, 0.12);
+}
+
+@keyframes aiPanelReveal {
+  from {
+    max-height: 0;
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    max-height: 220px;
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .place-detail-panel {
@@ -9495,6 +10013,16 @@ h1 {
 
 @media (max-width: 1100px) {
 
+  .conversation-card-top {
+    flex-direction: column;
+  }
+
+  .conversation-search-card,
+  .base-location-candidates,
+  .map-content {
+    width: 100%;
+  }
+
   .map-content.has-result-list,
   .map-content.has-result-list.has-selected-place,
   .map-content.has-result-list.is-list-collapsed,
@@ -9503,7 +10031,12 @@ h1 {
     grid-template-columns: 1fr;
   }
 
+  .map-area {
+    order: 1;
+  }
+
   .place-list-panel {
+    order: 2;
     position: relative;
     right: auto;
     bottom: auto;
@@ -9513,7 +10046,8 @@ h1 {
     height: clamp(260px, 38vh, 360px);
     max-height: clamp(260px, 38vh, 360px);
     min-height: 0;
-    border-radius: 18px;
+    margin-top: -18px;
+    border-radius: 22px 22px 18px 18px;
   }
 
   .map-content.has-selected-place .place-list-panel {
@@ -9523,6 +10057,8 @@ h1 {
   }
 
   .place-list-panel.is-collapsed {
+    height: 64px;
+    max-height: 64px;
     min-height: 0;
   }
 
@@ -9561,8 +10097,18 @@ h1 {
     border-radius: 18px;
   }
 
+  .search-section {
+    min-height: calc(100vh - 84px);
+    justify-content: flex-start;
+    padding-top: 54px;
+  }
+
+  .landing-preset-buttons {
+    justify-content: flex-start;
+  }
+
   .map-section-wrap {
-    margin-top: 22px;
+    margin-top: 0;
   }
 
   .map-header {
@@ -9584,6 +10130,22 @@ h1 {
     justify-content: stretch;
   }
 
+  .conversation-search-card {
+    border-radius: 20px;
+  }
+
+  .conversation-copy h1 {
+    font-size: 20px;
+  }
+
+  .conversation-status {
+    padding: 11px;
+  }
+
+  .view-switch {
+    width: 100%;
+  }
+
   .map-location-button,
   .map-header-reset {
     flex: 1;
@@ -9591,6 +10153,10 @@ h1 {
   }
 
   .map-search-box {
+    grid-template-columns: 1fr;
+  }
+
+  .search-experience.has-results .map-search-box {
     grid-template-columns: 1fr;
   }
 
@@ -9621,8 +10187,9 @@ h1 {
   }
 
   :deep(.map) {
-    height: min(680px, calc(100vh - 230px));
-    min-height: 440px;
+    height: min(58vh, 560px);
+    min-height: 360px;
+    border-radius: 20px;
   }
 
   .place-list-panel {
@@ -9632,8 +10199,9 @@ h1 {
     left: auto;
     z-index: 10;
     width: 100%;
-    height: clamp(260px, 42vh, 360px);
-    max-height: clamp(260px, 42vh, 360px);
+    height: clamp(250px, 42vh, 360px);
+    max-height: clamp(250px, 42vh, 360px);
+    margin-top: -16px;
   }
 
   .map-content.has-selected-place .place-list-panel {
