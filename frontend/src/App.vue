@@ -19,7 +19,16 @@ const isNotificationMenuOpen = ref(false)
 const notificationMenuRef = ref(null)
 const accountMenuRef = ref(null)
 const sidebarProfileRef = ref(null)
+const mascotFetchPhase = ref('')
+const mascotFetchedPlaceName = ref('')
+const mascotRunX = ref('-36vw')
+const mascotRunY = ref('-17vh')
+const mascotRunMidX = ref('-18vw')
+const mascotRunMidY = ref('-9vh')
+const mascotRunNearX = ref('-30vw')
+const mascotRunNearY = ref('-14vh')
 let notificationTimer = null
+let mascotFetchTimer = null
 
 const handleLogout = async () => {
   closeAllDropdowns()
@@ -92,6 +101,24 @@ const mascotState = computed(() => {
   }
 
   return { key: 'default', prop: '·', message: '천천히 따라가는 중' }
+})
+
+const activeMascotState = computed(() => {
+  if (mascotFetchPhase.value === 'fetching') {
+    return { key: 'fetching', prop: '', message: '뼈다귀 마커로 달려가는 중' }
+  }
+
+  if (mascotFetchPhase.value === 'carrying') {
+    return {
+      key: 'carrying',
+      prop: '',
+      message: mascotFetchedPlaceName.value
+        ? `${mascotFetchedPlaceName.value} 마커 물고 있는 중`
+        : '뼈다귀 마커 물고 있는 중',
+    }
+  }
+
+  return mascotState.value
 })
 
 const formatNotificationTime = (value) => {
@@ -224,8 +251,79 @@ const startNotificationPolling = () => {
   notificationTimer = window.setInterval(fetchNotifications, 30000)
 }
 
+const clearMascotFetch = () => {
+  if (mascotFetchTimer) {
+    window.clearTimeout(mascotFetchTimer)
+    mascotFetchTimer = null
+  }
+
+  mascotFetchPhase.value = ''
+  mascotFetchedPlaceName.value = ''
+}
+
+const clamp = (value, min, max) => Math.min(max, Math.max(min, value))
+
+const setMascotRunTarget = (target) => {
+  const fallbackX = Math.round(window.innerWidth * -0.36)
+  const fallbackY = Math.round(window.innerHeight * -0.17)
+
+  if (!target || typeof target.clientX !== 'number' || typeof target.clientY !== 'number') {
+    mascotRunX.value = `${fallbackX}px`
+    mascotRunY.value = `${fallbackY}px`
+    mascotRunMidX.value = `${Math.round(fallbackX * 0.48)}px`
+    mascotRunMidY.value = `${Math.round(fallbackY * 0.48 - 18)}px`
+    mascotRunNearX.value = `${Math.round(fallbackX * 0.82)}px`
+    mascotRunNearY.value = `${Math.round(fallbackY * 0.82 + 8)}px`
+    return
+  }
+
+  const mascotElement = document.querySelector('.route-mascot')
+  const mascotStyle = mascotElement ? window.getComputedStyle(mascotElement) : null
+  const baseRight = Number.parseFloat(mascotStyle?.right || '28') || 28
+  const baseBottom = Number.parseFloat(mascotStyle?.bottom || '24') || 24
+  const baseWidth = mascotElement?.offsetWidth || 150
+  const baseHeight = mascotElement?.offsetHeight || 190
+  const baseLeft = window.innerWidth - baseRight - baseWidth
+  const baseTop = window.innerHeight - baseBottom - baseHeight
+  const fromX = baseLeft + baseWidth * 0.68
+  const fromY = baseTop + baseHeight * 0.7
+  const targetX = clamp(target.clientX - fromX, -(window.innerWidth - 116), 28)
+  const targetY = clamp(target.clientY - fromY, -(window.innerHeight - 128), 24)
+
+  mascotRunX.value = `${Math.round(targetX)}px`
+  mascotRunY.value = `${Math.round(targetY)}px`
+  mascotRunMidX.value = `${Math.round(targetX * 0.48)}px`
+  mascotRunMidY.value = `${Math.round(targetY * 0.48 - 18)}px`
+  mascotRunNearX.value = `${Math.round(targetX * 0.82)}px`
+  mascotRunNearY.value = `${Math.round(targetY * 0.82 + 8)}px`
+}
+
+const updateMascotFetchTarget = (event) => {
+  if (!mascotFetchPhase.value) return
+
+  mascotFetchedPlaceName.value = event.detail?.placeName || mascotFetchedPlaceName.value
+  setMascotRunTarget(event.detail?.target)
+}
+
+const triggerMascotFetch = (event) => {
+  if (mascotFetchTimer) {
+    window.clearTimeout(mascotFetchTimer)
+  }
+
+  mascotFetchedPlaceName.value = event.detail?.placeName || ''
+  setMascotRunTarget(event.detail?.target)
+  mascotFetchPhase.value = 'fetching'
+  mascotFetchTimer = window.setTimeout(() => {
+    mascotFetchPhase.value = 'carrying'
+    mascotFetchTimer = null
+  }, 1100)
+}
+
 onMounted(() => {
   document.addEventListener('click', handleDocumentClick)
+  window.addEventListener('place-marker-fetch', triggerMascotFetch)
+  window.addEventListener('place-marker-fetch-update', updateMascotFetchTarget)
+  window.addEventListener('place-marker-fetch-clear', clearMascotFetch)
 
   authStore.fetchMe()
     .then(() => {
@@ -260,12 +358,17 @@ watch(
   () => route.fullPath,
   () => {
     isSidebarAccountMenuOpen.value = false
+    clearMascotFetch()
     fetchNotifications()
   },
 )
 
 onBeforeUnmount(() => {
   document.removeEventListener('click', handleDocumentClick)
+  window.removeEventListener('place-marker-fetch', triggerMascotFetch)
+  window.removeEventListener('place-marker-fetch-update', updateMascotFetchTarget)
+  window.removeEventListener('place-marker-fetch-clear', clearMascotFetch)
+  clearMascotFetch()
 
   if (notificationTimer) {
     window.clearInterval(notificationTimer)
@@ -581,8 +684,26 @@ onBeforeUnmount(() => {
         </template>
       </div>
 
-      <aside class="route-mascot" :class="`mascot-${mascotState.key}`" aria-live="polite">
-        <div class="mascot-speech">{{ mascotState.message }}</div>
+      <aside
+        class="route-mascot"
+        :style="{
+          '--mascot-run-x': mascotRunX,
+          '--mascot-run-y': mascotRunY,
+          '--mascot-run-mid-x': mascotRunMidX,
+          '--mascot-run-mid-y': mascotRunMidY,
+          '--mascot-run-near-x': mascotRunNearX,
+          '--mascot-run-near-y': mascotRunNearY,
+        }"
+        :class="[
+          `mascot-${activeMascotState.key}`,
+          {
+            'is-fetching': mascotFetchPhase === 'fetching',
+            'is-carrying': mascotFetchPhase === 'carrying',
+          },
+        ]"
+        aria-live="polite"
+      >
+        <div class="mascot-speech">{{ activeMascotState.message }}</div>
         <div class="mascot-dog" aria-hidden="true">
           <span class="mascot-ear left"></span>
           <span class="mascot-ear right"></span>
@@ -596,7 +717,8 @@ onBeforeUnmount(() => {
             <span class="mascot-paw right"></span>
           </span>
           <span class="mascot-tail"></span>
-          <span class="mascot-prop">{{ mascotState.prop }}</span>
+          <span class="mascot-fetch-bone"></span>
+          <span v-if="activeMascotState.prop" class="mascot-prop">{{ activeMascotState.prop }}</span>
         </div>
       </aside>
 
@@ -1163,6 +1285,8 @@ input {
   z-index: 70;
   width: 150px;
   pointer-events: none;
+  transform-origin: right bottom;
+  will-change: transform;
 }
 
 .mascot-speech {
@@ -1336,6 +1460,63 @@ input {
   box-shadow: 0 4px 0 #f2d7b0;
 }
 
+.mascot-fetch-bone {
+  position: absolute;
+  right: 7px;
+  bottom: 39px;
+  z-index: 7;
+  display: none;
+  width: 54px;
+  height: 54px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cg transform='rotate(-45 32 32)'%3E%3Cpath d='M21 18c-5.4-5.4-14.6-1.6-14.6 6.2 0 3.1 1.6 5.9 4.1 7.5-2.5 1.6-4.1 4.4-4.1 7.5 0 7.8 9.2 11.6 14.6 6.2l3.6-3.6h14.8l3.6 3.6c5.4 5.4 14.6 1.6 14.6-6.2 0-3.1-1.6-5.9-4.1-7.5 2.5-1.6 4.1-4.4 4.1-7.5 0-7.8-9.2-11.6-14.6-6.2l-3.6 3.6H24.6L21 18Z' fill='white' stroke='%23222222' stroke-width='4' stroke-linejoin='round'/%3E%3C/g%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-size: contain;
+  filter: drop-shadow(0 3px 0 rgba(242, 215, 176, 0.9));
+  transform: rotate(-8deg);
+  transform-origin: 18px 28px;
+}
+
+.route-mascot.is-fetching {
+  animation: mascot-run-to-marker 1.1s cubic-bezier(0.45, 0.02, 0.22, 1) forwards;
+}
+
+.route-mascot.is-carrying {
+  transform: translate(var(--mascot-run-x, -36vw), var(--mascot-run-y, -17vh));
+  transition: transform 0.16s ease-out;
+}
+
+.route-mascot.is-fetching .mascot-speech,
+.route-mascot.is-carrying .mascot-speech {
+  background: #fff8e9;
+  box-shadow: 0 5px 0 #dcb77e;
+}
+
+.route-mascot.is-fetching .mascot-dog {
+  animation: mascot-fast-run 0.32s ease-in-out infinite;
+}
+
+.route-mascot.is-carrying .mascot-dog {
+  animation: mascot-chew 0.72s ease-in-out infinite;
+}
+
+.route-mascot.is-fetching .mascot-fetch-bone,
+.route-mascot.is-carrying .mascot-fetch-bone {
+  display: block;
+}
+
+.route-mascot.is-fetching .mascot-fetch-bone {
+  animation: mascot-bone-swing 0.22s ease-in-out infinite;
+}
+
+.route-mascot.is-carrying .mascot-fetch-bone {
+  animation: mascot-bone-chew 0.48s ease-in-out infinite;
+}
+
+.route-mascot.is-fetching .mascot-prop,
+.route-mascot.is-carrying .mascot-prop {
+  display: none;
+}
+
 .mascot-home .mascot-dog {
   animation-name: mascot-sniff;
 }
@@ -1413,6 +1594,64 @@ input {
 @keyframes mascot-listen {
   50% {
     transform: rotate(-24deg) translateY(2px);
+  }
+}
+
+@keyframes mascot-run-to-marker {
+  0% {
+    transform: translate(0, 0) scale(1);
+  }
+
+  42% {
+    transform: translate(var(--mascot-run-mid-x, -18vw), var(--mascot-run-mid-y, -9vh)) scale(1.04);
+  }
+
+  72% {
+    transform: translate(var(--mascot-run-near-x, -30vw), var(--mascot-run-near-y, -14vh)) scale(0.98);
+  }
+
+  100% {
+    transform: translate(var(--mascot-run-x, -36vw), var(--mascot-run-y, -17vh)) scale(1);
+  }
+}
+
+@keyframes mascot-fast-run {
+  25% {
+    transform: translateY(-8px) rotate(-5deg);
+  }
+
+  50% {
+    transform: translateY(1px) rotate(4deg);
+  }
+
+  75% {
+    transform: translateY(-7px) rotate(5deg);
+  }
+}
+
+@keyframes mascot-chew {
+  45% {
+    transform: translateY(-5px) rotate(-2deg);
+  }
+
+  70% {
+    transform: translateY(-2px) rotate(2deg);
+  }
+}
+
+@keyframes mascot-bone-swing {
+  50% {
+    transform: rotate(7deg) translateY(-2px);
+  }
+}
+
+@keyframes mascot-bone-chew {
+  45% {
+    transform: rotate(-2deg) translate(1px, 1px);
+  }
+
+  80% {
+    transform: rotate(-11deg) translate(-1px, -1px);
   }
 }
 
@@ -1878,6 +2117,28 @@ input {
     width: 118px;
     transform: scale(0.82);
     transform-origin: right bottom;
+  }
+
+  .route-mascot.is-fetching {
+    animation-name: mascot-run-to-marker-mobile;
+  }
+
+  .route-mascot.is-carrying {
+    transform: translate(var(--mascot-run-x, -18vw), var(--mascot-run-y, -13vh)) scale(0.82);
+  }
+
+  @keyframes mascot-run-to-marker-mobile {
+    0% {
+      transform: translate(0, 0) scale(0.82);
+    }
+
+    48% {
+      transform: translate(var(--mascot-run-mid-x, -9vw), var(--mascot-run-mid-y, -7vh)) scale(0.86);
+    }
+
+    100% {
+      transform: translate(var(--mascot-run-x, -18vw), var(--mascot-run-y, -13vh)) scale(0.82);
+    }
   }
 }
 </style>

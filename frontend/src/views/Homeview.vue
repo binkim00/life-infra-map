@@ -6311,22 +6311,59 @@ const resetMapSearch = () => {
   locationMessage.value = '검색이 초기화되었습니다. 검색어를 입력하거나 지도를 이동한 뒤 다시 검색해보세요.'
 }
 
-const selectPlace = (place) => {
-  selectedPlace.value = place
-  detailFrameError.value = false
-  isPlaceDetailCollapsed.value = false
+const getListMarkerTarget = (event) => {
+  const markerElement = event?.currentTarget?.querySelector?.('.place-list-marker')
+  const rect = markerElement?.getBoundingClientRect()
+
+  if (!rect) return null
+
+  return {
+    clientX: rect.left + rect.width / 2,
+    clientY: rect.top + rect.height / 2,
+  }
 }
 
-const selectPlaceFromList = (place) => {
+const dispatchMascotFetch = (place, target = null) => {
+  window.dispatchEvent(new CustomEvent('place-marker-fetch', {
+    detail: {
+      placeId: place?.id,
+      placeName: place?.name,
+      target,
+    },
+  }))
+}
+
+const updateMascotFetchTarget = (place, target = null) => {
+  if (!selectedPlace.value || String(selectedPlace.value.id) !== String(place?.id)) return
+
+  window.dispatchEvent(new CustomEvent('place-marker-fetch-update', {
+    detail: {
+      placeId: place?.id,
+      placeName: place?.name,
+      target,
+    },
+  }))
+}
+
+const selectPlace = (place, target = null) => {
   selectedPlace.value = place
   detailFrameError.value = false
   isPlaceDetailCollapsed.value = false
+  dispatchMascotFetch(place, target)
+}
+
+const selectPlaceFromList = (place, event) => {
+  selectedPlace.value = place
+  detailFrameError.value = false
+  isPlaceDetailCollapsed.value = false
+  dispatchMascotFetch(place, getListMarkerTarget(event))
 }
 
 const closePlaceCard = () => {
   selectedPlace.value = null
   detailFrameError.value = false
   isPlaceDetailCollapsed.value = false
+  window.dispatchEvent(new CustomEvent('place-marker-fetch-clear'))
 }
 
 const openDetailPanel = () => {
@@ -6704,7 +6741,7 @@ const handleDetailFrameError = () => {
                 <button
                   type="button"
                   class="place-list-select-button"
-                  @click="selectPlaceFromList(place)"
+                  @click="selectPlaceFromList(place, $event)"
                 >
                   <span class="place-list-marker" :class="getPlaceSourceClass(place)">
                     {{ place.markerLabel }}
@@ -6841,6 +6878,7 @@ const handleDetailFrameError = () => {
             :selected-place="selectedPlace"
             @center-change="handleMapViewportChange"
             @select-place="selectPlace"
+            @marker-target-change="updateMascotFetchTarget"
           />
 
           <aside
@@ -7937,28 +7975,41 @@ h1 {
 }
 
 .place-list-marker {
-  width: 28px;
-  height: 28px;
+  position: relative;
+  width: 54px;
+  height: 54px;
   flex-shrink: 0;
-  margin-top: 2px;
+  margin-top: -10px;
   display: grid;
   place-items: center;
-  border: 2px solid #222222;
-  border-radius: 999px;
-  background: #ffffff;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   color: #222222;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 900;
+  isolation: isolate;
+}
+
+.place-list-marker::before {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='54' height='54' viewBox='0 0 54 54'%3E%3Cg transform='rotate(-45 27 27)'%3E%3Cpath d='M14.6 6.2 C16.4 2.9 20.8 1.8 24 4 C25.7 5.1 26.7 6.8 27 8.6 C27.3 6.8 28.3 5.1 30 4 C33.2 1.8 37.6 2.9 39.4 6.2 C41.4 9.8 39.8 14.2 36.3 15.8 L36.3 38.2 C39.8 39.8 41.4 44.2 39.4 47.8 C37.6 51.1 33.2 52.2 30 50 C28.3 48.9 27.3 47.2 27 45.4 C26.7 47.2 25.7 48.9 24 50 C20.8 52.2 16.4 51.1 14.6 47.8 C12.6 44.2 14.2 39.8 17.7 38.2 L17.7 15.8 C14.2 14.2 12.6 9.8 14.6 6.2 Z' fill='white' stroke='%23222222' stroke-width='4' stroke-linejoin='round'/%3E%3C/g%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
+  content: "";
 }
 
 .place-list-marker.source-db {
-  border-color: #2563eb;
-  color: #2563eb;
+  border-color: currentColor;
+  color: #222222;
 }
 
 .place-list-marker.source-base {
-  border-color: #16a34a;
-  color: #16a34a;
+  border-color: currentColor;
+  color: #222222;
 }
 
 .place-list-main {
