@@ -1,6 +1,14 @@
 <script setup>
 import { computed, nextTick, ref, watch } from 'vue'
-import { aiSearchRecommendations, checkSearchSafety, getKakaoPlaceTags, getSavedPlaces, runAiWebSearch } from '@/api/recommendation'
+import { useRoute } from 'vue-router'
+import {
+  aiSearchRecommendations,
+  checkSearchSafety,
+  getKakaoPlaceTags,
+  getSavedPlaces,
+  runAiWebSearch,
+  saveSearchLog,
+} from '@/api/recommendation'
 import KakaoMap from '@/components/KakaoMap.vue'
 
 const IS_DEV = import.meta.env.DEV
@@ -16,6 +24,7 @@ const normalizeTab = (tab) => {
   return ['search', 'map'].includes(tab) ? tab : 'search'
 }
 
+const route = useRoute()
 const activeTab = ref(normalizeTab(props.initialTab))
 const searchKeyword = ref('')
 
@@ -475,6 +484,23 @@ const activeMenuSearchProfile = ref(null)
 
 const showDetailPanel = ref(false)
 const detailFrameError = ref(false)
+
+const applyRouteSearchQuery = (value) => {
+  const nextQuery = Array.isArray(value) ? value[0] : value
+  const normalizedQuery = String(nextQuery || '').trim()
+
+  if (!normalizedQuery) return
+
+  searchKeyword.value = normalizedQuery
+  mapSearchKeyword.value = normalizedQuery
+  activeTab.value = 'search'
+}
+
+watch(
+  () => route.query.q,
+  applyRouteSearchQuery,
+  { immediate: true },
+)
 
 const NO_RESULT_MESSAGE_PATTERNS = [
   '검색 결과가 없습니다',
@@ -5397,6 +5423,187 @@ const setAiWebSearchContext = ({
   aiWebSearchLastResult.value = null
 }
 
+const getSearchLogAuthToken = () => {
+  try {
+    return localStorage.getItem('authToken')
+  } catch (error) {
+    return ''
+  }
+}
+
+const getFirstSearchLogList = (...values) => {
+  for (const value of values) {
+    const list = toDisplayList(value)
+    if (list.length) return list
+  }
+
+  return []
+}
+
+const getSearchLogLocationHint = ({
+  searchPlan = null,
+  baseLabel = '',
+  locationHint = '',
+} = {}) => {
+  const explicitLocation = getTextValue(
+    searchPlan?.locationQuery ||
+    searchPlan?.baseLocationQuery ||
+    locationHint,
+  )
+  if (explicitLocation) return explicitLocation.slice(0, 100)
+
+  const label = getTextValue(baseLabel)
+    .replace(/\s*기준\s*$/g, '')
+    .trim()
+
+  if (!label || label.includes('현재 위치') || label.includes('현재 지도')) {
+    return ''
+  }
+
+  return label.slice(0, 100)
+}
+
+const buildSearchPlanSnapshotForLog = (searchPlan = {}) => {
+  const snapshot = {}
+  const snapshotFields = [
+    'locationQuery',
+    'baseLocationQuery',
+    'targetQuery',
+    'targetType',
+    'categoryHint',
+    'confidence',
+    'fallbackReason',
+  ]
+
+  snapshotFields.forEach((fieldName) => {
+    const value = getTextValue(searchPlan?.[fieldName])
+    if (value) snapshot[fieldName] = value
+  })
+
+  if (typeof searchPlan?.recommendationIntent === 'boolean') {
+    snapshot.recommendationIntent = searchPlan.recommendationIntent
+  } else if (searchPlan?.recommendationIntent) {
+    snapshot.recommendationIntent = true
+  }
+
+  return snapshot
+}
+
+const getFiniteSearchLogCount = (value, fallback = 0) => {
+  const numericValue = Number(value)
+  if (!Number.isFinite(numericValue)) return fallback
+
+  return Math.max(0, Math.trunc(numericValue))
+}
+
+const buildSearchLogPayload = ({
+  query,
+  searchMode = '',
+  scenario = '',
+  locationHint = '',
+  baseLabel = '',
+  center = null,
+  searchPlan = null,
+  condition = {},
+  results = [],
+  dbResultCount = null,
+  kakaoResultCount = null,
+  aiWebResultCount = 0,
+} = {}) => {
+  const visibleResults = Array.isArray(results) ? results : []
+  const normalizedQuery = getTextValue(query || searchPlan?.originalQuery || searchPlan?.normalizedQuery)
+  const menuKeywords = getFirstSearchLogList(
+    condition?.menu_keywords,
+    condition?.menuKeywords,
+    searchPlan?.menu_keywords,
+    searchPlan?.menuKeywords,
+    extractFoodMenuKeywords(normalizedQuery),
+  )
+  const explicitPlaceTypeKeywords = getFirstSearchLogList(
+    condition?.place_type_keywords,
+    condition?.placeTypeKeywords,
+    searchPlan?.place_type_keywords,
+    searchPlan?.placeTypeKeywords,
+  )
+  const placeTypeKeywords = explicitPlaceTypeKeywords.length
+    ? explicitPlaceTypeKeywords
+    : (
+      menuKeywords.length || isCafeSearchKeyword(normalizedQuery)
+        ? inferFoodPlaceTypeKeywords({
+          query: normalizedQuery,
+          menuKeywords,
+          conditionPlaceTypes: explicitPlaceTypeKeywords,
+        })
+        : []
+    )
+  const fallbackDbCount = visibleResults.filter(isDbRecommendationResult).length
+  const fallbackKakaoCount = visibleResults.filter(isKakaoCandidateResult).length
+
+  return {
+    query: normalizedQuery,
+    search_mode: getTextValue(searchMode || searchPlan?.searchMode),
+    scenario: getTextValue(scenario || condition?.scenario || searchPlan?.scenario),
+    location_hint: getSearchLogLocationHint({
+      searchPlan,
+      baseLabel,
+      locationHint,
+    }),
+    lat: Number.isFinite(Number(center?.lat)) ? Number(center.lat) : null,
+    lng: Number.isFinite(Number(center?.lng)) ? Number(center.lng) : null,
+    target_query: getTextValue(
+      condition?.targetQuery ||
+      condition?.target_query ||
+      searchPlan?.targetQuery ||
+      searchPlan?.targetKeyword ||
+      normalizedQuery,
+    ).slice(0, 255),
+    category_hint: getTextValue(
+      condition?.categoryHint ||
+      condition?.category_hint ||
+      searchPlan?.categoryHint,
+    ),
+    requested_conditions: getFirstSearchLogList(
+      condition?.requested_conditions,
+      condition?.requestedConditions,
+      searchPlan?.requested_conditions,
+      searchPlan?.requestedConditions,
+    ),
+    menu_keywords: menuKeywords,
+    place_type_keywords: placeTypeKeywords,
+    preferred_tags: getFirstSearchLogList(
+      condition?.preferred_tags,
+      condition?.preferredTags,
+      searchPlan?.preferred_tags,
+      searchPlan?.preferredTags,
+    ),
+    negative_tags: getFirstSearchLogList(
+      condition?.negative_tags,
+      condition?.negativeTags,
+      searchPlan?.negative_tags,
+      searchPlan?.negativeTags,
+    ),
+    result_count: visibleResults.length,
+    db_result_count: getFiniteSearchLogCount(dbResultCount, fallbackDbCount),
+    kakao_result_count: getFiniteSearchLogCount(kakaoResultCount, fallbackKakaoCount),
+    ai_web_result_count: getFiniteSearchLogCount(aiWebResultCount, 0),
+    search_plan_snapshot: buildSearchPlanSnapshotForLog(searchPlan),
+  }
+}
+
+const saveSearchLogSilently = async (payload) => {
+  if (!getSearchLogAuthToken() || !payload?.query) return
+
+  try {
+    await saveSearchLog(payload)
+  } catch (error) {
+    if (import.meta.env.DEV) {
+      console.debug('[SearchLog] save skipped', {
+        status: error?.response?.status || 'request_failed',
+      })
+    }
+  }
+}
+
 const setSearchResults = ({
   results,
   sourceLabel = '검색 결과',
@@ -5532,12 +5739,39 @@ const searchAroundCenter = async ({
   const dedupedResults = shouldUseDbPlaces
     ? dedupeSearchResults(kakaoResults, dbPlaces)
     : kakaoResults
+  const saveAroundCenterSearchLog = ({
+    results = dedupedResults,
+    dbCount = null,
+    kakaoCount = kakaoResults.length,
+  } = {}) => {
+    saveSearchLogSilently(buildSearchLogPayload({
+      query: activeSearchPlan.value?.originalQuery || mapSearchKeyword.value.trim() || targetKeyword,
+      searchMode: bounds ? 'map_bounds_search' : (activeSearchPlan.value?.searchMode || 'keyword_search'),
+      locationHint: getSearchLogLocationHint({
+        searchPlan: activeSearchPlan.value,
+        baseLabel,
+      }),
+      baseLabel,
+      center,
+      searchPlan: activeSearchPlan.value,
+      condition: activeSearchPlan.value || {},
+      results,
+      dbResultCount: dbCount,
+      kakaoResultCount: kakaoCount,
+      aiWebResultCount: 0,
+    }))
+  }
 
   if (!dedupedResults.length) {
     clearSearchResults()
     selectedPlace.value = null
     showDetailPanel.value = false
     locationMessage.value = `${baseLabel} ${formatSearchRadius(radius)} 이내 "${targetKeyword}" 검색 결과가 없습니다.`
+    saveAroundCenterSearchLog({
+      results: [],
+      dbCount: 0,
+      kakaoCount: 0,
+    })
     return
   }
 
@@ -5550,6 +5784,11 @@ const searchAroundCenter = async ({
       messageSuffix: enrichedCount ? `태그 보강 카페 ${enrichedCount}개` : '',
     })
     locationMessage.value = `${baseLabel} ${formatSearchRadius(radius)} 이내 "${targetKeyword}" 카카오 검색 결과를 표시했습니다.`
+    saveAroundCenterSearchLog({
+      results: dedupedResults,
+      dbCount: 0,
+      kakaoCount: kakaoResults.length,
+    })
     return
   }
 
@@ -5564,6 +5803,11 @@ const searchAroundCenter = async ({
       messageSuffix: `카카오 ${kakaoResults.length}개, DB ${displayedDbCount}개`,
     })
     locationMessage.value = `${baseLabel} ${formatSearchRadius(radius)} 이내 "${targetKeyword}" 검색 결과를 표시했습니다.`
+    saveAroundCenterSearchLog({
+      results: dedupedResults,
+      dbCount: displayedDbCount,
+      kakaoCount: kakaoResults.length,
+    })
     return
   }
 
@@ -5572,6 +5816,11 @@ const searchAroundCenter = async ({
     sourceLabel: '카카오 결과',
   })
   locationMessage.value = `${baseLabel} ${formatSearchRadius(radius)} 이내 "${targetKeyword}" 카카오 검색 결과를 표시했습니다.`
+  saveAroundCenterSearchLog({
+    results: dedupedResults,
+    dbCount: 0,
+    kakaoCount: kakaoResults.length,
+  })
 }
 
 const setBaseLocationFromKakaoPlace = (basePlace) => {
@@ -6201,6 +6450,10 @@ const runAiMapSearchAtCenter = async ({
   const willShowNoResultMessage = !hasAnyResults
   const recommendationCondition = getRecommendationConditionData(data)
   const aiWebSearchPlan = buildAiWebSearchPlanPayload(parsedIntent, recommendationCondition, originalQuery)
+  const searchLogPlan = {
+    ...(parsedIntent || {}),
+    ...aiWebSearchPlan,
+  }
   const aiWebSearchLocationHint = await resolveAiWebSearchLocationHint({
     geocoder,
     center,
@@ -6279,6 +6532,20 @@ const runAiMapSearchAtCenter = async ({
       },
     })
     locationMessage.value = `"${originalQuery}" 조건에 맞는 추천 결과가 없습니다.`
+    saveSearchLogSilently(buildSearchLogPayload({
+      query: originalQuery,
+      searchMode: parsedIntent?.searchMode || 'recommendation_query',
+      scenario: data.scenario,
+      locationHint: aiWebSearchLocationHint,
+      baseLabel,
+      center,
+      searchPlan: searchLogPlan,
+      condition: recommendationCondition,
+      results: [],
+      dbResultCount: 0,
+      kakaoResultCount: 0,
+      aiWebResultCount: 0,
+    }))
     return
   }
 
@@ -6321,6 +6588,20 @@ const runAiMapSearchAtCenter = async ({
   locationMessage.value = kakaoResults.length
     ? `${baseLabel} "${originalQuery}" DB 추천이 부족해 카카오 fallback 후보를 함께 표시했습니다.`
     : `${baseLabel} "${originalQuery}" 자연어 조건의 DB 추천 결과를 표시했습니다.`
+  saveSearchLogSilently(buildSearchLogPayload({
+    query: originalQuery,
+    searchMode: parsedIntent?.searchMode || 'recommendation_query',
+    scenario: data.scenario,
+    locationHint: aiWebSearchLocationHint,
+    baseLabel,
+    center,
+    searchPlan: searchLogPlan,
+    condition: recommendationCondition,
+    results: mergedResults,
+    dbResultCount: recommendationResults.length,
+    kakaoResultCount: kakaoResults.length,
+    aiWebResultCount: 0,
+  }))
 }
 
 const applyAiWebSearchResult = (aiWebSearch = {}) => {
@@ -6735,6 +7016,17 @@ const runRegionMapSearch = async ({
   if (!kakaoPlaces.length) {
     clearSearchResults()
     locationMessage.value = `"${originalQuery}" 검색 결과가 없습니다. 더 구체적인 지역명을 입력해 주세요.`
+    saveSearchLogSilently(buildSearchLogPayload({
+      query: originalQuery,
+      searchMode: 'region_search',
+      locationHint: locationQuery,
+      searchPlan: parsedIntent,
+      condition: parsedIntent || {},
+      results: [],
+      dbResultCount: 0,
+      kakaoResultCount: 0,
+      aiWebResultCount: 0,
+    }))
     return
   }
 
@@ -6790,6 +7082,18 @@ const runRegionMapSearch = async ({
     messageSuffix: `${locationQuery} · 카카오 ${displayResults.length}개`,
   })
   locationMessage.value = `"${originalQuery}" 지역 검색 결과를 표시했습니다.`
+  saveSearchLogSilently(buildSearchLogPayload({
+    query: originalQuery,
+    searchMode: 'region_search',
+    locationHint: locationQuery,
+    center: nextCenter,
+    searchPlan: parsedIntent,
+    condition: parsedIntent || {},
+    results: displayResults,
+    dbResultCount: 0,
+    kakaoResultCount: displayResults.length,
+    aiWebResultCount: 0,
+  }))
 }
 
 const dedupeKakaoRawPlaces = (places) => {
@@ -7101,12 +7405,32 @@ const selectBaseLocationCandidate = async (candidate) => {
     }
 
     if (pendingSearch.type === 'region_results') {
+      const regionResults = candidate.regionResults || []
       setSearchResults({
-        results: candidate.regionResults || [],
+        results: regionResults,
         sourceLabel: '지역 검색 결과',
-        messageSuffix: `${candidate.place_name} · 카카오 ${(candidate.regionResults || []).length}개`,
+        messageSuffix: `${candidate.place_name} · 카카오 ${regionResults.length}개`,
       })
       locationMessage.value = `${resolvedBase.label} "${pendingSearch.originalQuery}" 지역 검색 결과를 표시했습니다.`
+      saveSearchLogSilently(buildSearchLogPayload({
+        query: pendingSearch.originalQuery,
+        searchMode: 'region_search',
+        locationHint: resolvedBase.label,
+        baseLabel: resolvedBase.label,
+        center: resolvedBase.center,
+        searchPlan: {
+          locationQuery: resolvedBase.label,
+          baseLocationQuery: resolvedBase.label,
+          targetQuery: pendingSearch.targetQuery,
+          targetType: '',
+          categoryHint: '',
+        },
+        condition: {},
+        results: regionResults,
+        dbResultCount: 0,
+        kakaoResultCount: regionResults.length,
+        aiWebResultCount: 0,
+      }))
       return
     }
 

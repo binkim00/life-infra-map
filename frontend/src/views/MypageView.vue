@@ -2,6 +2,7 @@
 import { onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { getMypage, updateNickname, updateProfileImage } from '@/api/boards'
+import { fetchSearchLogs } from '@/api/recommendation'
 import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
@@ -21,6 +22,9 @@ const profileImageInput = ref(null)
 const profileImagePreviewUrl = ref('')
 const profileImageMessage = ref('')
 const isUpdatingProfileImage = ref(false)
+const searchLogs = ref([])
+const isLoadingSearchLogs = ref(false)
+const searchLogMessage = ref('')
 
 const sectionValues = ['profile', 'posts', 'comments', 'liked']
 
@@ -41,12 +45,95 @@ const fetchMypage = async () => {
     data.value = response.data
     nicknameInput.value = response.data.user.nickname || ''
     profileImagePreviewUrl.value = response.data.user.profile_image_url || ''
+    fetchRecentSearchLogs()
   } catch (error) {
     console.error(error)
     errorMessage.value = '마이페이지 정보를 불러오지 못했습니다.'
   } finally {
     isLoading.value = false
   }
+}
+
+const fetchRecentSearchLogs = async () => {
+  if (!authStore.isLoggedIn) {
+    searchLogs.value = []
+    searchLogMessage.value = '로그인 후 검색 기록을 확인할 수 있습니다.'
+    return
+  }
+
+  try {
+    isLoadingSearchLogs.value = true
+    searchLogMessage.value = ''
+    const response = await fetchSearchLogs(10)
+    searchLogs.value = response.results || []
+
+    if (!searchLogs.value.length) {
+      searchLogMessage.value = '아직 저장된 검색 기록이 없습니다.'
+    }
+  } catch (error) {
+    searchLogs.value = []
+
+    if ([401, 403].includes(error.response?.status)) {
+      searchLogMessage.value = '로그인 후 검색 기록을 확인할 수 있습니다.'
+    } else {
+      searchLogMessage.value = '검색 기록을 불러오지 못했습니다.'
+    }
+
+    if (import.meta.env.DEV) {
+      console.debug('[SearchLogs] fetch failed', {
+        status: error.response?.status || 'request_failed',
+      })
+    }
+  } finally {
+    isLoadingSearchLogs.value = false
+  }
+}
+
+const formatSearchLogDate = (value) => {
+  if (!value) return ''
+
+  return new Date(value).toLocaleString('ko-KR', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+const getSearchLogCategoryLabel = (log) => {
+  return log.category_hint || log.scenario || log.search_mode || ''
+}
+
+const getSearchLogMeta = (log) => {
+  return [
+    log.location_hint,
+    getSearchLogCategoryLabel(log),
+    `결과 ${log.result_count || 0}개`,
+  ].filter(Boolean).join(' · ')
+}
+
+const getSearchLogChips = (log) => {
+  return [
+    ...(log.menu_keywords || []),
+    ...(log.place_type_keywords || []),
+    ...(log.requested_conditions || []),
+    ...(log.preferred_tags || []),
+  ]
+    .map((chip) => String(chip || '').trim())
+    .filter((chip, index, chips) => chip && chips.indexOf(chip) === index)
+    .slice(0, 5)
+}
+
+const rerunSearchLog = (log) => {
+  if (!log?.query) return
+
+  router.push({
+    name: 'home',
+    query: {
+      q: log.query,
+    },
+  })
 }
 
 const handleProfileImageChange = (event) => {
@@ -287,6 +374,44 @@ onMounted(() => {
               <span>좋아요한글</span>
             </RouterLink>
           </div>
+
+          <section class="search-history-section">
+            <div class="section-heading-row">
+              <div>
+                <h2>최근 검색 기록</h2>
+                <p>이전에 찾았던 장소 조건을 다시 검색할 수 있습니다.</p>
+              </div>
+              <button type="button" class="refresh-history-button" @click="fetchRecentSearchLogs">
+                새로고침
+              </button>
+            </div>
+
+            <p v-if="isLoadingSearchLogs" class="empty search-history-status">검색 기록을 불러오는 중입니다.</p>
+            <div v-else-if="searchLogs.length" class="search-history-list">
+              <button
+                v-for="log in searchLogs"
+                :key="log.id"
+                type="button"
+                class="search-history-item"
+                @click="rerunSearchLog(log)"
+              >
+                <strong>{{ log.query }}</strong>
+                <span>{{ getSearchLogMeta(log) }}</span>
+                <time>{{ formatSearchLogDate(log.created_at) }}</time>
+                <span v-if="getSearchLogChips(log).length" class="search-log-chip-row">
+                  <span v-for="chip in getSearchLogChips(log)" :key="chip" class="search-log-chip">
+                    {{ chip }}
+                  </span>
+                </span>
+              </button>
+            </div>
+            <div v-else class="empty search-history-status">
+              <p>{{ searchLogMessage }}</p>
+              <p v-if="searchLogMessage === '아직 저장된 검색 기록이 없습니다.'">
+                장소를 검색하면 최근 검색 기록이 이곳에 표시됩니다.
+              </p>
+            </div>
+          </section>
         </section>
 
         <section v-else-if="selectedSection === 'posts'" class="panel">
@@ -727,6 +852,110 @@ h2 {
   font-weight: 700;
 }
 
+.search-history-section {
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid #e5e8f0;
+}
+
+.section-heading-row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.section-heading-row p {
+  margin: 6px 0 0;
+  color: #667085;
+  font-weight: 700;
+}
+
+.refresh-history-button {
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid #d0d5dd;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #344054;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.refresh-history-button:hover {
+  border-color: #bfdbfe;
+  color: #2563eb;
+}
+
+.search-history-list {
+  margin-top: 12px;
+  display: grid;
+  gap: 10px;
+}
+
+.search-history-item {
+  width: 100%;
+  padding: 14px;
+  display: grid;
+  gap: 6px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: #f9fafb;
+  color: #111827;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+}
+
+.search-history-item:hover {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+  transform: translateY(-1px);
+}
+
+.search-history-item strong {
+  font-size: 15px;
+}
+
+.search-history-item span,
+.search-history-item time {
+  color: #667085;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.search-log-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.search-log-chip {
+  max-width: 100%;
+  padding: 4px 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e0f2fe;
+  color: #075985;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.search-history-status {
+  margin: 12px 0 0;
+  padding: 14px;
+  border-radius: 12px;
+  background: #f9fafb;
+}
+
+.search-history-status p {
+  margin: 0;
+}
+
+.search-history-status p + p {
+  margin-top: 4px;
+}
+
 .activity-item {
   display: grid;
   gap: 5px;
@@ -767,7 +996,8 @@ h2 {
 
   .avatar-edit-row,
   .nickname-display-row,
-  .profile-image-side {
+  .profile-image-side,
+  .section-heading-row {
     align-items: flex-start;
     flex-direction: column;
   }

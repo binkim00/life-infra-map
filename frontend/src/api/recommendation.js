@@ -1,4 +1,5 @@
 import axios from 'axios'
+import api from '@/api/axios'
 
 const API_BASE_URL = 'http://127.0.0.1:8000/api'
 
@@ -80,6 +81,22 @@ export const getKakaoPlaceTags = async (externalIds = []) => {
   const response = await axios.get(`${API_BASE_URL}/recommendations/kakao-place-tags/`, {
     params: {
       external_ids: externalIds.join(','),
+    },
+  })
+
+  return response.data
+}
+
+export const saveSearchLog = async (payload) => {
+  const response = await api.post('/recommendations/search-logs/', payload)
+
+  return response.data
+}
+
+export const fetchSearchLogs = async (limit = 10) => {
+  const response = await api.get('/recommendations/search-logs/', {
+    params: {
+      limit,
     },
   })
 

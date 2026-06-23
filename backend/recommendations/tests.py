@@ -1,10 +1,14 @@
+from datetime import timedelta
 import json
 from unittest.mock import Mock, patch
 
 import requests
+from django.contrib.auth import get_user_model
 from django.test import Client, TestCase, override_settings
+from django.utils import timezone
+from rest_framework.authtoken.models import Token
 
-from recommendations.models import Place, PlaceTag, Tag
+from recommendations.models import Place, PlaceTag, Tag, UserSearchLog
 from recommendations.services.ai_situation_parser import parse_situation
 from recommendations.services.ai_web_search_provider import (
     clear_ai_web_search_cache,
@@ -18,6 +22,11 @@ class RecommendationSearchTests(TestCase):
     def setUp(self):
         clear_ai_web_search_cache()
         self.client = Client(HTTP_HOST="localhost")
+        self.user = get_user_model().objects.create_user(
+            username="searcher",
+            password="pass",
+        )
+        self.token = Token.objects.create(user=self.user)
         self.place = Place.objects.create(
             name="테스트 작업 카페",
             category="cafe",
@@ -55,6 +64,220 @@ class RecommendationSearchTests(TestCase):
         response.raise_for_status.return_value = None
         response.json.return_value = {"items": items}
         return response
+
+    def _auth_headers(self):
+        return {
+            "HTTP_AUTHORIZATION": f"Token {self.token.key}",
+            "HTTP_HOST": "localhost",
+        }
+
+    def _create_search_log(self, user=None, query="검색어", created_at=None, **kwargs):
+        search_log = UserSearchLog.objects.create(
+            user=user or self.user,
+            query=query,
+            **kwargs,
+        )
+
+        if created_at is not None:
+            UserSearchLog.objects.filter(id=search_log.id).update(created_at=created_at)
+            search_log.refresh_from_db()
+
+        return search_log
+
+    def test_authenticated_user_can_save_search_log(self):
+        response = self.client.post(
+            "/api/recommendations/search-logs/",
+            data=json.dumps({
+                "query": "소금빵 맛집 찾아줘",
+                "search_mode": "recommendation_query",
+                "scenario": "restaurant",
+                "location_hint": "부산 강서구",
+                "lat": 35.123456,
+                "lng": 129.123456,
+                "target_query": "소금빵 맛집",
+                "category_hint": "cafe",
+                "requested_conditions": ["디저트"],
+                "menu_keywords": ["소금빵"],
+                "place_type_keywords": ["베이커리", "카페"],
+                "preferred_tags": ["조용함"],
+                "negative_tags": ["혼잡"],
+                "result_count": 10,
+                "db_result_count": 2,
+                "kakao_result_count": 8,
+                "ai_web_result_count": 0,
+                "search_plan_snapshot": {
+                    "targetQuery": "소금빵 맛집",
+                    "categoryHint": "cafe",
+                    "recommendationIntent": True,
+                },
+            }, ensure_ascii=False),
+            content_type="application/json",
+            **self._auth_headers(),
+        )
+
+        self.assertEqual(response.status_code, 201)
+        data = response.json()
+        self.assertEqual(data["message"], "search log saved")
+        self.assertEqual(UserSearchLog.objects.count(), 1)
+
+        search_log = UserSearchLog.objects.get(id=data["id"])
+        self.assertEqual(search_log.user, self.user)
+        self.assertEqual(search_log.query, "소금빵 맛집 찾아줘")
+        self.assertEqual(search_log.search_mode, "recommendation_query")
+        self.assertEqual(search_log.scenario, "restaurant")
+        self.assertEqual(search_log.location_hint, "부산 강서구")
+        self.assertEqual(search_log.target_query, "소금빵 맛집")
+        self.assertEqual(search_log.category_hint, "cafe")
+        self.assertEqual(search_log.requested_conditions, ["디저트"])
+        self.assertEqual(search_log.menu_keywords, ["소금빵"])
+        self.assertEqual(search_log.place_type_keywords, ["베이커리", "카페"])
+        self.assertEqual(search_log.preferred_tags, ["조용함"])
+        self.assertEqual(search_log.negative_tags, ["혼잡"])
+        self.assertEqual(search_log.result_count, 10)
+        self.assertEqual(search_log.db_result_count, 2)
+        self.assertEqual(search_log.kakao_result_count, 8)
+        self.assertEqual(search_log.ai_web_result_count, 0)
+        self.assertEqual(search_log.search_plan_snapshot["targetQuery"], "소금빵 맛집")
+
+    def test_search_log_requires_authenticated_user(self):
+        response = self.client.post(
+            "/api/recommendations/search-logs/",
+            data=json.dumps({
+                "query": "소금빵 맛집 찾아줘",
+                "result_count": 1,
+            }, ensure_ascii=False),
+            content_type="application/json",
+            HTTP_HOST="localhost",
+        )
+
+        self.assertIn(response.status_code, [401, 403])
+        self.assertEqual(UserSearchLog.objects.count(), 0)
+
+    def test_search_log_ignores_disallowed_result_payload_fields(self):
+        response = self.client.post(
+            "/api/recommendations/search-logs/",
+            data=json.dumps({
+                "query": "조용히 작업할 곳",
+                "search_mode": "recommendation_query",
+                "result_count": 1,
+                "results": [{"name": "전체 결과를 저장하면 안 됨"}],
+                "places": [{"name": "장소 목록"}],
+                "raw_response": {"items": [{"title": "외부 API 전문"}]},
+                "source_urls": ["https://example.com/place"],
+                "user": 9999,
+            }, ensure_ascii=False),
+            content_type="application/json",
+            **self._auth_headers(),
+        )
+
+        self.assertEqual(response.status_code, 201)
+        search_log = UserSearchLog.objects.get()
+        self.assertEqual(search_log.user, self.user)
+        self.assertEqual(search_log.result_count, 1)
+        self.assertNotIn(
+            "results",
+            UserSearchLog.objects.values().get(id=search_log.id),
+        )
+        self.assertEqual(search_log.search_plan_snapshot, {})
+
+    def test_authenticated_user_can_list_own_search_logs(self):
+        other_user = get_user_model().objects.create_user(
+            username="other-searcher",
+            password="pass",
+        )
+        older_time = timezone.now() - timedelta(hours=1)
+        newer_time = timezone.now()
+        older_log = self._create_search_log(
+            query="쌀국수 먹고 싶어",
+            search_mode="recommendation_query",
+            scenario="restaurant",
+            location_hint="부산 강서구",
+            category_hint="food",
+            menu_keywords=["쌀국수"],
+            result_count=8,
+            db_result_count=1,
+            kakao_result_count=7,
+            ai_web_result_count=0,
+            search_plan_snapshot={"targetQuery": "쌀국수"},
+            created_at=older_time,
+        )
+        newer_log = self._create_search_log(
+            query="소금빵 맛집 찾아줘",
+            search_mode="recommendation_query",
+            scenario="restaurant",
+            location_hint="부산 강서구",
+            target_query="소금빵 맛집",
+            category_hint="cafe",
+            requested_conditions=["디저트"],
+            menu_keywords=["소금빵"],
+            place_type_keywords=["베이커리", "카페"],
+            preferred_tags=["조용함"],
+            negative_tags=["혼잡"],
+            result_count=10,
+            db_result_count=2,
+            kakao_result_count=8,
+            ai_web_result_count=3,
+            search_plan_snapshot={"targetQuery": "소금빵 맛집"},
+            created_at=newer_time,
+        )
+        self._create_search_log(
+            user=other_user,
+            query="다른 사용자 검색어",
+            result_count=99,
+            created_at=timezone.now() + timedelta(hours=1),
+        )
+
+        response = self.client.get(
+            "/api/recommendations/search-logs/",
+            **self._auth_headers(),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual([item["id"] for item in data["results"]], [newer_log.id, older_log.id])
+        self.assertEqual(data["results"][0]["query"], "소금빵 맛집 찾아줘")
+        self.assertEqual(data["results"][0]["menu_keywords"], ["소금빵"])
+        self.assertEqual(data["results"][0]["place_type_keywords"], ["베이커리", "카페"])
+        self.assertEqual(data["results"][0]["preferred_tags"], ["조용함"])
+        self.assertEqual(data["results"][0]["negative_tags"], ["혼잡"])
+        self.assertEqual(data["results"][0]["result_count"], 10)
+        self.assertEqual(data["results"][0]["ai_web_result_count"], 3)
+        self.assertNotIn("search_plan_snapshot", data["results"][0])
+
+    def test_search_log_list_requires_authenticated_user(self):
+        self._create_search_log(query="소금빵 맛집 찾아줘")
+
+        response = self.client.get(
+            "/api/recommendations/search-logs/",
+            HTTP_HOST="localhost",
+        )
+
+        self.assertIn(response.status_code, [401, 403])
+
+    def test_search_log_list_limit_parameter_and_max_limit(self):
+        now = timezone.now()
+        for index in range(60):
+            self._create_search_log(
+                query=f"검색어 {index}",
+                created_at=now + timedelta(minutes=index),
+            )
+
+        limited_response = self.client.get(
+            "/api/recommendations/search-logs/",
+            {"limit": 10},
+            **self._auth_headers(),
+        )
+        max_limited_response = self.client.get(
+            "/api/recommendations/search-logs/",
+            {"limit": 100},
+            **self._auth_headers(),
+        )
+
+        self.assertEqual(limited_response.status_code, 200)
+        self.assertEqual(len(limited_response.json()["results"]), 10)
+        self.assertEqual(limited_response.json()["results"][0]["query"], "검색어 59")
+        self.assertEqual(max_limited_response.status_code, 200)
+        self.assertEqual(len(max_limited_response.json()["results"]), 50)
 
     def test_db_recommendation_search_returns_saved_place(self):
         response = self.client.get(

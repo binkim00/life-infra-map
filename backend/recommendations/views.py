@@ -1,8 +1,11 @@
 from django.db.models import Q
-from rest_framework.decorators import api_view
+from rest_framework import status
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from .models import Place
+from .models import Place, UserSearchLog
+from .serializers import UserSearchLogListSerializer, UserSearchLogSerializer
 from .services.kakao_local import search_places_by_keyword
 from .services.place_mapper import (
     get_saved_tag_data,
@@ -53,6 +56,42 @@ def health_check(request):
     return Response({
         "message": "recommendations API is working"
     })
+
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+def search_logs(request):
+    if request.method == "GET":
+        try:
+            limit = int(request.GET.get("limit", 20))
+        except (TypeError, ValueError):
+            limit = 20
+
+        limit = min(max(limit, 1), 50)
+        search_log_queryset = UserSearchLog.objects.filter(
+            user=request.user,
+        ).order_by("-created_at")[:limit]
+        serializer = UserSearchLogListSerializer(search_log_queryset, many=True)
+        return Response({
+            "results": serializer.data,
+        })
+
+    serializer = UserSearchLogSerializer(
+        data=request.data,
+        context={"request": request},
+    )
+
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    search_log = serializer.save()
+    return Response(
+        {
+            "id": search_log.id,
+            "message": "search log saved",
+        },
+        status=status.HTTP_201_CREATED,
+    )
 
 
 def get_matching_categories(keyword):

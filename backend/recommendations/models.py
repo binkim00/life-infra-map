@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import models
 
 
@@ -152,3 +153,46 @@ class PlaceTag(models.Model):
     @property
     def status_label(self):
         return dict(self.TAG_STATUS_CHOICES).get(self.status, self.status)
+
+
+class UserSearchLog(models.Model):
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="search_logs",
+    )
+    query = models.CharField(max_length=255)
+    search_mode = models.CharField(max_length=50, blank=True)
+    scenario = models.CharField(max_length=50, blank=True)
+    location_hint = models.CharField(max_length=100, blank=True)
+
+    lat = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    lng = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+
+    target_query = models.CharField(max_length=255, blank=True)
+    category_hint = models.CharField(max_length=50, blank=True)
+
+    requested_conditions = models.JSONField(default=list, blank=True)
+    menu_keywords = models.JSONField(default=list, blank=True)
+    place_type_keywords = models.JSONField(default=list, blank=True)
+    preferred_tags = models.JSONField(default=list, blank=True)
+    negative_tags = models.JSONField(default=list, blank=True)
+
+    result_count = models.PositiveIntegerField(default=0)
+    db_result_count = models.PositiveIntegerField(default=0)
+    kakao_result_count = models.PositiveIntegerField(default=0)
+    ai_web_result_count = models.PositiveIntegerField(default=0)
+
+    search_plan_snapshot = models.JSONField(default=dict, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["user", "-created_at"]),
+            models.Index(fields=["scenario"]),
+            models.Index(fields=["category_hint"]),
+        ]
+
+    def __str__(self):
+        return f"{self.user} - {self.query}"
