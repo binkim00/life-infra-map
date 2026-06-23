@@ -4,6 +4,7 @@ from django.core.validators import FileExtensionValidator
 from rest_framework import serializers
 
 from .models import UserProfile
+from .utils import get_user_tier_info
 
 
 def get_file_url(serializer, file_field):
@@ -47,6 +48,9 @@ def get_or_create_profile(user):
 class UserSerializer(serializers.ModelSerializer):
     nickname = serializers.SerializerMethodField()
     profile_image_url = serializers.SerializerMethodField()
+    score = serializers.SerializerMethodField()
+    tier = serializers.SerializerMethodField()
+    tier_label = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -57,6 +61,9 @@ class UserSerializer(serializers.ModelSerializer):
             "profile_image_url",
             "email",
             "is_staff",
+            "score",
+            "tier",
+            "tier_label",
             "date_joined",
         ]
 
@@ -65,6 +72,15 @@ class UserSerializer(serializers.ModelSerializer):
 
     def get_profile_image_url(self, obj):
         return get_file_url(self, get_or_create_profile(obj).profile_image)
+
+    def get_score(self, obj):
+        return get_user_tier_info(obj)["score"]
+
+    def get_tier(self, obj):
+        return get_user_tier_info(obj)["tier"]
+
+    def get_tier_label(self, obj):
+        return get_user_tier_info(obj)["tier_label"]
 
 
 class SignupSerializer(serializers.Serializer):

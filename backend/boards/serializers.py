@@ -3,6 +3,7 @@ from datetime import timedelta
 from django.contrib.auth.models import User
 from rest_framework import serializers
 from accounts.serializers import get_or_create_profile
+from accounts.utils import get_user_tier_info
 from .models import Comment, Inquiry, Notification, Post, Report, UserPenalty
 
 
@@ -30,6 +31,8 @@ class CommentSerializer(serializers.ModelSerializer):
     author_username = serializers.CharField(source="author.username", read_only=True)
     author_nickname = serializers.SerializerMethodField()
     author_profile_image_url = serializers.SerializerMethodField()
+    author_tier = serializers.SerializerMethodField()
+    author_tier_label = serializers.SerializerMethodField()
     post_title = serializers.CharField(source="post.title", read_only=True)
     post_board_type = serializers.CharField(source="post.board_type", read_only=True)
     likes_count = serializers.IntegerField(source="comment_likes.count", read_only=True)
@@ -51,6 +54,8 @@ class CommentSerializer(serializers.ModelSerializer):
             "author_username",
             "author_nickname",
             "author_profile_image_url",
+            "author_tier",
+            "author_tier_label",
             "content",
             "likes_count",
             "dislikes_count",
@@ -71,6 +76,8 @@ class CommentSerializer(serializers.ModelSerializer):
             "author_username",
             "author_nickname",
             "author_profile_image_url",
+            "author_tier",
+            "author_tier_label",
             "likes_count",
             "dislikes_count",
             "is_liked",
@@ -107,6 +114,12 @@ class CommentSerializer(serializers.ModelSerializer):
         profile = get_or_create_profile(obj.author)
         return get_file_url(self, profile.profile_image)
 
+    def get_author_tier(self, obj):
+        return get_user_tier_info(obj.author)["tier"]
+
+    def get_author_tier_label(self, obj):
+        return get_user_tier_info(obj.author)["tier_label"]
+
     def get_replies(self, obj):
         if obj.parent_id:
             return []
@@ -123,6 +136,8 @@ class PostListSerializer(serializers.ModelSerializer):
     author_username = serializers.CharField(source="author.username", read_only=True)
     author_nickname = serializers.SerializerMethodField()
     author_profile_image_url = serializers.SerializerMethodField()
+    author_tier = serializers.SerializerMethodField()
+    author_tier_label = serializers.SerializerMethodField()
     comments_count = serializers.IntegerField(source="comments.count", read_only=True)
     likes_count = serializers.IntegerField(source="post_likes.count", read_only=True)
     is_liked = serializers.SerializerMethodField()
@@ -137,6 +152,8 @@ class PostListSerializer(serializers.ModelSerializer):
             "author_username",
             "author_nickname",
             "author_profile_image_url",
+            "author_tier",
+            "author_tier_label",
             "board_type",
             "title",
             "image",
@@ -156,6 +173,8 @@ class PostListSerializer(serializers.ModelSerializer):
             "author_username",
             "author_nickname",
             "author_profile_image_url",
+            "author_tier",
+            "author_tier_label",
             "image_url",
             "view_count",
             "is_pinned",
@@ -188,11 +207,19 @@ class PostListSerializer(serializers.ModelSerializer):
         profile = get_or_create_profile(obj.author)
         return get_file_url(self, profile.profile_image)
 
+    def get_author_tier(self, obj):
+        return get_user_tier_info(obj.author)["tier"]
+
+    def get_author_tier_label(self, obj):
+        return get_user_tier_info(obj.author)["tier_label"]
+
 
 class PostDetailSerializer(serializers.ModelSerializer):
     author_username = serializers.CharField(source="author.username", read_only=True)
     author_nickname = serializers.SerializerMethodField()
     author_profile_image_url = serializers.SerializerMethodField()
+    author_tier = serializers.SerializerMethodField()
+    author_tier_label = serializers.SerializerMethodField()
     comments = serializers.SerializerMethodField()
     comments_count = serializers.IntegerField(source="comments.count", read_only=True)
     likes_count = serializers.IntegerField(source="post_likes.count", read_only=True)
@@ -208,6 +235,8 @@ class PostDetailSerializer(serializers.ModelSerializer):
             "author_username",
             "author_nickname",
             "author_profile_image_url",
+            "author_tier",
+            "author_tier_label",
             "board_type",
             "title",
             "content",
@@ -229,6 +258,8 @@ class PostDetailSerializer(serializers.ModelSerializer):
             "author_username",
             "author_nickname",
             "author_profile_image_url",
+            "author_tier",
+            "author_tier_label",
             "image_url",
             "view_count",
             "is_pinned",
@@ -261,6 +292,12 @@ class PostDetailSerializer(serializers.ModelSerializer):
     def get_author_profile_image_url(self, obj):
         profile = get_or_create_profile(obj.author)
         return get_file_url(self, profile.profile_image)
+
+    def get_author_tier(self, obj):
+        return get_user_tier_info(obj.author)["tier"]
+
+    def get_author_tier_label(self, obj):
+        return get_user_tier_info(obj.author)["tier_label"]
 
     def get_comments(self, obj):
         comments = obj.comments.filter(parent__isnull=True).prefetch_related("replies")

@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import { getPosts } from '@/api/boards'
+import { getTierIcon } from '@/utils/tierIcons'
 import { useAuthStore } from '@/stores/auth'
 
 const route = useRoute()
@@ -163,6 +164,12 @@ onMounted(() => {
                     <span v-else class="default-avatar" aria-hidden="true"></span>
                   </span>
                   {{ post.author_nickname }}
+                  <img
+                    v-if="post.author_tier"
+                    :src="getTierIcon(post.author_tier)"
+                    :alt="post.author_tier_label || post.author_tier"
+                    class="tier-icon"
+                  />
                 </span>
               </td>
               <td>{{ formatBoardDate(post.created_at) }}</td>
@@ -396,6 +403,13 @@ onMounted(() => {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+.tier-icon {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  object-fit: contain;
 }
 
 .default-avatar {
