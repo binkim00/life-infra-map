@@ -21,6 +21,9 @@ ALLOWED_CATEGORIES = {
     "tourism",
     "smoking_area",
     "restaurant",
+    "library",
+    "public_library",
+    "study_cafe",
 }
 ALLOWED_TAGS = {
     "조용한",
@@ -84,6 +87,28 @@ INDOOR_WEATHER_KEYWORDS = [
 ]
 INDOOR_WAITING_CATEGORIES = ["cafe", "shelter"]
 INDOOR_EXCLUDED_CATEGORIES = ["city_park", "beach"]
+WALK_HEALING_BASE_CATEGORIES = ["city_park", "beach", "tourism"]
+WALK_HEALING_CAFE_KEYWORDS = ["카페", "커피", "cafe"]
+WALK_HEALING_RESTAURANT_KEYWORDS = [
+    "식당",
+    "맛집",
+    "음식점",
+    "밥집",
+    "식사",
+    "밥",
+    "먹",
+]
+WALK_HEALING_WIFI_KEYWORDS = ["와이파이", "wifi", "wi-fi", "무선인터넷"]
+WALK_HEALING_HEALING_KEYWORDS = [
+    "힐링",
+    "쉬고 싶",
+    "쉬고싶",
+    "쉬고",
+    "조용히 걷",
+    "조용하게 걷",
+    "조용한 산책",
+]
+WALK_HEALING_REQUIRED_KEYWORDS = ["산책", "걷", "둘레길", "갈맷길"]
 
 FOOD_INTENT_KEYWORDS = [
     "맛집",
@@ -372,6 +397,65 @@ def _has_indoor_weather_context(query):
     )
 
 
+def _has_any_compact_keyword(query, keywords):
+    normalized = _compact_text(query)
+    return any(keyword.replace(" ", "").lower() in normalized for keyword in keywords)
+
+
+def _apply_walk_healing_constraints(parse, query):
+    if parse["scenario"] != "walk_healing":
+        return parse
+
+    mentions_cafe = _has_any_compact_keyword(query, WALK_HEALING_CAFE_KEYWORDS)
+    mentions_restaurant = _has_any_compact_keyword(query, WALK_HEALING_RESTAURANT_KEYWORDS)
+    mentions_wifi = _has_any_compact_keyword(query, WALK_HEALING_WIFI_KEYWORDS)
+    mentions_healing = _has_any_compact_keyword(query, WALK_HEALING_HEALING_KEYWORDS)
+    mentions_walk = _has_any_compact_keyword(query, WALK_HEALING_REQUIRED_KEYWORDS)
+
+    allowed_categories = set(WALK_HEALING_BASE_CATEGORIES)
+    if mentions_cafe:
+        allowed_categories.add("cafe")
+    if mentions_restaurant:
+        allowed_categories.add("restaurant")
+
+    parse["categories"] = [
+        category
+        for category in parse.get("categories", [])
+        if category in allowed_categories
+    ] or list(WALK_HEALING_BASE_CATEGORIES)
+
+    parse["preferred_tags"] = [
+        tag
+        for tag in parse.get("preferred_tags") or parse.get("tags") or []
+        if (
+            tag != "와이파이" or mentions_wifi
+        ) and (
+            tag != "힐링" or mentions_healing
+        )
+    ]
+    parse["required_tags"] = [
+        tag
+        for tag in parse.get("required_tags", [])
+        if (
+            tag != "와이파이" or mentions_wifi
+        ) and (
+            tag != "힐링" or mentions_healing
+        )
+    ]
+
+    if mentions_walk and "산책좋음" not in parse["required_tags"]:
+        parse["required_tags"].insert(0, "산책좋음")
+
+    if mentions_healing and "힐링" not in parse["preferred_tags"]:
+        parse["preferred_tags"].append("힐링")
+
+    if mentions_wifi and "와이파이" not in parse["preferred_tags"]:
+        parse["preferred_tags"].append("와이파이")
+
+    parse["tags"] = list(parse["preferred_tags"])
+    return parse
+
+
 def _sync_condition_aliases(parse):
     preferred_tags = list(dict.fromkeys(
         parse.get("preferred_tags")
@@ -388,6 +472,8 @@ def _sync_condition_aliases(parse):
 
 
 def _apply_context_constraints(parse, query):
+    parse = _apply_walk_healing_constraints(parse, query)
+
     if parse["scenario"] != "waiting_place" or not _has_indoor_weather_context(query):
         parse["exclude_categories"] = []
         return _sync_condition_aliases(parse)

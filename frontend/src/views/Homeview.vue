@@ -57,7 +57,7 @@ const KAKAO_FALLBACK_MIN_RESULTS = 3
 const KAKAO_FALLBACK_MAX_QUERIES = 5
 const KAKAO_WALK_HEALING_FALLBACK_MAX_QUERIES = 9
 const KAKAO_FALLBACK_MAX_RESULTS = 8
-const WALK_HEALING_FALLBACK_RADII = [1500, 3000, 5000]
+const WALK_HEALING_FALLBACK_RADII = [3000, 5000]
 const KAKAO_FALLBACK_MAX_SCORE = 60
 const AI_WEB_SEARCH_MIN_DB_RESULTS = 3
 const AI_WEB_SEARCH_MIN_TOTAL_RESULTS = 5
@@ -525,10 +525,14 @@ const mapViewportBounds = ref(null)
 const mapFitBoundsKey = ref(0)
 const currentLocationPlace = ref([])
 const allSearchResults = ref([])
+const mainResults = ref([])
+const fallbackResults = ref([])
+const webReferenceResults = ref([])
 const visibleCount = ref(DISPLAY_BATCH_SIZE)
 const resultFilterMode = ref('all')
 const sortMode = ref('distance')
 const searchResultStatus = ref('idle')
+const searchErrorMessage = ref('')
 const resultSourceLabel = ref('검색 결과')
 const resultMessageSuffix = ref('')
 const selectedPlace = ref(null)
@@ -548,6 +552,7 @@ const locationMessage = ref('지도 버튼을 누르면 현재 위치 기준으�
 const loadingMessage = ref('')
 const mapSearchKeyword = ref('')
 const aiSearchKeyword = ref('')
+const aiSearchError = ref('')
 const mapAiParse = ref(null)
 const aiWebSearchContext = ref(null)
 const aiWebSearchAvailability = ref(null)
@@ -583,6 +588,7 @@ const NO_RESULT_MESSAGE_PATTERNS = [
   '검색 결과가 없습니다',
   '추천 결과가 없습니다',
   '조건에 맞는 추천 결과가 없습니다',
+  '후보를 찾지 못했습니다',
 ]
 
 const isNoResultLocationMessage = (message = '') => {
@@ -668,8 +674,119 @@ const getResultFilterLabel = (filterMode = resultFilterMode.value) => {
   return RESULT_FILTER_OPTIONS.find((option) => option.value === filterMode)?.label || '전체'
 }
 
+const isSearchErrorMessage = (message = '') => {
+  const text = getTextValue(message)
+  return text.includes('오류가 발생했습니다') || text.includes('다시 시도해 주세요')
+}
+
+const clearMainSearchErrorState = () => {
+  searchErrorMessage.value = ''
+  aiSearchError.value = ''
+
+  if (isSearchErrorMessage(locationMessage.value)) {
+    locationMessage.value = ''
+  }
+}
+
+const beginMainSearch = () => {
+  mainResults.value = []
+  fallbackResults.value = []
+  webReferenceResults.value = []
+  syncLegacySearchResults()
+  searchResultStatus.value = 'loading'
+  clearMainSearchErrorState()
+}
+
+const setMainSearchError = (message) => {
+  if (displayResults.value.length > 0) {
+    searchResultStatus.value = 'success'
+    clearMainSearchErrorState()
+    return
+  }
+
+  const fallbackMessage = message || '검색 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.'
+  searchResultStatus.value = 'error'
+  searchErrorMessage.value = fallbackMessage
+  aiSearchError.value = fallbackMessage
+  locationMessage.value = fallbackMessage
+}
+
+const getDisplayResultKey = (place = {}) => {
+  return [
+    place.id,
+    place.savedPlaceId,
+    place.kakaoPlaceId,
+    place.externalId,
+    `${place.name || ''}:${place.address || ''}`,
+  ].find((value) => value !== undefined && value !== null && String(value).trim()) || ''
+}
+
+const mergeAndSortMainResults = (primaryResults = [], secondaryResults = []) => {
+  const mergedResults = [...primaryResults]
+  const seenKeys = new Set(
+    mergedResults
+      .map(getDisplayResultKey)
+      .filter(Boolean),
+  )
+
+  secondaryResults.forEach((place) => {
+    const key = getDisplayResultKey(place)
+    if (key && seenKeys.has(key)) return
+
+    if (key) {
+      seenKeys.add(key)
+    }
+    mergedResults.push(place)
+  })
+
+  return mergedResults
+}
+
+const displayResults = computed(() => {
+  return mergeAndSortMainResults(mainResults.value, fallbackResults.value)
+})
+
+const syncLegacySearchResults = () => {
+  allSearchResults.value = displayResults.value
+}
+
+const logSearchResultState = async () => {
+  if (!import.meta.env.DEV) return
+
+  await nextTick()
+  console.debug('[검색 결과 상태]', {
+    mainCount: mainResults.value.length,
+    fallbackCount: fallbackResults.value.length,
+    displayCount: displayResults.value.length,
+    webReferenceCount: webReferenceResults.value.length,
+    status: searchResultStatus.value,
+    errorMessage: searchErrorMessage.value,
+    locationMessage: locationMessage.value,
+  })
+}
+
+const setMainResults = (results = []) => {
+  mainResults.value = Array.isArray(results) ? results : []
+  syncLegacySearchResults()
+
+  if (displayResults.value.length > 0) {
+    searchResultStatus.value = 'success'
+    clearMainSearchErrorState()
+  }
+}
+
+const setFallbackResults = (results = []) => {
+  fallbackResults.value = Array.isArray(results) ? results : []
+  syncLegacySearchResults()
+
+  if (displayResults.value.length > 0) {
+    searchResultStatus.value = 'success'
+    clearMainSearchErrorState()
+  }
+}
+
 const filteredSearchResults = computed(() => {
-  return allSearchResults.value.filter((place) => {
+  return displayResults.value.filter((place) => {
     return matchesResultFilter(place, resultFilterMode.value)
   })
 })
@@ -703,7 +820,7 @@ const hasMoreResults = computed(() => {
 })
 
 const resultCountText = computed(() => {
-  if (!allSearchResults.value.length) {
+  if (!displayResults.value.length) {
     return ''
   }
 
@@ -955,7 +1072,7 @@ const shouldShowAiWebSearchPanel = computed(() => {
 const hasSearchExperienceContent = computed(() => {
   return Boolean(
     mapSearchKeyword.value.trim() ||
-    allSearchResults.value.length ||
+    displayResults.value.length ||
     isSearchingMap.value ||
     shouldShowAiWebSearchPanel.value ||
     baseLocationCandidates.value.length,
@@ -979,7 +1096,7 @@ const searchConversationTitle = computed(() => {
     return query ? `“${query}”에 맞는 장소를 찾는 중이에요.` : '필요한 장소를 찾는 중이에요.'
   }
 
-  if (allSearchResults.value.length && query) {
+  if (displayResults.value.length && query) {
     return `현재 위치 기준으로 “${query}” 결과를 찾았어요.`
   }
 
@@ -995,12 +1112,24 @@ const searchConversationDetail = computed(() => {
     return loadingMessage.value || '검색 조건을 확인하고 있습니다.'
   }
 
-  if (locationMessage.value) {
-    return locationMessage.value
+  if (displayResults.value.length) {
+    if (
+      locationMessage.value &&
+      !isSearchErrorMessage(locationMessage.value) &&
+      !isNoResultLocationMessage(locationMessage.value)
+    ) {
+      return locationMessage.value
+    }
+
+    return `${resultSourceLabel.value} ${filteredSearchResults.value.length}개를 확인했습니다.`
   }
 
-  if (allSearchResults.value.length) {
-    return `${resultSourceLabel.value} ${filteredSearchResults.value.length}개를 확인했습니다.`
+  if (searchErrorMessage.value) {
+    return searchErrorMessage.value
+  }
+
+  if (locationMessage.value) {
+    return locationMessage.value
   }
 
   return '검색 결과가 부족하면 웹 검색 참고 링크를 보조로 확인할 수 있어요.'
@@ -1024,7 +1153,7 @@ const searchConversationChips = computed(() => {
     chips.push({ label: '분류', value: category })
   }
 
-  if (allSearchResults.value.length) {
+  if (displayResults.value.length) {
     chips.push({ label: '결과', value: `${filteredSearchResults.value.length}개` })
   }
 
@@ -1033,7 +1162,7 @@ const searchConversationChips = computed(() => {
 
 const searchConversationNotice = computed(() => {
   const missingLabels = [
-    ...new Set(allSearchResults.value.flatMap((place) => getRecommendationMissingLabels(place))),
+    ...new Set(displayResults.value.flatMap((place) => getRecommendationMissingLabels(place))),
   ]
 
   if (missingLabels.length) {
@@ -1110,6 +1239,10 @@ const getAiWebSearchStatusMessage = (result = {}) => {
 
   if (result.error === 'incomplete_response') {
     return 'AI 웹 검색 응답이 완성되지 않아 후보를 표시하지 않았습니다.'
+  }
+
+  if (result.reason === 'manual_required') {
+    return ''
   }
 
   if (result.error === 'temporary_server_error') {
@@ -1910,9 +2043,15 @@ const getKakaoKeywordCandidates = ({
   return [...new Set(candidates.map((candidate) => candidate.trim()).filter(Boolean))]
 }
 
+function toArray(value) {
+  if (Array.isArray(value)) return value
+  if (value === null || value === undefined) return []
+  return [value]
+}
+
 const hasRequestedConditionKeyword = (text = '', rule) => {
   const normalizedText = normalizeLocationText(text)
-  return rule.keywords.some((keyword) => {
+  return toArray(rule?.keywords).some((keyword) => {
     return normalizedText.includes(normalizeLocationText(keyword))
   })
 }
@@ -1920,8 +2059,8 @@ const hasRequestedConditionKeyword = (text = '', rule) => {
 const cleanupConditionTargetText = (text = '', conditions = []) => {
   let cleaned = text
 
-  conditions.forEach((condition) => {
-    condition.cleanupPatterns.forEach((pattern) => {
+  toArray(conditions).forEach((condition) => {
+    toArray(condition?.cleanupPatterns).forEach((pattern) => {
       cleaned = cleaned.replace(pattern, ' ')
     })
   })
@@ -1968,17 +2107,17 @@ const extractRequestedConditions = (query = '', rawTargetQuery = '') => {
 }
 
 const getRequestedConditionEvidenceText = (place = {}) => {
-  const tagDetails = toDisplayList((place.tagDetails || place.tag_details || []).map((tag) => tag?.name))
+  const tagDetails = toDisplayList(toArray(place.tagDetails || place.tag_details).map((tag) => tag?.name))
   return [
     place.name,
     place.category,
     place.rawCategory,
-    ...(place.tags || []).map((tag) => getTagName(tag)),
-    ...(place.suggestedTags || place.suggested_tags || []),
-    ...(place.verifiedTags || place.verified_tags || []),
-    ...(place.warningTags || place.warning_tags || []),
-    ...(place.matchedTags || place.matched_tags || []),
-    ...(place.matchedTagLabels || place.matched_tag_labels || []),
+    ...toArray(place.tags).map((tag) => getTagName(tag)),
+    ...toArray(place.suggestedTags || place.suggested_tags),
+    ...toArray(place.verifiedTags || place.verified_tags),
+    ...toArray(place.warningTags || place.warning_tags),
+    ...toArray(place.matchedTags || place.matched_tags),
+    ...toArray(place.matchedTagLabels || place.matched_tag_labels),
     ...tagDetails,
   ].filter(Boolean).join(' ')
 }
@@ -1987,19 +2126,27 @@ const getRequestedConditionReview = (place = {}, requestedConditions = []) => {
   const evidenceText = normalizeLocationText(getRequestedConditionEvidenceText(place))
   const matchedLabels = []
   const missingLabels = []
+  const safeConditions = toArray(requestedConditions).filter((condition) => {
+    return condition && typeof condition === 'object'
+  })
 
-  requestedConditions.forEach((condition) => {
-    const hasEvidence = condition.evidenceKeywords.some((keyword) => {
+  safeConditions.forEach((condition) => {
+    const evidenceKeywords = toArray(condition.evidenceKeywords)
+    if (!evidenceKeywords.length) return
+
+    const hasEvidence = evidenceKeywords.some((keyword) => {
       const evidenceKeyword = normalizeLocationText(keyword)
       return evidenceText.includes(evidenceKeyword)
     })
 
     if (hasEvidence) {
-      matchedLabels.push(condition.matchLabel)
+      const matchLabel = getTextValue(condition.matchLabel)
+      if (matchLabel) matchedLabels.push(matchLabel)
       return
     }
 
-    missingLabels.push(condition.missingLabel)
+    const missingLabel = getTextValue(condition.missingLabel)
+    if (missingLabel) missingLabels.push(missingLabel)
   })
 
   return {
@@ -2009,9 +2156,12 @@ const getRequestedConditionReview = (place = {}, requestedConditions = []) => {
 }
 
 const mergeRequestedConditionReview = (place = {}, requestedConditions = []) => {
-  if (!requestedConditions.length) return place
+  const safeConditions = toArray(requestedConditions).filter((condition) => {
+    return condition && typeof condition === 'object'
+  })
+  if (!safeConditions.length) return place
 
-  const review = getRequestedConditionReview(place, requestedConditions)
+  const review = getRequestedConditionReview(place, safeConditions)
   const missingLabels = [...new Set([
     ...toDisplayList(place.missingTagLabels || place.missing_tag_labels),
     ...review.missingLabels,
@@ -2026,7 +2176,7 @@ const mergeRequestedConditionReview = (place = {}, requestedConditions = []) => 
 
   return {
     ...place,
-    requestedConditionIds: requestedConditions.map((condition) => condition.id),
+    requestedConditionIds: safeConditions.map((condition) => condition.id).filter(Boolean),
     matchedTagLabels: matchedLabels,
     matched_tag_labels: matchedLabels,
     missingTagLabels: missingLabels,
@@ -2161,7 +2311,7 @@ const getSearchPlanValue = (searchPlan = {}, ...keys) => {
 }
 
 const getConversationalPreviousContext = () => {
-  if (!activeSearchPlan.value || !allSearchResults.value.length) {
+  if (!activeSearchPlan.value || !displayResults.value.length) {
     return null
   }
 
@@ -2177,7 +2327,7 @@ const getConversationalPreviousContext = () => {
       place_type_keywords: activeSearchPlan.value.place_type_keywords || [],
       requestedConditions: activeSearchPlan.value.requestedConditions || [],
     },
-    result_count: allSearchResults.value.length,
+    result_count: displayResults.value.length,
   }
 }
 
@@ -2703,9 +2853,10 @@ const getTagConfidenceScore = (savedTagData = {}) => {
 const getMatchedSavedTags = (savedTagData = {}, query = '', preferredTags = []) => {
   const queryText = normalizeLocationText(query)
   const tagNames = getSavedTagNames(savedTagData)
+  const safePreferredTags = toArray(preferredTags)
   const preferredMatched = tagNames.filter((tagName) => {
     const tagText = normalizeLocationText(tagName)
-    return preferredTags.some((preferredTag) => {
+    return safePreferredTags.some((preferredTag) => {
       const preferredText = normalizeLocationText(preferredTag)
       return tagText && preferredText && (
         tagText.includes(preferredText) ||
@@ -2748,7 +2899,7 @@ const calculateKakaoTagRecommendation = ({
   const rawScores = savedTagData.raw_scores || {}
   const preferredMatchCount = matchedTags.filter((tagName) => {
     const tagText = normalizeLocationText(tagName)
-    return preferredTags.some((preferredTag) => {
+    return toArray(preferredTags).some((preferredTag) => {
       const preferredText = normalizeLocationText(preferredTag)
       return tagText.includes(preferredText) || preferredText.includes(tagText)
     })
@@ -2977,6 +3128,10 @@ const getRecommendationMetaText = (place) => {
 }
 
 const getRecommendationFallbackText = (place) => {
+  if (isLowConfidenceWalkHealingFallback(place)) {
+    return '낮은 신뢰도 후보'
+  }
+
   return getTextValue(place?.recommendationFallbackLabel || place?.fallback_label)
 }
 
@@ -3005,7 +3160,7 @@ const getPersonalizationBoostText = (place) => {
   return `개인화 +${boost.toFixed(1)}`
 }
 
-watch(allSearchResults, (results) => {
+watch(displayResults, (results) => {
   if (!IS_DEV || !Array.isArray(results) || !results.length) return
 
   const boosts = results
@@ -3338,6 +3493,39 @@ const dedupeSearchResults = (kakaoResults, dbPlaces) => {
   })
 
   return [...mergedKakaoResults, ...additionalDbPlaces]
+}
+
+const mergeKakaoFallbackIntoDbResults = (dbResults = [], kakaoFallbackResults = []) => {
+  const finalResults = [...dbResults]
+
+  kakaoFallbackResults.forEach((kakaoPlace) => {
+    const duplicateExists = finalResults.some((dbPlace) => {
+      return isDuplicateDbPlace(kakaoPlace, dbPlace)
+    })
+
+    if (!duplicateExists) {
+      finalResults.push(kakaoPlace)
+    }
+  })
+
+  return finalResults
+}
+
+const logSearchResultMerge = async ({
+  dbResults = [],
+  kakaoFallbackResults = [],
+  finalResults = [],
+} = {}) => {
+  if (!import.meta.env.DEV) return
+
+  await nextTick()
+  console.debug('[검색 결과 병합]', {
+    dbCount: dbResults.length,
+    kakaoFallbackCount: kakaoFallbackResults.length,
+    finalCount: finalResults.length,
+    displayedCount: searchedPlaces.value.length,
+    status: searchResultStatus.value,
+  })
 }
 
 const getPlaceSourceText = (place) => {
@@ -4327,6 +4515,18 @@ const getRecommendationSortScore = (place) => {
   return baseScore + sourceBonus + placeShapeScore - waitingPenalty
 }
 
+const isLowConfidenceWalkHealingFallback = (place = {}) => {
+  if (place?.recommendationIntent !== 'walk_healing') return false
+
+  const score = getRecommendScore(place)
+  return isCategoryFallbackRecommendation(place) || score < 40
+}
+
+const compareLowConfidenceFallback = (firstPlace, secondPlace) => {
+  return Number(isLowConfidenceWalkHealingFallback(firstPlace)) -
+    Number(isLowConfidenceWalkHealingFallback(secondPlace))
+}
+
 const getConfidenceRank = (place) => {
   const confidence = getTextValue(
     place?.recommendationConfidence ||
@@ -4574,6 +4774,11 @@ const sortSearchResults = (results = []) => {
   }))
 
   const sortedResults = [...indexedResults].sort((firstPlace, secondPlace) => {
+    const fallbackDifference = compareLowConfidenceFallback(firstPlace, secondPlace)
+    if (fallbackDifference !== 0) {
+      return fallbackDifference
+    }
+
     if (sortMode.value === 'recommendation') {
       return compareForRecommendationSearch(firstPlace, secondPlace)
     }
@@ -4602,7 +4807,7 @@ const convertKakaoPlaces = (
     requestedConditions = [],
   } = {},
 ) => {
-  return places.map((place) => {
+  return toArray(places).map((place) => {
     const savedTagData = savedTagDataByExternalId[String(place.id)] || {}
     const rawScores = savedTagData.raw_scores || {}
     const hasTagData = hasSavedTagMatch(savedTagData)
@@ -5625,7 +5830,7 @@ const makeDbTags = (place) => {
     tags.push(makeTag(categoryText, 'category_rule'))
   }
 
-  place.tags?.forEach((tag) => {
+  toArray(place.tags).forEach((tag) => {
     tags.push(makeTag(tag.name, tag.source))
   })
 
@@ -5633,7 +5838,7 @@ const makeDbTags = (place) => {
 }
 
 const convertDbPlaces = (places, { requestedConditions = [] } = {}) => {
-  return places.map((place) => {
+  return toArray(places).map((place) => {
     const externalId = place.external_id || place.externalId || null
     const isKakaoLocal = place.source === 'kakao_local'
     const sourceName = place.source_name || place.sourceName || ''
@@ -5721,19 +5926,19 @@ const makeRecommendationTags = (place) => {
     tags.push(makeTag(categoryText, 'category_rule'))
   }
 
-  ; (place.matched_tags || place.runtime_tags || []).forEach((tagName) => {
+  ;toArray(place.matched_tags || place.runtime_tags).forEach((tagName) => {
     tags.push(makeTag(tagName, 'checked'))
   })
 
-  place.suggested_tags?.forEach((tagName) => {
+  toArray(place.suggested_tags).forEach((tagName) => {
     tags.push(makeTag(tagName, 'blog_search'))
   })
 
-  place.verified_tags?.forEach((tagName) => {
+  toArray(place.verified_tags).forEach((tagName) => {
     tags.push(makeTag(tagName, 'user_verified'))
   })
 
-  place.warning_tags?.forEach((tagName) => {
+  toArray(place.warning_tags).forEach((tagName) => {
     tags.push(makeTag(tagName, 'warning_tags'))
   })
 
@@ -5741,9 +5946,11 @@ const makeRecommendationTags = (place) => {
 }
 
 const getPreferredTagMatchCount = (tagNames = [], preferredTags = []) => {
-  return tagNames.filter((tagName) => {
+  const safePreferredTags = toArray(preferredTags)
+
+  return toArray(tagNames).filter((tagName) => {
     const tagText = normalizeLocationText(tagName)
-    return preferredTags.some((preferredTag) => {
+    return safePreferredTags.some((preferredTag) => {
       const preferredText = normalizeLocationText(preferredTag)
       return tagText.includes(preferredText) || preferredText.includes(tagText)
     })
@@ -5758,7 +5965,8 @@ const convertRecommendationPlaces = (
     requestedConditions = [],
   } = {},
 ) => {
-  return places.map((place) => {
+  return toArray(places).map((place) => {
+    try {
     const externalId = place.external_id || place.externalId || null
     const isKakaoLocal = place.source === 'kakao_local'
     const sourceName = place.source_name || place.sourceName || ''
@@ -5779,10 +5987,10 @@ const convertRecommendationPlaces = (
     })
     const preferredMatchCount = getPreferredTagMatchCount(
       [
-        ...(place.matched_tags || []),
-        ...(place.runtime_tags || []),
-        ...(place.suggested_tags || []),
-        ...(place.verified_tags || []),
+        ...toArray(place.matched_tags),
+        ...toArray(place.runtime_tags),
+        ...toArray(place.suggested_tags),
+        ...toArray(place.verified_tags),
       ],
       preferredTags,
     )
@@ -5816,10 +6024,10 @@ const convertRecommendationPlaces = (
       dataQualityStatus: place.data_quality_status,
       dataQualityScore: place.data_quality_score,
       rawScores: place.raw_scores || {},
-      suggestedTags: place.suggested_tags || [],
-      verifiedTags: place.verified_tags || [],
-      warningTags: place.warning_tags || [],
-      tagDetails: place.tag_details || [],
+      suggestedTags: toArray(place.suggested_tags),
+      verifiedTags: toArray(place.verified_tags),
+      warningTags: toArray(place.warning_tags),
+      tagDetails: toArray(place.tag_details),
       matchedTagLabels: toDisplayList(place.matched_tag_labels),
       missingTagLabels: toDisplayList(place.missing_tag_labels),
       recommendationSourceLabel: getTextValue(place.source_label),
@@ -5836,7 +6044,7 @@ const convertRecommendationPlaces = (
       ),
       personalizationBoost: Number(place.personalization_boost || 0),
       personalizationReasons: toDisplayList(place.personalization_reasons),
-      matchedTags: place.matched_tags || place.runtime_tags || [],
+      matchedTags: toArray(place.matched_tags || place.runtime_tags),
       matchLevel: place.match_level,
       recommendationConfidence: place.confidence || place.recommendation_confidence,
       recommendationSourceType: place.source_type || '',
@@ -5853,7 +6061,11 @@ const convertRecommendationPlaces = (
       intentMismatchPenalty: ancillaryAdjustment.intentMismatchPenalty,
       isAncillaryPlace: ancillaryAdjustment.isAncillaryPlace,
     }, requestedConditions)
-  })
+    } catch (error) {
+      console.warn('[추천 결과 변환 실패]', { place, error })
+      return null
+    }
+  }).filter(Boolean)
 }
 
 const assignMarkerLabels = (places) => {
@@ -5869,6 +6081,7 @@ const resetAiWebSearchState = () => {
   aiWebSearchStatus.value = 'idle'
   aiWebSearchMessage.value = ''
   aiWebSearchCandidates.value = []
+  webReferenceResults.value = []
   aiWebSearchLastResult.value = null
 }
 
@@ -5976,6 +6189,7 @@ const setAiWebSearchContext = ({
   aiWebSearchStatus.value = 'idle'
   aiWebSearchMessage.value = ''
   aiWebSearchCandidates.value = []
+  webReferenceResults.value = []
   aiWebSearchLastResult.value = null
 }
 
@@ -6169,19 +6383,27 @@ const setSearchResults = ({
   const normalizedResults = Array.isArray(results) ? results : []
   resetAiWebSearchState()
   activeMenuSearchProfile.value = null
-  allSearchResults.value = normalizedResults
+  mainResults.value = normalizedResults
+  fallbackResults.value = []
+  syncLegacySearchResults()
   resultFilterMode.value = 'all'
   visibleCount.value = DISPLAY_BATCH_SIZE
-  searchResultStatus.value = status || (normalizedResults.length ? 'success' : 'empty')
+  searchResultStatus.value = displayResults.value.length ? 'success' : (status || 'empty')
+  if (displayResults.value.length) {
+    clearMainSearchErrorState()
+  }
   resultSourceLabel.value = sourceLabel
   resultMessageSuffix.value = messageSuffix
   placeListItemRefs.value = {}
   mapFitBoundsKey.value += 1
-  activeResultView.value = normalizedResults.length ? 'results' : activeResultView.value
+  activeResultView.value = displayResults.value.length ? 'results' : activeResultView.value
   isResultListCollapsed.value = false
 
-  if (normalizedResults.length > 0) {
+  if (displayResults.value.length > 0) {
     clearNoResultLocationMessage()
+    if (isSearchErrorMessage(locationMessage.value)) {
+      locationMessage.value = ''
+    }
   }
 }
 
@@ -6196,7 +6418,7 @@ const clearSearchResults = () => {
 const showMoreResults = () => {
   visibleCount.value = Math.min(
     visibleCount.value + DISPLAY_BATCH_SIZE,
-    allSearchResults.value.length,
+    displayResults.value.length,
   )
 }
 
@@ -6966,11 +7188,24 @@ const runAiMapSearchAtCenter = async ({
     return
   }
 
-  const recommendationResults = convertRecommendationPlaces(data.results || [], {
+  const dbResults = Array.isArray(data.results) ? data.results : []
+  const recommendationResults = convertRecommendationPlaces(dbResults, {
     preferredTags,
     recommendationIntent,
     requestedConditions,
   })
+  if (recommendationResults.length) {
+    setMainResults(recommendationResults)
+    resultFilterMode.value = 'all'
+    visibleCount.value = DISPLAY_BATCH_SIZE
+    resultSourceLabel.value = 'AI 검색 결과'
+    resultMessageSuffix.value = `DB ${recommendationResults.length}개 · ${getScenarioDisplayLabel(data.scenario)}`
+    placeListItemRefs.value = {}
+    mapFitBoundsKey.value += 1
+    activeResultView.value = 'results'
+    isResultListCollapsed.value = false
+  }
+
   let kakaoResults = []
   let kakaoFallbackQueries = []
   let kakaoFallbackDebug = {
@@ -7032,61 +7267,68 @@ const runAiMapSearchAtCenter = async ({
   }
 
   if (shouldRunFallback) {
-    if (import.meta.env.DEV && menuSearchProfile.menuIntent) {
-      console.debug('[메뉴 fallback 실행]', {
-        queries: kakaoFallbackQueries,
-        center,
-        radius: SEARCH_RADIUS,
-      })
-    }
+    try {
+      if (import.meta.env.DEV && menuSearchProfile.menuIntent) {
+        console.debug('[메뉴 fallback 실행]', {
+          queries: kakaoFallbackQueries,
+          center,
+          radius: SEARCH_RADIUS,
+        })
+      }
 
-    loadingMessage.value = '부족한 추천 후보 보강 중'
-    const fallbackData = recommendationIntent === 'walk_healing'
-      ? await runWalkHealingFallbackSearch({
-        placesService,
-        query: targetQuery,
-        data,
-        parsedIntent,
-        center,
-        preferredTags,
-        categoryHint,
-        isAncillaryIntent,
-        requestedConditions,
-      })
-      : await runKakaoRecommendationFallbackSearch({
-        placesService,
-        query: targetQuery,
-        data,
-        parsedIntent,
-        fallbackQueries: kakaoFallbackQueries,
-        center,
-        preferredTags,
-        recommendationIntent,
-        categoryHint,
-        isAncillaryIntent,
-        requestedConditions,
-      })
-    kakaoResults = fallbackData.results
-    kakaoFallbackQueries = fallbackData.queries
-    kakaoFallbackDebug = {
-      queryResultCounts: fallbackData.queryResultCounts || [],
-      excludedCount: fallbackData.excludedCount || 0,
-      rawCount: fallbackData.rawCount || 0,
-      filteredCount: fallbackData.filteredCount || fallbackData.results?.length || 0,
-      dedupeExcludedCount: fallbackData.dedupeExcludedCount || 0,
-      fallbackStage: fallbackData.fallbackStage || '',
-      radius: fallbackData.radius || SEARCH_RADIUS,
-      status: fallbackData.status || '',
+      loadingMessage.value = '부족한 추천 후보 보강 중'
+      const fallbackData = recommendationIntent === 'walk_healing'
+        ? await runWalkHealingFallbackSearch({
+          placesService,
+          query: targetQuery,
+          data,
+          parsedIntent,
+          center,
+          preferredTags,
+          categoryHint,
+          isAncillaryIntent,
+          requestedConditions,
+        })
+        : await runKakaoRecommendationFallbackSearch({
+          placesService,
+          query: targetQuery,
+          data,
+          parsedIntent,
+          fallbackQueries: kakaoFallbackQueries,
+          center,
+          preferredTags,
+          recommendationIntent,
+          categoryHint,
+          isAncillaryIntent,
+          requestedConditions,
+        })
+      kakaoResults = fallbackData.results
+      kakaoFallbackQueries = fallbackData.queries
+      kakaoFallbackDebug = {
+        queryResultCounts: fallbackData.queryResultCounts || [],
+        excludedCount: fallbackData.excludedCount || 0,
+        rawCount: fallbackData.rawCount || 0,
+        filteredCount: fallbackData.filteredCount || fallbackData.results?.length || 0,
+        dedupeExcludedCount: fallbackData.dedupeExcludedCount || 0,
+        fallbackStage: fallbackData.fallbackStage || '',
+        radius: fallbackData.radius || SEARCH_RADIUS,
+        status: fallbackData.status || '',
+      }
+    } catch (error) {
+      console.warn('[카카오 fallback] 보조 후보 보강 실패', error)
+      kakaoResults = []
+      kakaoFallbackQueries = []
+      kakaoFallbackDebug = {
+        ...kakaoFallbackDebug,
+        status: 'fallback_failed',
+      }
     }
   }
 
   loadingMessage.value = '추천 결과 정리 중'
-  const mergedResults = dedupeSearchResults(kakaoResults, recommendationResults)
-  const hasAnyResults = (
-    mergedResults.length > 0 ||
-    recommendationResults.length > 0 ||
-    kakaoResults.length > 0
-  )
+  setFallbackResults(kakaoResults)
+  const finalResults = displayResults.value
+  const hasAnyResults = finalResults.length > 0
   const willShowNoResultMessage = !hasAnyResults
   const recommendationCondition = getRecommendationConditionData(data)
   const aiWebSearchPlan = buildAiWebSearchPlanPayload(parsedIntent, recommendationCondition, originalQuery)
@@ -7094,17 +7336,23 @@ const runAiMapSearchAtCenter = async ({
     ...(parsedIntent || {}),
     ...aiWebSearchPlan,
   }
-  const aiWebSearchLocationHint = await resolveAiWebSearchLocationHint({
-    geocoder,
-    center,
-    baseLabel,
-    parsedIntent,
-  })
+  let aiWebSearchLocationHint = ''
+  try {
+    aiWebSearchLocationHint = await resolveAiWebSearchLocationHint({
+      geocoder,
+      center,
+      baseLabel,
+      parsedIntent,
+    })
+  } catch (error) {
+    console.warn('[AI 웹 검색 위치 힌트] 보조 위치 확인 실패', error)
+    aiWebSearchLocationHint = getAiWebSearchLocationHint(baseLabel, parsedIntent)
+  }
 
   if (import.meta.env.DEV && menuSearchProfile.menuIntent) {
     console.debug('[메뉴 fallback 최종]', {
       finalMergedCount: kakaoResults.length,
-      totalResultsAfterMerge: mergedResults.length,
+      totalResultsAfterMerge: finalResults.length,
       kakaoFallbackSummaryCount: kakaoResults.length,
     })
   }
@@ -7116,7 +7364,7 @@ const runAiMapSearchAtCenter = async ({
       rawCandidateCount: kakaoFallbackDebug.rawCount,
       excludedCandidateCount: kakaoFallbackDebug.excludedCount,
       mergedFallbackCount: kakaoResults.length,
-      totalMergedCount: mergedResults.length,
+      totalMergedCount: finalResults.length,
       willShowNoResultMessage,
     })
   }
@@ -7199,14 +7447,26 @@ const runAiMapSearchAtCenter = async ({
       kakaoResultCount: 0,
       aiWebResultCount: 0,
     }))
+    await logSearchResultState()
     return
   }
 
-  setSearchResults({
-    results: mergedResults,
-    sourceLabel: 'AI 검색 결과',
-    messageSuffix: `DB ${recommendationResults.length}개, 카카오 fallback ${kakaoResults.length}개 · ${getScenarioDisplayLabel(data.scenario)}`,
+  resultFilterMode.value = 'all'
+  visibleCount.value = DISPLAY_BATCH_SIZE
+  searchResultStatus.value = 'success'
+  clearMainSearchErrorState()
+  resultSourceLabel.value = 'AI 검색 결과'
+  resultMessageSuffix.value = `DB ${recommendationResults.length}개, 카카오 fallback ${kakaoResults.length}개 · ${getScenarioDisplayLabel(data.scenario)}`
+  placeListItemRefs.value = {}
+  mapFitBoundsKey.value += 1
+  activeResultView.value = 'results'
+  isResultListCollapsed.value = false
+  await logSearchResultMerge({
+    dbResults: recommendationResults,
+    kakaoFallbackResults: kakaoResults,
+    finalResults,
   })
+  await logSearchResultState()
   activeMenuSearchProfile.value = menuSearchProfile.menuIntent ? menuSearchProfile : null
   setAiWebSearchContext({
     query: originalQuery,
@@ -7220,7 +7480,7 @@ const runAiMapSearchAtCenter = async ({
       raw_db_count: recommendationResults.length,
       kakao_fallback_count: kakaoResults.length,
       total_count: (menuSearchProfile.menuIntent ? directMenuDbMatchCount : recommendationResults.length) + kakaoResults.length,
-      raw_total_count: mergedResults.length,
+      raw_total_count: finalResults.length,
       direct_match_count: directMenuDbMatchCount,
       menu_intent: menuSearchProfile.menuIntent,
       weak_match_count: recommendationResults.filter((place) => {
@@ -7230,8 +7490,8 @@ const runAiMapSearchAtCenter = async ({
           place.matchLevel === 'category_distance_fallback'
         )
       }).length,
-      low_confidence_count: getAiWebSearchLowConfidenceCount(mergedResults),
-      strong_evidence_count: getAiWebSearchStrongEvidenceCount(mergedResults),
+      low_confidence_count: getAiWebSearchLowConfidenceCount(finalResults),
+      strong_evidence_count: getAiWebSearchStrongEvidenceCount(finalResults),
       web_helpful_topic: isAiWebSearchHelpfulTopic(originalQuery, recommendationCondition, aiWebSearchPlan),
       infra_blocked_topic: isAiWebSearchInfraBlockedTopic(originalQuery, recommendationCondition, aiWebSearchPlan),
       explicit_web_request: hasExplicitAiWebSearchRequest(originalQuery, recommendationCondition, aiWebSearchPlan),
@@ -7255,7 +7515,7 @@ const runAiMapSearchAtCenter = async ({
     center,
     searchPlan: searchLogPlan,
     condition: recommendationCondition,
-    results: mergedResults,
+    results: finalResults,
     dbResultCount: recommendationResults.length,
     kakaoResultCount: kakaoResults.length,
     aiWebResultCount: 0,
@@ -7267,29 +7527,42 @@ const applyAiWebSearchResult = (aiWebSearch = {}) => {
     ? dedupeAiWebSearchCandidates(aiWebSearch.candidates)
     : []
   aiWebSearchLastResult.value = aiWebSearch
+  const hasMainResults = displayResults.value.length > 0
 
   if (!aiWebSearch.enabled || !aiWebSearch.supported) {
     aiWebSearchStatus.value = 'disabled'
     aiWebSearchCandidates.value = []
+    webReferenceResults.value = []
     aiWebSearchMessage.value = getAiWebSearchStatusMessage(aiWebSearch)
+    return
+  }
+
+  if (aiWebSearch.reason === 'manual_required') {
+    aiWebSearchStatus.value = 'idle'
+    aiWebSearchCandidates.value = []
+    webReferenceResults.value = []
+    aiWebSearchMessage.value = ''
     return
   }
 
   if (aiWebSearch.error === 'incomplete_response') {
     aiWebSearchStatus.value = 'empty'
     aiWebSearchCandidates.value = []
+    webReferenceResults.value = []
     aiWebSearchMessage.value = getAiWebSearchStatusMessage(aiWebSearch)
     return
   }
 
   if (aiWebSearch.error && !candidates.length) {
-    aiWebSearchStatus.value = 'error'
+    aiWebSearchStatus.value = hasMainResults ? 'empty' : 'error'
     aiWebSearchCandidates.value = []
-    aiWebSearchMessage.value = getAiWebSearchStatusMessage(aiWebSearch)
+    webReferenceResults.value = []
+    aiWebSearchMessage.value = hasMainResults ? '' : getAiWebSearchStatusMessage(aiWebSearch)
     return
   }
 
   aiWebSearchCandidates.value = candidates
+  webReferenceResults.value = candidates
   aiWebSearchStatus.value = candidates.length ? 'success' : 'empty'
   aiWebSearchMessage.value = getAiWebSearchStatusMessage(aiWebSearch)
 }
@@ -7366,8 +7639,15 @@ const searchAiWebCandidatesManually = async () => {
     applyAiWebSearchResult(aiWebSearch)
   } catch (error) {
     console.error('AI 웹 검색 중 오류가 발생했습니다.')
-    aiWebSearchStatus.value = 'error'
     aiWebSearchCandidates.value = []
+    webReferenceResults.value = []
+    if (displayResults.value.length) {
+      aiWebSearchStatus.value = 'empty'
+      aiWebSearchMessage.value = ''
+      return
+    }
+
+    aiWebSearchStatus.value = 'error'
     aiWebSearchMessage.value = 'AI 웹 검색 중 오류가 발생했습니다.'
   }
 }
@@ -8020,12 +8300,17 @@ const searchAiRecommendationsOnMap = async (searchPlanOverride = null) => {
     })
   } catch (error) {
     console.error(error)
+    if (displayResults.value.length) {
+      searchResultStatus.value = 'success'
+      clearMainSearchErrorState()
+      return
+    }
+
     mapAiParse.value = null
     clearSearchResults()
-    searchResultStatus.value = 'error'
+    setMainSearchError('검색 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.')
     selectedPlace.value = null
     showDetailPanel.value = false
-    locationMessage.value = '검색 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.'
   } finally {
     if (!baseLocationCandidates.value.length) {
       isSearchingMap.value = false
@@ -8042,6 +8327,8 @@ const performUnifiedMapSearch = async ({ useMapBounds = false } = {}) => {
     return
   }
 
+  beginMainSearch()
+
   const conversationalPlan = useMapBounds
     ? null
     : await resolveConversationalSearchPlan(keyword)
@@ -8053,6 +8340,7 @@ const performUnifiedMapSearch = async ({ useMapBounds = false } = {}) => {
     activeSearchPlan.value = adaptConversationalSearchPlan(conversationalPlan, keyword)
     locationMessage.value = conversationalPlan.clarification_question ||
       '검색 기준을 조금 더 알려주시면 더 정확히 찾아드릴게요.'
+    searchResultStatus.value = displayResults.value.length ? 'success' : 'idle'
     loadingMessage.value = ''
     isSearchingMap.value = false
     return
@@ -8527,7 +8815,7 @@ const handleDetailFrameError = () => {
       <div
         class="map-content search-reveal-area"
         :class="{
-          'has-result-list': allSearchResults.length || isSearchingMap || shouldShowAiWebSearchPanel,
+          'has-result-list': displayResults.length || isSearchingMap || shouldShowAiWebSearchPanel,
           'has-selected-place': selectedPlace,
           'is-list-collapsed': isResultListCollapsed,
           'is-result-focused': activeResultView === 'results',
@@ -8535,7 +8823,7 @@ const handleDetailFrameError = () => {
         }"
       >
         <aside
-          v-if="allSearchResults.length || isSearchingMap || shouldShowAiWebSearchPanel"
+          v-if="displayResults.length || isSearchingMap || shouldShowAiWebSearchPanel"
           class="place-list-panel"
           :class="{ 'is-collapsed': isResultListCollapsed }"
         >
@@ -8555,7 +8843,7 @@ const handleDetailFrameError = () => {
           </div>
 
           <div
-            v-if="allSearchResults.length && !isSearchingMap && !isResultListCollapsed"
+            v-if="displayResults.length && !isSearchingMap && !isResultListCollapsed"
             class="result-controls"
           >
             <div class="result-filter-buttons" aria-label="결과 필터">
@@ -8722,7 +9010,7 @@ const handleDetailFrameError = () => {
           </section>
 
           <div v-if="isResultListCollapsed" class="collapsed-panel-summary">
-            {{ allSearchResults.length }}개
+            {{ displayResults.length }}개
           </div>
 
           <template v-else>
@@ -8744,7 +9032,7 @@ const handleDetailFrameError = () => {
 
             <template v-else>
               <div
-                v-if="!searchedPlaces.length && allSearchResults.length"
+                v-if="!searchedPlaces.length && displayResults.length"
                 class="filtered-empty-message"
               >
                 선택한 필터에 맞는 결과가 없습니다.

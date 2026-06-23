@@ -26,7 +26,9 @@ from recommendations.services.ai_web_search_provider import (
     get_ai_web_search_result,
 )
 from recommendations.services.conversational_search_planner import build_conversational_search_plan
+from recommendations.services.db_recommender import search_db_recommendations
 from recommendations.services.naver_search_provider import build_naver_search_query
+from recommendations.services.recommendation_condition import build_recommendation_condition
 
 
 @override_settings(ALLOWED_HOSTS=["localhost", "testserver"])
@@ -116,6 +118,44 @@ class RecommendationSearchTests(TestCase):
             search_log.refresh_from_db()
 
         return search_log
+
+    def _create_place(
+        self,
+        name,
+        category,
+        external_id,
+        lat=35.1556,
+        lng=129.0641,
+        data_quality_score=70,
+        raw=None,
+    ):
+        return Place.objects.create(
+            name=name,
+            category=category,
+            address="부산 테스트로 10",
+            lat=lat,
+            lng=lng,
+            source="walk-test",
+            external_id=external_id,
+            source_name="test",
+            data_quality_score=data_quality_score,
+            raw=raw or {},
+        )
+
+    def _add_tag(self, place, name, is_verified=True, status="confirmed"):
+        tag, _ = Tag.objects.get_or_create(
+            name=name,
+            defaults={"tag_type": "recommendation"},
+        )
+        PlaceTag.objects.create(
+            place=place,
+            tag=tag,
+            source="checked" if is_verified else "ai_suggested",
+            status=status,
+            confidence=90 if is_verified else 60,
+            is_verified=is_verified,
+        )
+        return tag
 
     def test_authenticated_user_can_save_search_log(self):
         response = self.client.post(
@@ -3091,6 +3131,338 @@ class RecommendationSearchTests(TestCase):
         )
         self.assertIn("세부 태그 정보가 부족", fallback_result["recommend_reason"])
 
+    def test_work_cafe_condition_removes_broad_categories_and_non_work_tags(self):
+        condition = build_recommendation_condition(
+            scenario="work_cafe",
+            condition={
+                "scenario": "work_cafe",
+                "categories": [
+                    "cafe",
+                    "restaurant",
+                    "city_park",
+                    "beach",
+                    "shelter",
+                    "smoking_area",
+                    "tourism",
+                ],
+                "preferred_tags": [
+                    "노트북작업",
+                    "조용한",
+                    "와이파이",
+                    "콘센트있음",
+                    "실내쉼터",
+                    "편의시설",
+                    "실외흡연구역",
+                ],
+            },
+        )
+
+        self.assertEqual(condition["categories"], ["cafe"])
+        self.assertEqual(
+            condition["preferred_tags"],
+            ["노트북작업", "조용한", "와이파이", "콘센트있음"],
+        )
+        self.assertIn("shelter", condition["exclude_categories"])
+        self.assertIn("restaurant", condition["exclude_categories"])
+
+    def test_work_cafe_excludes_shelter_center_and_elderly_hall_candidates(self):
+        blocked_places = [
+            self._create_place("창날경로당", "shelter", "work-elderly-hall"),
+            self._create_place("괘법동주민센터", "cafe", "work-community-center"),
+            self._create_place("괘내마을행복센터", "cafe", "work-happy-center"),
+            self._create_place("무더위쉼터", "shelter", "work-heat-shelter"),
+        ]
+        self._add_tag(blocked_places[3], "실내쉼터")
+        tagged_cafe = self._create_place("노트북 작업 카페", "cafe", "work-tagged-cafe")
+        self._add_tag(tagged_cafe, "노트북작업")
+
+        result = search_db_recommendations(
+            scenario="work_cafe",
+            condition={
+                "scenario": "work_cafe",
+                "categories": ["cafe", "shelter", "city_park", "tourism"],
+                "preferred_tags": ["노트북작업", "조용한", "와이파이", "콘센트있음", "실내쉼터"],
+            },
+            lat=35.1556,
+            lng=129.0641,
+            limit=20,
+        )
+
+        result_ids = {item["id"] for item in result["results"]}
+        self.assertIn(tagged_cafe.id, result_ids)
+        for place in blocked_places:
+            self.assertNotIn(place.id, result_ids)
+
+    def test_work_cafe_caps_cafe_without_core_work_evidence(self):
+        result = search_db_recommendations(
+            scenario="work_cafe",
+            condition={
+                "scenario": "work_cafe",
+                "preferred_tags": ["노트북작업", "조용한", "와이파이", "콘센트있음"],
+            },
+            lat=35.1557,
+            lng=129.0642,
+            limit=10,
+        )
+
+        fallback_result = next(
+            item for item in result["results"]
+            if item["id"] == self.fallback_place.id
+        )
+        self.assertEqual(
+            fallback_result["match_level"],
+            "category_distance_fallback",
+        )
+        self.assertLessEqual(fallback_result["score"], 40)
+        self.assertIn(
+            "work_cafe_category_only_without_core",
+            fallback_result["score_breakdown"]["score_cap_reasons"],
+        )
+        self.assertIn(
+            "작업 장소로 보기에는",
+            fallback_result["recommendation_reason"],
+        )
+
+    def test_work_cafe_keeps_cafe_with_notebook_tag(self):
+        tagged_cafe = self._create_place("노트북 작업 카페", "cafe", "work-notebook-cafe")
+        self._add_tag(tagged_cafe, "노트북작업")
+
+        result = search_db_recommendations(
+            scenario="work_cafe",
+            condition={"scenario": "work_cafe"},
+            lat=35.1556,
+            lng=129.0641,
+            limit=10,
+        )
+
+        result_by_id = {item["id"]: item for item in result["results"]}
+        self.assertIn(tagged_cafe.id, result_by_id)
+        self.assertEqual(result_by_id[tagged_cafe.id]["match_level"], "tag_matched")
+
+    def test_waiting_place_excludes_limited_access_shelters_and_centers(self):
+        blocked_places = [
+            self._create_place("창날경로당", "shelter", "wait-elderly-hall"),
+            self._create_place("괘법동주민센터", "shelter", "wait-community-center"),
+            self._create_place("괘내마을행복센터", "shelter", "wait-happy-center"),
+            self._create_place("복지시설쉼터", "shelter", "wait-welfare-shelter"),
+            self._create_place("새마을금고 쉼터", "shelter", "wait-bank-shelter"),
+        ]
+        library = self._create_place("부산도서관", "shelter", "wait-public-library")
+
+        result = search_db_recommendations(
+            scenario="waiting_place",
+            condition={
+                "scenario": "waiting_place",
+                "categories": ["cafe", "shelter", "city_park"],
+                "preferred_tags": ["잠깐쉬기좋음", "실내쉼터", "조용한", "혼자이용좋음", "편의시설"],
+            },
+            lat=35.1556,
+            lng=129.0641,
+            limit=20,
+        )
+
+        result_ids = {item["id"] for item in result["results"]}
+        self.assertIn(library.id, result_ids)
+        for place in blocked_places:
+            self.assertNotIn(place.id, result_ids)
+
+    def test_waiting_place_condition_removes_unmentioned_work_smoking_food_tags(self):
+        condition = build_recommendation_condition(
+            scenario="waiting_place",
+            condition={
+                "scenario": "waiting_place",
+                "keyword": "잠깐 쉴 곳",
+                "categories": ["cafe", "shelter", "restaurant", "tourism", "smoking_area"],
+                "preferred_tags": [
+                    "잠깐쉬기좋음",
+                    "실내쉼터",
+                    "조용한",
+                    "혼자이용좋음",
+                    "편의시설",
+                    "노트북작업",
+                    "와이파이",
+                    "콘센트있음",
+                    "실외흡연구역",
+                    "식사가능",
+                    "야경",
+                    "벚꽃",
+                    "호수",
+                    "힐링",
+                    "사진찍기좋음",
+                ],
+            },
+        )
+
+        self.assertEqual(condition["categories"], ["cafe", "shelter"])
+        self.assertEqual(
+            condition["preferred_tags"],
+            ["잠깐쉬기좋음", "실내쉼터", "조용한", "혼자이용좋음", "편의시설"],
+        )
+
+    def test_walk_healing_disables_category_fallback_when_required_tags_are_missing(self):
+        tagged_place = self._create_place("에덴공원 산책로", "city_park", "walk-eden")
+        category_only_place = self._create_place("태그 없는 근린공원", "city_park", "walk-no-tag")
+        self._add_tag(tagged_place, "산책좋음")
+
+        result = search_db_recommendations(
+            scenario="walk_healing",
+            condition={
+                "scenario": "walk_healing",
+                "required_tags": ["산책좋음"],
+                "preferred_tags": ["조용한"],
+                "fallback_enabled": False,
+            },
+            lat=35.1556,
+            lng=129.0641,
+            limit=10,
+        )
+
+        result_ids = {item["id"] for item in result["results"]}
+        self.assertIn(tagged_place.id, result_ids)
+        self.assertNotIn(category_only_place.id, result_ids)
+        self.assertTrue(
+            all(
+                item["match_level"] != "category_distance_fallback"
+                for item in result["results"]
+            )
+        )
+
+    def test_walk_healing_excludes_commercial_market_and_parking_candidates(self):
+        blocked_places = [
+            self._create_place("뉴발란스 하단동점", "tourism", "walk-newbalance"),
+            self._create_place("신평종합시장", "tourism", "walk-market"),
+            self._create_place("홈플러스 장림점", "tourism", "walk-homeplus"),
+            self._create_place("당리동 샛별공원 지하공영주차장", "city_park", "walk-parking"),
+        ]
+        kept_place = self._create_place("에덴공원 산책로", "city_park", "walk-kept")
+        self._add_tag(kept_place, "산책좋음")
+
+        result = search_db_recommendations(
+            scenario="walk_healing",
+            condition={
+                "scenario": "walk_healing",
+                "required_tags": ["산책좋음"],
+                "fallback_enabled": True,
+            },
+            lat=35.1556,
+            lng=129.0641,
+            limit=10,
+        )
+
+        result_ids = {item["id"] for item in result["results"]}
+        self.assertIn(kept_place.id, result_ids)
+        for place in blocked_places:
+            self.assertNotIn(place.id, result_ids)
+
+    def test_walk_healing_keeps_tagged_park_and_galmaetgil_candidates(self):
+        eden = self._create_place("에덴공원", "city_park", "walk-tagged-eden")
+        galmaetgil = self._create_place("부산 갈맷길 산책 코스", "tourism", "walk-galmaetgil")
+        self._add_tag(eden, "산책좋음")
+
+        result = search_db_recommendations(
+            scenario="walk_healing",
+            condition={
+                "scenario": "walk_healing",
+                "required_tags": ["산책좋음"],
+                "preferred_tags": ["조용한"],
+                "fallback_enabled": True,
+            },
+            lat=35.1556,
+            lng=129.0641,
+            limit=10,
+        )
+
+        result_by_id = {item["id"]: item for item in result["results"]}
+        self.assertIn(eden.id, result_by_id)
+        self.assertEqual(result_by_id[eden.id]["match_level"], "tag_matched")
+        self.assertGreaterEqual(result_by_id[eden.id]["score"], 75)
+        self.assertIn(galmaetgil.id, result_by_id)
+        self.assertLessEqual(result_by_id[galmaetgil.id]["score"], 40)
+
+    def test_walk_healing_demotes_small_parks_without_walk_tags(self):
+        small_park = self._create_place("하단 어린이공원", "city_park", "walk-small-park")
+
+        result = search_db_recommendations(
+            scenario="walk_healing",
+            condition={
+                "scenario": "walk_healing",
+                "required_tags": [],
+                "preferred_tags": ["조용한"],
+                "fallback_enabled": True,
+            },
+            lat=35.1556,
+            lng=129.0641,
+            limit=10,
+        )
+
+        small_park_result = next(
+            item for item in result["results"]
+            if item["id"] == small_park.id
+        )
+        self.assertEqual(
+            small_park_result["match_level"],
+            "category_distance_fallback",
+        )
+        self.assertLessEqual(small_park_result["score"], 35)
+        self.assertIn(
+            "walk_healing_small_park_without_walk_tag",
+            small_park_result["score_breakdown"]["score_cap_reasons"],
+        )
+
+    def test_walk_healing_allows_tourism_only_with_walk_evidence(self):
+        river = self._create_place("낙동강하구 생태 전망대", "tourism", "walk-river")
+        generic = self._create_place("부산관광안내 전시관", "tourism", "walk-generic-tour")
+
+        result = search_db_recommendations(
+            scenario="walk_healing",
+            condition={
+                "scenario": "walk_healing",
+                "required_tags": [],
+                "preferred_tags": ["조용한"],
+                "fallback_enabled": True,
+            },
+            lat=35.1556,
+            lng=129.0641,
+            limit=10,
+        )
+
+        result_by_id = {item["id"]: item for item in result["results"]}
+        self.assertIn(river.id, result_by_id)
+        self.assertNotIn(generic.id, result_by_id)
+        self.assertLessEqual(result_by_id[river.id]["score"], 40)
+
+    def test_walk_healing_category_fallback_reason_marks_missing_direct_basis(self):
+        fallback_place = self._create_place("갈맷길 전망대", "tourism", "walk-reason")
+
+        result = search_db_recommendations(
+            scenario="walk_healing",
+            condition={
+                "scenario": "walk_healing",
+                "required_tags": ["산책좋음"],
+                "fallback_enabled": True,
+            },
+            lat=35.1556,
+            lng=129.0641,
+            limit=10,
+        )
+
+        fallback_result = next(
+            item for item in result["results"]
+            if item["id"] == fallback_place.id
+        )
+        self.assertEqual(
+            fallback_result["match_level"],
+            "category_distance_fallback",
+        )
+        self.assertIn(
+            "산책 조건과 직접 일치하는 근거가 부족합니다",
+            fallback_result["recommendation_reason"],
+        )
+        self.assertIn(
+            "기본 산책 추천이 아니라 카테고리 기반 fallback 후보",
+            fallback_result["recommendation_reason"],
+        )
+
     @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=False)
     def test_conversational_search_planner_keeps_station_for_walk_queries(self):
         for query in ["하단역 산책할 곳 추천해줘", "하단역 근처 산책할 곳 추천해줘"]:
@@ -3102,6 +3474,97 @@ class RecommendationSearchTests(TestCase):
                 self.assertEqual(plan["search_plan"]["locationQuery"], "하단역")
                 self.assertEqual(plan["search_plan"]["scenario"], "walk_healing")
                 self.assertTrue(plan["execution_policy"]["preserve_explicit_location"])
+
+    @patch("recommendations.services.ai_situation_parser._call_ai_parser")
+    def test_ai_parser_removes_unrequested_cafe_restaurant_wifi_for_walk_healing(self, mock_call_ai_parser):
+        mock_call_ai_parser.return_value = (
+            "gms",
+            json.dumps({
+                "is_searchable": True,
+                "scenario": "walk_healing",
+                "categories": ["city_park", "beach", "cafe", "restaurant"],
+                "required_tags": ["산책좋음"],
+                "preferred_tags": ["산책좋음", "전망좋음", "조용한", "와이파이", "힐링"],
+                "keywords": ["산책", "공원"],
+                "fallback_enabled": False,
+                "situation_summary": "하단역 산책할 곳 추천해줘",
+                "reason_hint": "산책 의도",
+            }, ensure_ascii=False),
+        )
+
+        parsed = parse_situation("하단역 산책할 곳 추천해줘")
+
+        self.assertEqual(parsed["scenario"], "walk_healing")
+        self.assertNotIn("cafe", parsed["categories"])
+        self.assertNotIn("restaurant", parsed["categories"])
+        self.assertNotIn("와이파이", parsed["preferred_tags"])
+        self.assertNotIn("힐링", parsed["preferred_tags"])
+        self.assertIn("산책좋음", parsed["required_tags"])
+
+    @patch("recommendations.services.ai_situation_parser._call_ai_parser")
+    def test_ai_parser_keeps_walk_healing_radius_at_least_3000(self, mock_call_ai_parser):
+        mock_call_ai_parser.return_value = (
+            "gms",
+            json.dumps({
+                "is_searchable": True,
+                "scenario": "walk_healing",
+                "categories": ["city_park", "beach", "tourism"],
+                "required_tags": ["산책좋음"],
+                "preferred_tags": ["산책좋음"],
+                "keywords": ["산책", "공원"],
+                "radius": 300,
+                "fallback_enabled": False,
+                "situation_summary": "하단역 산책할 곳 추천해줘",
+                "reason_hint": "산책 의도",
+            }, ensure_ascii=False),
+        )
+
+        parsed = parse_situation("하단역 산책할 곳 추천해줘")
+
+        self.assertEqual(parsed["scenario"], "walk_healing")
+        self.assertGreaterEqual(parsed["radius"], 3000)
+
+    def test_db_walk_healing_radius_request_is_at_least_3000(self):
+        result = search_db_recommendations(
+            scenario="walk_healing",
+            condition={
+                "scenario": "walk_healing",
+                "required_tags": ["산책좋음"],
+                "radius": 300,
+            },
+            lat=35.106,
+            lng=128.966,
+            radius=300,
+            limit=10,
+        )
+
+        self.assertEqual(result["condition"]["radius"], 3000)
+        self.assertEqual(result["conditions"]["radius"], 3000)
+
+    @patch("recommendations.services.ai_situation_parser._call_ai_parser")
+    def test_ai_parser_keeps_explicit_cafe_and_wifi_for_walk_healing(self, mock_call_ai_parser):
+        mock_call_ai_parser.return_value = (
+            "gms",
+            json.dumps({
+                "is_searchable": True,
+                "scenario": "walk_healing",
+                "categories": ["city_park", "cafe", "restaurant"],
+                "required_tags": ["산책좋음"],
+                "preferred_tags": ["산책좋음", "와이파이"],
+                "keywords": ["산책", "카페", "와이파이"],
+                "fallback_enabled": True,
+                "situation_summary": "와이파이 되는 산책 카페",
+                "reason_hint": "산책 가능한 카페 의도",
+            }, ensure_ascii=False),
+        )
+
+        parsed = parse_situation("와이파이 되는 산책 카페")
+
+        self.assertEqual(parsed["scenario"], "walk_healing")
+        self.assertIn("cafe", parsed["categories"])
+        self.assertNotIn("restaurant", parsed["categories"])
+        self.assertIn("와이파이", parsed["preferred_tags"])
+        self.assertIn("산책좋음", parsed["required_tags"])
 
     @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=False)
     def test_conversational_search_planner_extracts_menu_targets(self):
@@ -3163,6 +3626,82 @@ class RecommendationSearchTests(TestCase):
 
         self.assertEqual(parsed["scenario"], "waiting_place")
         self.assertIn("잠깐쉬기좋음", parsed["preferred_tags"])
+
+    @patch("recommendations.services.ai_situation_parser._call_ai_parser")
+    def test_ai_parser_normalizes_work_cafe_categories_and_tags(self, mock_call_ai_parser):
+        mock_call_ai_parser.return_value = (
+            "gms",
+            json.dumps({
+                "is_searchable": True,
+                "scenario": "work_cafe",
+                "categories": [
+                    "cafe",
+                    "restaurant",
+                    "city_park",
+                    "beach",
+                    "shelter",
+                    "smoking_area",
+                    "tourism",
+                ],
+                "preferred_tags": [
+                    "노트북작업",
+                    "조용한",
+                    "와이파이",
+                    "콘센트있음",
+                    "실내쉼터",
+                    "편의시설",
+                    "실외흡연구역",
+                ],
+                "keywords": ["작업", "카페"],
+                "situation_summary": "조용히 작업할 곳",
+                "reason_hint": "작업 장소 의도",
+            }, ensure_ascii=False),
+        )
+
+        parsed = parse_situation("조용히 작업할 곳")
+
+        self.assertEqual(parsed["scenario"], "work_cafe")
+        self.assertEqual(parsed["categories"], ["cafe"])
+        self.assertEqual(
+            parsed["preferred_tags"],
+            ["노트북작업", "조용한", "와이파이", "콘센트있음"],
+        )
+
+    @patch("recommendations.services.ai_situation_parser._call_ai_parser")
+    def test_ai_parser_normalizes_waiting_place_preferred_tags(self, mock_call_ai_parser):
+        mock_call_ai_parser.return_value = (
+            "gms",
+            json.dumps({
+                "is_searchable": True,
+                "scenario": "waiting_place",
+                "categories": ["cafe", "shelter", "restaurant", "tourism", "smoking_area"],
+                "preferred_tags": [
+                    "잠깐쉬기좋음",
+                    "실내쉼터",
+                    "조용한",
+                    "혼자이용좋음",
+                    "편의시설",
+                    "노트북작업",
+                    "와이파이",
+                    "콘센트있음",
+                    "실외흡연구역",
+                    "식사가능",
+                    "힐링",
+                ],
+                "keywords": ["잠깐", "쉴 곳"],
+                "situation_summary": "잠깐 쉴 곳 추천해줘",
+                "reason_hint": "짧게 쉬는 장소",
+            }, ensure_ascii=False),
+        )
+
+        parsed = parse_situation("잠깐 쉴 곳 추천해줘")
+
+        self.assertEqual(parsed["scenario"], "waiting_place")
+        self.assertEqual(parsed["categories"], ["cafe", "shelter"])
+        self.assertEqual(
+            parsed["preferred_tags"],
+            ["잠깐쉬기좋음", "실내쉼터", "조용한", "혼자이용좋음", "편의시설"],
+        )
 
     @override_settings(
         AI_PROVIDER="gms",

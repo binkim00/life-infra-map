@@ -2,7 +2,7 @@ SCENARIO_CONFIGS = {
     "work_cafe": {
         "keyword": "조용히 작업할 곳",
         "categories": ["cafe"],
-        "tags": ["조용한", "와이파이", "콘센트있음", "노트북작업", "혼자이용좋음"],
+        "tags": ["노트북작업", "조용한", "와이파이", "콘센트있음"],
     },
     "waiting_place": {
         "keyword": "잠깐 머물 곳",
@@ -32,6 +32,61 @@ SCENARIO_DEFAULT_RADIUS = {
     "walk_healing": 3000,
     "smoking_area": 800,
     "restaurant": 1500,
+}
+
+SCENARIO_MIN_RADIUS = {
+    "walk_healing": 3000,
+}
+
+WORK_CAFE_ALLOWED_CATEGORIES = {
+    "cafe",
+    "library",
+    "public_library",
+    "study_cafe",
+}
+WORK_CAFE_CORE_TAGS = [
+    "노트북작업",
+    "조용한",
+    "와이파이",
+    "콘센트있음",
+]
+WORK_CAFE_REMOVED_TAGS = {
+    "실내쉼터",
+    "편의시설",
+    "개방형흡연구역",
+    "부스형흡연구역",
+    "실내흡연실",
+    "실외흡연구역",
+}
+
+WAITING_PLACE_ALLOWED_CATEGORIES = {
+    "cafe",
+    "city_park",
+    "shelter",
+    "library",
+    "public_library",
+}
+WAITING_PLACE_DEFAULT_TAGS = [
+    "잠깐쉬기좋음",
+    "실내쉼터",
+    "조용한",
+    "혼자이용좋음",
+    "편의시설",
+]
+WAITING_PLACE_OPTIONAL_TAG_KEYWORDS = {
+    "노트북작업": ["노트북", "작업", "공부", "일할"],
+    "와이파이": ["와이파이", "wifi", "wi-fi", "무선인터넷"],
+    "콘센트있음": ["콘센트", "전원", "충전"],
+    "개방형흡연구역": ["흡연", "담배"],
+    "부스형흡연구역": ["흡연", "담배"],
+    "실내흡연실": ["흡연", "담배"],
+    "실외흡연구역": ["흡연", "담배"],
+    "식사가능": ["식사", "밥", "먹", "음식", "맛집"],
+    "야경": ["야경"],
+    "벚꽃": ["벚꽃"],
+    "호수": ["호수"],
+    "힐링": ["힐링"],
+    "사진찍기좋음": ["사진"],
 }
 
 SCENARIO_INTENTS = {
@@ -95,7 +150,114 @@ def _parse_bool(value, default=True):
     return bool(value)
 
 
-def _parse_radius(value, default):
+def _compact_text(value):
+    return str(value or "").lower().replace(" ", "")
+
+
+def _condition_policy_text(condition):
+    values = [
+        condition.get("intent"),
+        condition.get("keyword"),
+        *condition.get("keywords", []),
+        *condition.get("purpose_keywords", []),
+        *condition.get("place_type_keywords", []),
+    ]
+    return _compact_text(" ".join(str(value or "") for value in values))
+
+
+def _has_explicit_tag_signal(condition_text, tag_name):
+    keywords = WAITING_PLACE_OPTIONAL_TAG_KEYWORDS.get(tag_name, [])
+    return any(_compact_text(keyword) in condition_text for keyword in keywords)
+
+
+def _filter_categories(categories, allowed_categories, fallback_categories):
+    filtered = [
+        category
+        for category in _unique_list(categories)
+        if category in allowed_categories
+    ]
+    return filtered or list(fallback_categories)
+
+
+def _apply_work_cafe_policy(condition):
+    condition["categories"] = _filter_categories(
+        condition.get("categories"),
+        WORK_CAFE_ALLOWED_CATEGORIES,
+        ["cafe"],
+    )
+
+    preferred_tags = [
+        tag
+        for tag in _unique_list(condition.get("preferred_tags"))
+        if tag in WORK_CAFE_CORE_TAGS and tag not in WORK_CAFE_REMOVED_TAGS
+    ]
+    for tag in WORK_CAFE_CORE_TAGS:
+        if tag not in preferred_tags:
+            preferred_tags.append(tag)
+
+    condition["preferred_tags"] = preferred_tags
+    condition["required_tags"] = [
+        tag
+        for tag in _unique_list(condition.get("required_tags"))
+        if tag in WORK_CAFE_CORE_TAGS
+    ]
+    condition["avoid_tags"] = [
+        tag
+        for tag in _unique_list(condition.get("avoid_tags"))
+        if tag not in WORK_CAFE_REMOVED_TAGS
+    ]
+    condition["exclude_categories"] = _unique_list([
+        *condition.get("exclude_categories", []),
+        "shelter",
+        "city_park",
+        "beach",
+        "smoking_area",
+        "tourism",
+        "restaurant",
+    ])
+    return condition
+
+
+def _apply_waiting_place_policy(condition):
+    condition["categories"] = _filter_categories(
+        condition.get("categories"),
+        WAITING_PLACE_ALLOWED_CATEGORIES,
+        ["cafe", "city_park", "shelter"],
+    )
+
+    condition_text = _condition_policy_text(condition)
+    preferred_tags = []
+    for tag in _unique_list(condition.get("preferred_tags")):
+        if tag in WAITING_PLACE_DEFAULT_TAGS or _has_explicit_tag_signal(condition_text, tag):
+            preferred_tags.append(tag)
+
+    for tag in WAITING_PLACE_DEFAULT_TAGS:
+        if tag not in preferred_tags:
+            preferred_tags.append(tag)
+
+    condition["preferred_tags"] = preferred_tags
+    condition["required_tags"] = [
+        tag
+        for tag in _unique_list(condition.get("required_tags"))
+        if tag in WAITING_PLACE_DEFAULT_TAGS or _has_explicit_tag_signal(condition_text, tag)
+    ]
+    return condition
+
+
+def _apply_scenario_policy(condition):
+    scenario = condition.get("scenario")
+    if scenario == "work_cafe":
+        return _apply_work_cafe_policy(condition)
+    if scenario == "waiting_place":
+        return _apply_waiting_place_policy(condition)
+    return condition
+
+
+def get_min_radius(scenario):
+    return SCENARIO_MIN_RADIUS.get(scenario, 300)
+
+
+def _parse_radius(value, default, min_radius=300):
     if value in (None, ""):
         return default
 
@@ -104,7 +266,7 @@ def _parse_radius(value, default):
     except (TypeError, ValueError):
         return default
 
-    return min(max(radius, 300), 20000)
+    return min(max(radius, min_radius), 20000)
 
 
 def get_scenario_config(scenario):
@@ -165,7 +327,11 @@ def build_recommendation_condition(
         elif key == "tags":
             normalized["preferred_tags"] = _unique_list(value)
         elif key == "radius":
-            normalized["radius"] = _parse_radius(value, normalized["radius"])
+            normalized["radius"] = _parse_radius(
+                value,
+                normalized["radius"],
+                get_min_radius(normalized.get("scenario")),
+            )
         elif key == "fallback_enabled":
             normalized["fallback_enabled"] = _parse_bool(value, True)
         elif key in {"intent", "scenario", "keyword"}:
@@ -187,7 +353,11 @@ def build_recommendation_condition(
         normalized["exclude_categories"] = _unique_list(exclude_categories)
 
     if radius is not None:
-        normalized["radius"] = _parse_radius(radius, normalized["radius"])
+        normalized["radius"] = _parse_radius(
+            radius,
+            normalized["radius"],
+            get_min_radius(normalized.get("scenario")),
+        )
 
     normalized["required_tags"] = _unique_list(normalized.get("required_tags"))
     normalized["preferred_tags"] = _unique_list(normalized.get("preferred_tags"))
@@ -203,5 +373,8 @@ def build_recommendation_condition(
     normalized["radius"] = _parse_radius(
         normalized.get("radius"),
         get_default_radius(normalized.get("scenario")),
+        get_min_radius(normalized.get("scenario")),
     )
+    normalized = _apply_scenario_policy(normalized)
+    normalized["tags"] = list(normalized["preferred_tags"])
     return normalized

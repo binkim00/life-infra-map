@@ -4,6 +4,7 @@ from recommendations.models import Place
 from recommendations.services.recommendation_condition import (
     build_recommendation_condition,
     get_default_radius,
+    get_min_radius,
 )
 from recommendations.services.place_urls import get_kakao_place_url
 from recommendations.services.smoking_area_data import calculate_distance_m
@@ -29,6 +30,7 @@ WAITING_PLACE_EXCLUDE_KEYWORDS = [
     "행정복지센터",
     "주민센터",
     "동사무소",
+    "마을행복센터",
     "구청",
     "시청",
     "군청",
@@ -36,6 +38,8 @@ WAITING_PLACE_EXCLUDE_KEYWORDS = [
     "면사무소",
     "민원센터",
     "복지센터",
+    "복지시설쉼터",
+    "복지시설",
     "경로당",
     "노인정",
     "노인회관",
@@ -59,6 +63,13 @@ WAITING_PLACE_EXCLUDE_KEYWORDS = [
     "어린이집",
     "유치원",
     "학교",
+    "새마을금고",
+    "은행",
+    "호텔",
+    "브랜드 매장",
+    "브랜드매장",
+    "흡연구역",
+    "흡연실",
 ]
 
 WAITING_PLACE_PENALTY_KEYWORDS = [
@@ -85,10 +96,73 @@ WAITING_PLACE_PREFERRED_KEYWORDS = [
     "관광안내소",
 ]
 
+WORK_CAFE_EXCLUDE_KEYWORDS = [
+    "경로당",
+    "노인정",
+    "주민센터",
+    "행정복지센터",
+    "마을행복센터",
+    "마을회관",
+    "복지관",
+    "복지시설",
+    "무더위쉼터",
+    "쉼터",
+    "새마을금고",
+    "은행",
+    "흡연구역",
+    "흡연실",
+    "공원",
+    "해변",
+    "관광지",
+]
+
+WORK_CAFE_EXCLUDE_CATEGORIES = {
+    "shelter",
+    "city_park",
+    "beach",
+    "smoking_area",
+    "tourism",
+    "restaurant",
+}
+
+WORK_CAFE_CORE_TAGS = {
+    "노트북작업",
+    "조용한",
+    "와이파이",
+    "콘센트있음",
+}
+
+WORK_CAFE_EVIDENCE_KEYWORDS = [
+    "노트북",
+    "작업",
+    "공부",
+    "조용",
+    "와이파이",
+    "wifi",
+    "wi-fi",
+    "콘센트",
+    "전원",
+    "충전",
+]
+
+WORK_CAFE_LOW_CONFIDENCE_CATEGORIES = {
+    "cafe",
+    "library",
+    "public_library",
+    "study_cafe",
+}
+
 WALK_HEALING_EXCLUDE_KEYWORDS = [
     *WAITING_PLACE_EXCLUDE_KEYWORDS,
     "음식점",
     "식당",
+    "마트",
+    "홈플러스",
+    "시장",
+    "브랜드 매장",
+    "브랜드매장",
+    "뉴발란스",
+    "주차장",
     "술집",
     "주점",
     "편의점",
@@ -115,14 +189,34 @@ WALK_HEALING_PREFERRED_KEYWORDS = [
     "둘레길",
     "해변",
     "해수욕장",
-    "관광",
     "전망",
     "전망대",
     "명소",
     "생태",
     "숲",
+    "길",
     "호수",
     "갈맷길",
+    "낙동강",
+    "하구",
+]
+
+WALK_HEALING_STRONG_TAGS = {
+    "산책좋음",
+    "힐링",
+    "숲",
+    "강변",
+    "공원산책",
+    "산책로",
+    "둘레길",
+    "갈맷길",
+    "전망좋음",
+}
+
+WALK_HEALING_SMALL_PARK_KEYWORDS = [
+    "어린이공원",
+    "소공원",
+    "작은공원",
 ]
 
 def normalize_recommendation_context(
@@ -274,13 +368,34 @@ def _place_search_text(place, tag_data=None):
             place.address,
             place.detail_location,
             place.source_name,
+            _raw_search_text(place.raw),
             " ".join(tags),
         ]
     )
 
 
+def _raw_search_text(value):
+    if value in (None, ""):
+        return ""
+
+    if isinstance(value, dict):
+        return " ".join(_raw_search_text(item) for item in value.values())
+
+    if isinstance(value, (list, tuple, set)):
+        return " ".join(_raw_search_text(item) for item in value)
+
+    if isinstance(value, (str, int, float, bool)):
+        return str(value)
+
+    return ""
+
+
 def _has_keyword(text, keywords):
     return any(keyword in text for keyword in keywords)
+
+
+def _has_walk_healing_tag_evidence(tag_data):
+    return bool(_all_tag_names(tag_data) & WALK_HEALING_STRONG_TAGS)
 
 
 def get_waiting_place_adjustment(place, tag_data):
@@ -312,8 +427,49 @@ def get_waiting_place_adjustment(place, tag_data):
     }
 
 
+def get_work_cafe_adjustment(place, tag_data):
+    text = _place_search_text(place, tag_data)
+    tag_names = _all_tag_names(tag_data)
+    has_core_evidence = bool(tag_names & WORK_CAFE_CORE_TAGS) or _has_keyword(
+        text,
+        WORK_CAFE_EVIDENCE_KEYWORDS,
+    )
+    is_shelter_without_work_evidence = place.category == "shelter" and not has_core_evidence
+
+    if (
+        place.category in WORK_CAFE_EXCLUDE_CATEGORIES
+        or _has_keyword(text, WORK_CAFE_EXCLUDE_KEYWORDS)
+        or is_shelter_without_work_evidence
+    ):
+        return {
+            "exclude": True,
+            "penalty": 140,
+            "bonus": 0,
+            "reason": "work_cafe_unsuitable_place",
+            "has_core_evidence": has_core_evidence,
+            "category_only_without_core": False,
+        }
+
+    category_only_without_core = (
+        place.category in WORK_CAFE_LOW_CONFIDENCE_CATEGORIES
+        and not has_core_evidence
+    )
+    return {
+        "exclude": False,
+        "penalty": 35 if category_only_without_core else 0,
+        "bonus": 12 if has_core_evidence else 0,
+        "reason": "work_cafe_category_only_without_core" if category_only_without_core else None,
+        "has_core_evidence": has_core_evidence,
+        "category_only_without_core": category_only_without_core,
+    }
+
+
 def get_walk_healing_adjustment(place, tag_data):
     text = _place_search_text(place, tag_data)
+    has_walk_keyword_evidence = _has_keyword(text, WALK_HEALING_PREFERRED_KEYWORDS)
+    has_walk_tag_evidence = _has_walk_healing_tag_evidence(tag_data)
+    has_walk_evidence = has_walk_keyword_evidence or has_walk_tag_evidence
+    is_small_park = _has_keyword(text, WALK_HEALING_SMALL_PARK_KEYWORDS)
 
     if _has_keyword(text, WALK_HEALING_EXCLUDE_KEYWORDS):
         return {
@@ -321,17 +477,42 @@ def get_walk_healing_adjustment(place, tag_data):
             "penalty": 120,
             "bonus": 0,
             "reason": "non_walk_healing_place",
+            "has_walk_evidence": has_walk_evidence,
+            "is_small_park_without_walk_tag": False,
+            "tourism_without_walk_evidence": False,
+        }
+
+    if place.category == "tourism" and not has_walk_evidence:
+        return {
+            "exclude": True,
+            "penalty": 120,
+            "bonus": 0,
+            "reason": "tourism_without_walk_evidence",
+            "has_walk_evidence": False,
+            "is_small_park_without_walk_tag": False,
+            "tourism_without_walk_evidence": True,
         }
 
     bonus = 0
-    if _has_keyword(text, WALK_HEALING_PREFERRED_KEYWORDS):
+    if has_walk_evidence:
         bonus = 14
+
+    penalty = 0
+    reason = None
+    is_small_park_without_walk_tag = is_small_park and not has_walk_tag_evidence
+    if is_small_park_without_walk_tag:
+        penalty = 45
+        bonus = 0
+        reason = "small_park_without_walk_tag"
 
     return {
         "exclude": False,
-        "penalty": 0,
+        "penalty": penalty,
         "bonus": bonus,
-        "reason": None,
+        "reason": reason,
+        "has_walk_evidence": has_walk_evidence,
+        "is_small_park_without_walk_tag": is_small_park_without_walk_tag,
+        "tourism_without_walk_evidence": False,
     }
 
 
@@ -399,6 +580,11 @@ def score_place(
         if scenario == "waiting_place"
         else {"exclude": False, "penalty": 0, "bonus": 0, "reason": None}
     )
+    work_cafe_adjustment = (
+        get_work_cafe_adjustment(place, tag_data)
+        if scenario == "work_cafe"
+        else {"exclude": False, "penalty": 0, "bonus": 0, "reason": None}
+    )
     walk_healing_adjustment = (
         get_walk_healing_adjustment(place, tag_data)
         if scenario == "walk_healing"
@@ -412,10 +598,12 @@ def score_place(
         + distance_score
         + quality_score
         + waiting_adjustment["bonus"]
+        + work_cafe_adjustment["bonus"]
         + walk_healing_adjustment["bonus"]
         - warning_penalty
         - avoid_penalty
         - waiting_adjustment["penalty"]
+        - work_cafe_adjustment["penalty"]
         - walk_healing_adjustment["penalty"]
     )
 
@@ -435,10 +623,30 @@ def score_place(
         "unsuitable_place_penalty": waiting_adjustment["penalty"],
         "waiting_place_penalty_reason": waiting_adjustment["reason"],
         "excluded_by_waiting_place": waiting_adjustment["exclude"],
+        "work_cafe_bonus": work_cafe_adjustment["bonus"],
+        "work_cafe_penalty": work_cafe_adjustment["penalty"],
+        "work_cafe_penalty_reason": work_cafe_adjustment["reason"],
+        "excluded_by_work_cafe": work_cafe_adjustment["exclude"],
+        "work_cafe_policy_applied": scenario == "work_cafe",
+        "work_cafe_has_core_evidence": work_cafe_adjustment.get("has_core_evidence", False),
+        "work_cafe_category_only_without_core": work_cafe_adjustment.get(
+            "category_only_without_core",
+            False,
+        ),
         "walk_healing_bonus": walk_healing_adjustment["bonus"],
         "walk_healing_penalty": walk_healing_adjustment["penalty"],
         "walk_healing_penalty_reason": walk_healing_adjustment["reason"],
         "excluded_by_walk_healing": walk_healing_adjustment["exclude"],
+        "walk_healing_policy_applied": scenario == "walk_healing",
+        "walk_healing_has_evidence": walk_healing_adjustment.get("has_walk_evidence", False),
+        "walk_healing_small_park_without_walk_tag": walk_healing_adjustment.get(
+            "is_small_park_without_walk_tag",
+            False,
+        ),
+        "walk_healing_tourism_without_evidence": walk_healing_adjustment.get(
+            "tourism_without_walk_evidence",
+            False,
+        ),
     }
 
 
@@ -618,6 +826,26 @@ def apply_score_cap(score, metadata, matched_tags, missing_tags, score_breakdown
         cap = min(cap, 50)
         cap_reasons.append("category_only")
 
+        if score_breakdown.get("walk_healing_policy_applied"):
+            cap = min(cap, 40)
+            cap_reasons.append("walk_healing_category_only_without_walk_tag")
+
+        if score_breakdown.get("work_cafe_policy_applied"):
+            cap = min(cap, 40)
+            cap_reasons.append("work_cafe_category_only_without_core")
+
+    if score_breakdown.get("walk_healing_tourism_without_evidence"):
+        cap = min(cap, 30)
+        cap_reasons.append("walk_healing_tourism_without_evidence")
+
+    if score_breakdown.get("walk_healing_small_park_without_walk_tag"):
+        cap = min(cap, 35)
+        cap_reasons.append("walk_healing_small_park_without_walk_tag")
+
+    if score_breakdown.get("work_cafe_category_only_without_core"):
+        cap = min(cap, 40)
+        cap_reasons.append("work_cafe_category_only_without_core")
+
     if missing_tags and len(missing_tags) > len(matched_tags):
         cap = min(cap, 65)
         cap_reasons.append("more_missing_than_matched")
@@ -685,10 +913,16 @@ def build_db_recommend_reason(
             f"이 장소는 {', '.join(matched_tag_labels[:3])} 태그가 조건과 일부 일치해 {source_label} 후보로 분류되었습니다."
         )
     elif match_level == "category_distance_fallback":
-        parts.append(
-            f"이 장소는 {category_label} 카테고리와 위치 조건에는 부합하지만, "
-            "세부 태그 정보가 부족해 요청한 조건과 직접 일치하는 근거는 아직 부족합니다."
-        )
+        if scenario == "walk_healing":
+            parts.append(
+                f"이 장소는 {category_label} 카테고리와 위치 조건에는 부합하지만, "
+                "산책 조건과 직접 일치하는 근거가 부족합니다."
+            )
+        else:
+            parts.append(
+                f"이 장소는 {category_label} 카테고리와 위치 조건에는 부합하지만, "
+                "세부 태그 정보가 부족해 요청한 조건과 직접 일치하는 근거는 아직 부족합니다."
+            )
     elif place.category:
         parts.append(f"이 장소는 {category_label} 카테고리가 입력 조건과 일부 관련됩니다.")
 
@@ -704,13 +938,18 @@ def build_db_recommend_reason(
             f"다만 {', '.join(missing_tag_labels[:3])} 조건은 아직 확인되지 않았습니다."
         )
 
-    if metadata.get("source_type") == "db_category_fallback":
+    if metadata.get("source_type") == "db_category_fallback" and scenario == "walk_healing":
+        parts.append("따라서 기본 산책 추천이 아니라 카테고리 기반 fallback 후보로만 보아야 합니다.")
+    elif metadata.get("source_type") == "db_category_fallback":
         parts.append("따라서 검증 추천이 아니라 카테고리 기반 fallback 후보로 제공됩니다.")
     elif not metadata.get("is_verified"):
         parts.append("일부 근거가 후보 태그 기반이므로 방문 전 확인이 필요합니다.")
 
     if (score_breakdown or {}).get("waiting_place_penalty_reason"):
         parts.append("또한 일반적인 잠깐 휴식 목적과는 맞지 않을 수 있어 후순위로 반영했습니다.")
+
+    if (score_breakdown or {}).get("work_cafe_penalty_reason"):
+        parts.append("작업 장소로 보기에는 노트북 작업/조용함/와이파이/콘센트 같은 핵심 조건 근거가 부족합니다.")
 
     if (score_breakdown or {}).get("walk_healing_penalty_reason"):
         parts.append("또한 산책/힐링 목적과 직접 맞지 않을 수 있어 후순위로 반영했습니다.")
@@ -883,8 +1122,12 @@ def search_db_recommendations(
         exclude_categories=exclude_categories,
         radius=radius,
     )
+    min_radius = get_min_radius(context["scenario"])
     radius = min(
-        max(_parse_int(radius, context.get("radius") or get_default_radius(context["scenario"])), 300),
+        max(
+            _parse_int(radius, context.get("radius") or get_default_radius(context["scenario"])),
+            min_radius,
+        ),
         20000,
     )
     context["radius"] = radius
@@ -954,6 +1197,8 @@ def search_db_recommendations(
 
         if score_breakdown.get("excluded_by_waiting_place"):
             continue
+        if score_breakdown.get("excluded_by_work_cafe"):
+            continue
         if score_breakdown.get("excluded_by_walk_healing"):
             continue
 
@@ -964,6 +1209,14 @@ def search_db_recommendations(
         )
         category_matches = place.category in set(context["categories"])
         match_level = get_match_level(matched_tags, category_matches)
+        if (
+            not context["fallback_enabled"]
+            and match_level == "category_distance_fallback"
+            and context["required_tags"]
+            and not set(matched_tags).intersection(context["required_tags"])
+        ):
+            continue
+
         metadata = build_result_metadata(
             tag_data=tag_data,
             matched_tags=matched_tags,
