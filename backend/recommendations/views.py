@@ -31,6 +31,7 @@ from .services.ai_web_search_provider import (
     get_ai_web_search_result,
     get_ai_web_search_status,
 )
+from .services.conversational_search_planner import build_conversational_search_plan
 from .services.db_recommender import search_db_recommendations
 from .services.place_urls import get_kakao_place_url
 from .services.smoking_area_data import (
@@ -748,6 +749,29 @@ def search_safety_check(request):
         ) if blocked else "",
         "ai_parse": parsed,
     })
+
+
+@api_view(["POST"])
+def conversational_search_plan(request):
+    query = request.data.get("query", "")
+    if not str(query or "").strip():
+        return Response(
+            {
+                "detail": "검색어를 입력해 주세요.",
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    user = request.user if request.user.is_authenticated else None
+    data = build_conversational_search_plan(
+        query=query,
+        user=user,
+        lat=request.data.get("lat"),
+        lng=request.data.get("lng"),
+        map_center=request.data.get("map_center"),
+        previous_context=request.data.get("previous_context"),
+    )
+    return Response(data)
 
 
 @api_view(["POST"])

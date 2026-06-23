@@ -25,6 +25,7 @@ from recommendations.services.ai_web_search_provider import (
     clear_ai_web_search_cache,
     get_ai_web_search_result,
 )
+from recommendations.services.conversational_search_planner import build_conversational_search_plan
 from recommendations.services.naver_search_provider import build_naver_search_query
 
 
@@ -3089,6 +3090,48 @@ class RecommendationSearchTests(TestCase):
             "category_distance_fallback",
         )
         self.assertIn("세부 태그 정보가 부족", fallback_result["recommend_reason"])
+
+    @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=False)
+    def test_conversational_search_planner_keeps_station_for_walk_queries(self):
+        for query in ["하단역 산책할 곳 추천해줘", "하단역 근처 산책할 곳 추천해줘"]:
+            with self.subTest(query=query):
+                plan = build_conversational_search_plan(query)
+
+                self.assertEqual(plan["action"], "search")
+                self.assertFalse(plan["needs_clarification"])
+                self.assertEqual(plan["search_plan"]["locationQuery"], "하단역")
+                self.assertEqual(plan["search_plan"]["scenario"], "walk_healing")
+                self.assertTrue(plan["execution_policy"]["preserve_explicit_location"])
+
+    @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=False)
+    def test_conversational_search_planner_extracts_menu_targets(self):
+        brunch_plan = build_conversational_search_plan("서면역 브런치 카페")
+        self.assertEqual(brunch_plan["search_plan"]["locationQuery"], "서면역")
+        self.assertEqual(brunch_plan["search_plan"]["targetQuery"], "브런치 카페")
+        self.assertIn("브런치", brunch_plan["search_plan"]["menu_keywords"])
+
+        salt_bread_plan = build_conversational_search_plan("사상역 소금빵 맛집 찾아줘")
+        self.assertEqual(salt_bread_plan["search_plan"]["locationQuery"], "사상역")
+        self.assertEqual(salt_bread_plan["search_plan"]["targetQuery"], "소금빵 맛집")
+        self.assertIn("소금빵", salt_bread_plan["search_plan"]["menu_keywords"])
+
+    @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=False)
+    def test_conversational_search_planner_uses_current_location_when_location_missing(self):
+        plan = build_conversational_search_plan("배고픈데 혼자 먹기 편한 데")
+
+        self.assertEqual(plan["action"], "search")
+        self.assertEqual(plan["location"]["text"], "")
+        self.assertEqual(plan["location"]["fallback"], "current_location")
+        self.assertEqual(plan["search_plan"]["scenario"], "restaurant")
+        self.assertIn("혼자 이용하기 좋음", plan["conditions"])
+
+    @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=False)
+    def test_conversational_search_planner_asks_for_ambiguous_reference_without_context(self):
+        plan = build_conversational_search_plan("거기 말고 좀 조용한 데")
+
+        self.assertEqual(plan["action"], "ask_clarification")
+        self.assertTrue(plan["needs_clarification"])
+        self.assertIn("어느 지역", plan["clarification_question"])
 
     @override_settings(AI_PROVIDER="rule")
     def test_ai_parser_routes_menu_matjip_queries_to_food_intent(self):

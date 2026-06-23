@@ -7,6 +7,7 @@ urlpatterns = [
     path("kakao-place-tags/", views.kakao_place_tag_lookup),
     path("search/", views.recommendation_search),
     path("search-safety/", views.search_safety_check),
+    path("conversational-search-plan/", views.conversational_search_plan),
     path("search-logs/", views.search_logs),
     path("search-logs/<int:search_log_id>/", views.search_log_detail),
     path("preference-tags/", views.preference_tags),

@@ -85,6 +85,46 @@ WAITING_PLACE_PREFERRED_KEYWORDS = [
     "관광안내소",
 ]
 
+WALK_HEALING_EXCLUDE_KEYWORDS = [
+    *WAITING_PLACE_EXCLUDE_KEYWORDS,
+    "음식점",
+    "식당",
+    "술집",
+    "주점",
+    "편의점",
+    "카페",
+    "병원",
+    "약국",
+    "부동산",
+    "숙박",
+    "모텔",
+    "호텔",
+    "노래방",
+    "PC방",
+    "피시방",
+    "상가",
+]
+
+WALK_HEALING_PREFERRED_KEYWORDS = [
+    "공원",
+    "산책",
+    "산책로",
+    "강변",
+    "하천",
+    "수변",
+    "둘레길",
+    "해변",
+    "해수욕장",
+    "관광",
+    "전망",
+    "전망대",
+    "명소",
+    "생태",
+    "숲",
+    "호수",
+    "갈맷길",
+]
+
 def normalize_recommendation_context(
     scenario="work_cafe",
     condition=None,
@@ -272,6 +312,29 @@ def get_waiting_place_adjustment(place, tag_data):
     }
 
 
+def get_walk_healing_adjustment(place, tag_data):
+    text = _place_search_text(place, tag_data)
+
+    if _has_keyword(text, WALK_HEALING_EXCLUDE_KEYWORDS):
+        return {
+            "exclude": True,
+            "penalty": 120,
+            "bonus": 0,
+            "reason": "non_walk_healing_place",
+        }
+
+    bonus = 0
+    if _has_keyword(text, WALK_HEALING_PREFERRED_KEYWORDS):
+        bonus = 14
+
+    return {
+        "exclude": False,
+        "penalty": 0,
+        "bonus": bonus,
+        "reason": None,
+    }
+
+
 def get_place_tag_data(place):
     suggested_tags = []
     verified_tags = []
@@ -336,6 +399,11 @@ def score_place(
         if scenario == "waiting_place"
         else {"exclude": False, "penalty": 0, "bonus": 0, "reason": None}
     )
+    walk_healing_adjustment = (
+        get_walk_healing_adjustment(place, tag_data)
+        if scenario == "walk_healing"
+        else {"exclude": False, "penalty": 0, "bonus": 0, "reason": None}
+    )
 
     score = (
         20
@@ -344,9 +412,11 @@ def score_place(
         + distance_score
         + quality_score
         + waiting_adjustment["bonus"]
+        + walk_healing_adjustment["bonus"]
         - warning_penalty
         - avoid_penalty
         - waiting_adjustment["penalty"]
+        - walk_healing_adjustment["penalty"]
     )
 
     if category_score == 0 and not matched_tags:
@@ -365,6 +435,10 @@ def score_place(
         "unsuitable_place_penalty": waiting_adjustment["penalty"],
         "waiting_place_penalty_reason": waiting_adjustment["reason"],
         "excluded_by_waiting_place": waiting_adjustment["exclude"],
+        "walk_healing_bonus": walk_healing_adjustment["bonus"],
+        "walk_healing_penalty": walk_healing_adjustment["penalty"],
+        "walk_healing_penalty_reason": walk_healing_adjustment["reason"],
+        "excluded_by_walk_healing": walk_healing_adjustment["exclude"],
     }
 
 
@@ -638,6 +712,9 @@ def build_db_recommend_reason(
     if (score_breakdown or {}).get("waiting_place_penalty_reason"):
         parts.append("또한 일반적인 잠깐 휴식 목적과는 맞지 않을 수 있어 후순위로 반영했습니다.")
 
+    if (score_breakdown or {}).get("walk_healing_penalty_reason"):
+        parts.append("또한 산책/힐링 목적과 직접 맞지 않을 수 있어 후순위로 반영했습니다.")
+
     parts.append(f"추천 신뢰도는 {confidence_text}으로 표시됩니다.")
     return " ".join(parts)
 
@@ -876,6 +953,8 @@ def search_db_recommendations(
         )
 
         if score_breakdown.get("excluded_by_waiting_place"):
+            continue
+        if score_breakdown.get("excluded_by_walk_healing"):
             continue
 
         missing_tags = _missing_tags(

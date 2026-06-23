@@ -29,6 +29,24 @@ export const checkSearchSafety = async ({ query }) => {
   return response.data
 }
 
+export const buildConversationalSearchPlan = async ({
+  query,
+  lat = null,
+  lng = null,
+  mapCenter = null,
+  previousContext = null,
+}) => {
+  const response = await axios.post(`${API_BASE_URL}/recommendations/conversational-search-plan/`, {
+    query,
+    lat,
+    lng,
+    map_center: mapCenter,
+    previous_context: previousContext,
+  })
+
+  return response.data
+}
+
 export const runAiWebSearch = async ({
   query,
   lat = null,
