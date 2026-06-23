@@ -11,6 +11,7 @@ import {
   saveSearchLog,
 } from '@/api/recommendation'
 import KakaoMap from '@/components/KakaoMap.vue'
+import { useAuthStore } from '@/stores/auth'
 
 const IS_DEV = import.meta.env.DEV
 
@@ -27,6 +28,7 @@ const normalizeTab = (tab) => {
 
 const route = useRoute()
 const router = useRouter()
+const authStore = useAuthStore()
 const activeTab = ref(normalizeTab(props.initialTab))
 const searchKeyword = ref('')
 
@@ -564,10 +566,22 @@ const aiWebSearchLastResult = ref(null)
 const activeSearchPlan = ref(null)
 const pendingClarification = ref(null)
 const clarificationThread = ref([])
+const followUpInput = ref('')
+const followUpInputRef = ref(null)
+const primarySearchInputRef = ref(null)
+const conversationModeStarted = ref(false)
 const activeMenuSearchProfile = ref(null)
 
 const showDetailPanel = ref(false)
 const detailFrameError = ref(false)
+
+const displayUserName = computed(() => {
+  const user = authStore.user || {}
+  return user.profile?.nickname ||
+    user.nickname ||
+    user.username ||
+    '사용자'
+})
 
 const applyRouteSearchQuery = (value) => {
   const nextQuery = Array.isArray(value) ? value[0] : value
@@ -690,12 +704,14 @@ const clearMainSearchErrorState = () => {
   }
 }
 
-const beginMainSearch = () => {
+const beginMainSearch = ({ preserveClarificationThread = false } = {}) => {
   mainResults.value = []
   fallbackResults.value = []
   webReferenceResults.value = []
   pendingClarification.value = null
-  clarificationThread.value = []
+  if (!preserveClarificationThread) {
+    clarificationThread.value = []
+  }
   baseLocationCandidates.value = []
   pendingBaseLocationSearch.value = null
   syncLegacySearchResults()
@@ -1078,6 +1094,8 @@ const shouldShowAiWebSearchPanel = computed(() => {
 const hasSearchExperienceContent = computed(() => {
   return Boolean(
     mapSearchKeyword.value.trim() ||
+    pendingClarification.value ||
+    clarificationThread.value.length ||
     displayResults.value.length ||
     isSearchingMap.value ||
     shouldShowAiWebSearchPanel.value ||
@@ -1095,6 +1113,32 @@ const hasMapExperienceContent = computed(() => {
   )
 })
 
+const isConversationMode = computed(() => {
+  return Boolean(
+    conversationModeStarted.value ||
+    clarificationThread.value.length ||
+    pendingClarification.value ||
+    isSearchingMap.value ||
+    displayResults.value.length ||
+    baseLocationCandidates.value.length,
+  )
+})
+
+const clearTopSearchInputsForClarification = () => {
+  searchKeyword.value = ''
+  mapSearchKeyword.value = ''
+}
+
+const focusFollowUpInput = async () => {
+  await nextTick()
+  followUpInputRef.value?.focus?.()
+}
+
+const focusPrimarySearchInput = async () => {
+  await nextTick()
+  primarySearchInputRef.value?.focus?.()
+}
+
 const setClarificationThread = (query, plan, message) => {
   const userText = String(query || '').trim()
   const assistantText = String(
@@ -1103,25 +1147,57 @@ const setClarificationThread = (query, plan, message) => {
     plan?.message ||
     '지역과 목적을 함께 입력해 주세요.',
   ).trim()
+  const partialSearchPlan = plan?.search_plan && typeof plan.search_plan === 'object'
+    ? { ...plan.search_plan }
+    : {}
+  const partialConditions = getPlannerList(
+    getSearchPlanValue(partialSearchPlan, 'requestedConditions', 'requested_conditions', 'conditions') ||
+    plan?.conditions ||
+    [],
+  )
 
   pendingClarification.value = {
+    original_query: userText,
     query: userText,
     plan,
+    partial_search_plan: {
+      ...partialSearchPlan,
+      locationQuery: getPlannerText(getSearchPlanValue(partialSearchPlan, 'locationQuery', 'location_query')),
+      baseLocationQuery: getPlannerText(getSearchPlanValue(partialSearchPlan, 'baseLocationQuery', 'base_location_query')),
+      targetQuery: getPlannerText(getSearchPlanValue(partialSearchPlan, 'targetQuery', 'target_query')),
+      scenario: getPlannerText(partialSearchPlan.scenario),
+      conditions: partialConditions,
+      requestedConditions: partialConditions,
+    },
+    missing_field: 'location',
+    clarification_question: assistantText,
     message: assistantText,
   }
+  conversationModeStarted.value = true
+  followUpInput.value = ''
+  clearTopSearchInputsForClarification()
   clarificationThread.value = [
-    userText ? { role: 'user', label: '사용자', text: userText } : null,
+    userText ? { role: 'user', label: displayUserName.value, text: userText } : null,
     assistantText ? { role: 'assistant', label: 'AI', text: assistantText } : null,
   ].filter(Boolean).slice(-3)
+  focusFollowUpInput()
 }
 
 const clearPendingClarification = () => {
   pendingClarification.value = null
   clarificationThread.value = []
+  followUpInput.value = ''
 }
 
 const shouldShowClarificationThread = computed(() => {
   return clarificationThread.value.length > 0
+})
+
+const shouldShowFollowUpInput = computed(() => {
+  return Boolean(
+    pendingClarification.value &&
+    pendingClarification.value.missing_field === 'location',
+  )
 })
 
 const searchConversationTitle = computed(() => {
@@ -1582,6 +1658,7 @@ const handleSearch = async () => {
     return
   }
 
+  conversationModeStarted.value = true
   mapSearchKeyword.value = searchKeyword.value.trim()
   activeTab.value = 'search'
   activeResultView.value = 'results'
@@ -2505,6 +2582,280 @@ const adaptConversationalSearchPlan = (conversationalPlan, originalQuery) => {
     confidence: conversationalPlan?.confidence ?? basePlan.confidence,
     fallbackReason: conversationalPlan?.fallback_reason || basePlan.fallbackReason,
     aiSearchPlanApplied: true,
+  }
+}
+
+const CLARIFICATION_CURRENT_CONTEXT_ANSWERS = [
+  '현재위치',
+  '현재',
+  '내위치',
+  '내주변',
+  '내근처',
+  '근처',
+  '주변',
+  '여기',
+  '기본위치',
+  '지도중심',
+]
+const LOCATION_CHOICE_CLARIFICATION_MESSAGE = '현재 위치 기준으로 찾아볼까요, 아니면 원하는 지역이 있나요? 예: 현재 위치, 서면, 하단역, 광안리'
+const CURRENT_CONTEXT_SEARCH_REQUEST_KEYWORDS = [
+  '현재 위치',
+  '현재위치',
+  '내 주변',
+  '내주변',
+  '내 근처',
+  '내근처',
+  '이 근처',
+  '이근처',
+  '이 주변',
+  '이주변',
+  '근처',
+  '주변',
+]
+
+const FOLLOW_UP_BLOCKED_HINTS = [
+  '비트코인',
+  '주식',
+  '코인',
+  '투자',
+  '숙제',
+  '과제',
+  '파이썬',
+  '불법',
+  '위험',
+  '해킹',
+  '마약',
+]
+
+const isCurrentContextClarificationAnswer = (answer = '') => {
+  const text = normalizeLocationText(answer)
+  return CLARIFICATION_CURRENT_CONTEXT_ANSWERS.includes(text)
+}
+
+const hasExplicitCurrentContextSearchRequest = (query = '') => {
+  const text = normalizeLocationText(query)
+  return CURRENT_CONTEXT_SEARCH_REQUEST_KEYWORDS.some((keyword) => {
+    return text.includes(normalizeLocationText(keyword))
+  })
+}
+
+const looksLikeLocationClarificationAnswer = (answer = '') => {
+  const text = String(answer || '').trim()
+  const normalizedText = normalizeLocationText(text)
+
+  if (!text || normalizedText.length > 12) return false
+  if (FOLLOW_UP_BLOCKED_HINTS.some((keyword) => normalizedText.includes(normalizeLocationText(keyword)))) return false
+  if (isCurrentContextClarificationAnswer(text)) return true
+  if (isRecommendationQueryText(text)) return false
+  if (getRecommendationIntent(text)) return false
+
+  return /^[가-힣A-Za-z0-9\s]+$/.test(text)
+}
+
+const buildClarificationFollowUpTargetText = (partialPlan = {}) => {
+  const conditions = getPlannerList(partialPlan.conditions || partialPlan.requestedConditions || [])
+  const scenario = getPlannerText(partialPlan.scenario)
+  const targetQuery = getPlannerText(partialPlan.targetQuery || partialPlan.target_keyword) || '장소'
+  const conditionText = normalizeLocationText(conditions.join(' '))
+
+  if (scenario === 'work_cafe') {
+    if (conditionText.includes('조용') || conditionText.includes('노트북')) {
+      return '조용히 작업할 카페'
+    }
+    return '작업할 카페'
+  }
+
+  if (scenario === 'waiting_place') {
+    if (conditionText.includes('비피하기') || conditionText.includes('실내') || conditionText.includes('앉을수있음')) {
+      return '실내에 앉아 쉴 곳'
+    }
+    if (conditionText.includes('혼자') || conditionText.includes('조용') || conditionText.includes('붐비지')) {
+      return '혼자 조용히 쉴 곳'
+    }
+  }
+
+  if (scenario === 'walk_healing') {
+    return '산책할 곳'
+  }
+
+  return targetQuery
+}
+
+const buildClarificationFollowUpPlan = (answer = '') => {
+  const pending = pendingClarification.value
+  if (!pending || pending.missing_field !== 'location') return null
+  if (!looksLikeLocationClarificationAnswer(answer)) return null
+
+  const locationAnswer = String(answer || '').trim()
+  const useCurrentContext = isCurrentContextClarificationAnswer(locationAnswer)
+  const partialPlan = {
+    ...(pending.partial_search_plan || pending.plan?.search_plan || {}),
+  }
+  const conditions = getPlannerList(
+    partialPlan.requestedConditions ||
+    partialPlan.conditions ||
+    pending.plan?.conditions ||
+    [],
+  )
+  const targetQuery = getPlannerText(partialPlan.targetQuery || partialPlan.target_query) ||
+    buildClarificationFollowUpTargetText(partialPlan)
+  const scenario = getPlannerText(partialPlan.scenario) || ''
+  const targetText = buildClarificationFollowUpTargetText({
+    ...partialPlan,
+    targetQuery,
+    conditions,
+  })
+  const combinedMessage = useCurrentContext
+    ? `현재 위치 기준으로 ${targetText}을 찾아볼게요.`
+    : `${locationAnswer}에서 ${targetText}을 찾아볼게요.`
+  const searchPlan = {
+    ...partialPlan,
+    locationQuery: useCurrentContext ? '' : locationAnswer,
+    baseLocationQuery: useCurrentContext ? '' : locationAnswer,
+    has_explicit_location: !useCurrentContext,
+    location_resolution_required: !useCurrentContext,
+    targetQuery,
+    scenario,
+    requestedConditions: conditions,
+    conditions,
+  }
+
+  return {
+    action: 'search',
+    intent_type: 'place_recommendation',
+    user_intent_summary: combinedMessage,
+    message: combinedMessage,
+    location: {
+      text: useCurrentContext ? '' : locationAnswer,
+      is_explicit: !useCurrentContext,
+      fallback: useCurrentContext ? 'current_location' : '',
+    },
+    targets: [targetQuery].filter(Boolean),
+    conditions,
+    preferences: getPlannerList(partialPlan.preferred_tags || pending.plan?.preferences || []),
+    avoid: getPlannerList(pending.plan?.avoid || []),
+    search_plan: searchPlan,
+    execution_policy: {
+      run_search: true,
+      preserve_explicit_location: !useCurrentContext,
+      allow_kakao_fallback: true,
+      allow_ai_web_search_auto: false,
+      merge_ai_web_results: false,
+    },
+    needs_clarification: false,
+    clarification_question: '',
+    blocked_reason: '',
+    out_of_scope_reason: '',
+    confidence: pending.plan?.confidence ?? 76,
+    fallback_reason: 'clarification_follow_up',
+    parser_provider: pending.plan?.parser_provider || 'frontend',
+    parser_fallback: true,
+    clarification_follow_up: {
+      original_query: pending.original_query || pending.query || '',
+      answer: locationAnswer,
+    },
+  }
+}
+
+const appendClarificationFollowUpThread = (answer = '', message = '') => {
+  const nextItems = [
+    ...clarificationThread.value,
+    { role: 'user', label: displayUserName.value, text: String(answer || '').trim() },
+    { role: 'assistant', label: 'AI', text: String(message || '').trim() },
+  ].filter((item) => item.text)
+
+  clarificationThread.value = nextItems.slice(-4)
+  followUpInput.value = ''
+  clearTopSearchInputsForClarification()
+}
+
+const submitClarificationFollowUp = async () => {
+  const answer = followUpInput.value.trim()
+
+  if (!answer || isSearchingMap.value) return
+
+  followUpInput.value = ''
+  mapSearchKeyword.value = answer
+  activeTab.value = 'search'
+  activeResultView.value = 'results'
+  isResultListCollapsed.value = false
+
+  await nextTick()
+  await performUnifiedMapSearch()
+}
+
+const isNaturalLanguageScenarioSearch = (searchPlan = {}, rawQuery = '') => {
+  const scenario = getPlannerText(searchPlan.scenario)
+  if (!['waiting_place', 'work_cafe', 'walk_healing'].includes(scenario)) return false
+
+  const conditions = getPlannerList(
+    searchPlan.requestedConditions ||
+    searchPlan.requested_conditions ||
+    searchPlan.conditions ||
+    [],
+  )
+
+  return conditions.length > 0 || isRecommendationQueryText(rawQuery)
+}
+
+const shouldAskLocationChoiceBeforeSearch = ({
+  conversationalPlan = null,
+  rawQuery = '',
+  allowImplicitCurrentContext = false,
+} = {}) => {
+  if (allowImplicitCurrentContext) return false
+  if (!conversationalPlan || conversationalPlan.action !== 'search') return false
+  if (hasExplicitCurrentContextSearchRequest(rawQuery)) return false
+
+  const searchPlan = conversationalPlan.search_plan || {}
+  const locationQuery = getPlannerText(getSearchPlanValue(searchPlan, 'locationQuery', 'location_query'))
+  if (locationQuery) return false
+
+  const hasExplicitLocation = getPlannerBoolean(
+    getSearchPlanValue(searchPlan, 'has_explicit_location'),
+    false,
+  )
+  if (hasExplicitLocation) return false
+
+  return isNaturalLanguageScenarioSearch(searchPlan, rawQuery)
+}
+
+const makeLocationChoiceClarificationPlan = (conversationalPlan = {}, rawQuery = '') => {
+  const searchPlan = conversationalPlan.search_plan && typeof conversationalPlan.search_plan === 'object'
+    ? { ...conversationalPlan.search_plan }
+    : {}
+  const conditions = getPlannerList(
+    searchPlan.requestedConditions ||
+    searchPlan.requested_conditions ||
+    searchPlan.conditions ||
+    conversationalPlan.conditions ||
+    [],
+  )
+
+  return {
+    ...conversationalPlan,
+    action: 'ask_clarification',
+    message: LOCATION_CHOICE_CLARIFICATION_MESSAGE,
+    needs_clarification: true,
+    clarification_question: LOCATION_CHOICE_CLARIFICATION_MESSAGE,
+    search_plan: {
+      ...searchPlan,
+      locationQuery: '',
+      baseLocationQuery: '',
+      has_explicit_location: false,
+      location_resolution_required: false,
+      requestedConditions: conditions,
+      conditions,
+    },
+    conditions,
+    execution_policy: {
+      ...(conversationalPlan.execution_policy || {}),
+      run_search: false,
+      preserve_explicit_location: false,
+    },
+    fallback_reason: 'location_choice_required',
+    location_choice_required: true,
+    original_query: rawQuery,
   }
 }
 
@@ -6767,6 +7118,53 @@ const BASE_LOCATION_PLACE_CATEGORY_KEYWORDS = [
   '상권',
   '도서관',
 ]
+const BASE_LOCATION_REPRESENTATIVE_KEYWORDS = [
+  '해수욕장',
+  '광장',
+  '공원',
+  '대학교',
+  '대학',
+  '캠퍼스',
+  '관광',
+  '관광지',
+  '명소',
+  '문화',
+  '시장',
+  '백화점',
+  '도서관',
+]
+const BASE_LOCATION_FACILITY_KEYWORDS = [
+  '주차장',
+  '공영주차장',
+  '화장실',
+  '공중화장실',
+  '편의점',
+  '미용실',
+  '헤어',
+  '카페',
+  '커피',
+  '음식점',
+  '식당',
+  '매장',
+  '업체',
+  '상점',
+  '지점',
+  '역점',
+  '가맹점',
+  '마트',
+  '이마트24',
+  '세븐일레븐',
+  'cu',
+  'gs25',
+]
+const BASE_LOCATION_REGION_KEYWORDS = [
+  '동',
+  '읍',
+  '면',
+  '리',
+  '구',
+  '군',
+]
 
 const hasPoiHint = (query) => {
   const queryText = normalizeLocationText(query)
@@ -6788,22 +7186,79 @@ const buildBaseLocationSearchQueries = (baseKeyword) => {
   })
 }
 
-const getBaseCandidateKind = (candidate) => {
+const getBaseLocationCandidateSearchText = (candidate = {}) => {
+  return normalizeLocationText([
+    candidate.place_name,
+    candidate.category_name,
+    candidate.address_name,
+    candidate.road_address_name,
+  ].filter(Boolean).join(' '))
+}
+
+const hasBaseLocationCandidateKeyword = (candidate = {}, keywords = []) => {
+  const text = getBaseLocationCandidateSearchText(candidate)
+  return keywords.some((keyword) => {
+    return text.includes(normalizeLocationText(keyword))
+  })
+}
+
+const isFacilityBaseLocationCandidate = (candidate = {}) => {
+  return hasBaseLocationCandidateKeyword(candidate, BASE_LOCATION_FACILITY_KEYWORDS)
+}
+
+const isRegionBaseLocationCandidate = (candidate = {}) => {
+  if (candidate.source === 'address') {
+    const addressText = candidate.address_name || candidate.place_name || ''
+    const lastToken = String(addressText).trim().split(/\s+/).pop() || ''
+    return /[동읍면리구군]$/.test(lastToken)
+  }
+
+  const nameText = normalizeLocationText(candidate.place_name)
+  return BASE_LOCATION_REGION_KEYWORDS.some((keyword) => {
+    const normalizedKeyword = normalizeLocationText(keyword)
+    return nameText.endsWith(normalizedKeyword)
+  })
+}
+
+const isTransportBaseLocationCandidate = (candidate = {}) => {
+  if (isFacilityBaseLocationCandidate(candidate)) return false
+
   const nameText = normalizeLocationText(candidate.place_name)
   const categoryText = normalizeLocationText(candidate.category_name)
 
-  if (candidate.source === 'address') {
-    return '주소'
-  }
-
-  if (BASE_LOCATION_TRANSPORT_KEYWORDS.some((keyword) => {
+  return BASE_LOCATION_TRANSPORT_KEYWORDS.some((keyword) => {
     const normalizedKeyword = normalizeLocationText(keyword)
     return nameText.includes(normalizedKeyword) || categoryText.includes(normalizedKeyword)
-  })) {
-    return '역/교통'
+  })
+}
+
+const isRepresentativeBaseLocationCandidate = (candidate = {}) => {
+  if (isFacilityBaseLocationCandidate(candidate)) return false
+  return hasBaseLocationCandidateKeyword(candidate, BASE_LOCATION_REPRESENTATIVE_KEYWORDS)
+}
+
+const getBaseLocationCandidatePriority = (candidate = {}) => {
+  if (isFacilityBaseLocationCandidate(candidate)) return 5
+  if (isTransportBaseLocationCandidate(candidate)) return 1
+  if (isRegionBaseLocationCandidate(candidate)) return 2
+  if (isRepresentativeBaseLocationCandidate(candidate)) return 3
+  return 4
+}
+
+const getBaseLocationCandidatePriorityLabel = (priority) => {
+  if (priority === 1) return '역/교통'
+  if (priority === 2) return '지역'
+  if (priority === 3) return '대표 장소'
+  if (priority === 5) return '시설/매장'
+  return '장소'
+}
+
+const getBaseCandidateKind = (candidate) => {
+  if (candidate.source === 'address') {
+    return isRegionBaseLocationCandidate(candidate) ? '지역' : '주소'
   }
 
-  return '장소'
+  return getBaseLocationCandidatePriorityLabel(getBaseLocationCandidatePriority(candidate))
 }
 
 const isPlaceCandidate = (candidate) => {
@@ -6889,8 +7344,23 @@ const scoreBaseLocationCandidate = (candidate, query) => {
   const addressText = normalizeLocationText(candidate.address_name || candidate.road_address_name)
   const categoryText = normalizeLocationText(candidate.category_name)
   const sourceQueryText = normalizeLocationText(candidate.sourceQuery)
+  const baseLocationPriority = getBaseLocationCandidatePriority(candidate)
   const reasons = []
   let score = 0
+
+  if (baseLocationPriority === 1) {
+    score += 120
+    reasons.push('교통 기준점 우선')
+  } else if (baseLocationPriority === 2) {
+    score += 90
+    reasons.push('지역 기준점 우선')
+  } else if (baseLocationPriority === 3) {
+    score += 70
+    reasons.push('대표 장소 우선')
+  } else if (baseLocationPriority === 5) {
+    score -= 90
+    reasons.push('시설/매장 후순위')
+  }
 
   if (nameText === queryText) {
     score += 45
@@ -6962,8 +7432,22 @@ const scoreBaseLocationCandidate = (candidate, query) => {
     ...candidate,
     score: Math.round(score),
     scoreReasons: reasons,
+    baseLocationPriority,
     candidateKind: getBaseCandidateKind(candidate),
   }
+}
+
+const sortBaseLocationCandidates = (candidates = []) => {
+  return [...candidates].sort((first, second) => {
+    const firstPriority = first.baseLocationPriority || getBaseLocationCandidatePriority(first)
+    const secondPriority = second.baseLocationPriority || getBaseLocationCandidatePriority(second)
+
+    return (
+      firstPriority - secondPriority ||
+      second.score - first.score ||
+      first.rank - second.rank
+    )
+  })
 }
 
 const dedupeBaseLocationCandidates = (candidates) => {
@@ -7020,6 +7504,13 @@ const getAutoSelectedBaseCandidate = (candidates, query) => {
       normalizeLocationText(query).includes(normalizeLocationText(first.place_name))
     ),
     clearRegionPlace: hasRegionQualifier(query) && firstIsPlacePoi && first.score >= 68,
+  }
+
+  if (
+    shortAmbiguousQuery &&
+    candidates.length > 1
+  ) {
+    return null
   }
 
   if (
@@ -7098,12 +7589,10 @@ const collectBaseLocationCandidates = async ({
     ...addressResults.map((item, index) => normalizeKakaoBaseCandidate(item, 'address', index, baseKeyword)),
   ]
 
-  return dedupeBaseLocationCandidates(candidates)
-    .map((candidate) => scoreBaseLocationCandidate(candidate, baseKeyword))
-    .sort((first, second) => {
-      return second.score - first.score || first.rank - second.rank
-    })
-    .slice(0, 8)
+  return sortBaseLocationCandidates(
+    dedupeBaseLocationCandidates(candidates)
+      .map((candidate) => scoreBaseLocationCandidate(candidate, baseKeyword)),
+  ).slice(0, 8)
 }
 
 const resolveBaseLocation = async ({
@@ -8423,7 +8912,10 @@ const searchAiRecommendationsOnMap = async (searchPlanOverride = null) => {
   }
 }
 
-const performUnifiedMapSearch = async ({ useMapBounds = false } = {}) => {
+const performUnifiedMapSearch = async ({
+  useMapBounds = false,
+  allowImplicitCurrentContext = false,
+} = {}) => {
   const keyword = mapSearchKeyword.value.trim()
 
   if (!keyword) {
@@ -8431,15 +8923,31 @@ const performUnifiedMapSearch = async ({ useMapBounds = false } = {}) => {
     return
   }
 
+  conversationModeStarted.value = true
   const previousContext = getConversationalPreviousContext()
   const previousMainResults = [...mainResults.value]
   const previousFallbackResults = [...fallbackResults.value]
   const previousWebReferenceResults = [...webReferenceResults.value]
-  beginMainSearch()
-
-  const conversationalPlan = useMapBounds
+  const clarificationFollowUpPlan = useMapBounds
     ? null
-    : await resolveConversationalSearchPlan(keyword, previousContext)
+    : buildClarificationFollowUpPlan(keyword)
+  beginMainSearch({ preserveClarificationThread: Boolean(clarificationFollowUpPlan) })
+
+  let conversationalPlan = clarificationFollowUpPlan || (
+    useMapBounds
+      ? null
+      : await resolveConversationalSearchPlan(keyword, previousContext)
+  )
+
+  if (clarificationFollowUpPlan) {
+    appendClarificationFollowUpThread(keyword, clarificationFollowUpPlan.message)
+  } else if (shouldAskLocationChoiceBeforeSearch({
+    conversationalPlan,
+    rawQuery: keyword,
+    allowImplicitCurrentContext,
+  })) {
+    conversationalPlan = makeLocationChoiceClarificationPlan(conversationalPlan, keyword)
+  }
 
   if (
     conversationalPlan?.action &&
@@ -8477,7 +8985,11 @@ const performUnifiedMapSearch = async ({ useMapBounds = false } = {}) => {
     return
   }
 
-  clearPendingClarification()
+  if (!clarificationFollowUpPlan) {
+    clearPendingClarification()
+  } else {
+    pendingClarification.value = null
+  }
   const parsedKeyword = conversationalPlan
     ? adaptConversationalSearchPlan(conversationalPlan, keyword)
     : buildSearchPlan(keyword)
@@ -8498,14 +9010,16 @@ const performUnifiedMapSearch = async ({ useMapBounds = false } = {}) => {
 }
 
 const runAiPresetSearch = async (query) => {
+  conversationModeStarted.value = true
   mapSearchKeyword.value = query
   activeResultView.value = 'results'
   isResultListCollapsed.value = false
   await nextTick()
-  await performUnifiedMapSearch()
+  await performUnifiedMapSearch({ allowImplicitCurrentContext: true })
 }
 
 const runLandingPresetSearch = async (query) => {
+  conversationModeStarted.value = true
   searchKeyword.value = query
   await nextTick()
   await handleSearch()
@@ -8603,6 +9117,7 @@ const selectBaseLocationCandidate = async (candidate) => {
 }
 
 const resetMapSearch = () => {
+  conversationModeStarted.value = false
   mapSearchKeyword.value = ''
   aiSearchKeyword.value = ''
   mapAiParse.value = null
@@ -8620,6 +9135,31 @@ const resetMapSearch = () => {
   isResultListCollapsed.value = false
   clearSearchResults()
   locationMessage.value = '검색이 초기화되었습니다. 검색어를 입력하거나 지도를 이동한 뒤 다시 검색해보세요.'
+}
+
+const startNewConversationSearch = async () => {
+  conversationModeStarted.value = false
+  searchKeyword.value = ''
+  mapSearchKeyword.value = ''
+  aiSearchKeyword.value = ''
+  mapAiParse.value = null
+  activeSearchPlan.value = null
+  activeMenuSearchProfile.value = null
+  clearPendingClarification()
+  baseLocationCandidates.value = []
+  pendingBaseLocationSearch.value = null
+  loadingMessage.value = ''
+  isSearchingMap.value = false
+  selectedPlace.value = null
+  showDetailPanel.value = false
+  detailFrameError.value = false
+  activeTab.value = 'search'
+  activeResultView.value = 'results'
+  isResultListCollapsed.value = false
+  clearSearchResults()
+  locationMessage.value = '새 검색어를 입력해 주세요.'
+
+  await focusPrimarySearchInput()
 }
 
 const selectPlace = (place) => {
@@ -8699,6 +9239,7 @@ const handleDetailFrameError = () => {
       'is-map-tab': activeTab === 'map',
       'is-idle-experience': activeTab === 'search' && !hasSearchExperienceContent,
       'has-search-results': activeTab === 'search' && hasSearchExperienceContent,
+      'is-conversation-mode': isConversationMode,
     }"
   >
     <header class="page-header">
@@ -8737,6 +9278,7 @@ const handleDetailFrameError = () => {
 
       <div class="search-box">
         <input
+          ref="primarySearchInputRef"
           v-model="searchKeyword"
           type="text"
           placeholder="지금 어떤 장소가 필요하신가요?"
@@ -8774,7 +9316,10 @@ const handleDetailFrameError = () => {
     >
       <section
         class="conversation-search-card search-hero-card"
-        :class="{ 'has-results': hasMapExperienceContent }"
+        :class="{
+          'has-results': hasMapExperienceContent,
+          'is-conversation-mode': isConversationMode,
+        }"
       >
         <div class="conversation-card-top">
           <div class="conversation-copy">
@@ -8812,10 +9357,29 @@ const handleDetailFrameError = () => {
           </div>
         </div>
 
-        <form class="map-search-box ai-search-box" @submit.prevent="performUnifiedMapSearch">
+        <div
+          v-if="isConversationMode"
+          class="conversation-compact-bar"
+        >
+          <span>현재 대화형 검색 중</span>
+          <button
+            type="button"
+            :disabled="isSearchingMap"
+            @click="startNewConversationSearch"
+          >
+            새 검색
+          </button>
+        </div>
+
+        <form
+          class="map-search-box ai-search-box search-panel"
+          :class="{ 'search-panel--compact': isConversationMode }"
+          @submit.prevent="performUnifiedMapSearch"
+        >
           <label for="map-keyword-search">상황을 입력해 주세요</label>
           <input
             id="map-keyword-search"
+            ref="primarySearchInputRef"
             v-model="mapSearchKeyword"
             type="text"
             placeholder="예: 소금빵 맛집, 조용히 작업할 카페, 비 오는데 쉴 곳"
@@ -8863,6 +9427,28 @@ const handleDetailFrameError = () => {
               <p>{{ item.text }}</p>
             </div>
           </div>
+
+          <form
+            v-if="shouldShowFollowUpInput"
+            class="clarification-follow-up"
+            @submit.prevent="submitClarificationFollowUp"
+            @keydown.stop
+          >
+            <input
+              ref="followUpInputRef"
+              v-model="followUpInput"
+              type="text"
+              placeholder="예: 현재 위치, 서면, 하단역"
+              :disabled="isSearchingMap"
+              @keydown.stop
+            />
+            <button
+              type="submit"
+              :disabled="isSearchingMap || !followUpInput.trim()"
+            >
+              보내기
+            </button>
+          </form>
 
           <div
             v-if="searchConversationChips.length"
@@ -9825,6 +10411,10 @@ h1 {
   transform: translateY(-8px);
 }
 
+.conversation-search-card.is-conversation-mode {
+  gap: 10px;
+}
+
 .search-experience.has-results .search-hero-card {
   width: min(1040px, 100%);
   margin-bottom: 6px;
@@ -9869,6 +10459,47 @@ h1 {
   flex: 0 0 auto;
   min-height: 32px;
   font-size: 12px;
+}
+
+.conversation-compact-bar {
+  min-height: 42px;
+  padding: 8px 10px;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid #e5e8f0;
+  border-radius: 14px;
+  background: #f8fafc;
+  color: #344054;
+  animation: compactSearchEnter 0.22s ease both;
+}
+
+.conversation-compact-bar span {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.conversation-compact-bar button {
+  flex: 0 0 auto;
+  min-height: 32px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: #111827;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.conversation-compact-bar button:disabled {
+  background: #98a2b3;
+  cursor: not-allowed;
 }
 
 .conversation-card-top,
@@ -9972,6 +10603,31 @@ h1 {
   background: #f8fafc;
   border: 1px solid #e5e8f0;
   border-radius: 18px;
+}
+
+.search-panel {
+  max-height: 220px;
+  overflow: hidden;
+  opacity: 1;
+  transform: scale(1);
+  transition:
+    max-height 0.45s ease,
+    padding 0.35s ease,
+    margin 0.35s ease,
+    opacity 0.3s ease,
+    transform 0.35s ease,
+    border-color 0.3s ease;
+}
+
+.search-panel--compact {
+  max-height: 0;
+  margin-top: -4px;
+  padding-top: 0;
+  padding-bottom: 0;
+  border-color: transparent;
+  opacity: 0;
+  pointer-events: none;
+  transform: scale(0.985);
 }
 
 .map-search-box label {
@@ -10136,6 +10792,48 @@ h1 {
   overflow: visible;
   color: #1f2937;
   -webkit-line-clamp: unset;
+}
+
+.clarification-follow-up {
+  width: min(520px, 100%);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.clarification-follow-up input {
+  min-width: 0;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #d0d5dd;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #111827;
+  font-size: 13px;
+  outline: none;
+}
+
+.clarification-follow-up input:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+.clarification-follow-up button {
+  min-height: 40px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 10px;
+  background: #111827;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.clarification-follow-up button:disabled {
+  background: #98a2b3;
+  cursor: not-allowed;
 }
 
 .view-switch {
@@ -11742,6 +12440,189 @@ h1 {
 
 }
 
+@media (max-width: 768px) {
+  .home-page {
+    width: 100%;
+    max-width: 100%;
+    padding: 16px;
+    overflow-x: hidden;
+  }
+
+  .page-header {
+    margin-bottom: 12px;
+  }
+
+  .top-bar {
+    width: 100%;
+    max-width: 100%;
+    padding: 4px;
+    gap: 4px;
+  }
+
+  .tab-button {
+    flex: 1;
+    min-width: 0;
+    padding: 10px 12px;
+    font-size: 14px;
+  }
+
+  .search-section {
+    min-height: auto;
+    padding: 40px 0 24px;
+  }
+
+  .intro {
+    margin-bottom: 20px;
+  }
+
+  h1 {
+    font-size: 34px;
+  }
+
+  .description {
+    font-size: 15px;
+    line-height: 1.55;
+  }
+
+  .search-box,
+  .landing-preset-buttons,
+  .conversation-search-card,
+  .base-location-candidates,
+  .map-content {
+    width: 100%;
+    max-width: none;
+  }
+
+  .search-box {
+    border-radius: 20px;
+  }
+
+  .landing-preset-buttons {
+    justify-content: flex-start;
+    gap: 8px;
+  }
+
+  .landing-preset-buttons button,
+  .ai-preset-buttons button {
+    min-height: 36px;
+    padding: 0 12px;
+    font-size: 12px;
+  }
+
+  .conversation-search-card {
+    padding: 12px;
+    border-radius: 18px;
+  }
+
+  .conversation-card-top {
+    gap: 10px;
+  }
+
+  .conversation-copy h1 {
+    font-size: 20px;
+  }
+
+  .map-header-actions {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .map-location-button,
+  .map-header-reset {
+    flex: 1;
+    min-width: 0;
+    padding: 9px 10px;
+    font-size: 13px;
+  }
+
+  .conversation-compact-bar {
+    min-width: 0;
+    flex-wrap: wrap;
+  }
+
+  .conversation-compact-bar span {
+    flex: 1 1 160px;
+  }
+
+  .clarification-bubble {
+    max-width: 95%;
+    overflow-wrap: anywhere;
+  }
+
+  .clarification-follow-up {
+    width: 100%;
+  }
+
+  .map-search-box {
+    grid-template-columns: 1fr;
+  }
+
+  .search-experience.has-results .map-search-box {
+    grid-template-columns: 1fr;
+  }
+
+  .map-content.has-result-list,
+  .map-content.has-result-list.has-selected-place,
+  .map-content.has-result-list.is-list-collapsed,
+  .map-content.has-result-list.has-selected-place.is-list-collapsed,
+  .map-content.has-selected-place:not(.has-result-list) {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .place-list-panel {
+    order: 1;
+    width: 100%;
+    height: auto;
+    max-height: none;
+    min-height: 0;
+    margin-top: 0;
+    border-radius: 18px;
+  }
+
+  .map-area {
+    order: 2;
+  }
+
+  .place-list {
+    max-height: min(52vh, 460px);
+  }
+
+  :deep(.map) {
+    height: 420px;
+    min-height: 320px;
+    border-radius: 18px;
+  }
+
+  .base-location-candidates {
+    padding: 12px;
+    border-radius: 14px;
+  }
+
+  .candidate-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .candidate-cancel-button {
+    width: 100%;
+  }
+
+  .candidate-button {
+    align-items: flex-start;
+  }
+
+  .candidate-button strong,
+  .candidate-button small {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .candidate-kind {
+    max-width: 42%;
+  }
+}
+
 @media (max-width: 640px) {
   .home-page {
     padding: 18px;
@@ -11863,14 +12744,15 @@ h1 {
     left: auto;
     z-index: 10;
     width: 100%;
-    height: clamp(250px, 42vh, 360px);
-    max-height: clamp(250px, 42vh, 360px);
-    margin-top: -16px;
+    height: auto;
+    max-height: none;
+    min-height: 0;
+    margin-top: 0;
   }
 
   .map-content.has-selected-place .place-list-panel {
-    height: clamp(220px, 32vh, 300px);
-    max-height: clamp(220px, 32vh, 300px);
+    height: auto;
+    max-height: none;
   }
 
   .place-detail-panel {
@@ -11910,6 +12792,111 @@ h1 {
 
   .kakao-detail-drawer {
     width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  .home-page {
+    padding: 12px;
+  }
+
+  h1 {
+    font-size: 28px;
+  }
+
+  .search-section {
+    padding-top: 32px;
+  }
+
+  .search-box {
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px;
+  }
+
+  .search-box input {
+    width: 100%;
+    padding: 13px 14px;
+  }
+
+  .search-box button,
+  .map-search-box button,
+  .clarification-follow-up button {
+    width: 100%;
+  }
+
+  .landing-preset-buttons,
+  .ai-preset-buttons {
+    gap: 6px;
+  }
+
+  .conversation-search-card {
+    padding: 10px;
+    border-radius: 16px;
+  }
+
+  .conversation-compact-bar {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .conversation-compact-bar button {
+    width: 100%;
+  }
+
+  .clarification-bubble {
+    max-width: 100%;
+  }
+
+  .clarification-follow-up {
+    grid-template-columns: 1fr;
+  }
+
+  .result-controls {
+    gap: 8px;
+  }
+
+  .result-filter-buttons {
+    width: 100%;
+  }
+
+  .place-list-name-row,
+  .place-list-meta,
+  .place-list-recommend-meta,
+  .ai-web-search-heading,
+  .ai-web-search-candidate-title {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .source-badge,
+  .ai-web-search-candidate-title span {
+    max-width: 100%;
+    text-align: left;
+  }
+
+  .candidate-button {
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .candidate-kind {
+    max-width: 100%;
+    text-align: left;
+  }
+
+  .place-list-panel {
+    padding: 10px;
+  }
+
+  .place-list-select-button {
+    padding: 10px 6px;
+  }
+
+  :deep(.map) {
+    height: 360px;
+    min-height: 300px;
   }
 }
 </style>
