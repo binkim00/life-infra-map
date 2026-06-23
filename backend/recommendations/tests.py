@@ -8,7 +8,7 @@ from django.test import Client, TestCase, override_settings
 from django.utils import timezone
 from rest_framework.authtoken.models import Token
 
-from recommendations.models import Place, PlaceTag, Tag, UserSearchLog
+from recommendations.models import Place, PlaceTag, Tag, UserPreference, UserSearchLog
 from recommendations.services.ai_situation_parser import parse_situation
 from recommendations.services.ai_web_search_provider import (
     clear_ai_web_search_cache,
@@ -278,6 +278,378 @@ class RecommendationSearchTests(TestCase):
         self.assertEqual(limited_response.json()["results"][0]["query"], "검색어 59")
         self.assertEqual(max_limited_response.status_code, 200)
         self.assertEqual(len(max_limited_response.json()["results"]), 50)
+
+    def test_search_log_save_updates_user_preferences(self):
+        response = self.client.post(
+            "/api/recommendations/search-logs/",
+            data=json.dumps({
+                "query": "소금빵 맛집 찾아줘",
+                "scenario": "restaurant",
+                "category_hint": "cafe",
+                "preferred_tags": ["조용함"],
+                "requested_conditions": ["노트북 작업 가능"],
+                "menu_keywords": ["소금빵"],
+                "place_type_keywords": ["베이커리", "카페"],
+                "target_query": "소금빵 맛집",
+            }, ensure_ascii=False),
+            content_type="application/json",
+            **self._auth_headers(),
+        )
+
+        self.assertEqual(response.status_code, 201)
+        preferences = {
+            (preference.preference_type, preference.key): preference
+            for preference in UserPreference.objects.filter(user=self.user)
+        }
+
+        self.assertIn(("tag", "조용함"), preferences)
+        self.assertIn(("condition", "노트북 작업 가능"), preferences)
+        self.assertIn(("menu", "소금빵"), preferences)
+        self.assertIn(("place_type", "베이커리"), preferences)
+        self.assertIn(("category", "cafe"), preferences)
+        self.assertIn(("scenario", "restaurant"), preferences)
+        self.assertIn(("keyword", "소금빵 맛집"), preferences)
+        self.assertEqual(preferences[("menu", "소금빵")].score, 1.5)
+        self.assertEqual(preferences[("menu", "소금빵")].search_count, 1)
+
+    def test_repeated_search_log_increases_preference_score_and_count(self):
+        payload = {
+            "query": "소금빵 맛집 찾아줘",
+            "menu_keywords": ["소금빵"],
+        }
+
+        for _ in range(2):
+            response = self.client.post(
+                "/api/recommendations/search-logs/",
+                data=json.dumps(payload, ensure_ascii=False),
+                content_type="application/json",
+                **self._auth_headers(),
+            )
+            self.assertEqual(response.status_code, 201)
+
+        preference = UserPreference.objects.get(
+            user=self.user,
+            preference_type="menu",
+            key="소금빵",
+        )
+        self.assertEqual(preference.search_count, 2)
+        self.assertEqual(preference.score, 3.0)
+
+    def test_search_log_preferences_ignore_empty_duplicate_and_too_long_values(self):
+        too_long_value = "x" * 101
+        too_long_target = "y" * 61
+        response = self.client.post(
+            "/api/recommendations/search-logs/",
+            data=json.dumps({
+                "query": "조건 검색",
+                "preferred_tags": ["조용함", "조용함", " ", too_long_value],
+                "target_query": too_long_target,
+            }, ensure_ascii=False),
+            content_type="application/json",
+            **self._auth_headers(),
+        )
+
+        self.assertEqual(response.status_code, 201)
+        preferences = UserPreference.objects.filter(user=self.user)
+        self.assertEqual(preferences.count(), 1)
+        self.assertEqual(preferences.get().label, "조용함")
+
+    def test_search_log_normalizes_condition_object_labels(self):
+        response = self.client.post(
+            "/api/recommendations/search-logs/",
+            data=json.dumps({
+                "query": "조건 검색",
+                "requested_conditions": [
+                    {"label": "식사가능"},
+                    {"name": "조용함"},
+                ],
+            }, ensure_ascii=False),
+            content_type="application/json",
+            **self._auth_headers(),
+        )
+
+        self.assertEqual(response.status_code, 201)
+        search_log = UserSearchLog.objects.get()
+        self.assertEqual(search_log.requested_conditions, ["식사가능", "조용함"])
+        self.assertTrue(
+            UserPreference.objects.filter(
+                user=self.user,
+                preference_type="condition",
+                key="식사가능",
+                label="식사가능",
+            ).exists()
+        )
+        self.assertTrue(
+            UserPreference.objects.filter(
+                user=self.user,
+                preference_type="condition",
+                key="조용함",
+                label="조용함",
+            ).exists()
+        )
+
+    def test_search_log_preferences_ignore_unknown_objects_and_object_object_text(self):
+        response = self.client.post(
+            "/api/recommendations/search-logs/",
+            data=json.dumps({
+                "query": "조건 검색",
+                "requested_conditions": [
+                    {},
+                    {"unknown": "무시"},
+                    "[object Object]",
+                ],
+                "preferred_tags": [
+                    {"displayName": "실내쉼터"},
+                ],
+            }, ensure_ascii=False),
+            content_type="application/json",
+            **self._auth_headers(),
+        )
+
+        self.assertEqual(response.status_code, 201)
+        search_log = UserSearchLog.objects.get()
+        self.assertEqual(search_log.requested_conditions, [])
+        self.assertEqual(search_log.preferred_tags, ["실내쉼터"])
+        self.assertFalse(
+            UserPreference.objects.filter(
+                user=self.user,
+                key__iexact="[object object]",
+            ).exists()
+        )
+        self.assertTrue(
+            UserPreference.objects.filter(
+                user=self.user,
+                preference_type="tag",
+                key="실내쉼터",
+            ).exists()
+        )
+
+    def test_rebuild_preferences_removes_object_object_pollution(self):
+        UserPreference.objects.create(
+            user=self.user,
+            preference_type="condition",
+            key="[object Object]",
+            label="[object Object]",
+            score=20,
+            search_count=3,
+        )
+        self._create_search_log(
+            query="조건 검색",
+            requested_conditions=[
+                "[object Object]",
+                {"label": "식사가능"},
+                {},
+            ],
+        )
+
+        response = self.client.post(
+            "/api/recommendations/preferences/rebuild/",
+            **self._auth_headers(),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(
+            UserPreference.objects.filter(
+                user=self.user,
+                key__iexact="[object object]",
+            ).exists()
+        )
+        self.assertTrue(
+            UserPreference.objects.filter(
+                user=self.user,
+                preference_type="condition",
+                key="식사가능",
+            ).exists()
+        )
+
+    def test_search_log_and_preference_responses_do_not_include_object_object(self):
+        self._create_search_log(
+            query="조건 검색",
+            requested_conditions=[
+                {"label": "식사가능"},
+                "[object Object]",
+                {},
+            ],
+            preferred_tags=[
+                {"name": "조용함"},
+            ],
+        )
+        UserPreference.objects.create(
+            user=self.user,
+            preference_type="condition",
+            key="[object Object]",
+            label="[object Object]",
+            score=20,
+            search_count=3,
+        )
+        UserPreference.objects.create(
+            user=self.user,
+            preference_type="condition",
+            key="식사가능",
+            label="식사가능",
+            score=2,
+            search_count=1,
+        )
+
+        search_logs_response = self.client.get(
+            "/api/recommendations/search-logs/",
+            **self._auth_headers(),
+        )
+        preferences_response = self.client.get(
+            "/api/recommendations/preferences/",
+            **self._auth_headers(),
+        )
+
+        self.assertEqual(search_logs_response.status_code, 200)
+        self.assertEqual(preferences_response.status_code, 200)
+        serialized_payload = json.dumps(
+            {
+                "search_logs": search_logs_response.json(),
+                "preferences": preferences_response.json(),
+            },
+            ensure_ascii=False,
+        )
+        self.assertNotIn("[object Object]", serialized_payload)
+        self.assertEqual(
+            search_logs_response.json()["results"][0]["requested_conditions"],
+            ["식사가능"],
+        )
+        self.assertEqual(
+            search_logs_response.json()["results"][0]["preferred_tags"],
+            ["조용함"],
+        )
+
+    def test_authenticated_user_can_list_own_preferences(self):
+        other_user = get_user_model().objects.create_user(
+            username="other-preference-user",
+            password="pass",
+        )
+        UserPreference.objects.create(
+            user=self.user,
+            preference_type="menu",
+            key="소금빵",
+            label="소금빵",
+            score=6.0,
+            search_count=4,
+        )
+        UserPreference.objects.create(
+            user=other_user,
+            preference_type="menu",
+            key="쌀국수",
+            label="쌀국수",
+            score=9.0,
+            search_count=5,
+        )
+
+        response = self.client.get(
+            "/api/recommendations/preferences/",
+            {"limit": 10, "type": "menu"},
+            **self._auth_headers(),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(len(data["results"]), 1)
+        self.assertEqual(data["results"][0]["label"], "소금빵")
+        self.assertNotIn("쌀국수", [item["label"] for item in data["results"]])
+
+    def test_preferences_require_authenticated_user(self):
+        response = self.client.get(
+            "/api/recommendations/preferences/",
+            HTTP_HOST="localhost",
+        )
+
+        self.assertIn(response.status_code, [401, 403])
+
+    def test_rebuild_preferences_deletes_existing_and_recalculates_from_logs(self):
+        UserPreference.objects.create(
+            user=self.user,
+            preference_type="menu",
+            key="삭제될값",
+            label="삭제될값",
+            score=30,
+            search_count=10,
+        )
+        self._create_search_log(
+            query="소금빵 맛집 찾아줘",
+            menu_keywords=["소금빵"],
+            preferred_tags=["조용함"],
+        )
+        self._create_search_log(
+            query="소금빵 카페",
+            menu_keywords=["소금빵"],
+            category_hint="cafe",
+        )
+
+        response = self.client.post(
+            "/api/recommendations/preferences/rebuild/",
+            **self._auth_headers(),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["message"], "preferences rebuilt")
+        self.assertFalse(
+            UserPreference.objects.filter(user=self.user, key="삭제될값").exists()
+        )
+        menu_preference = UserPreference.objects.get(
+            user=self.user,
+            preference_type="menu",
+            key="소금빵",
+        )
+        self.assertEqual(menu_preference.search_count, 2)
+        self.assertEqual(menu_preference.score, 3.0)
+
+    def test_recommendation_search_applies_limited_personalization_for_authenticated_user(self):
+        UserPreference.objects.create(
+            user=self.user,
+            preference_type="tag",
+            key="와이파이",
+            label="와이파이",
+            score=80,
+            search_count=20,
+        )
+
+        response = self.client.get(
+            "/api/recommendations/search/",
+            {
+                "scenario": "work_cafe",
+                "lat": 35.1556,
+                "lng": 129.0641,
+                "limit": 3,
+            },
+            **self._auth_headers(),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        first_result = response.json()["results"][0]
+        self.assertGreater(first_result["personalization_boost"], 0)
+        self.assertLessEqual(first_result["personalization_boost"], 5)
+        self.assertIn("personalization_reasons", first_result)
+
+    def test_recommendation_search_does_not_apply_personalization_for_anonymous_user(self):
+        UserPreference.objects.create(
+            user=self.user,
+            preference_type="tag",
+            key="와이파이",
+            label="와이파이",
+            score=80,
+            search_count=20,
+        )
+
+        response = self.client.get(
+            "/api/recommendations/search/",
+            {
+                "scenario": "work_cafe",
+                "lat": 35.1556,
+                "lng": 129.0641,
+                "limit": 3,
+            },
+            HTTP_HOST="localhost",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        first_result = response.json()["results"][0]
+        self.assertEqual(first_result["personalization_boost"], 0)
 
     def test_db_recommendation_search_returns_saved_place(self):
         response = self.client.get(

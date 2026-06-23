@@ -17,6 +17,10 @@ from recommendations.services.tag_utils import (
     get_tag_display_names,
     get_visible_tag_names,
 )
+from recommendations.services.user_preferences import (
+    calculate_personalization_boost,
+    get_user_preference_lookup,
+)
 
 
 DEFAULT_CAUTION = "태그 정보는 후보 정보일 수 있으며 실제 이용 가능 여부는 확인이 필요합니다."
@@ -680,13 +684,17 @@ def serialize_recommendation(
         score_breakdown=score_breakdown,
         required_tags=required_tags,
     )
-    score, score_cap, score_cap_reasons = apply_score_cap(
-        score,
-        metadata,
-        matched_tags,
-        missing_tags,
-        score_breakdown,
-    )
+    if "score_cap" in score_breakdown:
+        score_cap = score_breakdown.get("score_cap")
+        score_cap_reasons = score_breakdown.get("score_cap_reasons", [])
+    else:
+        score, score_cap, score_cap_reasons = apply_score_cap(
+            score,
+            metadata,
+            matched_tags,
+            missing_tags,
+            score_breakdown,
+        )
     metadata["confidence"] = get_recommendation_confidence(score, metadata)
     labels = build_result_labels(metadata)
     score_breakdown = {
@@ -694,6 +702,8 @@ def serialize_recommendation(
         "score_cap": score_cap,
         "score_cap_reasons": score_cap_reasons,
     }
+    personalization_boost = round(float(score_breakdown.get("personalization_boost", 0) or 0), 2)
+    personalization_reasons = score_breakdown.get("personalization_reasons", [])
     visible_matched_tags = get_visible_tag_names(matched_tags)
     visible_missing_tags = get_visible_tag_names(missing_tags)
 
@@ -720,6 +730,8 @@ def serialize_recommendation(
         "distance": distance,
         "distance_m": distance,
         "score": score,
+        "personalization_boost": personalization_boost,
+        "personalization_reasons": personalization_reasons,
         "runtime_tags": visible_matched_tags,
         "matched_tags": visible_matched_tags,
         "missing_tags": visible_missing_tags,
@@ -779,6 +791,7 @@ def search_db_recommendations(
     exclude_categories=None,
     limit=10,
     radius=None,
+    user=None,
 ):
     lat = _parse_float(lat)
     lng = _parse_float(lng)
@@ -798,6 +811,7 @@ def search_db_recommendations(
         20000,
     )
     context["radius"] = radius
+    preference_lookup = get_user_preference_lookup(user)
 
     base_places = Place.objects.filter(category__in=context["categories"])
 
@@ -886,8 +900,19 @@ def search_db_recommendations(
             missing_tags,
             score_breakdown,
         )
+        base_score = score
+        personalization_boost, personalization_reasons = calculate_personalization_boost(
+            place=place,
+            tag_data=tag_data,
+            scenario=context["scenario"],
+            preference_lookup=preference_lookup,
+        )
+        score = min(round(base_score + personalization_boost, 2), 100)
         score_breakdown = {
             **score_breakdown,
+            "base_score": base_score,
+            "personalization_boost": round(score - base_score, 2),
+            "personalization_reasons": personalization_reasons,
             "score_cap": score_cap,
             "score_cap_reasons": score_cap_reasons,
         }

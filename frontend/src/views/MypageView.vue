@@ -2,7 +2,7 @@
 import { onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { getMypage, updateNickname, updateProfileImage } from '@/api/boards'
-import { fetchSearchLogs } from '@/api/recommendation'
+import { fetchSearchLogs, fetchUserPreferences } from '@/api/recommendation'
 import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
@@ -25,8 +25,72 @@ const isUpdatingProfileImage = ref(false)
 const searchLogs = ref([])
 const isLoadingSearchLogs = ref(false)
 const searchLogMessage = ref('')
+const userPreferences = ref([])
+const isLoadingPreferences = ref(false)
+const preferenceMessage = ref('')
 
 const sectionValues = ['profile', 'posts', 'comments', 'liked']
+
+const normalizeLabelValue = (item) => {
+  if (typeof item === 'string') return item.trim()
+  if (typeof item === 'number' && Number.isFinite(item)) return String(item)
+  if (!item || typeof item !== 'object') return ''
+
+  const labelKeys = ['label', 'name', 'display_name', 'displayName', 'value', 'text']
+  for (const key of labelKeys) {
+    const label = normalizeLabelValue(item[key])
+    if (label) return label
+  }
+
+  return ''
+}
+
+const normalizeLabelList = (items) => {
+  if (!Array.isArray(items)) return []
+
+  return [...new Set(
+    items
+      .map(normalizeLabelValue)
+      .filter((item) => item && item !== '[object Object]'),
+  )]
+}
+
+const scenarioLabels = {
+  work_cafe: '조용히 작업할 곳',
+  waiting_place: '잠깐 쉴 곳',
+  walk_healing: '산책/힐링',
+  smoking_area: '흡연 가능한 곳',
+  restaurant: '식당/맛집',
+  blocked: '검색 불가',
+}
+
+const categoryLabels = {
+  cafe: '카페',
+  restaurant: '식당',
+  food: '음식',
+  toilet: '공중화장실',
+  freewifi: '무료 와이파이',
+  smoking_area: '흡연구역',
+  beach: '해수욕장',
+  parking: '주차장',
+  city_park: '공원',
+  tourism: '관광지',
+}
+
+const searchModeLabels = {
+  recommendation_query: '추천 검색',
+  region_search: '지역 검색',
+  keyword_search: '키워드 검색',
+  map_bounds_search: '지도 검색',
+  current_context: '현재 위치 검색',
+}
+
+const getMappedLabel = (value, labelMap = {}) => {
+  const label = normalizeLabelValue(value)
+  const key = label.toLowerCase()
+
+  return labelMap[key] || labelMap[label] || label
+}
 
 const syncSelectedSection = () => {
   const section = route.query.section
@@ -46,11 +110,49 @@ const fetchMypage = async () => {
     nicknameInput.value = response.data.user.nickname || ''
     profileImagePreviewUrl.value = response.data.user.profile_image_url || ''
     fetchRecentSearchLogs()
+    fetchPreferences()
   } catch (error) {
     console.error(error)
     errorMessage.value = '마이페이지 정보를 불러오지 못했습니다.'
   } finally {
     isLoading.value = false
+  }
+}
+
+const fetchPreferences = async () => {
+  if (!authStore.isLoggedIn) {
+    userPreferences.value = []
+    preferenceMessage.value = '로그인 후 선호 키워드를 확인할 수 있습니다.'
+    return
+  }
+
+  try {
+    isLoadingPreferences.value = true
+    preferenceMessage.value = ''
+    const response = await fetchUserPreferences(10)
+    userPreferences.value = (response.results || []).filter((preference) => {
+      return normalizeLabelValue(preference.label)
+    })
+
+    if (!userPreferences.value.length) {
+      preferenceMessage.value = '검색을 이용하면 자주 찾는 조건과 키워드가 이곳에 표시됩니다.'
+    }
+  } catch (error) {
+    userPreferences.value = []
+
+    if ([401, 403].includes(error.response?.status)) {
+      preferenceMessage.value = '로그인 후 선호 키워드를 확인할 수 있습니다.'
+    } else {
+      preferenceMessage.value = '선호 키워드를 불러오지 못했습니다.'
+    }
+
+    if (import.meta.env.DEV) {
+      console.debug('[UserPreferences] fetch failed', {
+        status: error.response?.status || 'request_failed',
+      })
+    }
+  } finally {
+    isLoadingPreferences.value = false
   }
 }
 
@@ -102,27 +204,28 @@ const formatSearchLogDate = (value) => {
 }
 
 const getSearchLogCategoryLabel = (log) => {
-  return log.category_hint || log.scenario || log.search_mode || ''
+  return (
+    getMappedLabel(log.category_hint, categoryLabels) ||
+    getMappedLabel(log.scenario, scenarioLabels) ||
+    getMappedLabel(log.search_mode, searchModeLabels)
+  )
 }
 
 const getSearchLogMeta = (log) => {
   return [
-    log.location_hint,
+    normalizeLabelValue(log.location_hint),
     getSearchLogCategoryLabel(log),
     `결과 ${log.result_count || 0}개`,
   ].filter(Boolean).join(' · ')
 }
 
 const getSearchLogChips = (log) => {
-  return [
-    ...(log.menu_keywords || []),
-    ...(log.place_type_keywords || []),
-    ...(log.requested_conditions || []),
-    ...(log.preferred_tags || []),
-  ]
-    .map((chip) => String(chip || '').trim())
-    .filter((chip, index, chips) => chip && chips.indexOf(chip) === index)
-    .slice(0, 5)
+  return normalizeLabelList([
+    ...normalizeLabelList(log.menu_keywords),
+    ...normalizeLabelList(log.place_type_keywords),
+    ...normalizeLabelList(log.requested_conditions),
+    ...normalizeLabelList(log.preferred_tags),
+  ]).slice(0, 5)
 }
 
 const rerunSearchLog = (log) => {
@@ -134,6 +237,51 @@ const rerunSearchLog = (log) => {
       q: log.query,
     },
   })
+}
+
+const preferenceTypeLabels = {
+  menu: '메뉴',
+  place_type: '장소 유형',
+  condition: '조건',
+  category: '카테고리',
+  scenario: '상황',
+  tag: '태그',
+  keyword: '키워드',
+}
+
+const getPreferenceTypeLabel = (type) => {
+  return preferenceTypeLabels[type] || '선호'
+}
+
+const getPreferenceLabel = (preference) => {
+  const rawLabel = preference?.label || preference?.key
+
+  if (preference?.preference_type === 'scenario') {
+    return getMappedLabel(rawLabel, scenarioLabels)
+  }
+
+  if (preference?.preference_type === 'category') {
+    return getMappedLabel(rawLabel, categoryLabels)
+  }
+
+  return normalizeLabelValue(rawLabel)
+}
+
+const formatPreferenceScore = (score) => {
+  const numericScore = Number(score)
+
+  if (!Number.isFinite(numericScore)) return '0.0'
+  return numericScore.toFixed(1)
+}
+
+const getPreferenceMeta = (preference) => {
+  const searchCount = Number(preference?.search_count || 0)
+  const countText = searchCount > 0 ? `최근 검색 ${searchCount}회` : ''
+
+  return [
+    `선호도 ${formatPreferenceScore(preference?.score)}`,
+    countText,
+  ].filter(Boolean).join(' · ')
 }
 
 const handleProfileImageChange = (event) => {
@@ -411,6 +559,33 @@ onMounted(() => {
                 장소를 검색하면 최근 검색 기록이 이곳에 표시됩니다.
               </p>
             </div>
+          </section>
+
+          <section class="preference-section">
+            <div class="section-heading-row">
+              <div>
+                <h2>내 선호 키워드</h2>
+                <p>최근 검색에서 자주 등장한 조건과 키워드입니다. 추천 결과에 약하게 반영됩니다.</p>
+              </div>
+            </div>
+
+            <p v-if="isLoadingPreferences" class="empty preference-status">선호 키워드를 불러오는 중입니다.</p>
+            <div v-else-if="userPreferences.length" class="preference-list">
+              <article
+                v-for="preference in userPreferences"
+                :key="preference.id"
+                class="preference-item"
+              >
+                <span class="preference-type-badge">
+                  {{ getPreferenceTypeLabel(preference.preference_type) }}
+                </span>
+                <strong>{{ getPreferenceLabel(preference) }}</strong>
+                <span>{{ getPreferenceMeta(preference) }}</span>
+              </article>
+            </div>
+            <p v-else class="empty preference-status">
+              {{ preferenceMessage || '검색을 이용하면 자주 찾는 조건과 키워드가 이곳에 표시됩니다.' }}
+            </p>
           </section>
         </section>
 
@@ -956,6 +1131,60 @@ h2 {
   margin-top: 4px;
 }
 
+.preference-section {
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid #e5e8f0;
+}
+
+.preference-list {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.preference-item {
+  min-width: 0;
+  padding: 12px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  border-radius: 12px;
+  background: #f9fafb;
+}
+
+.preference-item strong {
+  overflow: hidden;
+  color: #111827;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preference-item span:last-child {
+  color: #667085;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.preference-type-badge {
+  padding: 4px 7px;
+  border-radius: 999px;
+  background: #eef2ff;
+  color: #3730a3;
+  font-size: 11px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.preference-status {
+  margin: 12px 0 0;
+  padding: 14px;
+  border-radius: 12px;
+  background: #f9fafb;
+}
+
 .activity-item {
   display: grid;
   gap: 5px;
@@ -990,7 +1219,8 @@ h2 {
 @media (max-width: 820px) {
   .profile-card,
   .profile-info-grid,
-  .summary-grid {
+  .summary-grid,
+  .preference-list {
     grid-template-columns: 1fr;
   }
 
@@ -1009,6 +1239,14 @@ h2 {
   .profile-image-message,
   .nickname-message {
     white-space: normal;
+  }
+
+  .preference-item {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .preference-item span:last-child {
+    grid-column: 1 / -1;
   }
 }
 </style>

@@ -1,11 +1,17 @@
+import logging
+
 from django.db.models import Q
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from .models import Place, UserSearchLog
-from .serializers import UserSearchLogListSerializer, UserSearchLogSerializer
+from .models import Place, UserPreference, UserSearchLog
+from .serializers import (
+    UserPreferenceSerializer,
+    UserSearchLogListSerializer,
+    UserSearchLogSerializer,
+)
 from .services.kakao_local import search_places_by_keyword
 from .services.place_mapper import (
     get_saved_tag_data,
@@ -23,6 +29,13 @@ from .services.smoking_area_data import (
     search_nearby_smoking_areas,
     map_smoking_area_to_recommendation,
 )
+from .services.user_preferences import (
+    rebuild_user_preferences,
+    update_user_preferences_from_search_log,
+)
+
+
+logger = logging.getLogger(__name__)
 
 SCENARIO_KEYWORDS = {
     "work_cafe": "카페",
@@ -85,6 +98,11 @@ def search_logs(request):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     search_log = serializer.save()
+    try:
+        update_user_preferences_from_search_log(search_log)
+    except Exception:
+        logger.debug("Failed to update user preferences from search log.", exc_info=True)
+
     return Response(
         {
             "id": search_log.id,
@@ -92,6 +110,43 @@ def search_logs(request):
         },
         status=status.HTTP_201_CREATED,
     )
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def user_preferences(request):
+    try:
+        limit = int(request.GET.get("limit", 20))
+    except (TypeError, ValueError):
+        limit = 20
+
+    limit = min(max(limit, 1), 50)
+    preference_type = request.GET.get("type", "").strip()
+    preferences = (
+        UserPreference.objects
+        .filter(user=request.user)
+        .exclude(key__iexact="[object object]")
+        .exclude(label__iexact="[object object]")
+    )
+
+    if preference_type:
+        preferences = preferences.filter(preference_type=preference_type)
+
+    preferences = preferences.order_by("-score", "-last_seen_at", "label")[:limit]
+    serializer = UserPreferenceSerializer(preferences, many=True)
+    return Response({
+        "results": serializer.data,
+    })
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def rebuild_preferences(request):
+    rebuilt_count = rebuild_user_preferences(request.user)
+    return Response({
+        "message": "preferences rebuilt",
+        "count": rebuilt_count,
+    })
 
 
 def get_matching_categories(keyword):
@@ -339,12 +394,14 @@ def recommendation_search(request):
     limit = request.GET.get("limit", 10)
     radius = request.GET.get("radius")
 
+    user = request.user if request.user.is_authenticated else None
     data = search_db_recommendations(
         scenario=scenario,
         lat=lat,
         lng=lng,
         limit=limit,
         radius=radius,
+        user=user,
     )
 
     return Response(data)
@@ -393,6 +450,7 @@ def ai_recommendation_search(request):
             "ai_web_search": get_ai_web_search_status(),
         })
 
+    user = request.user if request.user.is_authenticated else None
     data = search_db_recommendations(
         scenario=parsed["scenario"],
         condition=parsed,
@@ -402,6 +460,7 @@ def ai_recommendation_search(request):
         exclude_categories=parsed.get("exclude_categories"),
         limit=limit,
         radius=radius,
+        user=user,
     )
     data["ai_parse"] = parsed
     data["ai_web_search"] = get_ai_web_search_status()

@@ -196,3 +196,39 @@ class UserSearchLog(models.Model):
 
     def __str__(self):
         return f"{self.user} - {self.query}"
+
+
+class UserPreference(models.Model):
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="preferences",
+    )
+
+    preference_type = models.CharField(max_length=30)
+    key = models.CharField(max_length=100)
+    label = models.CharField(max_length=100)
+
+    score = models.FloatField(default=0)
+    search_count = models.PositiveIntegerField(default=0)
+
+    source = models.CharField(max_length=30, default="search_log")
+
+    last_seen_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "preference_type", "key"],
+                name="unique_user_preference",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["user", "-score"]),
+            models.Index(fields=["preference_type", "key"]),
+        ]
+
+    def __str__(self):
+        return f"{self.user} - {self.preference_type}:{self.label}"

@@ -102,3 +102,20 @@ export const fetchSearchLogs = async (limit = 10) => {
 
   return response.data
 }
+
+export const fetchUserPreferences = async (limit = 10, type = '') => {
+  const response = await api.get('/recommendations/preferences/', {
+    params: {
+      limit,
+      ...(type ? { type } : {}),
+    },
+  })
+
+  return response.data
+}
+
+export const rebuildUserPreferences = async () => {
+  const response = await api.post('/recommendations/preferences/rebuild/')
+
+  return response.data
+}

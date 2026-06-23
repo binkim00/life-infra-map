@@ -153,6 +153,14 @@ const AI_SCENARIO_KAKAO_KEYWORDS = {
   smoking_area: '흡연구역',
   restaurant: '식당',
 }
+const SCENARIO_DISPLAY_LABELS = {
+  work_cafe: '조용히 작업할 곳',
+  waiting_place: '잠깐 쉴 곳',
+  walk_healing: '산책/힐링',
+  smoking_area: '흡연 가능한 곳',
+  restaurant: '식당/맛집',
+  blocked: '검색 불가',
+}
 const CATEGORY_KAKAO_KEYWORDS = {
   cafe: '카페',
   shelter: '쉼터',
@@ -2684,17 +2692,38 @@ const getSortedTags = (tags = []) => {
   })
 }
 
+const normalizeLabelValue = (item) => {
+  if (typeof item === 'string') return item.trim()
+  if (typeof item === 'number' && Number.isFinite(item)) return String(item)
+  if (!item || typeof item !== 'object') return ''
+
+  const labelKeys = ['label', 'name', 'display_name', 'displayName', 'value', 'text']
+  for (const key of labelKeys) {
+    const label = normalizeLabelValue(item[key])
+    if (label) return label
+  }
+
+  return ''
+}
+
 const toDisplayList = (value) => {
   if (!Array.isArray(value)) {
     return []
   }
 
-  return value
-    .map((item) => String(item || '').trim())
-    .filter(Boolean)
+  return [...new Set(
+    value
+      .map(normalizeLabelValue)
+      .filter((item) => item && item !== '[object Object]'),
+  )]
 }
 
 const getTextValue = (value) => String(value || '').trim()
+
+const getScenarioDisplayLabel = (scenario) => {
+  const value = getTextValue(scenario)
+  return SCENARIO_DISPLAY_LABELS[value] || value
+}
 
 const getRecommendationMatchedLabels = (place) => {
   const labels = toDisplayList(place?.matchedTagLabels || place?.matched_tag_labels)
@@ -2728,6 +2757,38 @@ const getRecommendationFallbackDescription = (place) => {
 const getRecommendationCaution = (place) => {
   return getTextValue(place?.recommendationCaution || place?.caution_message || place?.caution)
 }
+
+const getPersonalizationBoost = (place) => {
+  const boost = Number(place?.personalizationBoost ?? place?.personalization_boost ?? 0)
+
+  return Number.isFinite(boost) ? boost : 0
+}
+
+const getPersonalizationReasons = (place) => {
+  return toDisplayList(place?.personalizationReasons || place?.personalization_reasons)
+}
+
+const getPersonalizationBoostText = (place) => {
+  const boost = getPersonalizationBoost(place)
+
+  if (boost <= 0) return ''
+  return `개인화 +${boost.toFixed(1)}`
+}
+
+watch(allSearchResults, (results) => {
+  if (!IS_DEV || !Array.isArray(results) || !results.length) return
+
+  const boosts = results
+    .map((place) => getPersonalizationBoost(place))
+    .filter((boost) => boost > 0)
+
+  if (!boosts.length) return
+
+  console.debug('[개인화 추천]', {
+    personalizedCount: boosts.length,
+    maxBoost: Math.max(...boosts),
+  })
+})
 
 const getRecommendationPreviewLabels = (labels = [], limit = 3) => {
   return toDisplayList(labels).slice(0, limit)
@@ -5144,6 +5205,8 @@ const convertDbPlaces = (places, { requestedConditions = [] } = {}) => {
       recommendationReason: getTextValue(
         place.recommendation_reason || place.recommend_reason || place.reason,
       ),
+      personalizationBoost: Number(place.personalization_boost || 0),
+      personalizationReasons: toDisplayList(place.personalization_reasons),
       recommendScore:
         place.raw?.scores?.recommendation_ready_score ??
         place.data_quality_score ??
@@ -5280,6 +5343,8 @@ const convertRecommendationPlaces = (
       recommendationReason: getTextValue(
         place.recommendation_reason || place.recommend_reason || place.reason,
       ),
+      personalizationBoost: Number(place.personalization_boost || 0),
+      personalizationReasons: toDisplayList(place.personalization_reasons),
       matchedTags: place.matched_tags || place.runtime_tags || [],
       matchLevel: place.match_level,
       recommendationConfidence: place.confidence || place.recommendation_confidence,
@@ -6552,7 +6617,7 @@ const runAiMapSearchAtCenter = async ({
   setSearchResults({
     results: mergedResults,
     sourceLabel: 'AI 검색 결과',
-    messageSuffix: `DB ${recommendationResults.length}개, 카카오 fallback ${kakaoResults.length}개 · ${data.scenario}`,
+    messageSuffix: `DB ${recommendationResults.length}개, 카카오 fallback ${kakaoResults.length}개 · ${getScenarioDisplayLabel(data.scenario)}`,
   })
   activeMenuSearchProfile.value = menuSearchProfile.menuIntent ? menuSearchProfile : null
   setAiWebSearchContext({
@@ -8032,6 +8097,10 @@ const handleDetailFrameError = () => {
                         추천 점수 {{ getRecommendScore(place) }}
                       </small>
 
+                      <small v-if="isRecommendationPlace(place) && getPersonalizationBoost(place) > 0">
+                        {{ getPersonalizationBoostText(place) }}
+                      </small>
+
                     </span>
 
                     <span
@@ -8047,10 +8116,31 @@ const handleDetailFrameError = () => {
                     </span>
 
                     <span
+                      v-if="isRecommendationPlace(place) && getPersonalizationBoost(place) > 0"
+                      class="place-list-personalization personalization-badge"
+                    >
+                      최근 선호 반영
+                    </span>
+
+                    <span
                       v-if="isRecommendationPlace(place) && getRecommendationReasonSummary(place)"
                       class="place-list-reason"
                     >
                       {{ getRecommendationReasonSummary(place) }}
+                    </span>
+
+                    <span
+                      v-if="isRecommendationPlace(place) && getPersonalizationReasons(place).length"
+                      class="personalization-reasons"
+                    >
+                      <span class="personalization-reasons-label">최근 선호</span>
+                      <span
+                        v-for="reason in getRecommendationPreviewLabels(getPersonalizationReasons(place), 3)"
+                        :key="`personalization-${place.id}-${reason}`"
+                        class="personalization-reason-chip"
+                      >
+                        {{ reason.replace(/^최근 자주 찾은\s*/, '') }}
+                      </span>
                     </span>
 
                     <span
@@ -9684,6 +9774,48 @@ h1 {
   content: '·';
   margin-right: 8px;
   color: #98a2b3;
+}
+
+.place-list-personalization {
+  width: fit-content;
+  max-width: 100%;
+  padding: 4px 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #ecfdf3;
+  color: #047857;
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.personalization-reasons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  align-items: center;
+}
+
+.personalization-reasons-label {
+  color: #047857;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.personalization-reason-chip {
+  max-width: 100%;
+  padding: 3px 7px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #f0fdf4;
+  color: #166534;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .place-list-reason {

@@ -1,6 +1,7 @@
 from rest_framework import serializers
 
-from .models import UserSearchLog
+from .models import UserPreference, UserSearchLog
+from .services.user_preferences import normalize_preference_label, unique_valid_labels
 
 
 class UserSearchLogSerializer(serializers.ModelSerializer):
@@ -60,6 +61,8 @@ class UserSearchLogSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({
                     field_name: "리스트 형태로 보내 주세요.",
                 })
+            if value is not None:
+                attrs[field_name] = unique_valid_labels(value)
 
         snapshot = attrs.get("search_plan_snapshot")
         if snapshot is not None and not isinstance(snapshot, dict):
@@ -98,4 +101,35 @@ class UserSearchLogListSerializer(serializers.ModelSerializer):
             "kakao_result_count",
             "ai_web_result_count",
             "created_at",
+        ]
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        for field_name in [
+            "requested_conditions",
+            "menu_keywords",
+            "place_type_keywords",
+            "preferred_tags",
+            "negative_tags",
+        ]:
+            data[field_name] = unique_valid_labels(data.get(field_name))
+
+        data["category_hint"] = normalize_preference_label(data.get("category_hint"))
+        data["scenario"] = normalize_preference_label(data.get("scenario"))
+        data["target_query"] = normalize_preference_label(data.get("target_query"))
+        return data
+
+
+class UserPreferenceSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = UserPreference
+        fields = [
+            "id",
+            "preference_type",
+            "key",
+            "label",
+            "score",
+            "search_count",
+            "source",
+            "last_seen_at",
         ]
