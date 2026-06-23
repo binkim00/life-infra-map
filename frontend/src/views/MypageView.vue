@@ -3,6 +3,7 @@ import { onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { getMypage, updateNickname, updateProfileImage } from '@/api/boards'
 import { useAuthStore } from '@/stores/auth'
+import { getTierIcon } from '@/utils/tierIcons'
 
 const router = useRouter()
 const route = useRoute()
@@ -223,6 +224,12 @@ onMounted(() => {
               <div v-else class="nickname-display-row">
                 <h2>
                   {{ data.user.nickname }}
+                  <img
+                    v-if="data.user.tier"
+                    :src="getTierIcon(data.user.tier)"
+                    :alt="data.user.tier_label || data.user.tier"
+                    class="profile-tier-icon"
+                  />
                   <button
                     type="button"
                     class="icon-edit-button pencil-button"
@@ -247,7 +254,19 @@ onMounted(() => {
           <div class="profile-info-grid">
             <article>
               <span>닉네임</span>
-              <strong>{{ data.user.nickname }}</strong>
+              <strong class="profile-tier-name">
+                {{ data.user.nickname }}
+                <img
+                  v-if="data.user.tier"
+                  :src="getTierIcon(data.user.tier)"
+                  :alt="data.user.tier_label || data.user.tier"
+                  class="info-tier-icon"
+                />
+              </strong>
+            </article>
+            <article>
+              <span>티어</span>
+              <strong>{{ data.user.tier_label || '아이언' }} · {{ data.user.score || 0 }}점</strong>
             </article>
             <article>
               <span>아이디</span>
@@ -318,7 +337,16 @@ onMounted(() => {
           <RouterLink v-for="post in data.liked_posts" :key="post.id" :to="`/boards/${post.board_type}/${post.id}`"
             class="activity-item link-item">
             <strong>{{ post.title }}</strong>
-            <span>{{ post.author_nickname }} · 댓글 {{ post.comments_count }} · 좋아요 {{ post.likes_count }}</span>
+            <span class="activity-meta-line">
+              {{ post.author_nickname }}
+              <img
+                v-if="post.author_tier"
+                :src="getTierIcon(post.author_tier)"
+                :alt="post.author_tier_label || post.author_tier"
+                class="activity-tier-icon"
+              />
+              · 댓글 {{ post.comments_count }} · 좋아요 {{ post.likes_count }}
+            </span>
           </RouterLink>
           <p v-if="data.liked_posts.length === 0" class="empty">좋아요한 글이 없습니다.</p>
         </section>
@@ -396,7 +424,18 @@ h2 {
   width: fit-content;
   margin-top: 10px;
   padding-right: 28px;
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
   font-size: 30px;
+}
+
+.profile-tier-icon {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  object-fit: contain;
+  filter: drop-shadow(0 5px 8px rgba(20, 35, 70, 0.18));
 }
 
 .profile-main p {
@@ -665,6 +704,19 @@ h2 {
   color: #111827;
 }
 
+.profile-tier-name {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.info-tier-icon {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
+  object-fit: contain;
+}
+
 .profile-image-message {
   margin: 0;
   color: #2563eb;
@@ -743,6 +795,19 @@ h2 {
   color: #344054;
   line-height: 1.6;
   white-space: pre-wrap;
+}
+
+.activity-meta-line {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+}
+
+.activity-tier-icon {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  object-fit: contain;
 }
 
 .link-item:hover {

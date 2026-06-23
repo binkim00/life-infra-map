@@ -15,6 +15,7 @@ import AdminUserView from '@/views/AdminUserView.vue'
 import AdminUserProfileView from '@/views/AdminUserProfileView.vue'
 import SettingsView from '@/views/SettingsView.vue'
 import GuideView from '@/views/GuideView.vue'
+import UpgradeGuideView from '@/views/UpgradeGuideView.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -58,6 +59,11 @@ const router = createRouter({
       path: '/guide',
       name: 'guide',
       component: GuideView,
+    },
+    {
+      path: '/upgrade-guide',
+      name: 'upgrade-guide',
+      component: UpgradeGuideView,
     },
     {
       path: '/inquiries/new',

@@ -442,13 +442,13 @@ watch(
               />
               <span v-else class="default-avatar" aria-hidden="true"></span>
             </span>
+            {{ post.author_nickname }}
             <img
               v-if="post.author_tier"
               :src="getTierIcon(post.author_tier)"
               :alt="post.author_tier_label || post.author_tier"
               class="tier-icon"
             />
-            {{ post.author_nickname }}
           </span>
           <span>{{ formatDateTime(post.created_at) }} <template v-if="post.is_edited">(수정됨)</template></span>
           <span>조회 {{ post.view_count }}</span>
@@ -519,13 +519,13 @@ watch(
 
                 <div class="comment-body">
                   <div class="comment-meta-line">
+                    <strong>{{ comment.author_nickname || comment.author_username }}</strong>
                     <img
                       v-if="comment.author_tier"
                       :src="getTierIcon(comment.author_tier)"
                       :alt="comment.author_tier_label || comment.author_tier"
                       class="tier-icon small"
                     />
-                    <strong>{{ comment.author_nickname || comment.author_username }}</strong>
                     <span>{{ formatCommentTime(comment.created_at) }}</span>
                     <span v-if="comment.is_edited">(수정됨)</span>
                   </div>
@@ -612,13 +612,13 @@ watch(
 
                       <div class="comment-body">
                         <div class="comment-meta-line">
+                          <strong>{{ reply.author_nickname || reply.author_username }}</strong>
                           <img
                             v-if="reply.author_tier"
                             :src="getTierIcon(reply.author_tier)"
                             :alt="reply.author_tier_label || reply.author_tier"
                             class="tier-icon small"
                           />
-                          <strong>{{ reply.author_nickname || reply.author_username }}</strong>
                           <span>{{ formatCommentTime(reply.created_at) }}</span>
                           <span v-if="reply.is_edited">(수정됨)</span>
                         </div>

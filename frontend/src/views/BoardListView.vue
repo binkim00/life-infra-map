@@ -163,13 +163,13 @@ onMounted(() => {
                     />
                     <span v-else class="default-avatar" aria-hidden="true"></span>
                   </span>
+                  {{ post.author_nickname }}
                   <img
                     v-if="post.author_tier"
                     :src="getTierIcon(post.author_tier)"
                     :alt="post.author_tier_label || post.author_tier"
                     class="tier-icon"
                   />
-                  {{ post.author_nickname }}
                 </span>
               </td>
               <td>{{ formatBoardDate(post.created_at) }}</td>
@@ -405,6 +405,13 @@ onMounted(() => {
   object-fit: cover;
 }
 
+.tier-icon {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  object-fit: contain;
+}
+
 .default-avatar {
   position: relative;
   display: block;
@@ -467,10 +474,3 @@ onMounted(() => {
   }
 }
 </style>
-
-.tier-icon {
-  width: 18px;
-  height: 18px;
-  flex: 0 0 auto;
-  object-fit: contain;
-}

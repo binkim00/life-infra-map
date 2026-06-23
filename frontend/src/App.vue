@@ -320,6 +320,40 @@ onBeforeUnmount(() => {
         </RouterLink>
       </nav>
 
+      <nav class="sidebar-bottom-nav" aria-label="설정 및 이용가이드">
+        <RouterLink to="/settings" class="nav-link utility-link">
+          <span class="nav-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <path d="M12 15.5A3.5 3.5 0 1 0 12 8a3.5 3.5 0 0 0 0 7.5Z" />
+              <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.7 1.7 0 0 0 15 19.36a1.7 1.7 0 0 0-1 .58V20a2 2 0 1 1-4 0v-.08a1.7 1.7 0 0 0-1-.58 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.64 15a1.7 1.7 0 0 0-.58-1H4a2 2 0 1 1 0-4h.08a1.7 1.7 0 0 0 .58-1 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.64a1.7 1.7 0 0 0 1-.58V4a2 2 0 1 1 4 0v.08a1.7 1.7 0 0 0 1 .58 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.36 9c.2.35.39.69.58 1H20a2 2 0 1 1 0 4h-.08a1.7 1.7 0 0 0-.52 1Z" />
+            </svg>
+          </span>
+          <span class="nav-text">설정</span>
+        </RouterLink>
+
+        <RouterLink to="/guide" class="nav-link utility-link">
+          <span class="nav-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <path d="M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20Z" />
+              <path d="M12 8v5" />
+              <path d="M12 16h.01" />
+            </svg>
+          </span>
+          <span class="nav-text">이용가이드</span>
+        </RouterLink>
+
+        <RouterLink to="/upgrade-guide" class="nav-link utility-link">
+          <span class="nav-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <path d="M12 3 4 7l8 4 8-4-8-4Z" />
+              <path d="m4 11 8 4 8-4" />
+              <path d="m4 15 8 4 8-4" />
+            </svg>
+          </span>
+          <span class="nav-text">승급가이드</span>
+        </RouterLink>
+      </nav>
+
       <div v-if="authStore.isLoggedIn" ref="sidebarProfileRef" class="sidebar-profile">
         <button
           type="button"
@@ -337,13 +371,13 @@ onBeforeUnmount(() => {
           </span>
           <span class="sidebar-profile-copy">
             <strong class="sidebar-nickname-line">
+              <span>{{ authStore.user?.nickname || authStore.user?.username }}</span>
               <img
                 v-if="authStore.user?.tier"
                 :src="currentUserTierIcon"
                 :alt="currentUserTierLabel"
                 class="sidebar-tier-icon"
               />
-              <span>{{ authStore.user?.nickname || authStore.user?.username }}</span>
             </strong>
             <span>{{ currentUserTierLabel }} · {{ authStore.user?.score || 0 }}점</span>
           </span>
@@ -373,32 +407,6 @@ onBeforeUnmount(() => {
           </button>
         </div>
 
-        <div class="sidebar-profile-actions">
-          <RouterLink
-            to="/settings"
-            class="sidebar-icon-button"
-            aria-label="설정"
-            title="설정"
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M12 15.5A3.5 3.5 0 1 0 12 8a3.5 3.5 0 0 0 0 7.5Z" />
-              <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.7 1.7 0 0 0 15 19.36a1.7 1.7 0 0 0-1 .58V20a2 2 0 1 1-4 0v-.08a1.7 1.7 0 0 0-1-.58 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.64 15a1.7 1.7 0 0 0-.58-1H4a2 2 0 1 1 0-4h.08a1.7 1.7 0 0 0 .58-1 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.64a1.7 1.7 0 0 0 1-.58V4a2 2 0 1 1 4 0v.08a1.7 1.7 0 0 0 1 .58 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.36 9c.2.35.39.69.58 1H20a2 2 0 1 1 0 4h-.08a1.7 1.7 0 0 0-.52 1Z" />
-            </svg>
-          </RouterLink>
-
-          <RouterLink
-            to="/guide"
-            class="sidebar-icon-button"
-            aria-label="이용가이드"
-            title="이용가이드"
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20Z" />
-              <path d="M12 8v5" />
-              <path d="M12 16h.01" />
-            </svg>
-          </RouterLink>
-        </div>
       </div>
     </aside>
 
@@ -469,6 +477,12 @@ onBeforeUnmount(() => {
               <span class="global-user-name">
                 {{ authStore.user?.nickname || authStore.user?.username }}
               </span>
+              <img
+                v-if="authStore.user?.tier"
+                :src="currentUserTierIcon"
+                :alt="currentUserTierLabel"
+                class="global-tier-icon"
+              />
               <span class="global-menu-caret" aria-hidden="true">▾</span>
             </button>
 
@@ -643,9 +657,24 @@ input {
   gap: 8px;
 }
 
+.sidebar-bottom-nav {
+  margin-top: auto;
+  margin-bottom: -12px;
+  padding-top: 10px;
+  display: grid;
+  gap: 4px;
+  border-top: 1px solid #e5e8f0;
+}
+
+.utility-link {
+  padding-top: 9px;
+  padding-bottom: 9px;
+  color: #475467;
+}
+
 .sidebar-profile {
   position: relative;
-  margin-top: auto;
+  margin-top: 0;
   min-height: 58px;
   padding: 8px 10px;
   display: flex;
@@ -876,9 +905,12 @@ input {
   justify-content: center;
 }
 
-.app-shell.is-sidebar-collapsed .sidebar-profile-copy,
-.app-shell.is-sidebar-collapsed .sidebar-profile-actions {
+.app-shell.is-sidebar-collapsed .sidebar-profile-copy {
   display: none;
+}
+
+.app-shell.is-sidebar-collapsed .sidebar-bottom-nav {
+  width: 100%;
 }
 
 .app-shell.is-sidebar-collapsed .nav-link {
@@ -1099,6 +1131,13 @@ input {
   white-space: nowrap;
 }
 
+.global-tier-icon {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  object-fit: contain;
+}
+
 .global-menu-caret {
   color: #667085;
   font-size: 12px;
@@ -1277,6 +1316,7 @@ input {
     display: none;
   }
 
+  .sidebar-bottom-nav,
   .sidebar-profile,
   .app-shell.is-sidebar-collapsed .sidebar-profile {
     display: none;
