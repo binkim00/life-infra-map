@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getNotifications, markAllNotificationsRead } from '@/api/boards'
+import { getTierIcon, getTierLabel } from '@/utils/tierIcons'
 import { useAuthStore } from '@/stores/auth'
 import { useSettingsStore } from '@/stores/settings'
 
@@ -36,6 +37,14 @@ const unreadNotificationCount = computed(() => {
 
 const recentNotifications = computed(() => {
   return visibleNotifications.value.slice(0, 6)
+})
+
+const currentUserTierIcon = computed(() => {
+  return getTierIcon(authStore.user?.tier)
+})
+
+const currentUserTierLabel = computed(() => {
+  return authStore.user?.tier_label || getTierLabel(authStore.user?.tier)
 })
 
 const formatNotificationTime = (value) => {
@@ -327,8 +336,16 @@ onBeforeUnmount(() => {
             <span v-else class="default-avatar" aria-hidden="true"></span>
           </span>
           <span class="sidebar-profile-copy">
-            <strong>{{ authStore.user?.nickname || authStore.user?.username }}</strong>
-            <span>Plus</span>
+            <strong class="sidebar-nickname-line">
+              <img
+                v-if="authStore.user?.tier"
+                :src="currentUserTierIcon"
+                :alt="currentUserTierLabel"
+                class="sidebar-tier-icon"
+              />
+              <span>{{ authStore.user?.nickname || authStore.user?.username }}</span>
+            </strong>
+            <span>{{ currentUserTierLabel }} · {{ authStore.user?.score || 0 }}점</span>
           </span>
         </button>
 
@@ -686,6 +703,19 @@ input {
   color: #111827;
   font-size: 13px;
   font-weight: 900;
+}
+
+.sidebar-nickname-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.sidebar-tier-icon {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  object-fit: contain;
 }
 
 .sidebar-profile-copy span {
