@@ -442,7 +442,9 @@ watch(
               />
               <span v-else class="default-avatar" aria-hidden="true"></span>
             </span>
-            {{ post.author_nickname }}
+            <span :style="post.author_nickname_color ? { color: post.author_nickname_color } : {}">
+              {{ post.author_nickname }}
+            </span>
             <img
               v-if="post.author_tier"
               :src="getTierIcon(post.author_tier)"
@@ -519,7 +521,9 @@ watch(
 
                 <div class="comment-body">
                   <div class="comment-meta-line">
-                    <strong>{{ comment.author_nickname || comment.author_username }}</strong>
+                    <strong :style="comment.author_nickname_color ? { color: comment.author_nickname_color } : {}">
+                      {{ comment.author_nickname || comment.author_username }}
+                    </strong>
                     <img
                       v-if="comment.author_tier"
                       :src="getTierIcon(comment.author_tier)"
@@ -612,7 +616,9 @@ watch(
 
                       <div class="comment-body">
                         <div class="comment-meta-line">
-                          <strong>{{ reply.author_nickname || reply.author_username }}</strong>
+                          <strong :style="reply.author_nickname_color ? { color: reply.author_nickname_color } : {}">
+                            {{ reply.author_nickname || reply.author_username }}
+                          </strong>
                           <img
                             v-if="reply.author_tier"
                             :src="getTierIcon(reply.author_tier)"

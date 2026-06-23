@@ -49,8 +49,11 @@ class UserSerializer(serializers.ModelSerializer):
     nickname = serializers.SerializerMethodField()
     profile_image_url = serializers.SerializerMethodField()
     score = serializers.SerializerMethodField()
+    contribution = serializers.SerializerMethodField()
     tier = serializers.SerializerMethodField()
     tier_label = serializers.SerializerMethodField()
+    tier_color = serializers.SerializerMethodField()
+    nickname_color = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -62,8 +65,11 @@ class UserSerializer(serializers.ModelSerializer):
             "email",
             "is_staff",
             "score",
+            "contribution",
             "tier",
             "tier_label",
+            "tier_color",
+            "nickname_color",
             "date_joined",
         ]
 
@@ -76,11 +82,20 @@ class UserSerializer(serializers.ModelSerializer):
     def get_score(self, obj):
         return get_user_tier_info(obj)["score"]
 
+    def get_contribution(self, obj):
+        return get_user_tier_info(obj)["contribution"]
+
     def get_tier(self, obj):
         return get_user_tier_info(obj)["tier"]
 
     def get_tier_label(self, obj):
         return get_user_tier_info(obj)["tier_label"]
+
+    def get_tier_color(self, obj):
+        return get_user_tier_info(obj)["tier_color"]
+
+    def get_nickname_color(self, obj):
+        return get_user_tier_info(obj)["nickname_color"]
 
 
 class SignupSerializer(serializers.Serializer):

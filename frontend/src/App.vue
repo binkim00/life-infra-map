@@ -47,6 +47,14 @@ const currentUserTierLabel = computed(() => {
   return authStore.user?.tier_label || getTierLabel(authStore.user?.tier)
 })
 
+const currentUserContribution = computed(() => {
+  return authStore.user?.contribution ?? authStore.user?.score ?? 0
+})
+
+const currentUserNicknameStyle = computed(() => {
+  return authStore.user?.nickname_color ? { color: authStore.user.nickname_color } : {}
+})
+
 const formatNotificationTime = (value) => {
   if (!value) {
     return ''
@@ -379,7 +387,9 @@ onBeforeUnmount(() => {
           </span>
           <span class="sidebar-profile-copy">
             <strong class="sidebar-nickname-line">
-              <span>{{ authStore.user?.nickname || authStore.user?.username }}</span>
+              <span :style="currentUserNicknameStyle">
+                {{ authStore.user?.nickname || authStore.user?.username }}
+              </span>
               <img
                 v-if="authStore.user?.tier"
                 :src="currentUserTierIcon"
@@ -387,7 +397,7 @@ onBeforeUnmount(() => {
                 class="sidebar-tier-icon"
               />
             </strong>
-            <span>{{ currentUserTierLabel }} · {{ authStore.user?.score || 0 }}점</span>
+            <span>{{ currentUserTierLabel }} · 기여도 {{ currentUserContribution }}</span>
           </span>
         </button>
 
@@ -483,7 +493,9 @@ onBeforeUnmount(() => {
                 <span v-else class="default-avatar" aria-hidden="true"></span>
               </span>
               <span class="global-user-name">
-                {{ authStore.user?.nickname || authStore.user?.username }}
+                <span :style="currentUserNicknameStyle">
+                  {{ authStore.user?.nickname || authStore.user?.username }}
+                </span>
               </span>
               <img
                 v-if="authStore.user?.tier"

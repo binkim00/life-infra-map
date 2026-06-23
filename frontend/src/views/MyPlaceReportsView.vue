@@ -24,6 +24,32 @@ const statusLabels = {
   rejected: '반려',
 }
 
+const reportContributionRewards = {
+  tag_suggestion: 10,
+  wrong_info: 8,
+  edit_place: 12,
+  new_place: 20,
+}
+
+const getReportContributionMessage = (report) => {
+  if (report.status === 'approved') {
+    const contribution = reportContributionRewards[report.report_type] || 0
+    return contribution
+      ? `승인됨 · 기여도 +${contribution} 반영`
+      : '승인됨 · 기여도 반영 대상이 아닙니다.'
+  }
+
+  if (report.status === 'pending') {
+    return '검토 대기 · 승인되면 기여도에 반영됩니다.'
+  }
+
+  if (report.status === 'rejected') {
+    return '반려됨 · 기여도 반영 없음'
+  }
+
+  return ''
+}
+
 const fetchReports = async () => {
   try {
     isLoading.value = true
@@ -110,6 +136,9 @@ onMounted(() => {
             </div>
             <strong>{{ report.report_type_label }}</strong>
             <p>{{ report.place_name || report.suggested_name || '장소명 없음' }}</p>
+            <p class="contribution-note" :class="report.status">
+              {{ getReportContributionMessage(report) }}
+            </p>
             <div v-if="report.suggested_tags?.length" class="chip-row">
               <span v-for="tag in report.suggested_tags" :key="tag" class="chip">
                 {{ tag }}
@@ -267,6 +296,31 @@ h2 {
   color: #344054;
   font-size: 13px;
   line-height: 1.5;
+}
+
+.contribution-note {
+  width: fit-content;
+  padding: 7px 10px;
+  border-radius: 999px;
+  background: #eef2ff;
+  color: #3730a3;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.contribution-note.pending {
+  background: #fff7ed;
+  color: #9a3412;
+}
+
+.contribution-note.approved {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.contribution-note.rejected {
+  background: #fee2e2;
+  color: #991b1b;
 }
 
 .empty {

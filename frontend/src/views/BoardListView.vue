@@ -163,7 +163,9 @@ onMounted(() => {
                     />
                     <span v-else class="default-avatar" aria-hidden="true"></span>
                   </span>
-                  {{ post.author_nickname }}
+                  <span :style="post.author_nickname_color ? { color: post.author_nickname_color } : {}">
+                    {{ post.author_nickname }}
+                  </span>
                   <img
                     v-if="post.author_tier"
                     :src="getTierIcon(post.author_tier)"

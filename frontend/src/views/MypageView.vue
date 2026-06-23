@@ -82,6 +82,12 @@ const categoryLabels = {
   tourism: '관광지',
 }
 
+const getUserContribution = (user) => user?.contribution ?? user?.score ?? 0
+
+const getNicknameColorStyle = (user) => {
+  return user?.nickname_color ? { color: user.nickname_color } : {}
+}
+
 const searchModeLabels = {
   recommendation_query: '추천 검색',
   region_search: '지역 검색',
@@ -488,7 +494,9 @@ onMounted(() => {
 
               <div v-else class="nickname-display-row">
                 <h2>
-                  {{ data.user.nickname }}
+                  <span :style="getNicknameColorStyle(data.user)">
+                    {{ data.user.nickname }}
+                  </span>
                   <img
                     v-if="data.user.tier"
                     :src="getTierIcon(data.user.tier)"
@@ -520,7 +528,9 @@ onMounted(() => {
             <article>
               <span>닉네임</span>
               <strong class="profile-tier-name">
-                {{ data.user.nickname }}
+                <span :style="getNicknameColorStyle(data.user)">
+                  {{ data.user.nickname }}
+                </span>
                 <img
                   v-if="data.user.tier"
                   :src="getTierIcon(data.user.tier)"
@@ -530,8 +540,8 @@ onMounted(() => {
               </strong>
             </article>
             <article>
-              <span>티어</span>
-              <strong>{{ data.user.tier_label || '아이언' }} · {{ data.user.score || 0 }}점</strong>
+              <span>내 기여도</span>
+              <strong>기여도 {{ getUserContribution(data.user) }} · 현재 티어 {{ data.user.tier_label || '아이언' }}</strong>
             </article>
             <article>
               <span>아이디</span>
@@ -550,6 +560,10 @@ onMounted(() => {
               <strong>{{ data.user.is_staff ? '관리자 계정' : '일반 사용자' }}</strong>
             </article>
           </div>
+
+          <p class="contribution-help">
+            게시글, 댓글, 승인된 장소 제보가 기여도에 반영됩니다.
+          </p>
 
           <div v-if="data.penalty.is_suspended" class="penalty-detail">
             <strong>{{ data.penalty.is_permanent_ban ? '영구밴 상태입니다.' : '활동정지 상태입니다.' }}</strong>
@@ -1084,6 +1098,16 @@ h2 {
   height: 22px;
   flex: 0 0 auto;
   object-fit: contain;
+}
+
+.contribution-help {
+  margin: 12px 0 0;
+  padding: 12px;
+  border-radius: 12px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 13px;
+  font-weight: 800;
 }
 
 .profile-image-message {

@@ -33,6 +33,7 @@ class CommentSerializer(serializers.ModelSerializer):
     author_profile_image_url = serializers.SerializerMethodField()
     author_tier = serializers.SerializerMethodField()
     author_tier_label = serializers.SerializerMethodField()
+    author_nickname_color = serializers.SerializerMethodField()
     post_title = serializers.CharField(source="post.title", read_only=True)
     post_board_type = serializers.CharField(source="post.board_type", read_only=True)
     likes_count = serializers.IntegerField(source="comment_likes.count", read_only=True)
@@ -56,6 +57,7 @@ class CommentSerializer(serializers.ModelSerializer):
             "author_profile_image_url",
             "author_tier",
             "author_tier_label",
+            "author_nickname_color",
             "content",
             "likes_count",
             "dislikes_count",
@@ -78,6 +80,7 @@ class CommentSerializer(serializers.ModelSerializer):
             "author_profile_image_url",
             "author_tier",
             "author_tier_label",
+            "author_nickname_color",
             "likes_count",
             "dislikes_count",
             "is_liked",
@@ -120,6 +123,9 @@ class CommentSerializer(serializers.ModelSerializer):
     def get_author_tier_label(self, obj):
         return get_user_tier_info(obj.author)["tier_label"]
 
+    def get_author_nickname_color(self, obj):
+        return get_user_tier_info(obj.author)["nickname_color"]
+
     def get_replies(self, obj):
         if obj.parent_id:
             return []
@@ -138,6 +144,7 @@ class PostListSerializer(serializers.ModelSerializer):
     author_profile_image_url = serializers.SerializerMethodField()
     author_tier = serializers.SerializerMethodField()
     author_tier_label = serializers.SerializerMethodField()
+    author_nickname_color = serializers.SerializerMethodField()
     comments_count = serializers.IntegerField(source="comments.count", read_only=True)
     likes_count = serializers.IntegerField(source="post_likes.count", read_only=True)
     is_liked = serializers.SerializerMethodField()
@@ -154,6 +161,7 @@ class PostListSerializer(serializers.ModelSerializer):
             "author_profile_image_url",
             "author_tier",
             "author_tier_label",
+            "author_nickname_color",
             "board_type",
             "title",
             "image",
@@ -175,6 +183,7 @@ class PostListSerializer(serializers.ModelSerializer):
             "author_profile_image_url",
             "author_tier",
             "author_tier_label",
+            "author_nickname_color",
             "image_url",
             "view_count",
             "is_pinned",
@@ -213,6 +222,9 @@ class PostListSerializer(serializers.ModelSerializer):
     def get_author_tier_label(self, obj):
         return get_user_tier_info(obj.author)["tier_label"]
 
+    def get_author_nickname_color(self, obj):
+        return get_user_tier_info(obj.author)["nickname_color"]
+
 
 class PostDetailSerializer(serializers.ModelSerializer):
     author_username = serializers.CharField(source="author.username", read_only=True)
@@ -220,6 +232,7 @@ class PostDetailSerializer(serializers.ModelSerializer):
     author_profile_image_url = serializers.SerializerMethodField()
     author_tier = serializers.SerializerMethodField()
     author_tier_label = serializers.SerializerMethodField()
+    author_nickname_color = serializers.SerializerMethodField()
     comments = serializers.SerializerMethodField()
     comments_count = serializers.IntegerField(source="comments.count", read_only=True)
     likes_count = serializers.IntegerField(source="post_likes.count", read_only=True)
@@ -237,6 +250,7 @@ class PostDetailSerializer(serializers.ModelSerializer):
             "author_profile_image_url",
             "author_tier",
             "author_tier_label",
+            "author_nickname_color",
             "board_type",
             "title",
             "content",
@@ -260,6 +274,7 @@ class PostDetailSerializer(serializers.ModelSerializer):
             "author_profile_image_url",
             "author_tier",
             "author_tier_label",
+            "author_nickname_color",
             "image_url",
             "view_count",
             "is_pinned",
@@ -298,6 +313,9 @@ class PostDetailSerializer(serializers.ModelSerializer):
 
     def get_author_tier_label(self, obj):
         return get_user_tier_info(obj.author)["tier_label"]
+
+    def get_author_nickname_color(self, obj):
+        return get_user_tier_info(obj.author)["nickname_color"]
 
     def get_comments(self, obj):
         comments = obj.comments.filter(parent__isnull=True).prefetch_related("replies")

@@ -8,9 +8,13 @@ import diamondIcon from '@/assets/tiers/diamond.png'
 import masterIcon from '@/assets/tiers/master.png'
 import challengerIcon from '@/assets/tiers/challenger.png'
 
-const scoreRules = [
-  { label: '게시글 작성', point: '+2점', description: '자유게시판 또는 공지사항 게시글 1개 작성 기준입니다.' },
-  { label: '댓글 작성', point: '+1점', description: '게시글 댓글 1개 작성 기준입니다.' },
+const contributionRules = [
+  { label: '게시글 작성', contribution: '기여도 +2', description: '자유게시판 또는 공지사항 게시글 1개 작성 기준입니다.' },
+  { label: '댓글 작성', contribution: '기여도 +1', description: '게시글 댓글 1개 작성 기준입니다.' },
+  { label: '태그 제보 승인', contribution: '기여도 +10', description: '관리자가 장소 태그 제보를 승인하면 반영됩니다.' },
+  { label: '오류 제보 승인', contribution: '기여도 +8', description: '잘못된 장소 정보 제보가 승인되면 반영됩니다.' },
+  { label: '장소 수정 제보 승인', contribution: '기여도 +12', description: '장소 정보 수정 제보가 승인되면 반영됩니다.' },
+  { label: '새 장소 제보 승인', contribution: '기여도 +20', description: '새로운 장소 제보가 승인되면 반영됩니다.' },
 ]
 
 const tiers = [
@@ -29,7 +33,7 @@ const tiers = [
     minScore: 4,
     icon: bronzeIcon,
     tone: 'bronze',
-    condition: '4점 이상',
+    condition: '기여도 4 이상',
     description: '게시글과 댓글 활동을 시작한 사용자에게 부여됩니다.',
   },
   {
@@ -38,7 +42,7 @@ const tiers = [
     minScore: 6,
     icon: silverIcon,
     tone: 'silver',
-    condition: '6점 이상',
+    condition: '기여도 6 이상',
     description: '꾸준히 게시판 활동을 이어가는 사용자 등급입니다.',
   },
   {
@@ -47,7 +51,7 @@ const tiers = [
     minScore: 8,
     icon: goldIcon,
     tone: 'gold',
-    condition: '8점 이상',
+    condition: '기여도 8 이상',
     description: '장소 정보와 의견 공유에 적극적으로 참여한 사용자 등급입니다.',
   },
   {
@@ -56,7 +60,7 @@ const tiers = [
     minScore: 10,
     icon: platinumIcon,
     tone: 'platinum',
-    condition: '10점 이상',
+    condition: '기여도 10 이상',
     description: '서비스 커뮤니티에 안정적으로 기여한 사용자 등급입니다.',
   },
   {
@@ -65,7 +69,7 @@ const tiers = [
     minScore: 12,
     icon: diamondIcon,
     tone: 'diamond',
-    condition: '12점 이상',
+    condition: '기여도 12 이상',
     description: '활발한 활동으로 신뢰도 높은 사용자에게 부여되는 등급입니다.',
   },
   {
@@ -74,7 +78,7 @@ const tiers = [
     minScore: 14,
     icon: masterIcon,
     tone: 'master',
-    condition: '14점 이상',
+    condition: '기여도 14 이상',
     description: '게시판 활동과 소통이 매우 활발한 상위 등급입니다.',
   },
   {
@@ -83,7 +87,7 @@ const tiers = [
     minScore: 16,
     icon: challengerIcon,
     tone: 'challenger',
-    condition: '16점 이상',
+    condition: '기여도 16 이상',
     description: '현재 기준 최고 등급입니다.',
   },
 ]
@@ -97,8 +101,8 @@ const tiers = [
           <p class="eyebrow">TIER GUIDE</p>
           <h1>승급가이드</h1>
           <p class="hero-description">
-            게시글과 댓글 활동 점수를 기준으로 티어가 자동 계산됩니다.
-            점수 부여 방식과 승급 조건은 추후 서비스 운영 기준에 맞춰 조정될 수 있습니다.
+            게시글, 댓글, 승인된 장소 제보 기여도를 기준으로 티어가 자동 계산됩니다.
+            기여도 반영 기준과 승급 조건은 추후 서비스 운영 기준에 맞춰 조정될 수 있습니다.
           </p>
         </div>
       </header>
@@ -107,15 +111,15 @@ const tiers = [
         <div class="score-rule-title">
           <span class="rule-icon" aria-hidden="true">✦</span>
           <div>
-            <h2>점수 부여 방식</h2>
-            <p>현재 임시 기준입니다. 추후 활동 종류가 추가되면 점수 기준도 함께 변경할 수 있습니다.</p>
+            <h2>기여도 반영 기준</h2>
+            <p>현재 임시 기준입니다. 추후 활동 종류가 추가되면 기여도 기준도 함께 변경할 수 있습니다.</p>
           </div>
         </div>
 
         <div class="score-rule-grid">
-          <article v-for="rule in scoreRules" :key="rule.label" class="score-rule-card">
+          <article v-for="rule in contributionRules" :key="rule.label" class="score-rule-card">
             <strong>{{ rule.label }}</strong>
-            <span>{{ rule.point }}</span>
+            <span>{{ rule.contribution }}</span>
             <p>{{ rule.description }}</p>
           </article>
         </div>
@@ -149,7 +153,7 @@ const tiers = [
               <p>{{ tier.description }}</p>
 
               <div class="tier-score-line">
-                <strong>{{ tier.minScore }}점</strong>
+                <strong>기여도 {{ tier.minScore }}</strong>
                 <span v-if="tier.minScore === 0">부터 시작</span>
                 <span v-else>이상 달성 시 승급</span>
               </div>
