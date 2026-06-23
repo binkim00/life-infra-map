@@ -63,6 +63,14 @@ class Comment(models.Model):
         related_name="comments",
         verbose_name="작성자",
     )
+    parent = models.ForeignKey(
+        "self",
+        on_delete=models.CASCADE,
+        related_name="replies",
+        null=True,
+        blank=True,
+        verbose_name="부모 댓글",
+    )
 
     content = models.TextField(verbose_name="댓글 내용")
 
@@ -132,6 +140,35 @@ class CommentLike(models.Model):
 
     def __str__(self):
         return f"{self.user} likes comment {self.comment.id}"
+
+
+class CommentDislike(models.Model):
+    comment = models.ForeignKey(
+        Comment,
+        on_delete=models.CASCADE,
+        related_name="comment_dislikes",
+        verbose_name="댓글",
+    )
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="comment_dislikes",
+        verbose_name="사용자",
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="싫어요 날짜")
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["comment", "user"],
+                name="unique_comment_dislike",
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.user} dislikes comment {self.comment.id}"
 
 
 class Report(models.Model):
@@ -215,6 +252,9 @@ class Report(models.Model):
 
 class Notification(models.Model):
     TYPE_CHOICES = [
+        ("post_commented", "게시글 댓글"),
+        ("post_liked", "게시글 좋아요"),
+        ("comment_liked", "댓글 좋아요"),
         ("report_passed", "신고 패스"),
         ("report_penalty", "신고 조치"),
         ("admin_warning", "관리자 경고"),
@@ -242,6 +282,22 @@ class Notification(models.Model):
         choices=TYPE_CHOICES,
         default="system",
         verbose_name="알림 종류",
+    )
+    target_post = models.ForeignKey(
+        Post,
+        on_delete=models.SET_NULL,
+        related_name="notifications",
+        null=True,
+        blank=True,
+        verbose_name="대상 게시글",
+    )
+    target_comment = models.ForeignKey(
+        Comment,
+        on_delete=models.SET_NULL,
+        related_name="notifications",
+        null=True,
+        blank=True,
+        verbose_name="대상 댓글",
     )
     title = models.CharField(max_length=200, verbose_name="제목")
     message = models.TextField(verbose_name="내용")

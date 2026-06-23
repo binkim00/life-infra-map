@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   createComment,
@@ -8,6 +8,7 @@ import {
   getPost,
   reportComment,
   reportPost,
+  toggleCommentDislike,
   toggleCommentLike,
   togglePostLike,
   updateComment,
@@ -28,6 +29,10 @@ const reportMessage = ref('')
 const isSubmittingReport = ref(false)
 const editingCommentId = ref(null)
 const editingCommentContent = ref('')
+const replyingCommentId = ref(null)
+const replyContent = ref('')
+const collapsedReplyIds = ref(new Set())
+const openCommentMenuId = ref(null)
 
 const boardType = computed(() => route.params.boardType || 'free')
 const postId = computed(() => route.params.postId)
@@ -58,11 +63,81 @@ const fetchPost = async () => {
 
     const response = await getPost(postId.value)
     post.value = response.data
+    await nextTick()
+    scrollToCommentFromHash()
   } catch (error) {
     console.error(error)
     errorMessage.value = '게시글을 불러오지 못했습니다.'
   } finally {
     isLoading.value = false
+  }
+}
+
+const formatCommentTime = (value) => {
+  if (!value) {
+    return ''
+  }
+
+  const createdAt = new Date(value)
+  const diffMinutes = Math.floor((Date.now() - createdAt.getTime()) / 60000)
+
+  if (diffMinutes < 1) return '방금 전'
+  if (diffMinutes < 60) return `${diffMinutes}분 전`
+
+  const diffHours = Math.floor(diffMinutes / 60)
+  if (diffHours < 24) return `${diffHours}시간 전`
+
+  const diffDays = Math.floor(diffHours / 24)
+  if (diffDays < 7) return `${diffDays}일 전`
+
+  return createdAt.toLocaleDateString('ko-KR', {
+    month: '2-digit',
+    day: '2-digit',
+  }).replace(/\. /g, '.').replace(/\.$/, '')
+}
+
+const findCommentLocation = (commentId) => {
+  if (!post.value) {
+    return null
+  }
+
+  for (const comment of post.value.comments) {
+    if (comment.id === commentId) {
+      return {
+        comment,
+        list: post.value.comments,
+        index: post.value.comments.indexOf(comment),
+        parent: null,
+      }
+    }
+
+    const replyIndex = comment.replies?.findIndex((reply) => reply.id === commentId) ?? -1
+
+    if (replyIndex !== -1) {
+      return {
+        comment: comment.replies[replyIndex],
+        list: comment.replies,
+        index: replyIndex,
+        parent: comment,
+      }
+    }
+  }
+
+  return null
+}
+
+const scrollToCommentFromHash = () => {
+  if (!route.hash?.startsWith('#comment-')) {
+    return
+  }
+
+  const target = document.querySelector(route.hash)
+
+  if (target) {
+    target.scrollIntoView({
+      behavior: 'smooth',
+      block: 'center',
+    })
   }
 }
 
@@ -92,9 +167,41 @@ const handleCreateComment = async () => {
     content: commentContent.value,
   })
 
+  response.data.replies = response.data.replies || []
   post.value.comments.push(response.data)
   post.value.comments_count += 1
   commentContent.value = ''
+}
+
+const startReplyComment = (comment) => {
+  if (!authStore.isLoggedIn) {
+    router.push('/login')
+    return
+  }
+
+  replyingCommentId.value = comment.id
+  replyContent.value = ''
+}
+
+const cancelReplyComment = () => {
+  replyingCommentId.value = null
+  replyContent.value = ''
+}
+
+const handleCreateReply = async (comment) => {
+  if (!replyContent.value.trim()) {
+    return
+  }
+
+  const response = await createComment(post.value.id, {
+    content: replyContent.value,
+    parent: comment.id,
+  })
+
+  comment.replies = comment.replies || []
+  comment.replies.push(response.data)
+  post.value.comments_count += 1
+  cancelReplyComment()
 }
 
 const handleCommentLike = async (comment) => {
@@ -106,7 +213,47 @@ const handleCommentLike = async (comment) => {
   const response = await toggleCommentLike(comment.id)
 
   comment.is_liked = response.data.liked
+  comment.is_disliked = response.data.disliked
   comment.likes_count = response.data.likes_count
+  comment.dislikes_count = response.data.dislikes_count
+}
+
+const handleCommentDislike = async (comment) => {
+  if (!authStore.isLoggedIn) {
+    router.push('/login')
+    return
+  }
+
+  const response = await toggleCommentDislike(comment.id)
+
+  comment.is_liked = response.data.liked
+  comment.is_disliked = response.data.disliked
+  comment.likes_count = response.data.likes_count
+  comment.dislikes_count = response.data.dislikes_count
+}
+
+const toggleReplies = (commentId) => {
+  const next = new Set(collapsedReplyIds.value)
+
+  if (next.has(commentId)) {
+    next.delete(commentId)
+  } else {
+    next.add(commentId)
+  }
+
+  collapsedReplyIds.value = next
+}
+
+const areRepliesVisible = (commentId) => {
+  return !collapsedReplyIds.value.has(commentId)
+}
+
+const toggleCommentMenu = (commentId) => {
+  openCommentMenuId.value = openCommentMenuId.value === commentId ? null : commentId
+}
+
+const closeCommentMenu = () => {
+  openCommentMenuId.value = null
 }
 
 const handleDeletePost = async () => {
@@ -123,13 +270,22 @@ const handleDeleteComment = async (comment) => {
     return
   }
 
+  closeCommentMenu()
   await deleteComment(comment.id)
 
-  post.value.comments = post.value.comments.filter((item) => item.id !== comment.id)
-  post.value.comments_count -= 1
+  const location = findCommentLocation(comment.id)
+
+  if (!location) {
+    return
+  }
+
+  const removedCount = 1 + (location.comment.replies?.length || 0)
+  location.list.splice(location.index, 1)
+  post.value.comments_count -= removedCount
 }
 
 const startEditComment = (comment) => {
+  closeCommentMenu()
   editingCommentId.value = comment.id
   editingCommentContent.value = comment.content
 }
@@ -148,10 +304,11 @@ const handleUpdateComment = async (comment) => {
     content: editingCommentContent.value,
   })
 
-  const index = post.value.comments.findIndex((item) => item.id === comment.id)
+  const location = findCommentLocation(comment.id)
 
-  if (index !== -1) {
-    post.value.comments[index] = response.data
+  if (location) {
+    response.data.replies = location.comment.replies || response.data.replies || []
+    location.list[location.index] = response.data
   }
 
   cancelEditComment()
@@ -163,6 +320,7 @@ const openReportModal = (type, target) => {
     return
   }
 
+  closeCommentMenu()
   reportTarget.value = {
     type,
     target,
@@ -214,7 +372,20 @@ const submitReport = async () => {
 
 onMounted(() => {
   fetchPost()
+  document.addEventListener('click', closeCommentMenu)
 })
+
+onBeforeUnmount(() => {
+  document.removeEventListener('click', closeCommentMenu)
+})
+
+watch(
+  () => route.hash,
+  async () => {
+    await nextTick()
+    scrollToCommentFromHash()
+  },
+)
 </script>
 
 <template>
@@ -328,64 +499,238 @@ onMounted(() => {
           </form>
 
           <div class="comment-list">
-            <article v-for="comment in post.comments" :key="comment.id" class="comment-card">
-              <div class="comment-top">
-                <div class="comment-author-block">
-                  <strong class="author-chip">
-                    <span class="author-avatar">
-                      <img
-                        v-if="comment.author_profile_image_url"
-                        :src="comment.author_profile_image_url"
-                        :alt="comment.author_nickname"
-                      />
-                      <span v-else class="default-avatar" aria-hidden="true"></span>
-                    </span>
-                    {{ comment.author_nickname }}
-                  </strong>
-                  <span>{{ formatDateTime(comment.created_at) }} <template v-if="comment.is_edited">(수정됨)</template></span>
+            <article v-for="comment in post.comments" :id="`comment-${comment.id}`" :key="comment.id" class="comment-card">
+              <div class="comment-item">
+                <span class="comment-avatar">
+                  <img
+                    v-if="comment.author_profile_image_url"
+                    :src="comment.author_profile_image_url"
+                    :alt="comment.author_nickname"
+                  />
+                  <span v-else class="default-avatar" aria-hidden="true"></span>
+                </span>
+
+                <div class="comment-body">
+                  <div class="comment-meta-line">
+                    <strong>@{{ comment.author_username }}</strong>
+                    <span>{{ formatCommentTime(comment.created_at) }}</span>
+                    <span v-if="comment.is_edited">(수정됨)</span>
+                  </div>
+
+                  <form
+                    v-if="editingCommentId === comment.id"
+                    class="comment-edit-form"
+                    @submit.prevent="handleUpdateComment(comment)"
+                  >
+                    <textarea v-model="editingCommentContent" rows="3"></textarea>
+
+                    <div class="comment-edit-actions">
+                      <button type="button" class="comment-cancel-button" @click="cancelEditComment">
+                        취소
+                      </button>
+
+                      <button type="submit" class="comment-save-button">
+                        저장
+                      </button>
+                    </div>
+                  </form>
+
+                  <p v-else class="comment-content">{{ comment.content }}</p>
+
+                  <div class="comment-actions">
+                    <button type="button" class="icon-action-button" :class="{ active: comment.is_liked }" @click="handleCommentLike(comment)">
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M7 10v10" />
+                        <path d="M15 5.5 14 10h5.5a2 2 0 0 1 2 2.3l-1 6A2 2 0 0 1 18.5 20H7V10h3l3.2-5.1A1 1 0 0 1 15 5.5Z" />
+                      </svg>
+                      <span>{{ comment.likes_count }}</span>
+                    </button>
+
+                    <button type="button" class="icon-action-button" :class="{ active: comment.is_disliked }" @click="handleCommentDislike(comment)">
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M17 14V4" />
+                        <path d="M9 18.5 10 14H4.5a2 2 0 0 1-2-2.3l1-6A2 2 0 0 1 5.5 4H17v10h-3l-3.2 5.1A1 1 0 0 1 9 18.5Z" />
+                      </svg>
+                      <span>{{ comment.dislikes_count }}</span>
+                    </button>
+
+                    <button type="button" class="text-action-button" @click="startReplyComment(comment)">
+                      답글
+                    </button>
+
+                  </div>
+
+                  <form
+                    v-if="replyingCommentId === comment.id"
+                    class="reply-form"
+                    @submit.prevent="handleCreateReply(comment)"
+                  >
+                    <textarea v-model="replyContent" rows="2" placeholder="답글을 입력하세요"></textarea>
+                    <div class="comment-edit-actions">
+                      <button type="button" class="comment-cancel-button" @click="cancelReplyComment">
+                        취소
+                      </button>
+                      <button type="submit" class="comment-save-button">
+                        답글 등록
+                      </button>
+                    </div>
+                  </form>
+
+                  <button
+                    v-if="comment.replies?.length"
+                    type="button"
+                    class="reply-count-button"
+                    @click="toggleReplies(comment.id)"
+                  >
+                    답글 {{ comment.replies.length }}개
+                    <span :class="{ open: areRepliesVisible(comment.id) }">⌄</span>
+                  </button>
+
+                  <div v-if="comment.replies?.length && areRepliesVisible(comment.id)" class="reply-list">
+                    <article v-for="reply in comment.replies" :id="`comment-${reply.id}`" :key="reply.id" class="reply-card">
+                      <span class="comment-avatar small">
+                        <img
+                          v-if="reply.author_profile_image_url"
+                          :src="reply.author_profile_image_url"
+                          :alt="reply.author_nickname"
+                        />
+                        <span v-else class="default-avatar" aria-hidden="true"></span>
+                      </span>
+
+                      <div class="comment-body">
+                        <div class="comment-meta-line">
+                          <strong>@{{ reply.author_username }}</strong>
+                          <span>{{ formatCommentTime(reply.created_at) }}</span>
+                          <span v-if="reply.is_edited">(수정됨)</span>
+                        </div>
+
+                        <form
+                          v-if="editingCommentId === reply.id"
+                          class="comment-edit-form"
+                          @submit.prevent="handleUpdateComment(reply)"
+                        >
+                          <textarea v-model="editingCommentContent" rows="3"></textarea>
+                          <div class="comment-edit-actions">
+                            <button type="button" class="comment-cancel-button" @click="cancelEditComment">
+                              취소
+                            </button>
+                            <button type="submit" class="comment-save-button">
+                              저장
+                            </button>
+                          </div>
+                        </form>
+
+                        <p v-else class="comment-content">{{ reply.content }}</p>
+
+                        <div class="comment-actions">
+                          <button type="button" class="icon-action-button" :class="{ active: reply.is_liked }" @click="handleCommentLike(reply)">
+                            <svg viewBox="0 0 24 24" aria-hidden="true">
+                              <path d="M7 10v10" />
+                              <path d="M15 5.5 14 10h5.5a2 2 0 0 1 2 2.3l-1 6A2 2 0 0 1 18.5 20H7V10h3l3.2-5.1A1 1 0 0 1 15 5.5Z" />
+                            </svg>
+                            <span>{{ reply.likes_count }}</span>
+                          </button>
+
+                          <button type="button" class="icon-action-button" :class="{ active: reply.is_disliked }" @click="handleCommentDislike(reply)">
+                            <svg viewBox="0 0 24 24" aria-hidden="true">
+                              <path d="M17 14V4" />
+                              <path d="M9 18.5 10 14H4.5a2 2 0 0 1-2-2.3l1-6A2 2 0 0 1 5.5 4H17v10h-3l-3.2 5.1A1 1 0 0 1 9 18.5Z" />
+                            </svg>
+                            <span>{{ reply.dislikes_count }}</span>
+                          </button>
+
+                        </div>
+                      </div>
+
+                      <div
+                        v-if="authStore.user?.id === reply.author || post.board_type === 'free'"
+                        class="comment-more-menu"
+                        :class="{ open: openCommentMenuId === reply.id }"
+                        @click.stop
+                      >
+                        <button
+                          type="button"
+                          class="comment-more-button"
+                          aria-label="답글 메뉴 열기"
+                          @click="toggleCommentMenu(reply.id)"
+                        >
+                          ⋮
+                        </button>
+
+                        <div v-if="openCommentMenuId === reply.id" class="comment-menu-dropdown">
+                          <button
+                            v-if="authStore.user?.id === reply.author"
+                            type="button"
+                            @click="startEditComment(reply)"
+                          >
+                            수정
+                          </button>
+
+                          <button
+                            v-if="authStore.user?.id === reply.author"
+                            type="button"
+                            class="danger"
+                            @click="handleDeleteComment(reply)"
+                          >
+                            삭제
+                          </button>
+
+                          <button
+                            v-if="post.board_type === 'free'"
+                            type="button"
+                            @click="openReportModal('comment', reply)"
+                          >
+                            신고하기
+                          </button>
+                        </div>
+                      </div>
+                    </article>
+                  </div>
                 </div>
-                <span>좋아요 {{ comment.likes_count }}</span>
+
+                <div
+                  v-if="authStore.user?.id === comment.author || post.board_type === 'free'"
+                  class="comment-more-menu"
+                  :class="{ open: openCommentMenuId === comment.id }"
+                  @click.stop
+                >
+                  <button
+                    type="button"
+                    class="comment-more-button"
+                    aria-label="댓글 메뉴 열기"
+                    @click="toggleCommentMenu(comment.id)"
+                  >
+                    ⋮
+                  </button>
+
+                  <div v-if="openCommentMenuId === comment.id" class="comment-menu-dropdown">
+                    <button
+                      v-if="authStore.user?.id === comment.author"
+                      type="button"
+                      @click="startEditComment(comment)"
+                    >
+                      수정
+                    </button>
+
+                    <button
+                      v-if="authStore.user?.id === comment.author"
+                      type="button"
+                      class="danger"
+                      @click="handleDeleteComment(comment)"
+                    >
+                      삭제
+                    </button>
+
+                    <button
+                      v-if="post.board_type === 'free'"
+                      type="button"
+                      @click="openReportModal('comment', comment)"
+                    >
+                      신고하기
+                    </button>
+                  </div>
+                </div>
               </div>
-
-              <form
-                v-if="editingCommentId === comment.id"
-                class="comment-edit-form"
-                @submit.prevent="handleUpdateComment(comment)"
-              >
-                <textarea v-model="editingCommentContent" rows="3"></textarea>
-
-                <div class="comment-edit-actions">
-                  <button type="button" class="comment-cancel-button" @click="cancelEditComment">
-                    취소
-                  </button>
-
-                  <button type="submit" class="comment-save-button">
-                    저장
-                  </button>
-                </div>
-              </form>
-
-              <p v-else>{{ comment.content }}</p>
-
-              <button type="button" class="comment-like-button" :class="{ active: comment.is_liked }"
-                @click="handleCommentLike(comment)">
-                {{ comment.is_liked ? '댓글 좋아요 취소' : '댓글 좋아요' }}
-              </button>
-
-              <button v-if="authStore.user?.id === comment.author" type="button" class="comment-delete-button"
-                @click="handleDeleteComment(comment)">
-                댓글 삭제
-              </button>
-
-              <button v-if="authStore.user?.id === comment.author" type="button" class="comment-edit-button"
-                @click="startEditComment(comment)">
-                댓글 수정
-              </button>
-
-              <button v-if="post.board_type === 'free'" type="button" class="comment-report-button"
-                @click="openReportModal('comment', comment)">
-                신고하기
-              </button>
             </article>
 
             <p v-if="post.comments.length === 0" class="empty-text">
@@ -773,33 +1118,237 @@ onMounted(() => {
 
 .comment-list {
   display: grid;
-  gap: 10px;
+  gap: 20px;
   margin-top: 20px;
 }
 
 .comment-card {
-  padding: 16px;
-  border: 1px solid #e5e8f0;
-  border-radius: 16px;
-  background: #ffffff;
+  position: relative;
+  scroll-margin-top: 96px;
+  padding: 0;
+  border: 0;
+  background: transparent;
 }
 
-.comment-top {
+.comment-card:target {
+  border-radius: 12px;
+  background: #eff6ff;
+}
+
+.comment-item,
+.reply-card {
+  position: relative;
   display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  color: #344054;
-  font-size: 14px;
+  gap: 11px;
+  align-items: flex-start;
+  padding-right: 34px;
 }
 
-.comment-author-block {
-  display: grid;
-  gap: 4px;
+.comment-avatar {
+  position: relative;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 auto;
+  overflow: hidden;
+  border-radius: 50%;
+  background: #8fb8cc;
 }
 
-.comment-author-block span {
+.comment-avatar.small {
+  width: 32px;
+  height: 32px;
+}
+
+.comment-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.comment-body {
+  min-width: 0;
+  flex: 1;
+}
+
+.comment-meta-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  align-items: baseline;
   color: #667085;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.comment-meta-line strong {
+  color: #111827;
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.comment-content {
+  margin: 2px 0 9px;
+  color: #111827;
+  font-size: 14px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.comment-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 13px;
+  align-items: center;
+}
+
+.icon-action-button,
+.text-action-button {
+  padding: 0;
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  border: 0;
+  background: transparent;
+  color: #344054;
   font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.icon-action-button svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+
+.icon-action-button.active {
+  color: #2563eb;
+}
+
+.icon-action-button.muted {
+  color: #667085;
+}
+
+.text-action-button.danger {
+  color: #dc2626;
+}
+
+.reply-count-button {
+  margin-top: 14px;
+  padding: 0;
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  border: 0;
+  background: transparent;
+  color: #111827;
+  font-size: 14px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.reply-count-button span {
+  display: inline-block;
+  color: #344054;
+  transition: transform 0.15s ease;
+}
+
+.reply-count-button span.open {
+  transform: rotate(180deg);
+}
+
+.reply-form {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.reply-form textarea {
+  width: 100%;
+  padding: 11px 12px;
+  border: 1px solid #d0d5dd;
+  border-radius: 12px;
+  resize: vertical;
+  outline: none;
+}
+
+.reply-list {
+  display: grid;
+  gap: 14px;
+  margin-top: 14px;
+  padding-left: 18px;
+  border-left: 1px solid #e5e7eb;
+}
+
+.comment-more-menu {
+  position: absolute;
+  top: -3px;
+  right: 0;
+  z-index: 2;
+}
+
+.comment-more-menu.open {
+  z-index: 40;
+}
+
+.comment-more-button {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: #111827;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.comment-more-button:hover {
+  background: #f2f4f7;
+}
+
+.comment-menu-dropdown {
+  position: absolute;
+  top: 30px;
+  right: 0;
+  z-index: 1;
+  min-width: 104px;
+  padding: 6px;
+  display: grid;
+  gap: 2px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.14);
+}
+
+.comment-menu-dropdown button {
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #344054;
+  font-size: 13px;
+  font-weight: 800;
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.comment-menu-dropdown button:hover {
+  background: #f2f4f7;
+}
+
+.comment-menu-dropdown button.danger {
+  color: #dc2626;
 }
 
 .comment-edit-form {
@@ -847,6 +1396,10 @@ onMounted(() => {
   margin: 10px 0;
   color: #111827;
   line-height: 1.6;
+}
+
+.comment-card .comment-content {
+  margin: 2px 0 8px;
 }
 
 .comment-like-button {

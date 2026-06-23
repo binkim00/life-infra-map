@@ -9,6 +9,7 @@ urlpatterns = [
     path("posts/<int:post_id>/report/", views.report_post),
     path("comments/<int:comment_id>/", views.comment_update_delete),
     path("comments/<int:comment_id>/like/", views.toggle_comment_like),
+    path("comments/<int:comment_id>/dislike/", views.toggle_comment_dislike),
     path("comments/<int:comment_id>/report/", views.report_comment),
     path("reports/", views.report_list),
     path("reports/<int:report_id>/process/", views.process_report),

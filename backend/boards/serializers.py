@@ -30,36 +30,53 @@ class CommentSerializer(serializers.ModelSerializer):
     author_username = serializers.CharField(source="author.username", read_only=True)
     author_nickname = serializers.SerializerMethodField()
     author_profile_image_url = serializers.SerializerMethodField()
+    post_title = serializers.CharField(source="post.title", read_only=True)
+    post_board_type = serializers.CharField(source="post.board_type", read_only=True)
     likes_count = serializers.IntegerField(source="comment_likes.count", read_only=True)
+    dislikes_count = serializers.IntegerField(source="comment_dislikes.count", read_only=True)
     is_liked = serializers.SerializerMethodField()
+    is_disliked = serializers.SerializerMethodField()
     is_edited = serializers.SerializerMethodField()
+    replies = serializers.SerializerMethodField()
 
     class Meta:
         model = Comment
         fields = [
             "id",
             "post",
+            "post_title",
+            "post_board_type",
             "author",
+            "parent",
             "author_username",
             "author_nickname",
             "author_profile_image_url",
             "content",
             "likes_count",
+            "dislikes_count",
             "is_liked",
+            "is_disliked",
             "is_edited",
+            "replies",
             "created_at",
             "updated_at",
         ]
         read_only_fields = [
             "id",
             "post",
+            "post_title",
+            "post_board_type",
             "author",
+            "parent",
             "author_username",
             "author_nickname",
             "author_profile_image_url",
             "likes_count",
+            "dislikes_count",
             "is_liked",
+            "is_disliked",
             "is_edited",
+            "replies",
             "created_at",
             "updated_at",
         ]
@@ -72,6 +89,14 @@ class CommentSerializer(serializers.ModelSerializer):
 
         return obj.comment_likes.filter(user=request.user).exists()
 
+    def get_is_disliked(self, obj):
+        request = self.context.get("request")
+
+        if not request or not request.user.is_authenticated:
+            return False
+
+        return obj.comment_dislikes.filter(user=request.user).exists()
+
     def get_is_edited(self, obj):
         return is_edited(obj)
 
@@ -81,6 +106,17 @@ class CommentSerializer(serializers.ModelSerializer):
     def get_author_profile_image_url(self, obj):
         profile = get_or_create_profile(obj.author)
         return get_file_url(self, profile.profile_image)
+
+    def get_replies(self, obj):
+        if obj.parent_id:
+            return []
+
+        serializer = CommentSerializer(
+            obj.replies.all(),
+            many=True,
+            context=self.context,
+        )
+        return serializer.data
 
 
 class PostListSerializer(serializers.ModelSerializer):
@@ -157,7 +193,7 @@ class PostDetailSerializer(serializers.ModelSerializer):
     author_username = serializers.CharField(source="author.username", read_only=True)
     author_nickname = serializers.SerializerMethodField()
     author_profile_image_url = serializers.SerializerMethodField()
-    comments = CommentSerializer(many=True, read_only=True)
+    comments = serializers.SerializerMethodField()
     comments_count = serializers.IntegerField(source="comments.count", read_only=True)
     likes_count = serializers.IntegerField(source="post_likes.count", read_only=True)
     is_liked = serializers.SerializerMethodField()
@@ -225,6 +261,11 @@ class PostDetailSerializer(serializers.ModelSerializer):
     def get_author_profile_image_url(self, obj):
         profile = get_or_create_profile(obj.author)
         return get_file_url(self, profile.profile_image)
+
+    def get_comments(self, obj):
+        comments = obj.comments.filter(parent__isnull=True).prefetch_related("replies")
+        serializer = CommentSerializer(comments, many=True, context=self.context)
+        return serializer.data
 
 
 class ReportCreateSerializer(serializers.ModelSerializer):
@@ -328,6 +369,7 @@ class ReportListSerializer(serializers.ModelSerializer):
 
 class NotificationSerializer(serializers.ModelSerializer):
     sender_username = serializers.CharField(source="sender.username", read_only=True)
+    target_route = serializers.SerializerMethodField()
 
     class Meta:
         model = Notification
@@ -337,6 +379,9 @@ class NotificationSerializer(serializers.ModelSerializer):
             "sender",
             "sender_username",
             "notification_type",
+            "target_post",
+            "target_comment",
+            "target_route",
             "title",
             "message",
             "is_read",
@@ -348,9 +393,31 @@ class NotificationSerializer(serializers.ModelSerializer):
             "sender",
             "sender_username",
             "notification_type",
+            "target_post",
+            "target_comment",
+            "target_route",
             "is_read",
             "created_at",
         ]
+
+    def get_target_route(self, obj):
+        if obj.notification_type == "inquiry_answered":
+            return "/inquiries/my"
+
+        post = obj.target_post
+
+        if not post and obj.target_comment:
+            post = obj.target_comment.post
+
+        if not post:
+            return ""
+
+        route = f"/boards/{post.board_type}/{post.id}"
+
+        if obj.target_comment_id:
+            return f"{route}#comment-{obj.target_comment_id}"
+
+        return route
 
 
 class InquirySerializer(serializers.ModelSerializer):
@@ -397,6 +464,47 @@ class InquirySerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("문의 내용은 5자 이상 입력해주세요.")
 
         return value.strip()
+
+
+class InquiryHistorySerializer(serializers.ModelSerializer):
+    replied_by_username = serializers.CharField(source="replied_by.username", read_only=True)
+
+    class Meta:
+        model = Inquiry
+        fields = [
+            "id",
+            "title",
+            "content",
+            "status",
+            "admin_reply",
+            "replied_by_username",
+            "replied_at",
+            "created_at",
+        ]
+
+
+class AdminInquirySerializer(InquirySerializer):
+    previous_inquiries = serializers.SerializerMethodField()
+    previous_inquiries_count = serializers.SerializerMethodField()
+
+    class Meta(InquirySerializer.Meta):
+        fields = InquirySerializer.Meta.fields + [
+            "previous_inquiries",
+            "previous_inquiries_count",
+        ]
+        read_only_fields = InquirySerializer.Meta.read_only_fields + [
+            "previous_inquiries",
+            "previous_inquiries_count",
+        ]
+
+    def get_previous_queryset(self, obj):
+        return Inquiry.objects.filter(author=obj.author).exclude(id=obj.id).order_by("-created_at")
+
+    def get_previous_inquiries(self, obj):
+        return InquiryHistorySerializer(self.get_previous_queryset(obj), many=True).data
+
+    def get_previous_inquiries_count(self, obj):
+        return self.get_previous_queryset(obj).count()
 
 
 class InquiryAdminUpdateSerializer(serializers.ModelSerializer):

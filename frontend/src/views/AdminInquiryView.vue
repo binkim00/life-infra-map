@@ -9,6 +9,7 @@ const authStore = useAuthStore()
 const inquiries = ref([])
 const replies = ref({})
 const errorMessage = ref('')
+const openedHistoryIds = ref(new Set())
 
 const fetchInquiries = async () => {
   if (authStore.isLoggedIn && !authStore.user?.is_staff) {
@@ -38,6 +39,25 @@ const submitReply = async (inquiry) => {
   Object.assign(inquiry, response.data)
 }
 
+const toggleHistory = (inquiryId) => {
+  const next = new Set(openedHistoryIds.value)
+
+  if (next.has(inquiryId)) {
+    next.delete(inquiryId)
+  } else {
+    next.add(inquiryId)
+  }
+
+  openedHistoryIds.value = next
+}
+
+const isHistoryOpen = (inquiryId) => openedHistoryIds.value.has(inquiryId)
+
+const formatDateTime = (value) => {
+  if (!value) return ''
+  return new Date(value).toLocaleString()
+}
+
 onMounted(fetchInquiries)
 </script>
 
@@ -57,10 +77,35 @@ onMounted(fetchInquiries)
         <div class="top">
           <span class="badge">{{ inquiry.status === 'answered' ? '답변 완료' : '대기' }}</span>
           <span>{{ inquiry.author_username }}</span>
-          <span>{{ new Date(inquiry.created_at).toLocaleString() }}</span>
+          <span>{{ formatDateTime(inquiry.created_at) }}</span>
         </div>
         <h2>{{ inquiry.title }}</h2>
         <p class="content">{{ inquiry.content }}</p>
+
+        <section v-if="inquiry.previous_inquiries_count" class="history-box">
+          <button type="button" class="history-toggle" @click="toggleHistory(inquiry.id)">
+            이 유저의 이전 문의 {{ inquiry.previous_inquiries_count }}건
+            <span :class="{ opened: isHistoryOpen(inquiry.id) }">⌄</span>
+          </button>
+
+          <div v-if="isHistoryOpen(inquiry.id)" class="history-list">
+            <article v-for="history in inquiry.previous_inquiries" :key="history.id" class="history-item">
+              <div class="history-top">
+                <span class="history-status">{{ history.status === 'answered' ? '답변 완료' : history.status === 'closed' ? '종료' : '대기' }}</span>
+                <strong>{{ history.title }}</strong>
+                <span>{{ formatDateTime(history.created_at) }}</span>
+              </div>
+
+              <p>{{ history.content }}</p>
+
+              <div v-if="history.admin_reply" class="history-reply">
+                <strong>답변</strong>
+                <p>{{ history.admin_reply }}</p>
+              </div>
+            </article>
+          </div>
+        </section>
+
         <div v-if="inquiry.status === 'answered' || inquiry.status === 'closed'" class="reply-box">
           <strong>관리자 답변</strong>
           <p>{{ inquiry.admin_reply || '등록된 답변이 없습니다.' }}</p>
@@ -86,6 +131,19 @@ h1, h2 { margin: 0; color: #111827; }
 .top { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; color: #667085; font-size: 13px; font-weight: 800; }
 .badge { padding: 5px 9px; border-radius: 999px; background: #fff7ed; color: #f97316; }
 .content { padding: 14px; border-radius: 14px; background: #f9fafb; white-space: pre-wrap; }
+.history-box { margin: 12px 0; border: 1px solid #e5e8f0; border-radius: 14px; background: #fcfcfd; overflow: hidden; }
+.history-toggle { width: 100%; margin: 0; padding: 12px 14px; display: flex; justify-content: space-between; align-items: center; border: 0; border-radius: 0; background: transparent; color: #344054; font-weight: 900; text-align: left; cursor: pointer; }
+.history-toggle:hover { background: #f9fafb; }
+.history-toggle span { transition: transform .15s ease; }
+.history-toggle span.opened { transform: rotate(180deg); }
+.history-list { display: grid; gap: 10px; padding: 0 12px 12px; }
+.history-item { padding: 12px; border-radius: 12px; background: #fff; border: 1px solid #eef2f7; }
+.history-top { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; color: #667085; font-size: 12px; font-weight: 800; }
+.history-top strong { color: #111827; font-size: 14px; }
+.history-status { padding: 4px 7px; border-radius: 999px; background: #eef2ff; color: #2563eb; }
+.history-item p { margin: 9px 0 0; color: #344054; line-height: 1.55; white-space: pre-wrap; }
+.history-reply { margin-top: 10px; padding: 10px; border-radius: 10px; background: #eff6ff; color: #1d4ed8; }
+.history-reply p { margin-top: 5px; }
 .reply-box { margin-top: 12px; padding: 14px; border-radius: 14px; background: #eff6ff; color: #1d4ed8; }
 .reply-box p { margin: 6px 0 0; color: #344054; white-space: pre-wrap; }
 textarea { width: 100%; padding: 14px; border: 1px solid #d0d5dd; border-radius: 14px; outline: none; }

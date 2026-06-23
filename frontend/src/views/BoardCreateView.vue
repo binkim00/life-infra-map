@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { createPost } from '@/api/boards'
 import { useAuthStore } from '@/stores/auth'
@@ -65,6 +65,12 @@ const handleSubmit = async () => {
     isLoading.value = false
   }
 }
+
+onMounted(() => {
+  if (boardType.value === 'notice' && !authStore.user?.is_staff) {
+    router.replace('/boards/notice')
+  }
+})
 </script>
 
 <template>

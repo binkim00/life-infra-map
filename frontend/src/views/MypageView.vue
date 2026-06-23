@@ -301,10 +301,15 @@ onMounted(() => {
 
         <section v-else-if="selectedSection === 'comments'" class="panel">
           <h2>내가 쓴 댓글</h2>
-          <div v-for="comment in data.comments" :key="comment.id" class="activity-item">
+          <RouterLink
+            v-for="comment in data.comments"
+            :key="comment.id"
+            :to="`/boards/${comment.post_board_type}/${comment.post}#comment-${comment.id}`"
+            class="activity-item link-item"
+          >
             <strong>{{ comment.content }}</strong>
-            <span>{{ new Date(comment.created_at).toLocaleDateString() }}</span>
-          </div>
+            <span>{{ comment.post_title }} · {{ new Date(comment.created_at).toLocaleDateString() }}</span>
+          </RouterLink>
           <p v-if="data.comments.length === 0" class="empty">작성한 댓글이 없습니다.</p>
         </section>
 

@@ -56,6 +56,10 @@ export const toggleCommentLike = (commentId) => {
   return api.post(`/boards/comments/${commentId}/like/`)
 }
 
+export const toggleCommentDislike = (commentId) => {
+  return api.post(`/boards/comments/${commentId}/dislike/`)
+}
+
 export const reportPost = (postId, payload) => {
   return api.post(`/boards/posts/${postId}/report/`, payload)
 }

@@ -1,30 +1,41 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { getNotifications } from '@/api/boards'
+import { getNotifications, markAllNotificationsRead } from '@/api/boards'
 import { useAuthStore } from '@/stores/auth'
+import { useSettingsStore } from '@/stores/settings'
 
 const isSidebarCollapsed = ref(false)
 
 const authStore = useAuthStore()
+const settingsStore = useSettingsStore()
 const route = useRoute()
 const router = useRouter()
 const notifications = ref([])
 const isAccountMenuOpen = ref(false)
+const isSidebarAccountMenuOpen = ref(false)
 const isNotificationMenuOpen = ref(false)
+const notificationMenuRef = ref(null)
+const accountMenuRef = ref(null)
+const sidebarProfileRef = ref(null)
 let notificationTimer = null
 
 const handleLogout = async () => {
+  closeAllDropdowns()
   await authStore.logout()
   router.push('/')
 }
 
+const visibleNotifications = computed(() => {
+  return notifications.value.filter(settingsStore.isNotificationVisible)
+})
+
 const unreadNotificationCount = computed(() => {
-  return notifications.value.filter((notification) => !notification.is_read).length
+  return visibleNotifications.value.filter((notification) => !notification.is_read).length
 })
 
 const recentNotifications = computed(() => {
-  return notifications.value.slice(0, 6)
+  return visibleNotifications.value.slice(0, 6)
 })
 
 const formatNotificationTime = (value) => {
@@ -77,6 +88,78 @@ const fetchNotifications = async () => {
   }
 }
 
+const markNotificationsReadLocally = () => {
+  notifications.value = notifications.value.map((notification) => ({
+    ...notification,
+    is_read: true,
+  }))
+}
+
+const openNotificationMenu = async () => {
+  const willOpen = !isNotificationMenuOpen.value
+  isNotificationMenuOpen.value = willOpen
+  isAccountMenuOpen.value = false
+  isSidebarAccountMenuOpen.value = false
+
+  if (!willOpen || unreadNotificationCount.value === 0) {
+    return
+  }
+
+  markNotificationsReadLocally()
+
+  try {
+    await markAllNotificationsRead()
+  } catch (error) {
+    console.error(error)
+    fetchNotifications()
+  }
+}
+
+const moveToNotificationTarget = (notification) => {
+  closeAllDropdowns()
+
+  if (notification.notification_type === 'inquiry_answered') {
+    router.push('/inquiries/my')
+    return
+  }
+
+  router.push(notification.target_route || '/')
+}
+
+const closeAllDropdowns = () => {
+  isNotificationMenuOpen.value = false
+  isAccountMenuOpen.value = false
+  isSidebarAccountMenuOpen.value = false
+}
+
+const toggleAccountMenu = () => {
+  const willOpen = !isAccountMenuOpen.value
+  isAccountMenuOpen.value = willOpen
+  isNotificationMenuOpen.value = false
+  isSidebarAccountMenuOpen.value = false
+}
+
+const toggleSidebarAccountMenu = () => {
+  const willOpen = !isSidebarAccountMenuOpen.value
+  isSidebarAccountMenuOpen.value = willOpen
+  isNotificationMenuOpen.value = false
+  isAccountMenuOpen.value = false
+}
+
+const handleDocumentClick = (event) => {
+  const target = event.target
+
+  if (
+    notificationMenuRef.value?.contains(target)
+    || accountMenuRef.value?.contains(target)
+    || sidebarProfileRef.value?.contains(target)
+  ) {
+    return
+  }
+
+  closeAllDropdowns()
+}
+
 const startNotificationPolling = () => {
   if (notificationTimer) {
     window.clearInterval(notificationTimer)
@@ -86,6 +169,8 @@ const startNotificationPolling = () => {
 }
 
 onMounted(() => {
+  document.addEventListener('click', handleDocumentClick)
+
   authStore.fetchMe()
     .then(() => {
       fetchNotifications()
@@ -106,6 +191,7 @@ watch(
     }
 
     notifications.value = []
+    isSidebarAccountMenuOpen.value = false
 
     if (notificationTimer) {
       window.clearInterval(notificationTimer)
@@ -117,11 +203,14 @@ watch(
 watch(
   () => route.fullPath,
   () => {
+    isSidebarAccountMenuOpen.value = false
     fetchNotifications()
   },
 )
 
 onBeforeUnmount(() => {
+  document.removeEventListener('click', handleDocumentClick)
+
   if (notificationTimer) {
     window.clearInterval(notificationTimer)
   }
@@ -129,7 +218,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="app-shell" :class="{ 'is-sidebar-collapsed': isSidebarCollapsed }">
+  <div class="app-shell" :class="{ 'is-sidebar-collapsed': isSidebarCollapsed, 'is-compact-mode': settingsStore.compactMode }">
     <aside class="app-sidebar">
       <RouterLink to="/" class="brand">
         <span class="brand-mark">틈</span>
@@ -164,7 +253,7 @@ onBeforeUnmount(() => {
           <span class="nav-text">홈</span>
         </RouterLink>
 
-        <RouterLink to="/boards/free" class="nav-link">
+        <RouterLink to="/boards/notice" class="nav-link">
           <span class="nav-icon" aria-hidden="true">
             <svg viewBox="0 0 24 24">
               <path d="M6 4h11a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z" />
@@ -174,7 +263,39 @@ onBeforeUnmount(() => {
               <path d="M11 12h5" />
             </svg>
           </span>
-          <span class="nav-text">게시판</span>
+          <span class="nav-text">공지사항</span>
+        </RouterLink>
+
+        <RouterLink to="/boards/free" class="nav-link">
+          <span class="nav-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <path d="M4 5h16" />
+              <path d="M4 12h16" />
+              <path d="M4 19h10" />
+            </svg>
+          </span>
+          <span class="nav-text">자유게시판</span>
+        </RouterLink>
+
+        <RouterLink v-if="authStore.isLoggedIn" to="/mypage" class="nav-link">
+          <span class="nav-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <path d="M20 21a8 8 0 0 0-16 0" />
+              <path d="M12 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10Z" />
+            </svg>
+          </span>
+          <span class="nav-text">마이페이지</span>
+        </RouterLink>
+
+        <RouterLink v-if="authStore.isLoggedIn" to="/inquiries/my" class="nav-link">
+          <span class="nav-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4Z" />
+              <path d="M8 9h8" />
+              <path d="M8 13h5" />
+            </svg>
+          </span>
+          <span class="nav-text">고객센터</span>
         </RouterLink>
 
         <RouterLink v-if="authStore.user?.is_staff" to="/admin/reports" class="nav-link">
@@ -189,18 +310,91 @@ onBeforeUnmount(() => {
           <span class="nav-text">문의 관리</span>
         </RouterLink>
       </nav>
+
+      <div v-if="authStore.isLoggedIn" ref="sidebarProfileRef" class="sidebar-profile">
+        <button
+          type="button"
+          class="sidebar-profile-link"
+          :aria-expanded="isSidebarAccountMenuOpen"
+          @click="toggleSidebarAccountMenu"
+        >
+          <span class="sidebar-avatar">
+            <img
+              v-if="authStore.user?.profile_image_url"
+              :src="authStore.user.profile_image_url"
+              :alt="authStore.user?.nickname || authStore.user?.username"
+            />
+            <span v-else class="default-avatar" aria-hidden="true"></span>
+          </span>
+          <span class="sidebar-profile-copy">
+            <strong>{{ authStore.user?.nickname || authStore.user?.username }}</strong>
+            <span>Plus</span>
+          </span>
+        </button>
+
+        <div v-if="isSidebarAccountMenuOpen" class="sidebar-account-dropdown">
+          <RouterLink
+            :to="{ path: '/mypage', query: { section: 'profile' } }"
+            class="account-menu-button"
+            :class="{ active: isMypageActive }"
+            @click="isSidebarAccountMenuOpen = false"
+          >
+            <span>마이페이지</span>
+          </RouterLink>
+
+          <RouterLink
+            to="/inquiries/my"
+            class="account-menu-button"
+            :class="{ active: isCustomerCenterActive }"
+            @click="isSidebarAccountMenuOpen = false"
+          >
+            <span>고객센터</span>
+          </RouterLink>
+
+          <button type="button" class="account-logout-button" @click="handleLogout">
+            로그아웃
+          </button>
+        </div>
+
+        <div class="sidebar-profile-actions">
+          <RouterLink
+            to="/settings"
+            class="sidebar-icon-button"
+            aria-label="설정"
+            title="설정"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 15.5A3.5 3.5 0 1 0 12 8a3.5 3.5 0 0 0 0 7.5Z" />
+              <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.7 1.7 0 0 0 15 19.36a1.7 1.7 0 0 0-1 .58V20a2 2 0 1 1-4 0v-.08a1.7 1.7 0 0 0-1-.58 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.64 15a1.7 1.7 0 0 0-.58-1H4a2 2 0 1 1 0-4h.08a1.7 1.7 0 0 0 .58-1 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.64a1.7 1.7 0 0 0 1-.58V4a2 2 0 1 1 4 0v.08a1.7 1.7 0 0 0 1 .58 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.36 9c.2.35.39.69.58 1H20a2 2 0 1 1 0 4h-.08a1.7 1.7 0 0 0-.52 1Z" />
+            </svg>
+          </RouterLink>
+
+          <RouterLink
+            to="/guide"
+            class="sidebar-icon-button"
+            aria-label="이용가이드"
+            title="이용가이드"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20Z" />
+              <path d="M12 8v5" />
+              <path d="M12 16h.01" />
+            </svg>
+          </RouterLink>
+        </div>
+      </div>
     </aside>
 
     <div class="app-main">
       <div class="global-account-bar">
         <template v-if="authStore.isLoggedIn">
-          <div class="global-notification-menu">
+          <div ref="notificationMenuRef" class="global-notification-menu">
             <button
               type="button"
               class="global-notification-button"
               :aria-expanded="isNotificationMenuOpen"
               aria-label="알림"
-              @click="isNotificationMenuOpen = !isNotificationMenuOpen"
+              @click="openNotificationMenu"
             >
               <svg viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" />
@@ -222,6 +416,10 @@ onBeforeUnmount(() => {
                   :key="notification.id"
                   class="notification-dropdown-item"
                   :class="{ unread: !notification.is_read }"
+                  role="button"
+                  tabindex="0"
+                  @click="moveToNotificationTarget(notification)"
+                  @keyup.enter="moveToNotificationTarget(notification)"
                 >
                   <span class="notification-dot" aria-hidden="true"></span>
                   <div class="notification-copy">
@@ -236,12 +434,12 @@ onBeforeUnmount(() => {
             </div>
           </div>
 
-          <div class="global-account-menu">
+          <div ref="accountMenuRef" class="global-account-menu">
             <button
               type="button"
               class="global-user-link"
               :aria-expanded="isAccountMenuOpen"
-              @click="isAccountMenuOpen = !isAccountMenuOpen"
+              @click="toggleAccountMenu"
             >
               <span class="global-avatar">
                 <img
@@ -428,6 +626,126 @@ input {
   gap: 8px;
 }
 
+.sidebar-profile {
+  position: relative;
+  margin-top: auto;
+  min-height: 58px;
+  padding: 8px 10px;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: center;
+  border-top: 1px solid #e5e8f0;
+  background: #ffffff;
+}
+
+.sidebar-profile-link {
+  min-width: 0;
+  flex: 1 1 auto;
+  padding: 0;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.sidebar-avatar {
+  position: relative;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  overflow: hidden;
+  border-radius: 50%;
+  background: #8fb8cc;
+}
+
+.sidebar-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.sidebar-profile-copy {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.sidebar-profile-copy strong,
+.sidebar-profile-copy span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-profile-copy strong {
+  color: #111827;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.sidebar-profile-copy span {
+  color: #667085;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.sidebar-profile-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 4px;
+}
+
+.sidebar-icon-button {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  display: inline-grid;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #71717a;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.sidebar-icon-button:hover {
+  border-color: #2563eb;
+  color: #2563eb;
+  background: #eff6ff;
+}
+
+.sidebar-icon-button svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+
+.sidebar-account-dropdown {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: calc(100% + 8px);
+  z-index: 95;
+  padding: 10px;
+  display: grid;
+  gap: 6px;
+  border: 1px solid #e5e8f0;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 18px 40px rgba(20, 35, 70, 0.18);
+  backdrop-filter: blur(10px);
+}
+
 .nav-link {
   width: 100%;
   padding: 11px 12px;
@@ -518,6 +836,21 @@ input {
   width: 100%;
 }
 
+.app-shell.is-sidebar-collapsed .sidebar-profile {
+  width: 100%;
+  padding: 8px;
+  place-items: center;
+}
+
+.app-shell.is-sidebar-collapsed .sidebar-profile-link {
+  justify-content: center;
+}
+
+.app-shell.is-sidebar-collapsed .sidebar-profile-copy,
+.app-shell.is-sidebar-collapsed .sidebar-profile-actions {
+  display: none;
+}
+
 .app-shell.is-sidebar-collapsed .nav-link {
   justify-content: center;
   padding: 8px;
@@ -543,6 +876,26 @@ input {
   min-width: 0;
   position: relative;
   padding-top: 68px;
+}
+
+.app-shell.is-compact-mode .board-table th,
+.app-shell.is-compact-mode .board-table td,
+.app-shell.is-compact-mode .inquiry-table th,
+.app-shell.is-compact-mode .inquiry-table td {
+  height: 26px;
+  padding-right: 6px;
+  padding-left: 6px;
+  font-size: 12px;
+}
+
+.app-shell.is-compact-mode .board-table,
+.app-shell.is-compact-mode .inquiry-table {
+  font-size: 12px;
+}
+
+.app-shell.is-compact-mode .board-page,
+.app-shell.is-compact-mode .page {
+  padding-top: 28px;
 }
 
 .global-account-bar {
@@ -625,10 +978,17 @@ input {
   display: grid;
   gap: 4px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  cursor: pointer;
 }
 
 .notification-dropdown-item:last-child {
   border-bottom: 0;
+}
+
+.notification-dropdown-item:hover,
+.notification-dropdown-item:focus-visible {
+  background: rgba(255, 255, 255, 0.06);
+  outline: none;
 }
 
 .notification-dropdown-item.unread .notification-dot {
@@ -884,6 +1244,11 @@ input {
   }
 
   .app-shell.is-sidebar-collapsed .side-nav {
+    display: none;
+  }
+
+  .sidebar-profile,
+  .app-shell.is-sidebar-collapsed .sidebar-profile {
     display: none;
   }
 

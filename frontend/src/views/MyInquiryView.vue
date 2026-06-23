@@ -9,6 +9,7 @@ const authStore = useAuthStore()
 const inquiries = ref([])
 const isLoading = ref(false)
 const errorMessage = ref('')
+const openedInquiryId = ref(null)
 
 const statusLabel = (status) => {
   if (status === 'answered') {
@@ -16,6 +17,34 @@ const statusLabel = (status) => {
   }
 
   return '답변대기'
+}
+
+const formatBoardDate = (value) => {
+  if (!value) {
+    return ''
+  }
+
+  const date = new Date(value)
+  const now = new Date()
+  const isToday = date.toDateString() === now.toDateString()
+
+  if (isToday) {
+    return date.toLocaleTimeString('ko-KR', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    })
+  }
+
+  return date.toLocaleDateString('ko-KR', {
+    year: '2-digit',
+    month: '2-digit',
+    day: '2-digit',
+  }).replace(/\. /g, '.').replace(/\.$/, '')
+}
+
+const toggleInquiry = (inquiryId) => {
+  openedInquiryId.value = openedInquiryId.value === inquiryId ? null : inquiryId
 }
 
 const fetchInquiries = async () => {
@@ -56,25 +85,75 @@ onMounted(fetchInquiries)
       <p v-if="isLoading" class="status-card">문의 내역을 불러오는 중입니다.</p>
       <p v-else-if="errorMessage" class="status-card error">{{ errorMessage }}</p>
 
-      <section v-else class="inquiry-list">
-        <article v-for="inquiry in inquiries" :key="inquiry.id" class="inquiry-card">
-          <div class="inquiry-header">
-            <div>
-              <h2>{{ inquiry.title }}</h2>
-              <p>{{ new Date(inquiry.created_at).toLocaleString() }}</p>
-            </div>
-            <span class="status-badge" :class="{ answered: inquiry.status === 'answered' }">
-              {{ statusLabel(inquiry.status) }}
-            </span>
-          </div>
+      <section v-else class="inquiry-board">
+        <table class="inquiry-table">
+          <colgroup>
+            <col class="col-number" />
+            <col class="col-category" />
+            <col class="col-title" />
+            <col class="col-author" />
+            <col class="col-date" />
+            <col class="col-status" />
+          </colgroup>
 
-          <p class="inquiry-content">{{ inquiry.content }}</p>
+          <thead>
+            <tr>
+              <th>번호</th>
+              <th>말머리</th>
+              <th>제목</th>
+              <th>글쓴이</th>
+              <th>작성일</th>
+              <th>상태</th>
+            </tr>
+          </thead>
 
-          <div v-if="inquiry.status === 'answered'" class="reply-box">
-            <strong>답변 내용</strong>
-            <p>{{ inquiry.admin_reply || '등록된 답변 내용이 없습니다.' }}</p>
-          </div>
-        </article>
+          <tbody>
+            <template v-for="inquiry in inquiries" :key="inquiry.id">
+              <tr
+                class="inquiry-row"
+                :class="{ opened: openedInquiryId === inquiry.id }"
+                tabindex="0"
+                @click="toggleInquiry(inquiry.id)"
+                @keyup.enter="toggleInquiry(inquiry.id)"
+              >
+                <td>{{ inquiry.id }}</td>
+                <td>
+                  <span class="category-label">문의</span>
+                </td>
+                <td class="title-cell">
+                  <button type="button" class="title-button">
+                    {{ inquiry.title }}
+                  </button>
+                </td>
+                <td>{{ authStore.user?.nickname || authStore.user?.username || '나' }}</td>
+                <td>{{ formatBoardDate(inquiry.created_at) }}</td>
+                <td>
+                  <span class="status-badge" :class="{ answered: inquiry.status === 'answered' }">
+                    {{ statusLabel(inquiry.status) }}
+                  </span>
+                </td>
+              </tr>
+
+              <tr v-if="openedInquiryId === inquiry.id" class="inquiry-detail-row">
+                <td colspan="6">
+                  <div class="inquiry-detail">
+                    <section>
+                      <strong>문의 내용</strong>
+                      <p>{{ inquiry.content }}</p>
+                    </section>
+
+                    <section>
+                      <strong>답변 내용</strong>
+                      <p>
+                        {{ inquiry.status === 'answered' ? (inquiry.admin_reply || '등록된 답변 내용이 없습니다.') : '아직 답변을 기다리고 있습니다.' }}
+                      </p>
+                    </section>
+                  </div>
+                </td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
 
         <p v-if="inquiries.length === 0" class="status-card">
           작성한 문의가 없습니다.
@@ -92,7 +171,7 @@ onMounted(fetchInquiries)
 }
 
 .container {
-  max-width: 880px;
+  max-width: 1120px;
   margin: 0 auto;
 }
 
@@ -131,51 +210,101 @@ h2 {
   text-decoration: none;
 }
 
-.inquiry-list {
-  display: grid;
-  gap: 12px;
-}
-
-.inquiry-card,
+.inquiry-board,
 .status-card {
   border: 1px solid #e5e8f0;
   border-radius: 8px;
   background: #ffffff;
-  box-shadow: 0 10px 28px rgba(20, 35, 70, 0.08);
+  box-shadow: 0 10px 28px rgba(20, 35, 70, 0.06);
 }
 
-.inquiry-card {
-  padding: 20px;
-  display: grid;
-  gap: 14px;
+.inquiry-board {
+  overflow: hidden;
 }
 
-.inquiry-header {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  align-items: flex-start;
-}
-
-.inquiry-header h2 {
-  font-size: 20px;
-  line-height: 1.35;
-}
-
-.inquiry-header p {
-  margin: 5px 0 0;
-  color: #667085;
+.inquiry-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  color: #111827;
   font-size: 13px;
-  font-weight: 700;
+}
+
+.inquiry-table th,
+.inquiry-table td {
+  height: 30px;
+  padding: 0 8px;
+  border-bottom: 1px solid #edf0f4;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.inquiry-table th {
+  border-bottom-color: #cfd6e2;
+  background: #fbfcfe;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.inquiry-row {
+  cursor: pointer;
+}
+
+.inquiry-row:hover,
+.inquiry-row:focus-visible,
+.inquiry-row.opened {
+  background: #f4f7fb;
+  outline: none;
+}
+
+.inquiry-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.col-number { width: 70px; }
+.col-category { width: 86px; }
+.col-author { width: 120px; }
+.col-date { width: 90px; }
+.col-status { width: 110px; }
+
+.title-cell {
+  text-align: left;
+}
+
+.title-button {
+  width: 100%;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  background: transparent;
+  color: #111827;
+  font-size: 13px;
+  font-weight: 800;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.inquiry-row:hover .title-button {
+  color: #dc2626;
+  text-decoration: underline;
+}
+
+.category-label {
+  color: #2563eb;
+  font-weight: 900;
 }
 
 .status-badge {
-  flex: 0 0 auto;
-  padding: 6px 10px;
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
   border-radius: 999px;
   background: #fef3c7;
   color: #92400e;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 900;
 }
 
@@ -184,27 +313,30 @@ h2 {
   color: #166534;
 }
 
-.inquiry-content {
-  margin: 0;
-  color: #344054;
-  line-height: 1.7;
-  white-space: pre-wrap;
+.inquiry-detail-row td {
+  height: auto;
+  padding: 0;
+  background: #fbfcfe;
+  text-align: left;
 }
 
-.reply-box {
-  padding: 14px;
+.inquiry-detail {
+  padding: 16px 22px;
+  display: grid;
+  gap: 12px;
+}
+
+.inquiry-detail section {
   display: grid;
   gap: 6px;
-  border-radius: 8px;
-  background: #f9fafb;
 }
 
-.reply-box strong {
+.inquiry-detail strong {
   color: #111827;
   font-size: 14px;
 }
 
-.reply-box p {
+.inquiry-detail p {
   margin: 0;
   color: #344054;
   line-height: 1.7;
@@ -232,13 +364,12 @@ h2 {
     flex-direction: column;
   }
 
-  .inquiry-header {
-    align-items: stretch;
-    flex-direction: column;
+  .inquiry-board {
+    overflow-x: auto;
   }
 
-  .status-badge {
-    width: fit-content;
+  .inquiry-table {
+    min-width: 680px;
   }
 }
 </style>
