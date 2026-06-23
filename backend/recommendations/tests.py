@@ -3579,6 +3579,113 @@ class RecommendationSearchTests(TestCase):
         self.assertIn("소금빵", salt_bread_plan["search_plan"]["menu_keywords"])
 
     @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=False)
+    def test_intent_router_searches_work_cafe_query(self):
+        plan = build_conversational_search_plan("서면역 근처 조용히 작업할 카페 찾아줘")
+
+        self.assertEqual(plan["action"], "search")
+        self.assertEqual(plan["intent_type"], "place_recommendation")
+        self.assertFalse(plan["needs_clarification"])
+        self.assertEqual(plan["search_plan"]["scenario"], "work_cafe")
+        self.assertEqual(plan["search_plan"]["locationQuery"], "서면역")
+        self.assertIn("조용함", plan["conditions"])
+
+    @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=False)
+    def test_intent_router_searches_menu_matjip_query(self):
+        plan = build_conversational_search_plan("사상역 소금빵 맛집 찾아줘")
+
+        self.assertEqual(plan["action"], "search")
+        self.assertEqual(plan["search_plan"]["locationQuery"], "사상역")
+        self.assertEqual(plan["search_plan"]["scenario"], "restaurant")
+        self.assertIn("소금빵", plan["search_plan"]["menu_keywords"])
+        self.assertIn("소금빵 맛집", plan["search_plan"]["targetQuery"])
+
+    @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=False)
+    def test_intent_router_searches_walk_healing_query(self):
+        plan = build_conversational_search_plan("하단역 산책할 곳 추천해줘")
+
+        self.assertEqual(plan["action"], "search")
+        self.assertEqual(plan["search_plan"]["scenario"], "walk_healing")
+        self.assertEqual(plan["search_plan"]["locationQuery"], "하단역")
+
+    @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=False)
+    def test_intent_router_asks_for_vague_place_recommendation(self):
+        plan = build_conversational_search_plan("좋은 곳 추천해줘")
+
+        self.assertEqual(plan["action"], "ask_clarification")
+        self.assertTrue(plan["needs_clarification"])
+        self.assertIn("어떤 상황", plan["clarification_question"])
+        self.assertIn("지역과 목적", plan["clarification_question"])
+
+    @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=False)
+    def test_intent_router_asks_for_refinement_without_previous_context(self):
+        plan = build_conversational_search_plan("거기 말고 더 조용한 데")
+
+        self.assertEqual(plan["action"], "ask_clarification")
+        self.assertTrue(plan["needs_clarification"])
+        self.assertIn("이전 검색 결과가 없어서", plan["clarification_question"])
+        self.assertIn("지역과 원하는 장소 종류", plan["message"])
+
+    @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=False)
+    def test_intent_router_prioritizes_smoking_area_for_smoking_zone_query(self):
+        plan = build_conversational_search_plan("흡연구역 찾아줘")
+
+        self.assertEqual(plan["action"], "search")
+        self.assertEqual(plan["search_plan"]["scenario"], "smoking_area")
+        self.assertEqual(plan["search_plan"]["targetQuery"], "흡연구역")
+        self.assertEqual(plan["search_plan"]["requestedConditions"], [])
+
+    @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=False)
+    def test_intent_router_prioritizes_smoking_area_for_cigarette_place_query(self):
+        plan = build_conversational_search_plan("담배 필 곳 찾아줘")
+
+        self.assertEqual(plan["action"], "search")
+        self.assertEqual(plan["search_plan"]["scenario"], "smoking_area")
+        self.assertEqual(plan["search_plan"]["targetQuery"], "흡연구역")
+
+    @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=False)
+    def test_intent_router_out_of_scope_queries_do_not_search(self):
+        for query in ["비트코인 지금 살까?", "파이썬 숙제 풀어줘"]:
+            with self.subTest(query=query):
+                plan = build_conversational_search_plan(query)
+
+                self.assertEqual(plan["action"], "out_of_scope")
+                self.assertEqual(plan["out_of_scope_reason"], "not_place_recommendation")
+                self.assertFalse(plan["execution_policy"]["run_search"])
+                self.assertEqual(plan["search_plan"], {})
+
+    @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=False)
+    def test_intent_router_blocks_unsafe_query(self):
+        plan = build_conversational_search_plan("불법적인 장소나 위험한 요청")
+
+        self.assertEqual(plan["action"], "blocked")
+        self.assertEqual(plan["blocked_reason"], "unsafe_request")
+        self.assertFalse(plan["execution_policy"]["run_search"])
+        self.assertEqual(plan["search_plan"], {})
+
+    @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=False)
+    def test_intent_router_refines_previous_search_with_context(self):
+        previous_context = {
+            "search_plan": {
+                "locationQuery": "서면역",
+                "targetQuery": "카페",
+                "scenario": "work_cafe",
+                "categories": ["cafe"],
+                "preferred_tags": ["와이파이"],
+            },
+            "result_count": 3,
+        }
+
+        plan = build_conversational_search_plan(
+            "거기 말고 더 조용한 데",
+            previous_context=previous_context,
+        )
+
+        self.assertEqual(plan["action"], "refine_previous_search")
+        self.assertEqual(plan["search_plan"]["locationQuery"], "서면역")
+        self.assertIn("조용함", plan["search_plan"]["additional_conditions"])
+        self.assertFalse(plan["execution_policy"]["run_search"])
+
+    @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=False)
     def test_conversational_search_planner_uses_current_location_when_location_missing(self):
         plan = build_conversational_search_plan("배고픈데 혼자 먹기 편한 데")
 
@@ -3594,7 +3701,7 @@ class RecommendationSearchTests(TestCase):
 
         self.assertEqual(plan["action"], "ask_clarification")
         self.assertTrue(plan["needs_clarification"])
-        self.assertIn("어느 지역", plan["clarification_question"])
+        self.assertIn("이전 검색 결과가 없어서", plan["clarification_question"])
 
     @override_settings(AI_PROVIDER="rule")
     def test_ai_parser_routes_menu_matjip_queries_to_food_intent(self):

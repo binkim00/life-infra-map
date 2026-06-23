@@ -2331,7 +2331,7 @@ const getConversationalPreviousContext = () => {
   }
 }
 
-const resolveConversationalSearchPlan = async (keyword) => {
+const resolveConversationalSearchPlan = async (keyword, previousContext = null) => {
   try {
     loadingMessage.value = '검색 의도 해석 중'
     const data = await buildConversationalSearchPlan({
@@ -2339,7 +2339,7 @@ const resolveConversationalSearchPlan = async (keyword) => {
       lat: mapCenter.value?.lat ?? null,
       lng: mapCenter.value?.lng ?? null,
       mapCenter: mapCenter.value || null,
-      previousContext: getConversationalPreviousContext(),
+      previousContext,
     })
 
     if (import.meta.env.DEV) {
@@ -8327,19 +8327,38 @@ const performUnifiedMapSearch = async ({ useMapBounds = false } = {}) => {
     return
   }
 
+  const previousContext = getConversationalPreviousContext()
+  const previousMainResults = [...mainResults.value]
+  const previousFallbackResults = [...fallbackResults.value]
+  const previousWebReferenceResults = [...webReferenceResults.value]
   beginMainSearch()
 
   const conversationalPlan = useMapBounds
     ? null
-    : await resolveConversationalSearchPlan(keyword)
+    : await resolveConversationalSearchPlan(keyword, previousContext)
 
   if (
-    conversationalPlan?.needs_clarification ||
-    conversationalPlan?.action === 'ask_clarification'
+    conversationalPlan?.action &&
+    conversationalPlan.action !== 'search'
   ) {
+    if (conversationalPlan.action === 'refine_previous_search' && previousContext) {
+      mainResults.value = previousMainResults
+      fallbackResults.value = previousFallbackResults
+      webReferenceResults.value = previousWebReferenceResults
+      syncLegacySearchResults()
+    }
+
     activeSearchPlan.value = adaptConversationalSearchPlan(conversationalPlan, keyword)
-    locationMessage.value = conversationalPlan.clarification_question ||
-      '검색 기준을 조금 더 알려주시면 더 정확히 찾아드릴게요.'
+    const fallbackMessage = conversationalPlan.action === 'blocked'
+      ? '해당 요청은 안전상 안내하기 어렵습니다.'
+      : conversationalPlan.action === 'out_of_scope'
+        ? '이 서비스는 생활 장소 추천을 위한 서비스라 해당 질문은 도와드리기 어렵습니다.'
+        : conversationalPlan.action === 'refine_previous_search'
+          ? (previousContext ? '이전 검색 조건을 반영했습니다.' : '이전 검색 결과를 조정하려면 기준이 되는 검색 결과가 필요합니다.')
+          : '검색 기준을 조금 더 알려주시면 더 정확히 찾아드릴게요.'
+    locationMessage.value = conversationalPlan.message ||
+      conversationalPlan.clarification_question ||
+      fallbackMessage
     searchResultStatus.value = displayResults.value.length ? 'success' : 'idle'
     loadingMessage.value = ''
     isSearchingMap.value = false

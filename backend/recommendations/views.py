@@ -754,13 +754,6 @@ def search_safety_check(request):
 @api_view(["POST"])
 def conversational_search_plan(request):
     query = request.data.get("query", "")
-    if not str(query or "").strip():
-        return Response(
-            {
-                "detail": "검색어를 입력해 주세요.",
-            },
-            status=status.HTTP_400_BAD_REQUEST,
-        )
 
     user = request.user if request.user.is_authenticated else None
     data = build_conversational_search_plan(
@@ -769,7 +762,10 @@ def conversational_search_plan(request):
         lat=request.data.get("lat"),
         lng=request.data.get("lng"),
         map_center=request.data.get("map_center"),
-        previous_context=request.data.get("previous_context"),
+        previous_context=(
+            request.data.get("previous_search_context")
+            or request.data.get("previous_context")
+        ),
     )
     return Response(data)
 

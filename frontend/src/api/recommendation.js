@@ -42,6 +42,7 @@ export const buildConversationalSearchPlan = async ({
     lng,
     map_center: mapCenter,
     previous_context: previousContext,
+    previous_search_context: previousContext,
   })
 
   return response.data

@@ -15,6 +15,24 @@ from recommendations.services.ai_situation_parser import (
 logger = logging.getLogger(__name__)
 
 CLARIFICATION_MESSAGE = "어느 지역이나 기준 위치에서 찾을지 알려주시면 더 정확히 찾아드릴게요."
+PURPOSE_CLARIFICATION_MESSAGE = (
+    "어떤 상황의 장소를 찾으시나요? 지역과 목적을 함께 입력해 주세요. "
+    "예: 서면역 조용한 카페, 하단역 산책할 곳, 광안리 잠깐 쉴 곳"
+)
+REFINEMENT_CLARIFICATION_MESSAGE = (
+    "이전 검색 결과가 없어서 어떤 장소를 다시 찾으려는지 알 수 없습니다. "
+    "지역과 원하는 장소 종류를 함께 입력해 주세요. 예: 서면역 조용한 카페, 하단역 산책할 곳"
+)
+OUT_OF_SCOPE_MESSAGE = "이 서비스는 생활 장소 추천을 위한 서비스라 해당 질문은 도와드리기 어렵습니다."
+BLOCKED_MESSAGE = "해당 요청은 안전상 안내하기 어렵습니다."
+
+ROUTER_ACTIONS = {
+    "search",
+    "ask_clarification",
+    "out_of_scope",
+    "blocked",
+    "refine_previous_search",
+}
 
 LOCATION_SUFFIXES = (
     "특별자치시",
@@ -76,7 +94,7 @@ PLACE_TYPE_KEYWORDS = {
 SCENARIO_RULES = [
     (
         "smoking_area",
-        ["흡연", "담배"],
+        ["흡연구역", "흡연장", "흡연", "담배필", "담배 필", "담배피", "담배 피", "담배", "피울 수 있는 곳", "피울수있는곳"],
         ["smoking_area"],
         ["흡연구역"],
         ["실외흡연구역"],
@@ -90,14 +108,14 @@ SCENARIO_RULES = [
     ),
     (
         "work_cafe",
-        ["작업", "노트북", "공부", "조용", "콘센트", "와이파이", "카페"],
+        ["작업", "노트북", "공부", "조용", "콘센트", "와이파이", "카페", "카공"],
         ["cafe"],
         ["카페", "작업 카페", "스터디카페"],
         ["조용한", "노트북작업", "콘센트있음", "와이파이"],
     ),
     (
         "waiting_place",
-        ["잠깐", "쉬", "쉴", "대기", "기다", "실내", "쉼터"],
+        ["잠깐", "잠시", "쉬", "쉴", "앉", "대기", "기다", "실내", "쉼터"],
         ["cafe", "shelter"],
         ["카페", "쉼터", "실내 쉼터"],
         ["잠깐쉬기좋음", "실내쉼터"],
@@ -137,8 +155,73 @@ REFINEMENT_KEYWORDS = [
     "말고",
     "대신",
     "더",
-    "좀",
     "다른",
+    "가까운",
+    "가까이",
+    "만",
+    "빼",
+    "제외",
+    "보여줘",
+]
+
+OUT_OF_SCOPE_KEYWORDS = [
+    "비트코인",
+    "주식",
+    "코인",
+    "투자",
+    "매수",
+    "매도",
+    "숙제",
+    "과제",
+    "파이썬",
+    "정치",
+    "뉴스",
+    "연애",
+    "의료",
+    "법률",
+    "소송",
+    "진단",
+]
+
+BLOCKED_KEYWORDS = [
+    "불법",
+    "위험한 요청",
+    "마약",
+    "도박",
+    "폭탄",
+    "무기",
+    "해킹",
+    "몰래",
+    "스토킹",
+    "침입",
+    "방화",
+    "범죄",
+]
+
+PLACE_RECOMMENDATION_HINTS = [
+    "장소",
+    "곳",
+    "데",
+    "근처",
+    "주변",
+    "카페",
+    "맛집",
+    "산책",
+    "쉴",
+    "쉬",
+    "작업",
+    "공부",
+    "노트북",
+    "공원",
+    "화장실",
+    "주차장",
+    "와이파이",
+    "흡연",
+    "쉼터",
+    "식당",
+    "밥",
+    "먹",
+    "역",
 ]
 
 
@@ -152,7 +235,7 @@ def build_conversational_search_plan(
 ):
     normalized_query = _clean_text(query)
     if not normalized_query:
-        return _empty_plan(query)
+        return _finalize_router_plan(_empty_plan(query))
 
     rule_plan = _build_rule_plan(
         normalized_query,
@@ -164,7 +247,7 @@ def build_conversational_search_plan(
     ai_plan = _build_ai_plan(normalized_query, rule_plan)
 
     if not ai_plan:
-        return rule_plan
+        return _finalize_router_plan(rule_plan)
 
     normalized_ai_plan = _normalize_ai_plan(
         ai_plan,
@@ -175,7 +258,7 @@ def build_conversational_search_plan(
         map_center=map_center,
         previous_context=previous_context,
     )
-    return normalized_ai_plan or rule_plan
+    return _finalize_router_plan(normalized_ai_plan or rule_plan)
 
 
 def _empty_plan(query):
@@ -210,49 +293,67 @@ def _empty_plan(query):
 
 
 def _build_rule_plan(query, lat=None, lng=None, map_center=None, previous_context=None):
+    if _is_blocked_query(query):
+        return _blocked_plan(query)
+
+    if _is_out_of_scope_query(query):
+        return _out_of_scope_plan(query)
+
     location_query, target_query = _extract_location_and_target(query)
     has_explicit_location = bool(location_query)
     fallback_location = "" if has_explicit_location else "current_location"
     has_previous_context = bool(previous_context)
     has_ambiguous_reference = _has_any(query, AMBIGUOUS_REFERENCE_KEYWORDS)
-    has_refinement = _has_any(query, REFINEMENT_KEYWORDS)
+    has_refinement = _is_refinement_request(query)
+    has_location_context = has_explicit_location or _has_coordinate_context(lat, lng, map_center)
+
+    if has_refinement and not has_previous_context and not has_explicit_location:
+        return _clarification_plan(
+            query,
+            question=REFINEMENT_CLARIFICATION_MESSAGE,
+            reason="refinement_without_context",
+            target_query=target_query,
+            fallback_location=fallback_location,
+        )
 
     if has_ambiguous_reference and not has_previous_context and not has_explicit_location:
-        return {
-            "action": "ask_clarification",
-            "user_intent_summary": "이전 장소를 가리키는 표현이 있지만 기준이 분명하지 않습니다.",
-            "location": _location_payload("", False, fallback_location),
-            "targets": [],
-            "conditions": _extract_conditions(query),
-            "preferences": [],
-            "avoid": [],
-            "search_plan": _search_plan_payload(
-                original_query=query,
-                location_query="",
-                target_query=_clean_target_query(target_query or query),
-                scenario="waiting_place",
-                categories=["cafe", "shelter"],
-                menu_keywords=[],
-                place_type_keywords=[],
-                required_tags=[],
-                preferred_tags=[],
-                requested_conditions=_extract_conditions(query),
-            ),
-            "execution_policy": _execution_policy(False, False),
-            "needs_clarification": True,
-            "clarification_question": CLARIFICATION_MESSAGE,
-            "confidence": 40,
-            "fallback_reason": "ambiguous_reference_without_context",
-            "parser_provider": "rule",
-            "parser_fallback": True,
-        }
+        return _clarification_plan(
+            query,
+            question=CLARIFICATION_MESSAGE,
+            reason="ambiguous_reference_without_context",
+            target_query=target_query,
+            fallback_location=fallback_location,
+        )
 
     scenario, categories, kakao_keywords, preferred_tags = _pick_scenario(query, target_query)
-    conditions = _extract_conditions(query)
+    if _is_vague_place_request(query, scenario, target_query):
+        return _clarification_plan(
+            query,
+            question=PURPOSE_CLARIFICATION_MESSAGE,
+            reason="missing_purpose",
+            target_query=target_query,
+            fallback_location=fallback_location,
+        )
+
+    if not has_location_context and _requires_location_before_search(query, scenario, target_query):
+        return _clarification_plan(
+            query,
+            question=CLARIFICATION_MESSAGE,
+            reason="missing_location_context",
+            target_query=target_query,
+            fallback_location=fallback_location,
+        )
+
+    if has_previous_context and has_refinement:
+        return _refine_previous_search_plan(query, previous_context)
+
+    conditions = [] if scenario == "smoking_area" else _extract_conditions(query)
     menu_keywords = _extract_menu_keywords(query)
     place_type_keywords = _extract_place_type_keywords(query, menu_keywords, scenario)
     target_query = _clean_target_query(target_query or _derive_target_query(query, scenario, menu_keywords))
     target_query = _fallback_target_query(target_query, scenario, menu_keywords)
+    if scenario == "smoking_area":
+        target_query = "흡연구역"
 
     preferred_tags = _unique([
         *preferred_tags,
@@ -260,10 +361,8 @@ def _build_rule_plan(query, lat=None, lng=None, map_center=None, previous_contex
     ])
     preferred_tags = [tag for tag in preferred_tags if tag in ALLOWED_TAGS or tag]
 
-    action = "refine_previous_search" if has_previous_context and has_refinement else "search"
-
     return {
-        "action": action,
+        "action": "search",
         "user_intent_summary": _build_intent_summary(location_query, target_query, scenario, conditions),
         "location": _location_payload(location_query, has_explicit_location, fallback_location),
         "targets": _unique([target_query, *menu_keywords, *place_type_keywords]),
@@ -291,6 +390,211 @@ def _build_rule_plan(query, lat=None, lng=None, map_center=None, previous_contex
         "parser_provider": "rule",
         "parser_fallback": True,
     }
+
+
+def _clarification_plan(
+    query,
+    question,
+    reason,
+    target_query="",
+    fallback_location="current_location",
+):
+    conditions = _extract_conditions(query)
+    return {
+        "action": "ask_clarification",
+        "user_intent_summary": question,
+        "message": question,
+        "location": _location_payload("", False, fallback_location),
+        "targets": [],
+        "conditions": conditions,
+        "preferences": [],
+        "avoid": [],
+        "search_plan": _search_plan_payload(
+            original_query=query,
+            location_query="",
+            target_query=_clean_target_query(target_query or query),
+            scenario="waiting_place",
+            categories=["cafe", "shelter"],
+            menu_keywords=[],
+            place_type_keywords=[],
+            required_tags=[],
+            preferred_tags=[],
+            requested_conditions=conditions,
+        ),
+        "execution_policy": _execution_policy(False, False),
+        "needs_clarification": True,
+        "clarification_question": question,
+        "confidence": 45,
+        "fallback_reason": reason,
+        "parser_provider": "rule",
+        "parser_fallback": True,
+    }
+
+
+def _out_of_scope_plan(query):
+    return {
+        "action": "out_of_scope",
+        "intent_type": "out_of_scope",
+        "user_intent_summary": "장소 추천 범위 밖 요청입니다.",
+        "message": OUT_OF_SCOPE_MESSAGE,
+        "location": _location_payload("", False, ""),
+        "targets": [],
+        "conditions": [],
+        "preferences": [],
+        "avoid": [],
+        "search_plan": {},
+        "execution_policy": _execution_policy(False, False),
+        "needs_clarification": False,
+        "clarification_question": "",
+        "blocked_reason": "",
+        "out_of_scope_reason": "not_place_recommendation",
+        "confidence": 90,
+        "fallback_reason": "out_of_scope_rule",
+        "parser_provider": "rule",
+        "parser_fallback": True,
+    }
+
+
+def _blocked_plan(query):
+    return {
+        "action": "blocked",
+        "intent_type": "unsafe_request",
+        "user_intent_summary": "안전상 처리할 수 없는 요청입니다.",
+        "message": BLOCKED_MESSAGE,
+        "location": _location_payload("", False, ""),
+        "targets": [],
+        "conditions": [],
+        "preferences": [],
+        "avoid": [],
+        "search_plan": {},
+        "execution_policy": _execution_policy(False, False),
+        "needs_clarification": False,
+        "clarification_question": "",
+        "blocked_reason": "unsafe_request",
+        "out_of_scope_reason": "",
+        "confidence": 95,
+        "fallback_reason": "blocked_rule",
+        "parser_provider": "rule",
+        "parser_fallback": True,
+    }
+
+
+def _refine_previous_search_plan(query, previous_context):
+    previous_context = previous_context or {}
+    previous_search_plan = previous_context.get("search_plan") or {}
+    if not isinstance(previous_search_plan, dict):
+        previous_search_plan = {}
+
+    additional_conditions = _extract_conditions(query)
+    location_query = _clean_text(
+        previous_search_plan.get("locationQuery")
+        or previous_search_plan.get("location_query")
+        or previous_search_plan.get("baseLocationQuery")
+        or previous_search_plan.get("base_location_query")
+    )
+    target_query = _clean_target_query(
+        previous_search_plan.get("targetQuery")
+        or previous_search_plan.get("target_query")
+        or previous_search_plan.get("targetKeyword")
+        or previous_search_plan.get("target_keyword")
+        or _derive_target_query(query, "waiting_place", [])
+    )
+    scenario = _normalize_scenario(previous_search_plan.get("scenario"))
+    categories = _normalize_categories(previous_search_plan.get("categories") or [])
+    if not categories:
+        categories = ["cafe", "shelter"] if scenario == "waiting_place" else ["cafe"]
+
+    search_plan = _search_plan_payload(
+        original_query=query,
+        location_query=location_query,
+        target_query=target_query,
+        scenario=scenario,
+        categories=categories,
+        menu_keywords=_normalize_text_list(previous_search_plan.get("menu_keywords") or []),
+        place_type_keywords=_normalize_text_list(previous_search_plan.get("place_type_keywords") or []),
+        required_tags=_normalize_tags(previous_search_plan.get("required_tags") or []),
+        preferred_tags=_unique([
+            *_normalize_tags(previous_search_plan.get("preferred_tags") or []),
+            *[tag for _, _, tag in _matched_condition_rules(query) if tag],
+        ]),
+        requested_conditions=_unique([
+            *_normalize_text_list(
+                previous_search_plan.get("requestedConditions")
+                or previous_search_plan.get("requested_conditions")
+                or []
+            ),
+            *additional_conditions,
+        ]),
+        kakao_keyword_candidates=_normalize_text_list(
+            previous_search_plan.get("kakaoKeywordCandidates")
+            or previous_search_plan.get("kakao_keyword_candidates")
+            or [target_query]
+        ),
+    )
+    search_plan["additional_conditions"] = additional_conditions
+    search_plan["sort_hint"] = "distance" if _has_any(query, ["가까운", "가까이"]) else ""
+    search_plan["category_filter"] = _extract_category_filter(query)
+    search_plan["exclude_terms"] = _extract_avoid_terms(query)
+
+    return {
+        "action": "refine_previous_search",
+        "intent_type": "place_recommendation",
+        "user_intent_summary": "이전 검색 결과를 더 좁히는 요청입니다.",
+        "message": "",
+        "location": _location_payload(location_query, bool(location_query), "current_location"),
+        "targets": _normalize_text_list([target_query]),
+        "conditions": additional_conditions,
+        "preferences": search_plan["preferred_tags"],
+        "avoid": search_plan["exclude_terms"],
+        "search_plan": search_plan,
+        "execution_policy": _execution_policy(False, bool(location_query)),
+        "needs_clarification": False,
+        "clarification_question": "",
+        "confidence": 78,
+        "fallback_reason": "refine_previous_search_rule",
+        "parser_provider": "rule",
+        "parser_fallback": True,
+    }
+
+
+def _finalize_router_plan(plan):
+    plan = plan or _empty_plan("")
+    action = plan.get("action")
+    if action not in ROUTER_ACTIONS:
+        action = "ask_clarification"
+    plan["action"] = action
+
+    if "intent_type" not in plan:
+        if action == "blocked":
+            plan["intent_type"] = "unsafe_request"
+        elif action == "out_of_scope":
+            plan["intent_type"] = "out_of_scope"
+        else:
+            plan["intent_type"] = "place_recommendation"
+
+    plan.setdefault("user_intent_summary", "")
+    plan.setdefault("message", "")
+    plan.setdefault("search_plan", {} if action in {"blocked", "out_of_scope"} else _empty_plan("")["search_plan"])
+    plan.setdefault("blocked_reason", "unsafe_request" if action == "blocked" else "")
+    plan.setdefault("out_of_scope_reason", "not_place_recommendation" if action == "out_of_scope" else "")
+    plan.setdefault("confidence", 0.0)
+    plan.setdefault("clarification_question", "")
+
+    if action == "ask_clarification":
+        plan["needs_clarification"] = True
+        plan["clarification_question"] = plan.get("clarification_question") or plan.get("message") or CLARIFICATION_MESSAGE
+        plan["message"] = plan.get("message") or plan["clarification_question"]
+        plan["execution_policy"] = _execution_policy(False, False)
+    elif action in {"blocked", "out_of_scope"}:
+        plan["needs_clarification"] = False
+        plan["message"] = plan.get("message") or (BLOCKED_MESSAGE if action == "blocked" else OUT_OF_SCOPE_MESSAGE)
+        plan["search_plan"] = {}
+        plan["execution_policy"] = _execution_policy(False, False)
+    else:
+        plan["needs_clarification"] = False
+        plan.setdefault("execution_policy", _execution_policy(action == "search", False))
+
+    return plan
 
 
 def _build_ai_plan(query, fallback_plan):
@@ -327,12 +631,16 @@ CONVERSATIONAL_SEARCH_SYSTEM_PROMPT = """
 - 사용자가 명시한 지역/역/장소명은 현재 위치나 지도 중심으로 덮어쓰지 않는다.
 - 위치가 명시되지 않으면 location.fallback에 current_location 또는 map_center를 넣고 location.text는 비워둔다.
 - "거기", "아까", "그곳"처럼 이전 맥락이 필요한 표현인데 previous_context가 없으면 action은 ask_clarification으로 둔다.
+- 장소 추천과 무관한 일반 질문은 out_of_scope로 둔다.
+- 불법적이거나 위험한 장소 이용 요청은 blocked로 둔다.
 - SearchPlan 전체 구조를 새로 설계하지 말고 아래 스키마에 맞춘다.
 
 반환 스키마:
 {
-  "action": "search | ask_clarification | refine_previous_search",
+  "action": "search | ask_clarification | out_of_scope | blocked | refine_previous_search",
+  "intent_type": "place_recommendation | out_of_scope | unsafe_request",
   "user_intent_summary": "짧은 한국어 요약",
+  "message": "",
   "location": {"text": "", "is_explicit": false, "fallback": "current_location"},
   "targets": [],
   "conditions": [],
@@ -361,6 +669,8 @@ CONVERSATIONAL_SEARCH_SYSTEM_PROMPT = """
   },
   "needs_clarification": false,
   "clarification_question": "",
+  "blocked_reason": "",
+  "out_of_scope_reason": "",
   "confidence": 0,
   "fallback_reason": ""
 }
@@ -372,8 +682,26 @@ def _normalize_ai_plan(raw_plan, query, fallback_plan, lat=None, lng=None, map_c
         return None
 
     action = raw_plan.get("action")
-    if action not in {"search", "ask_clarification", "refine_previous_search"}:
+    if action not in ROUTER_ACTIONS:
         action = fallback_plan["action"]
+
+    if action == "blocked":
+        plan = _blocked_plan(query)
+        plan["message"] = _clean_text(raw_plan.get("message")) or plan["message"]
+        plan["blocked_reason"] = _clean_text(raw_plan.get("blocked_reason")) or plan["blocked_reason"]
+        plan["confidence"] = _normalize_confidence(raw_plan.get("confidence"), plan["confidence"])
+        plan["parser_provider"] = "gms"
+        plan["parser_fallback"] = False
+        return plan
+
+    if action == "out_of_scope":
+        plan = _out_of_scope_plan(query)
+        plan["message"] = _clean_text(raw_plan.get("message")) or plan["message"]
+        plan["out_of_scope_reason"] = _clean_text(raw_plan.get("out_of_scope_reason")) or plan["out_of_scope_reason"]
+        plan["confidence"] = _normalize_confidence(raw_plan.get("confidence"), plan["confidence"])
+        plan["parser_provider"] = "gms"
+        plan["parser_fallback"] = False
+        return plan
 
     search_plan = raw_plan.get("search_plan") or {}
     if not isinstance(search_plan, dict):
@@ -425,7 +753,9 @@ def _normalize_ai_plan(raw_plan, query, fallback_plan, lat=None, lng=None, map_c
     needs_clarification = bool(raw_plan.get("needs_clarification")) or action == "ask_clarification"
     return {
         "action": action,
+        "intent_type": "place_recommendation",
         "user_intent_summary": _clean_text(raw_plan.get("user_intent_summary")) or fallback_plan["user_intent_summary"],
+        "message": _clean_text(raw_plan.get("message")),
         "location": _location_payload(
             location_text,
             bool(location_text),
@@ -436,9 +766,11 @@ def _normalize_ai_plan(raw_plan, query, fallback_plan, lat=None, lng=None, map_c
         "preferences": preferred_tags,
         "avoid": _normalize_text_list(raw_plan.get("avoid") or fallback_plan.get("avoid") or []),
         "search_plan": normalized_search_plan,
-        "execution_policy": _execution_policy(not needs_clarification, bool(location_text)),
+        "execution_policy": _execution_policy(action == "search" and not needs_clarification, bool(location_text)),
         "needs_clarification": needs_clarification,
         "clarification_question": _clean_text(raw_plan.get("clarification_question")) if needs_clarification else "",
+        "blocked_reason": "",
+        "out_of_scope_reason": "",
         "confidence": _normalize_confidence(raw_plan.get("confidence"), fallback_plan["confidence"]),
         "fallback_reason": "ai_planner",
         "parser_provider": "gms",
@@ -492,9 +824,79 @@ def _has_any(query, keywords):
     return any(_compact(keyword) in compact for keyword in keywords)
 
 
+def _has_coordinate_context(lat=None, lng=None, map_center=None):
+    if lat not in (None, "") and lng not in (None, ""):
+        return True
+
+    if isinstance(map_center, dict):
+        return map_center.get("lat") not in (None, "") and map_center.get("lng") not in (None, "")
+
+    return False
+
+
+def _is_blocked_query(query):
+    return _has_any(query, BLOCKED_KEYWORDS)
+
+
+def _has_place_recommendation_hint(query):
+    return _has_any(query, PLACE_RECOMMENDATION_HINTS)
+
+
+def _is_out_of_scope_query(query):
+    if not _has_any(query, OUT_OF_SCOPE_KEYWORDS):
+        return False
+
+    if _has_any(query, ["숙제", "과제", "비트코인", "주식", "코인", "투자", "정치", "뉴스", "의료", "법률", "연애"]):
+        return True
+
+    return not _has_place_recommendation_hint(query)
+
+
+def _is_refinement_request(query):
+    return _has_any(query, REFINEMENT_KEYWORDS)
+
+
+def _scenario_keyword_score(query):
+    combined = _compact(query)
+    return max(
+        sum(1 for keyword in keywords if _compact(keyword) in combined)
+        for _, keywords, _, _, _ in SCENARIO_RULES
+    )
+
+
+def _is_vague_place_request(query, scenario, target_query):
+    compact = _compact(query)
+    has_vague_phrase = any(
+        phrase in compact
+        for phrase in [
+            "좋은곳",
+            "좋은데",
+            "괜찮은곳",
+            "괜찮은데",
+            "어디좋",
+        ]
+    )
+    has_command = _has_any(query, ["추천", "찾아", "알려"])
+    return has_vague_phrase and has_command and _scenario_keyword_score(query) <= 0 and not _extract_menu_keywords(query)
+
+
+def _requires_location_before_search(query, scenario, target_query):
+    return _has_any(query, ["근처", "주변", "가까운", "가까이", "인근"])
+
+
+def _extract_category_filter(query):
+    if _has_any(query, ["카페만"]):
+        return "cafe"
+    if _has_any(query, ["공원만"]):
+        return "city_park"
+    if _has_any(query, ["식당만", "맛집만"]):
+        return "restaurant"
+    return ""
+
+
 def _looks_like_non_location(text):
     compact = _compact(text)
-    return any(keyword in compact for keyword in ["조용", "혼자", "잠깐", "추천", "산책", "먹고", "맛집"])
+    return any(keyword in compact for keyword in ["조용", "혼자", "잠깐", "추천", "산책", "먹고", "맛집", "흡연", "담배"])
 
 
 def _pick_scenario(query, target_query):
@@ -575,8 +977,14 @@ def _fallback_target_query(target_query, scenario, menu_keywords):
 def _extract_avoid_terms(query):
     text = _clean_text(query)
     if "말고" not in text and "제외" not in text:
-        return []
-    return []
+        if "빼" not in text:
+            return []
+
+    avoid_terms = []
+    for keyword in ["공원", "카페", "식당", "쉼터", "흡연구역", "관광지"]:
+        if keyword in text:
+            avoid_terms.append(keyword)
+    return _unique(avoid_terms)
 
 
 def _build_intent_summary(location_query, target_query, scenario, conditions):
