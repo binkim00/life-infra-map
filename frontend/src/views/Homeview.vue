@@ -539,6 +539,7 @@ const allSearchResults = ref([])
 const mainResults = ref([])
 const fallbackResults = ref([])
 const webReferenceResults = ref([])
+const preserveBackendResultOrder = ref(false)
 const visibleCount = ref(DISPLAY_BATCH_SIZE)
 const resultFilterMode = ref('all')
 const sortMode = ref('distance')
@@ -573,6 +574,7 @@ const aiWebSearchCandidates = ref([])
 const aiWebSearchClientCache = ref({})
 const aiWebSearchLastResult = ref(null)
 const activeSearchPlan = ref(null)
+const conversationMessages = ref([])
 const pendingClarification = ref(null)
 const clarificationThread = ref([])
 const followUpInput = ref('')
@@ -687,6 +689,7 @@ const RESULT_FILTER_OPTIONS = [
   { value: 'all', label: '전체' },
   { value: 'db', label: 'DB 추천' },
   { value: 'kakao', label: '카카오 후보' },
+  { value: 'web', label: '웹 후보' },
 ]
 
 const RESULT_SORT_OPTIONS = [
@@ -717,8 +720,10 @@ const beginMainSearch = ({ preserveClarificationThread = false } = {}) => {
   mainResults.value = []
   fallbackResults.value = []
   webReferenceResults.value = []
+  preserveBackendResultOrder.value = false
   pendingClarification.value = null
   if (!preserveClarificationThread) {
+    conversationMessages.value = []
     clarificationThread.value = []
   }
   baseLocationCandidates.value = []
@@ -774,6 +779,10 @@ const mergeAndSortMainResults = (primaryResults = [], secondaryResults = []) => 
 }
 
 const displayResults = computed(() => {
+  if (preserveBackendResultOrder.value) {
+    return Array.isArray(mainResults.value) ? mainResults.value : []
+  }
+
   return mergeAndSortMainResults(mainResults.value, fallbackResults.value)
 })
 
@@ -823,6 +832,10 @@ const filteredSearchResults = computed(() => {
 })
 
 const sortedSearchResults = computed(() => {
+  if (preserveBackendResultOrder.value) {
+    return filteredSearchResults.value
+  }
+
   return sortSearchResults(filteredSearchResults.value)
 })
 
@@ -832,10 +845,20 @@ const searchedPlaces = computed(() => {
   )
 })
 
+const canShowPlaceOnMap = (place = {}) => {
+  if (place?.canShowOnMap === false || place?.can_show_on_map === false) {
+    return false
+  }
+
+  const lat = Number(place?.lat)
+  const lng = Number(place?.lng)
+  return Number.isFinite(lat) && Number.isFinite(lng)
+}
+
 const mapPlaces = computed(() => {
   return [
     ...currentLocationPlace.value,
-    ...searchedPlaces.value,
+    ...searchedPlaces.value.filter((place) => canShowPlaceOnMap(place)),
   ]
 })
 
@@ -884,8 +907,11 @@ const mapParserStatus = computed(() => {
     activeSearchPlan.value?.planSource,
   )
   const hasAiFrame = executionMode === 'frame' && planSource !== 'legacy_fallback'
+  const isAiFirstParser = executionMode === 'ai_first_orchestrator' ||
+    parserProvider === 'ai_intent_planner' ||
+    parserProvider === 'backend_ai_only'
 
-  if (!parserFallback && (parserProvider === 'gms' || hasAiFrame)) {
+  if (!parserFallback && (parserProvider === 'gms' || hasAiFrame || isAiFirstParser)) {
     return {
       label: 'AI 사용',
       detail: hasAiFrame
@@ -1196,6 +1222,58 @@ const focusPrimarySearchInput = async () => {
   primarySearchInputRef.value?.focus?.()
 }
 
+const makeConversationMessage = ({
+  role = 'assistant',
+  type = 'clarification',
+  content = '',
+  options = [],
+  plan = null,
+} = {}) => {
+  const text = String(content || '').trim()
+  if (!text) return null
+
+  return {
+    role,
+    type,
+    content: text,
+    text,
+    label: role === 'user' ? displayUserName.value : 'AI',
+    options: getPlannerList(options),
+    plan,
+    createdAt: new Date().toISOString(),
+  }
+}
+
+const syncClarificationThreadFromMessages = () => {
+  clarificationThread.value = conversationMessages.value.filter((message) => {
+    return ['user', 'assistant'].includes(message.role)
+  })
+}
+
+const getClarificationStateKind = (plan = {}, partialFrame = {}) => {
+  const debugStatus = getPlannerText(plan?.ai_debug?.post_validation?.status)
+  if (debugStatus === 'forced_clarification') {
+    return 'intent_evidence'
+  }
+
+  const reason = getPlannerText(
+    plan?.fallback_reason ||
+    plan?.fallbackReason ||
+    plan?.ai_fallback_reason ||
+    plan?.aiFallbackReason,
+  ).toLowerCase()
+  if (reason.includes('location')) {
+    return 'location'
+  }
+
+  const missingInfo = getPlannerList(partialFrame?.missing_info || partialFrame?.missingInfo)
+  if (missingInfo.length) {
+    return getPlannerText(missingInfo[0]) || 'intent_evidence'
+  }
+
+  return 'intent_evidence'
+}
+
 const setClarificationThread = (query, plan, message) => {
   const userText = String(query || '').trim()
   const assistantText = String(
@@ -1211,7 +1289,7 @@ const setClarificationThread = (query, plan, message) => {
   const partialCandidatePlaceTypes = getFrameCandidatePlaceTypes(partialSearchPlan)
   const partialConstraints = getFrameConstraints(partialSearchPlan)
   const partialExclusions = getFrameExclusions(partialSearchPlan)
-  const clarificationOptions = getPlannerList(
+  const clarificationOptions = getClarificationOptionItems(
     plan?.clarification_options ||
     plan?.clarificationOptions ||
     partialFrame?.clarification_options ||
@@ -1254,7 +1332,8 @@ const setClarificationThread = (query, plan, message) => {
       intent_group: getPlannerText(getSearchPlanValue(partialSearchPlan, 'intent_group', 'intentGroup')),
       intentGroup: getPlannerText(getSearchPlanValue(partialSearchPlan, 'intent_group', 'intentGroup')),
     },
-    missing_field: 'location',
+    missing_field: getClarificationStateKind(plan, partialFrame),
+    clarification_kind: getClarificationStateKind(plan, partialFrame),
     clarification_question: assistantText,
     clarification_options: clarificationOptions,
     clarificationOptions,
@@ -1263,16 +1342,51 @@ const setClarificationThread = (query, plan, message) => {
   conversationModeStarted.value = true
   followUpInput.value = ''
   clearTopSearchInputsForClarification()
-  clarificationThread.value = [
-    userText ? { role: 'user', label: displayUserName.value, text: userText } : null,
-    assistantText ? { role: 'assistant', label: 'AI', text: assistantText } : null,
+  conversationMessages.value = [
+    makeConversationMessage({
+      role: 'user',
+      type: 'search',
+      content: userText,
+      plan: partialSearchPlan,
+    }),
+    makeConversationMessage({
+      role: 'assistant',
+      type: 'clarification',
+      content: assistantText,
+      options: clarificationOptions,
+      plan,
+    }),
   ].filter(Boolean).slice(-3)
+  syncClarificationThreadFromMessages()
   focusFollowUpInput()
 }
 
-const clearPendingClarification = () => {
+const setDecisionConversationThread = (query, plan, message, type = 'out_of_scope') => {
+  const userText = String(query || '').trim()
+  const assistantText = String(message || plan?.message || '').trim()
+  conversationMessages.value = [
+    makeConversationMessage({
+      role: 'user',
+      type: 'search',
+      content: userText,
+      plan: plan?.search_plan || null,
+    }),
+    makeConversationMessage({
+      role: 'assistant',
+      type,
+      content: assistantText,
+      plan,
+    }),
+  ].filter(Boolean)
+  syncClarificationThreadFromMessages()
+}
+
+const clearPendingClarification = ({ preserveMessages = false } = {}) => {
   pendingClarification.value = null
-  clarificationThread.value = []
+  if (!preserveMessages) {
+    conversationMessages.value = []
+  }
+  syncClarificationThreadFromMessages()
   followUpInput.value = ''
 }
 
@@ -1294,7 +1408,7 @@ const isClarificationOnlyState = computed(() => {
 })
 
 const clarificationOptions = computed(() => {
-  return getPlannerList(
+  return getClarificationOptionItems(
     pendingClarification.value?.clarification_options ||
     pendingClarification.value?.clarificationOptions ||
     [],
@@ -2548,6 +2662,55 @@ const getPlannerList = (value = []) => {
   return [...new Set(items.map(getPlannerText).filter((item) => item && item !== '[object Object]'))]
 }
 
+const getClarificationOptionItems = (value = []) => {
+  const items = Array.isArray(value) ? value : (value ? [value] : [])
+  const seen = new Set()
+  return items.map((item) => {
+    if (item && typeof item === 'object') {
+      const label = getPlannerText(item.label || item.text || item.name || item.value)
+      const optionValue = getPlannerText(item.value || item.answer || item.text || item.label)
+      return {
+        label,
+        value: optionValue || label,
+      }
+    }
+    const text = getPlannerText(item)
+    return {
+      label: text,
+      value: text,
+    }
+  }).filter((item) => {
+    const key = `${item.label}::${item.value}`
+    if (!item.label || !item.value || seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+const getClarificationOptionLabel = (option = '') => {
+  if (option && typeof option === 'object') {
+    return getPlannerText(option.label || option.text || option.name || option.value)
+  }
+  return getPlannerText(option)
+}
+
+const getClarificationOptionValue = (option = '') => {
+  if (option && typeof option === 'object') {
+    return getPlannerText(option.value || option.answer || option.text || option.label)
+  }
+  return getPlannerText(option)
+}
+
+const isBackendAiFirstResponse = (data = {}, parsedIntent = {}) => {
+  return Boolean(
+    parsedIntent?.backendAiOnly ||
+    data?.unified_candidate_pipeline ||
+    data?.frontend_should_skip_kakao_fallback ||
+    data?.execution_mode === 'ai_first_orchestrator' ||
+    data?.ai_parse?.execution_mode === 'ai_first_orchestrator',
+  )
+}
+
 const getSearchPlanValue = (searchPlan = {}, ...keys) => {
   for (const key of keys) {
     const value = searchPlan?.[key]
@@ -3210,13 +3373,23 @@ const buildClarificationFollowUpPayload = (pending = null, answer = '') => {
 
   const previousSearchPlan = pending.partial_search_plan || pending.plan?.search_plan || {}
   const pendingFrame = getSearchPlanFrame(previousSearchPlan)
+  const lastResolvedLocationContext = {
+    locationQuery: getResolvedSearchPlanLocationQuery(previousSearchPlan) || '',
+    anchorLocation: getFrameAnchorLocation(previousSearchPlan) || '',
+    locationMode: getFrameLocationMode(previousSearchPlan) || 'current_context',
+    lat: mapCenter.value?.lat ?? null,
+    lng: mapCenter.value?.lng ?? null,
+  }
   const previousSearchContext = {
     query: pending.original_query || pending.query || '',
     search_plan: previousSearchPlan,
     pending_clarification_frame: pendingFrame,
     is_clarification_followup: true,
     clarification_answer: answer,
+    pending_clarification_question: pending.clarification_question || pending.message || '',
     original_query: pending.original_query || pending.query || '',
+    previous_user_query: pending.original_query || pending.query || '',
+    last_resolved_location_context: lastResolvedLocationContext,
   }
 
   return {
@@ -3225,9 +3398,12 @@ const buildClarificationFollowUpPayload = (pending = null, answer = '') => {
     previous_search_context: previousSearchContext,
     previous_search_plan: previousSearchPlan,
     pending_clarification_frame: pendingFrame,
+    pending_clarification_question: pending.clarification_question || pending.message || '',
     is_clarification_followup: true,
     clarification_answer: answer,
+    previous_user_query: pending.original_query || pending.query || '',
     original_query: pending.original_query || pending.query || '',
+    last_resolved_location_context: lastResolvedLocationContext,
   }
 }
 
@@ -3543,7 +3719,7 @@ const buildClarificationFollowUpTargetText = (partialPlan = {}) => {
 
 const buildClarificationFollowUpPlan = (answer = '') => {
   const pending = pendingClarification.value
-  if (!pending || pending.missing_field !== 'location') return null
+  if (!pending || pending.missing_field !== 'location' || pending.clarification_kind !== 'location') return null
   if (!looksLikeLocationClarificationAnswer(answer)) return null
 
   const locationAnswer = String(answer || '').trim()
@@ -3629,15 +3805,54 @@ const buildClarificationFollowUpPlan = (answer = '') => {
 }
 
 const appendClarificationFollowUpThread = (answer = '', message = '') => {
-  const nextItems = [
-    ...clarificationThread.value,
-    { role: 'user', label: displayUserName.value, text: String(answer || '').trim() },
-    { role: 'assistant', label: 'AI', text: String(message || '').trim() },
-  ].filter((item) => item.text)
+  conversationMessages.value = [
+    ...conversationMessages.value,
+    makeConversationMessage({
+      role: 'user',
+      type: 'clarification',
+      content: String(answer || '').trim(),
+    }),
+    makeConversationMessage({
+      role: 'assistant',
+      type: 'result_summary',
+      content: String(message || '').trim(),
+    }),
+  ].filter((item) => item && item.text)
 
-  clarificationThread.value = nextItems.slice(-4)
+  syncClarificationThreadFromMessages()
   followUpInput.value = ''
   clearTopSearchInputsForClarification()
+}
+
+const appendClarificationAnswerMessage = (answer = '') => {
+  const text = String(answer || '').trim()
+  if (!text) return
+
+  conversationMessages.value = [
+    ...conversationMessages.value,
+    makeConversationMessage({
+      role: 'user',
+      type: 'clarification_answer',
+      content: text,
+    }),
+  ].filter((item) => item && item.text)
+  syncClarificationThreadFromMessages()
+}
+
+const appendSearchSummaryMessage = (message = '') => {
+  const text = String(message || '').trim()
+  if (!text) return
+
+  conversationMessages.value = [
+    ...conversationMessages.value,
+    makeConversationMessage({
+      role: 'assistant',
+      type: 'search_summary',
+      content: text,
+      plan: activeSearchPlan.value || null,
+    }),
+  ].filter((item) => item && item.text)
+  syncClarificationThreadFromMessages()
 }
 
 const submitClarificationFollowUp = async () => {
@@ -3656,7 +3871,7 @@ const submitClarificationFollowUp = async () => {
 }
 
 const submitClarificationOption = async (option = '') => {
-  const answer = String(option || '').trim()
+  const answer = getClarificationOptionValue(option)
   if (!answer || isSearchingMap.value) return
 
   followUpInput.value = answer
@@ -4857,6 +5072,10 @@ const getPlaceSourceText = (place) => {
 }
 
 const getPlaceSourceClass = (place) => {
+  if (place.searchSource === 'web') {
+    return 'source-web'
+  }
+
   if (place.searchSource === 'local_db') {
     return 'source-db'
   }
@@ -5574,8 +5793,13 @@ const isRecommendationPlace = (place) => {
     place?.sourceLabel === 'DB추천' ||
     place?.sourceLabel === '카카오+DB' ||
     place?.recommendationSourceType === 'kakao_candidate' ||
+    place?.recommendationSourceType === 'web_evidence_candidate' ||
+    place?.recommendationSourceType === 'web_reference' ||
     place?.source_type === 'kakao_candidate' ||
+    place?.source_type === 'web_evidence_candidate' ||
+    place?.source_type === 'web_reference' ||
     place?.resultType === 'kakao_fallback_candidate' ||
+    place?.resultType === 'web_evidence_candidate' ||
     place?.tagSource === 'DB 추천 결과' ||
     place?.tagSource?.includes('DB 추천 결과')
   )
@@ -5607,6 +5831,16 @@ const isKakaoCandidateResult = (place = {}) => {
   )
 }
 
+const isWebEvidenceCandidateResult = (place = {}) => {
+  const sourceType = getTextValue(place.recommendationSourceType || place.source_type)
+
+  return (
+    ['web_evidence_candidate', 'web_reference'].includes(sourceType) ||
+    place.searchSource === 'web' ||
+    place.sourceLabel === '웹 근거 후보'
+  )
+}
+
 const matchesResultFilter = (place, filterMode = 'all') => {
   if (filterMode === 'db') {
     return isDbRecommendationResult(place)
@@ -5614,6 +5848,10 @@ const matchesResultFilter = (place, filterMode = 'all') => {
 
   if (filterMode === 'kakao') {
     return isKakaoCandidateResult(place)
+  }
+
+  if (filterMode === 'web') {
+    return isWebEvidenceCandidateResult(place)
   }
 
   return true
@@ -5859,12 +6097,7 @@ const getRecommendationSortScore = (place) => {
   const baseScore = getRecommendScore(place)
   const weakFrameFallback = isWeakFrameFallbackRecommendation(place)
   const frameRank = getFrameEvidenceSortRank(place)
-  const sourceBonusMap = {
-    'DB추천': 35,
-    '카카오+DB': 32,
-    '카카오': 0,
-  }
-  const sourceBonus = weakFrameFallback ? 0 : (sourceBonusMap[place?.sourceLabel] || 0)
+  const sourceBonus = 0
   const waitingPenalty = place?.waitingPlacePenalty || 0
   const mainPlaceScore = place?.mainPlaceScore || 0
   const ancillaryPenalty = place?.ancillaryPlacePenalty || 0
@@ -6100,13 +6333,6 @@ const compareForGeneralSearch = (firstPlace, secondPlace) => {
     return frameRankDifference
   }
 
-  const sourceRankDifference =
-    getResultSourceRank(firstPlace) - getResultSourceRank(secondPlace)
-
-  if (sourceRankDifference !== 0) {
-    return sourceRankDifference
-  }
-
   const shapeDifference =
     ((secondPlace.mainPlaceScore || 0) - (secondPlace.ancillaryPlacePenalty || 0) - (secondPlace.intentMismatchPenalty || 0)) -
     ((firstPlace.mainPlaceScore || 0) - (firstPlace.ancillaryPlacePenalty || 0) - (firstPlace.intentMismatchPenalty || 0))
@@ -6115,7 +6341,12 @@ const compareForGeneralSearch = (firstPlace, secondPlace) => {
     return shapeDifference
   }
 
-  return compareByDistance(firstPlace, secondPlace)
+  const distanceDifference = compareByDistance(firstPlace, secondPlace)
+  if (distanceDifference !== 0) {
+    return distanceDifference
+  }
+
+  return getResultSourceRank(firstPlace) - getResultSourceRank(secondPlace)
 }
 
 const compareForRecommendationSearch = (firstPlace, secondPlace) => {
@@ -7473,6 +7704,86 @@ const makeRecommendationTags = (place) => {
   return tags
 }
 
+const getBackendRecommendationSourceType = (place = {}) => {
+  return getTextValue(place.source_type || place.recommendationSourceType)
+}
+
+const getBackendRecommendationSourceLabel = (place = {}) => {
+  const sourceType = getBackendRecommendationSourceType(place)
+
+  if (sourceType === 'kakao_candidate') {
+    return '카카오 후보'
+  }
+
+  if (sourceType === 'web_evidence_candidate') {
+    return '웹 근거 후보'
+  }
+
+  if (sourceType === 'web_reference') {
+    return '웹 참고 근거'
+  }
+
+  return 'DB추천'
+}
+
+const getBackendRecommendationSearchSource = (place = {}) => {
+  const sourceType = getBackendRecommendationSourceType(place)
+
+  if (sourceType === 'kakao_candidate') {
+    return 'kakao'
+  }
+
+  if (['web_evidence_candidate', 'web_reference'].includes(sourceType)) {
+    return 'web'
+  }
+
+  return 'local_db'
+}
+
+const getBackendRecommendationMarkerColor = (place = {}) => {
+  const sourceType = getBackendRecommendationSourceType(place)
+
+  if (sourceType === 'kakao_candidate') {
+    return 'red'
+  }
+
+  if (['web_evidence_candidate', 'web_reference'].includes(sourceType)) {
+    return '#64748b'
+  }
+
+  return '#7c3aed'
+}
+
+const makeBackendRecommendationTags = (place = {}) => {
+  const sourceLabel = getBackendRecommendationSourceLabel(place)
+  const tags = [
+    makeTag(sourceLabel, 'external_data'),
+  ]
+  const categoryText = getDbCategoryText(place.category)
+
+  if (categoryText) {
+    tags.push(makeTag(categoryText, 'category_rule'))
+  }
+
+  ;toArray(place.matched_tags || place.runtime_tags).forEach((tagName) => {
+    tags.push(makeTag(tagName, 'checked'))
+  })
+
+  toArray(place.suggested_tags).forEach((tagName) => {
+    tags.push(makeTag(tagName, 'blog_search'))
+  })
+
+  toArray(place.verified_tags).forEach((tagName) => {
+    tags.push(makeTag(tagName, 'user_verified'))
+  })
+
+  toArray(place.warning_tags).forEach((tagName) => {
+    tags.push(makeTag(tagName, 'warning_tags'))
+  })
+
+  return tags
+}
+
 const getPreferredTagMatchCount = (tagNames = [], preferredTags = []) => {
   const safePreferredTags = toArray(preferredTags)
 
@@ -7497,7 +7808,14 @@ const convertRecommendationPlaces = (
   return toArray(places).map((place) => {
     try {
     const externalId = place.external_id || place.externalId || null
-    const isKakaoLocal = place.source === 'kakao_local'
+    const sourceType = getBackendRecommendationSourceType(place)
+    const isBackendKakaoCandidate = sourceType === 'kakao_candidate'
+    const isBackendWebCandidate = ['web_evidence_candidate', 'web_reference'].includes(sourceType)
+    const isExternalCandidate = Boolean(place.is_external || isBackendKakaoCandidate || isBackendWebCandidate)
+    const sourceLabel = getBackendRecommendationSourceLabel(place)
+    const searchSource = getBackendRecommendationSearchSource(place)
+    const canShowOnMap = place.can_show_on_map !== false && place.canShowOnMap !== false
+    const isKakaoLocal = place.source === 'kakao_local' || isBackendKakaoCandidate
     const sourceName = place.source_name || place.sourceName || ''
     const kakaoPlaceId = isKakaoLocal && isKakaoPlaceId(externalId) ? externalId : null
     const kakaoDetailUrl = getKakaoDetailUrl({
@@ -7506,6 +7824,17 @@ const convertRecommendationPlaces = (
       sourceName,
       kakaoPlaceId,
     })
+    const placeExternalUrl = getTextValue(
+      place.external_url ||
+      place.externalUrl ||
+      place.place_url ||
+      place.placeUrl ||
+      place.kakao_place_url ||
+      place.kakaoPlaceUrl,
+    )
+    const detailUrl = isBackendWebCandidate
+      ? placeExternalUrl
+      : (kakaoDetailUrl || placeExternalUrl)
     const ancillaryAdjustment = getAncillaryPlaceAdjustment({
       place: {
         ...place,
@@ -7526,7 +7855,7 @@ const convertRecommendationPlaces = (
 
     return mergeRequestedConditionReview({
       id: `recommendation-${place.id}`,
-      savedPlaceId: place.id,
+      savedPlaceId: isExternalCandidate ? null : place.id,
       source: place.source,
       sourceName,
       externalId,
@@ -7535,21 +7864,27 @@ const convertRecommendationPlaces = (
       name: place.name,
       category: getDbCategoryText(place.category),
       address: place.address,
-      detailLocation: place.detail_location,
+      detailLocation: place.detail_location || place.road_address,
       lat: Number(place.lat),
       lng: Number(place.lng),
       distance: place.distance ?? place.distance_m ?? null,
       phone: '',
-      placeUrl: kakaoDetailUrl,
+      placeUrl: detailUrl,
       kakaoPlaceUrl: getTextValue(place.kakao_place_url || place.kakaoPlaceUrl),
       kakaoUrl: getTextValue(place.kakao_url || place.kakaoUrl),
-      detailUrl: getTextValue(place.detail_url || place.detailUrl),
-      navigationUrl: `https://map.kakao.com/link/to/${encodeURIComponent(place.name)},${place.lat},${place.lng}`,
-      markerColor: '#7c3aed',
-      searchSource: 'local_db',
-      sourceLabel: 'DB추천',
-      tags: makeRecommendationTags(place),
-      tagSource: 'DB 추천 결과',
+      detailUrl: getTextValue(place.detail_url || place.detailUrl || detailUrl),
+      navigationUrl: canShowOnMap
+        ? `https://map.kakao.com/link/to/${encodeURIComponent(place.name)},${place.lat},${place.lng}`
+        : '',
+      markerColor: getBackendRecommendationMarkerColor(place),
+      searchSource,
+      sourceLabel,
+      tags: makeBackendRecommendationTags(place),
+      tagSource: isExternalCandidate ? `${sourceLabel} · 응답 단위 임시 후보` : 'DB 추천 결과',
+      isExternal: isExternalCandidate,
+      is_external: isExternalCandidate,
+      canShowOnMap,
+      can_show_on_map: canShowOnMap,
       dataQualityStatus: place.data_quality_status,
       dataQualityScore: place.data_quality_score,
       rawScores: place.raw_scores || {},
@@ -7587,7 +7922,8 @@ const convertRecommendationPlaces = (
       matchedTags: toArray(place.matched_tags || place.runtime_tags),
       matchLevel: place.match_level,
       recommendationConfidence: place.confidence || place.recommendation_confidence,
-      recommendationSourceType: place.source_type || '',
+      recommendationSourceType: sourceType,
+      source_type: sourceType,
       fallbackLevel: place.fallback_level ?? null,
       recommendationIntent,
       preferredTags,
@@ -7595,7 +7931,11 @@ const convertRecommendationPlaces = (
       waitingPlacePenalty: place.score_breakdown?.unsuitable_place_penalty || 0,
       waitingPlaceExcluded: place.score_breakdown?.excluded_by_waiting_place || false,
       waitingPlacePenaltyReason: place.score_breakdown?.waiting_place_penalty_reason || null,
-      resultType: 'db_recommendation',
+      resultType: isBackendKakaoCandidate
+        ? 'kakao_backend_candidate'
+        : isBackendWebCandidate
+          ? sourceType
+          : 'db_recommendation',
       mainPlaceScore: ancillaryAdjustment.mainPlaceScore,
       ancillaryPlacePenalty: ancillaryAdjustment.ancillaryPlacePenalty,
       intentMismatchPenalty: ancillaryAdjustment.intentMismatchPenalty,
@@ -8006,10 +8346,12 @@ const setSearchResults = ({
   sourceLabel = '검색 결과',
   messageSuffix = '',
   status = '',
+  preserveBackendOrder = false,
 }) => {
   const normalizedResults = Array.isArray(results) ? results : []
   resetAiWebSearchState()
   activeMenuSearchProfile.value = null
+  preserveBackendResultOrder.value = Boolean(preserveBackendOrder)
   mainResults.value = normalizedResults
   fallbackResults.value = []
   syncLegacySearchResults()
@@ -8973,6 +9315,7 @@ const runAiMapSearchAtCenter = async ({
   center,
   baseLabel,
   parsedIntent = null,
+  extraAiPayload = {},
 }) => {
   loadingMessage.value = '상황 해석 중'
   sortMode.value = 'recommendation'
@@ -8995,6 +9338,7 @@ const runAiMapSearchAtCenter = async ({
     constraints: parsedIntent?.constraints || [],
     exclusions: parsedIntent?.exclusions || [],
     ranking_policy: getFrameRankingPolicy(parsedIntent || {}),
+    ...extraAiPayload,
   })
   if (import.meta.env.DEV) {
     console.debug('[AI 추천 API 응답]', {
@@ -9006,22 +9350,69 @@ const runAiMapSearchAtCenter = async ({
       parserProvider: data?.ai_parse?.parser_provider,
       parserFallback: data?.ai_parse?.parser_fallback,
       aiFallbackReason: data?.ai_parse?.ai_fallback_reason || data?.ai_fallback_reason,
+      candidateCounts: data?.debug_pipeline?.candidate_counts,
+      dbSearchTerms: data?.debug_pipeline?.evidence_terms?.db_search_terms,
+      rerankerStatus: data?.debug_pipeline?.reranker?.status,
+      unresolvedCount: data?.debug_pipeline?.unresolved_count,
+      totalLatencyMs: data?.debug_pipeline?.total_latency_ms,
+      locationResolution: data?.debug_pipeline?.location_resolution,
       locationMode: getFrameLocationMode(data?.place_intent_frame ? { place_intent_frame: data.place_intent_frame } : parsedIntent),
       anchorLocation: getFrameAnchorLocation(data?.place_intent_frame ? { place_intent_frame: data.place_intent_frame } : parsedIntent),
       locationQuery: parsedIntent?.locationQuery || parsedIntent?.location_query || '',
     })
   }
-  const resultScenarioLabel = getFrameDisplayLabel(parsedIntent) ||
-    getIntentGroupDisplayLabel(parsedIntent?.intentGroup || parsedIntent?.intent_group || '') ||
+  const backendSearchPlan = data?.search_plan || data?.ai_parse?.search_plan || parsedIntent || {}
+  const backendAction = data?.decision_action || data?.decisionAction || data?.ai_parse?.decision_action || ''
+  const backendIsAiFirst = isBackendAiFirstResponse(data, parsedIntent)
+  activeSearchPlan.value = backendSearchPlan
+  const resultScenarioLabel = getFrameDisplayLabel(backendSearchPlan) ||
+    getIntentGroupDisplayLabel(backendSearchPlan?.intentGroup || backendSearchPlan?.intent_group || '') ||
     getScenarioDisplayLabel(data?.scenario || recommendationIntent)
 
-  mapAiParse.value = data.ai_parse || {
+  mapAiParse.value = {
+    ...(data.ai_parse || {
     parser_provider: data.parser_provider || '',
     parser_fallback: data.parser_fallback ?? false,
     execution_mode: data.execution_mode || '',
     plan_source: data.plan_source || '',
     place_intent_frame: data.place_intent_frame || {},
     ai_fallback_reason: data.ai_fallback_reason || '',
+    }),
+    parser_provider: backendIsAiFirst
+      ? (data.ai_parse?.parser_provider || 'ai_intent_planner')
+      : (data.ai_parse?.parser_provider || data.parser_provider || ''),
+    parser_fallback: backendIsAiFirst ? false : (data.ai_parse?.parser_fallback ?? data.parser_fallback ?? false),
+    execution_mode: backendIsAiFirst
+      ? (data.ai_parse?.execution_mode || data.execution_mode || 'ai_first_orchestrator')
+      : (data.ai_parse?.execution_mode || data.execution_mode || ''),
+    ai_fallback_reason: backendIsAiFirst ? '' : (data.ai_parse?.ai_fallback_reason || data.ai_fallback_reason || ''),
+    fallback_reason: backendIsAiFirst ? '' : (data.ai_parse?.fallback_reason || data.fallback_reason || ''),
+  }
+
+  if (backendAction && backendAction !== 'search') {
+    clearSearchResults()
+    searchResultStatus.value = backendAction === 'ask_clarification' ? 'idle' : 'error'
+    selectedPlace.value = null
+    showDetailPanel.value = false
+    detailFrameError.value = false
+    locationMessage.value = data.clarification_question ||
+      data.message ||
+      data.ai_parse?.user_message ||
+      '?붿껌?섏떊 紐⑹쟻? ?μ냼 異붿쿇?쇰줈 ?꾩??쒕━湲??대졄?듬땲??'
+    const decisionPlan = {
+      ...data,
+      action: backendAction,
+      search_plan: backendSearchPlan,
+      clarification_question: data.clarification_question || '',
+      clarification_options: data.clarification_options || [],
+    }
+    if (backendAction === 'ask_clarification') {
+      setClarificationThread(originalQuery, decisionPlan, locationMessage.value)
+    } else {
+      setDecisionConversationThread(originalQuery, decisionPlan, locationMessage.value, backendAction)
+      clearPendingClarification({ preserveMessages: true })
+    }
+    return
   }
 
   if (data.blocked || data.ai_parse?.blocked || data.ai_parse?.is_searchable === false) {
@@ -9035,23 +9426,75 @@ const runAiMapSearchAtCenter = async ({
   }
 
   const dbResults = Array.isArray(data.results) ? data.results : []
+  const useUnifiedBackendOrder = Boolean(data.unified_candidate_pipeline || data.frontend_should_preserve_order)
+  const shouldSkipFrontendFallback = Boolean(data.frontend_should_skip_kakao_fallback || useUnifiedBackendOrder)
+  preserveBackendResultOrder.value = useUnifiedBackendOrder
+  if (useUnifiedBackendOrder) {
+    fallbackResults.value = []
+  }
   const rawRecommendationResults = convertRecommendationPlaces(dbResults, {
     preferredTags,
-    recommendationIntent: getRecommendationIntentForScoring(recommendationIntent, parsedIntent || {}),
+    recommendationIntent: getRecommendationIntentForScoring(recommendationIntent, backendSearchPlan || {}),
     requestedConditions,
-    searchPlan: parsedIntent,
+    searchPlan: backendSearchPlan,
   })
-  const frameDirectMatchCount = getFrameDirectMatchCount(rawRecommendationResults, parsedIntent || {})
-  const recommendationResults = filterFrameDirectMatchedResults(rawRecommendationResults, parsedIntent || {})
+  const frameDirectMatchCount = getFrameDirectMatchCount(rawRecommendationResults, backendSearchPlan || {})
+  const recommendationResults = useUnifiedBackendOrder
+    ? rawRecommendationResults
+    : filterFrameDirectMatchedResults(rawRecommendationResults, backendSearchPlan || {})
+  const backendExternalResultCount = recommendationResults.filter((place) => place.isExternal).length
+  const backendDbResultCount = Math.max(recommendationResults.length - backendExternalResultCount, 0)
   const relevantDbResultCount = Number(
-    data.relevant_result_count ?? frameDirectMatchCount ?? recommendationResults.length,
+    data.external_search_triggered
+      ? backendDbResultCount
+      : (data.relevant_result_count ?? frameDirectMatchCount ?? backendDbResultCount),
   )
+  if (backendIsAiFirst) {
+    fallbackResults.value = []
+    resultFilterMode.value = 'all'
+    visibleCount.value = DISPLAY_BATCH_SIZE
+    activeResultView.value = 'results'
+    isResultListCollapsed.value = false
+    resultSourceLabel.value = 'AI 검색 결과'
+    resultMessageSuffix.value = `DB ${backendDbResultCount}개, 외부 후보 ${backendExternalResultCount}개 · evidence 통합 정렬 · ${resultScenarioLabel}`
+    placeListItemRefs.value = {}
+    selectedPlace.value = null
+    showDetailPanel.value = false
+    detailFrameError.value = false
+
+    if (recommendationResults.length) {
+      setMainResults(recommendationResults)
+      searchResultStatus.value = 'success'
+      clearMainSearchErrorState()
+      mapFitBoundsKey.value += 1
+      locationMessage.value = data.message ||
+        `${baseLabel} "${originalQuery}" backend AI-first 결과를 표시했습니다.`
+    } else {
+      mainResults.value = []
+      fallbackResults.value = []
+      webReferenceResults.value = []
+      syncLegacySearchResults()
+      searchResultStatus.value = data.decision_action === 'ai_unavailable' ? 'error' : 'empty'
+      locationMessage.value = data.message ||
+        data.clarification_question ||
+        `"${originalQuery}" 조건에 맞는 backend AI-first 결과가 없습니다.`
+    }
+    loadingMessage.value = ''
+    isSearchingMap.value = false
+    await logSearchResultState()
+    return
+  }
+
   if (recommendationResults.length) {
     setMainResults(recommendationResults)
     resultFilterMode.value = 'all'
     visibleCount.value = DISPLAY_BATCH_SIZE
     resultSourceLabel.value = 'AI 검색 결과'
-    resultMessageSuffix.value = `DB ${recommendationResults.length}개 · ${resultScenarioLabel}`
+    resultMessageSuffix.value = useUnifiedBackendOrder
+      ? `DB ${backendDbResultCount}개, 외부 후보 ${backendExternalResultCount}개 · evidence 통합 정렬 · ${resultScenarioLabel}`
+      : backendExternalResultCount
+      ? `DB ${backendDbResultCount}개, 외부 후보 ${backendExternalResultCount}개 · ${resultScenarioLabel}`
+      : `DB ${backendDbResultCount}개 · ${resultScenarioLabel}`
     placeListItemRefs.value = {}
     mapFitBoundsKey.value += 1
     activeResultView.value = 'results'
@@ -9077,20 +9520,8 @@ const runAiMapSearchAtCenter = async ({
   const dbCategoryFallbackCount = recommendationResults.filter((place) => {
     return isCategoryFallbackRecommendation(place)
   }).length
-  const shouldRunFallback = shouldRunKakaoRecommendationFallback({
-    dbResults: recommendationResults,
-    query: targetQuery,
-    recommendationIntent,
-    categoryHint,
-    data,
-    menuProfile: menuSearchProfile,
-    parsedIntent,
-  })
-  kakaoFallbackQueries = buildKakaoRecommendationFallbackQueries({
-    query: targetQuery,
-    data,
-    parsedIntent,
-  })
+  const shouldRunFallback = false
+  kakaoFallbackQueries = []
 
   if (import.meta.env.DEV && menuSearchProfile.menuIntent) {
     console.debug('[메뉴 fallback 진입]', {
@@ -9099,87 +9530,12 @@ const runAiMapSearchAtCenter = async ({
       isMenuSearch: menuSearchProfile.menuIntent,
       menuKeywords: menuSearchProfile.menuKeywords,
       placeTypeKeywords: menuSearchProfile.placeTypeKeywords,
-      dbCount: recommendationResults.length,
+      dbCount: backendDbResultCount,
+      backendExternalResultCount,
       dbCategoryFallbackCount,
       directMenuMatchCount: directMenuDbMatchCount,
       shouldRunKakaoFallback: shouldRunFallback,
     })
-  }
-
-  if (import.meta.env.DEV) {
-    console.debug('[카카오 fallback 시작]', getSearchPlanDebugSnapshot(parsedIntent || {}, {
-      query: targetQuery,
-      rawQuery: originalQuery,
-      originalQuery,
-      dbResultCount: recommendationResults.length,
-      rawDbResultCount: rawRecommendationResults.length,
-      frameDirectMatchCount,
-      directMenuDbMatchCount,
-      menuIntent: menuSearchProfile.menuIntent,
-      shouldRunFallback,
-      center,
-      fallbackQueries: kakaoFallbackQueries,
-      recommendationIntentForScoring: getRecommendationIntentForScoring(recommendationIntent, parsedIntent || {}),
-    }))
-  }
-
-  if (shouldRunFallback) {
-    try {
-      if (import.meta.env.DEV && menuSearchProfile.menuIntent) {
-        console.debug('[메뉴 fallback 실행]', {
-          queries: kakaoFallbackQueries,
-          center,
-          radius: SEARCH_RADIUS,
-        })
-      }
-
-      loadingMessage.value = '부족한 추천 후보 보강 중'
-      const fallbackData = recommendationIntent === 'walk_healing'
-        ? await runWalkHealingFallbackSearch({
-          placesService,
-          query: targetQuery,
-          data,
-          parsedIntent,
-          center,
-          preferredTags,
-          categoryHint,
-          isAncillaryIntent,
-          requestedConditions,
-        })
-        : await runKakaoRecommendationFallbackSearch({
-          placesService,
-          query: targetQuery,
-          data,
-          parsedIntent,
-          fallbackQueries: kakaoFallbackQueries,
-          center,
-          preferredTags,
-          recommendationIntent,
-          categoryHint,
-          isAncillaryIntent,
-          requestedConditions,
-        })
-      kakaoResults = fallbackData.results
-      kakaoFallbackQueries = fallbackData.queries
-      kakaoFallbackDebug = {
-        queryResultCounts: fallbackData.queryResultCounts || [],
-        excludedCount: fallbackData.excludedCount || 0,
-        rawCount: fallbackData.rawCount || 0,
-        filteredCount: fallbackData.filteredCount || fallbackData.results?.length || 0,
-        dedupeExcludedCount: fallbackData.dedupeExcludedCount || 0,
-        fallbackStage: fallbackData.fallbackStage || '',
-        radius: fallbackData.radius || SEARCH_RADIUS,
-        status: fallbackData.status || '',
-      }
-    } catch (error) {
-      console.warn('[카카오 fallback] 보조 후보 보강 실패', error)
-      kakaoResults = []
-      kakaoFallbackQueries = []
-      kakaoFallbackDebug = {
-        ...kakaoFallbackDebug,
-        status: 'fallback_failed',
-      }
-    }
   }
 
   loadingMessage.value = '추천 결과 정리 중'
@@ -9314,7 +9670,9 @@ const runAiMapSearchAtCenter = async ({
   searchResultStatus.value = 'success'
   clearMainSearchErrorState()
   resultSourceLabel.value = 'AI 검색 결과'
-  resultMessageSuffix.value = `DB ${recommendationResults.length}개, 카카오 fallback ${kakaoResults.length}개 · ${resultScenarioLabel}`
+  resultMessageSuffix.value = useUnifiedBackendOrder
+    ? `DB ${backendDbResultCount}개, 외부 후보 ${backendExternalResultCount}개 · evidence 통합 정렬 · ${resultScenarioLabel}`
+    : `DB ${backendDbResultCount}개, 외부 후보 ${backendExternalResultCount}개, 카카오 fallback ${kakaoResults.length}개 · ${resultScenarioLabel}`
   placeListItemRefs.value = {}
   mapFitBoundsKey.value += 1
   activeResultView.value = 'results'
@@ -9336,15 +9694,16 @@ const runAiMapSearchAtCenter = async ({
     existingResultsSummary: {
       db_count: isFrameDrivenSearch(parsedIntent || {})
         ? relevantDbResultCount
-        : (menuSearchProfile.menuIntent ? directMenuDbMatchCount : recommendationResults.length),
+        : (menuSearchProfile.menuIntent ? Math.min(directMenuDbMatchCount, backendDbResultCount) : backendDbResultCount),
       relevant_result_count: relevantDbResultCount,
-      raw_db_count: recommendationResults.length,
+      raw_db_count: backendDbResultCount,
+      backend_external_count: backendExternalResultCount,
       kakao_fallback_count: kakaoResults.length,
       total_count: (
         isFrameDrivenSearch(parsedIntent || {})
           ? relevantDbResultCount
-          : (menuSearchProfile.menuIntent ? directMenuDbMatchCount : recommendationResults.length)
-      ) + kakaoResults.length,
+          : (menuSearchProfile.menuIntent ? Math.min(directMenuDbMatchCount, backendDbResultCount) : backendDbResultCount)
+      ) + backendExternalResultCount + kakaoResults.length,
       raw_total_count: finalResults.length,
       direct_match_count: isFrameDrivenSearch(parsedIntent || {})
         ? frameDirectMatchCount
@@ -9366,10 +9725,19 @@ const runAiMapSearchAtCenter = async ({
   })
 
   const intentSummaryMessage = parsedIntent?.userIntentSummary || ''
+  const externalMergeText = useUnifiedBackendOrder
+    ? 'DB/Kakao/Web 후보를 근거 기준으로 통합 정렬했습니다.'
+    : backendExternalResultCount
+    ? 'DB 추천이 부족해 외부 근거 후보를 함께 표시했습니다.'
+    : (kakaoResults.length ? 'DB 추천이 부족해 카카오 fallback 후보를 함께 표시했습니다.' : 'DB 추천 결과를 표시했습니다.')
   locationMessage.value = intentSummaryMessage
-    ? `${intentSummaryMessage} ${kakaoResults.length ? 'DB 추천이 부족해 카카오 fallback 후보를 함께 표시했습니다.' : 'DB 추천 결과를 표시했습니다.'}`
+    ? `${intentSummaryMessage} ${externalMergeText}`
     : (
-      kakaoResults.length
+      useUnifiedBackendOrder
+        ? `${baseLabel} "${originalQuery}" DB/Kakao/Web 후보를 근거 기준으로 통합 정렬했습니다.`
+        : backendExternalResultCount
+        ? `${baseLabel} "${originalQuery}" DB 추천이 부족해 외부 근거 후보를 함께 표시했습니다.`
+        : kakaoResults.length
         ? `${baseLabel} "${originalQuery}" DB 추천이 부족해 카카오 fallback 후보를 함께 표시했습니다.`
         : `${baseLabel} "${originalQuery}" 자연어 조건의 DB 추천 결과를 표시했습니다.`
     )
@@ -10232,30 +10600,101 @@ const performUnifiedMapSearch = async ({
   const previousMainResults = [...mainResults.value]
   const previousFallbackResults = [...fallbackResults.value]
   const previousWebReferenceResults = [...webReferenceResults.value]
-  const clarificationFollowUpPlan = useMapBounds
-    ? null
-    : buildClarificationFollowUpPlan(keyword)
-  const clarificationFollowUpPayload = !clarificationFollowUpPlan && pendingClarificationForFollowUp
+  const clarificationFollowUpPayload = pendingClarificationForFollowUp
     ? buildClarificationFollowUpPayload(pendingClarificationForFollowUp, keyword)
     : {}
   beginMainSearch({
-    preserveClarificationThread: Boolean(clarificationFollowUpPlan || pendingClarificationForFollowUp),
+    preserveClarificationThread: Boolean(pendingClarificationForFollowUp),
   })
 
-  let conversationalPlan = clarificationFollowUpPlan || (
-    useMapBounds
-      ? null
-      : await resolveConversationalSearchPlan(keyword, previousContext, clarificationFollowUpPayload)
-  )
+  if (!useMapBounds) {
+    if (!window.kakao || !window.kakao.maps || !window.kakao.maps.services) {
+      alert('移댁뭅??吏???쒕퉬?ㅻ? 遺덈윭?ㅻ뒗 以묒엯?덈떎. ?좎떆 ???ㅼ떆 寃?됲빐二쇱꽭??')
+      isSearchingMap.value = false
+      loadingMessage.value = ''
+      return
+    }
 
-  if (clarificationFollowUpPlan) {
-    appendClarificationFollowUpThread(keyword, clarificationFollowUpPlan.message)
+    if (pendingClarificationForFollowUp) {
+      appendClarificationAnswerMessage(keyword)
+    }
+
+    const placesService = new window.kakao.maps.services.Places()
+    const geocoder = new window.kakao.maps.services.Geocoder()
+    const currentContext = await getSearchCenterForRecommendation()
+    const backendOnlyPlan = {
+      originalQuery: keyword,
+      targetQuery: keyword,
+      targetKeyword: keyword,
+      searchMode: 'recommendation_query',
+      recommendationIntent: '',
+      backendAiOnly: true,
+      parser_provider: 'backend_ai_only',
+      parser_fallback: false,
+      plan_source: 'ai',
+      kakaoKeywordCandidates: [],
+    }
+
+    await runAiMapSearchAtCenter({
+      placesService,
+      geocoder,
+      originalQuery: keyword,
+      targetQuery: keyword,
+      center: currentContext.center,
+      baseLabel: currentContext.baseLabel,
+      parsedIntent: backendOnlyPlan,
+      extraAiPayload: {
+        previousContext,
+        previous_context: previousContext,
+        previous_search_context: previousContext,
+        ...clarificationFollowUpPayload,
+      },
+    })
+
+    if (pendingClarificationForFollowUp && displayResults.value.length) {
+      appendSearchSummaryMessage(locationMessage.value || resultCountText.value)
+    }
+    if (!baseLocationCandidates.value.length) {
+      isSearchingMap.value = false
+      loadingMessage.value = ''
+      searchResultStatus.value = displayResults.value.length ? 'success' : searchResultStatus.value
+    }
+    return
+  }
+
+  let conversationalPlan = useMapBounds
+    ? null
+    : await resolveConversationalSearchPlan(keyword, previousContext, clarificationFollowUpPayload)
+
+  if (pendingClarificationForFollowUp) {
+    appendClarificationAnswerMessage(keyword)
   } else if (shouldAskLocationChoiceBeforeSearch({
     conversationalPlan,
     rawQuery: keyword,
     allowImplicitCurrentContext,
   })) {
     conversationalPlan = makeLocationChoiceClarificationPlan(conversationalPlan, keyword)
+  }
+
+  if (pendingClarificationForFollowUp && !conversationalPlan) {
+    conversationalPlan = {
+      action: 'ask_clarification',
+      decision_action: 'ask_clarification',
+      needs_clarification: true,
+      can_search_now: false,
+      message: '이전 질문에 대한 답변을 해석하지 못했습니다. 목적과 지역을 함께 다시 입력해 주세요.',
+      clarification_question: '어떤 목적의 장소를 어느 지역 기준으로 찾으시나요?',
+      clarification_options: [],
+      search_plan: pendingClarificationForFollowUp.partial_search_plan || {},
+      execution_policy: {
+        run_search: false,
+        allow_kakao_fallback: false,
+      },
+      parser_provider: 'frontend',
+      parser_fallback: false,
+      execution_mode: 'decision_gate',
+      plan_source: 'backend_followup_unavailable',
+    }
   }
 
   if (
@@ -10306,7 +10745,8 @@ const performUnifiedMapSearch = async ({
     if (conversationalPlan.action === 'ask_clarification') {
       setClarificationThread(keyword, conversationalPlan, locationMessage.value)
     } else {
-      clearPendingClarification()
+      setDecisionConversationThread(keyword, conversationalPlan, locationMessage.value, conversationalPlan.action)
+      clearPendingClarification({ preserveMessages: true })
     }
     searchResultStatus.value = displayResults.value.length ? 'success' : 'idle'
     loadingMessage.value = ''
@@ -10314,11 +10754,9 @@ const performUnifiedMapSearch = async ({
     return
   }
 
-  if (!clarificationFollowUpPlan) {
-    clearPendingClarification()
-  } else {
-    pendingClarification.value = null
-  }
+  clearPendingClarification({
+    preserveMessages: Boolean(pendingClarificationForFollowUp),
+  })
   const parsedKeyword = conversationalPlan
     ? adaptConversationalSearchPlan(conversationalPlan, keyword)
     : buildSearchPlan(keyword)
@@ -10331,6 +10769,9 @@ const performUnifiedMapSearch = async ({
       : 'distance'
     aiSearchKeyword.value = keyword
     await searchAiRecommendationsOnMap(parsedKeyword)
+    if (pendingClarificationForFollowUp) {
+      appendSearchSummaryMessage(locationMessage.value || resultCountText.value)
+    }
     if (!baseLocationCandidates.value.length && loadingMessage.value === '검색 의도 해석 중') {
       isSearchingMap.value = false
       loadingMessage.value = ''
@@ -10341,6 +10782,9 @@ const performUnifiedMapSearch = async ({
 
   sortMode.value = 'distance'
   await searchKakaoPlaces({ useMapBounds, searchPlanOverride: parsedKeyword })
+  if (pendingClarificationForFollowUp) {
+    appendSearchSummaryMessage(locationMessage.value || resultCountText.value)
+  }
   if (!baseLocationCandidates.value.length && loadingMessage.value === '검색 의도 해석 중') {
     isSearchingMap.value = false
     loadingMessage.value = ''
@@ -10811,12 +11255,12 @@ const handleDetailFrameError = () => {
           >
             <button
               v-for="option in clarificationOptions"
-              :key="option"
+              :key="`${getClarificationOptionLabel(option)}-${getClarificationOptionValue(option)}`"
               type="button"
               :disabled="isSearchingMap"
               @click="submitClarificationOption(option)"
             >
-              {{ option }}
+              {{ getClarificationOptionLabel(option) }}
             </button>
           </div>
 
@@ -13086,6 +13530,11 @@ h1 {
   color: #222222;
 }
 
+.place-list-marker.source-web {
+  border-color: currentColor;
+  color: #222222;
+}
+
 .place-list-main {
   min-width: 0;
   flex: 1;
@@ -13325,6 +13774,11 @@ h1 {
 .source-badge.source-db {
   background: #dbeafe;
   color: #1d4ed8;
+}
+
+.source-badge.source-web {
+  background: #e2e8f0;
+  color: #334155;
 }
 
 .source-badge.source-base {

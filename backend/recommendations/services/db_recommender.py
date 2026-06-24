@@ -452,11 +452,16 @@ def _normalize_frame_for_recommendation(search_plan=None, place_intent_frame=Non
         or search_plan.get("locationMode")
         or ""
     ).strip()
+    collector_categories = _as_text_list(
+        search_plan.get("collector_category_codes")
+        or search_plan.get("collectorCategoryCodes")
+    )
     candidate_categories = _as_text_list(
         frame.get("candidate_category_codes")
         or frame.get("candidateCategoryCodes")
         or search_plan.get("candidate_category_codes")
         or search_plan.get("candidateCategoryCodes")
+        or collector_categories
     )
     candidate_place_types = _as_text_list(
         frame.get("candidate_place_types")
@@ -671,11 +676,117 @@ def _term_matches_text(text, terms):
     )
 
 
+FRAME_EVIDENCE_TIER_RANKS = {
+    "target_direct": 0,
+    "result_direct": 1,
+    "verified_direct": 2,
+    "suggested_direct": 3,
+    "candidate_direct": 4,
+    "category_only": 5,
+    "none": 9,
+}
+
+TRUSTED_DIRECT_TAG_SOURCES = {"checked", "user_verified"}
+SUGGESTED_DIRECT_TAG_SOURCES = {"ai_suggested", "blog_search"}
+
+
+def _frame_evidence_sort_rank(frame_relevance):
+    frame_relevance = frame_relevance if isinstance(frame_relevance, dict) else {}
+    return FRAME_EVIDENCE_TIER_RANKS.get(
+        frame_relevance.get("evidence_tier") or "none",
+        FRAME_EVIDENCE_TIER_RANKS["none"],
+    )
+
+
+def _frame_result_terms(frame):
+    return _as_text_list(frame.get("result_match_terms")) + _as_text_list(frame.get("resultMatchTerms"))
+
+
+def _is_trusted_tag_detail(detail):
+    if not isinstance(detail, dict):
+        return False
+    if detail.get("is_verified"):
+        return True
+    return (
+        detail.get("source") in TRUSTED_DIRECT_TAG_SOURCES
+        and detail.get("status") == "confirmed"
+    )
+
+
+def _is_suggested_tag_detail(detail):
+    if not isinstance(detail, dict):
+        return False
+    if _is_trusted_tag_detail(detail):
+        return False
+    return detail.get("source") in SUGGESTED_DIRECT_TAG_SOURCES or detail.get("status") != "confirmed"
+
+
+def _tag_names_for_evidence(tag_data, *, trusted):
+    names = []
+    for detail in tag_data.get("tag_details", []):
+        if not isinstance(detail, dict):
+            continue
+        if _is_trusted_tag_detail(detail) == trusted:
+            names.append(detail.get("name"))
+    return list(dict.fromkeys(name for name in names if name))
+
+
+def _append_frame_evidence(evidence, evidence_type, value, *, label="", source_strength=""):
+    item = {
+        "type": evidence_type,
+        "value": value,
+    }
+    if label:
+        item["label"] = label
+    if source_strength:
+        item["source_strength"] = source_strength
+    evidence.append(item)
+
+
+def _evidence_tier(evidence):
+    best_tier = "none"
+    best_rank = FRAME_EVIDENCE_TIER_RANKS[best_tier]
+    for item in evidence:
+        evidence_type = str(item.get("type") or "")
+        source_strength = str(item.get("source_strength") or "")
+        if source_strength == "verified":
+            tier = "verified_direct"
+        elif source_strength == "suggested":
+            tier = "suggested_direct"
+        elif source_strength == "candidate":
+            tier = "candidate_direct"
+        elif evidence_type.startswith("target_"):
+            tier = "target_direct"
+        elif evidence_type.startswith("result_"):
+            tier = "result_direct"
+        elif evidence_type in {"category_code", "category_label"}:
+            tier = "category_only"
+        else:
+            tier = "none"
+
+        rank = FRAME_EVIDENCE_TIER_RANKS.get(tier, FRAME_EVIDENCE_TIER_RANKS["none"])
+        if rank < best_rank:
+            best_rank = rank
+            best_tier = tier
+    return best_tier
+
+
+def _match_strength_from_evidence_tier(tier):
+    if tier in {"target_direct", "result_direct", "verified_direct"}:
+        return "strong"
+    if tier in {"suggested_direct", "candidate_direct"}:
+        return "medium"
+    if tier == "category_only":
+        return "weak"
+    return "none"
+
+
 def _frame_relevance_terms(frame):
     return list(dict.fromkeys(
         _as_text_list(frame.get("target_objects"))
         + _as_text_list(frame.get("targetObjects"))
         + _as_text_list(frame.get("result_match_terms"))
+        + _as_text_list(frame.get("constraints"))
         + _as_text_list(frame.get("candidate_place_types"))
     ))
 
@@ -685,6 +796,7 @@ def _frame_target_terms(frame):
         _as_text_list(frame.get("target_objects"))
         + _as_text_list(frame.get("targetObjects"))
         + _as_text_list(frame.get("result_match_terms"))
+        + _as_text_list(frame.get("constraints"))
     ))
 
 
@@ -782,94 +894,177 @@ def _evaluate_frame_relevance(place, tag_data, frame):
     evidence = []
     matched_categories = []
     category_codes = set(_as_text_list(frame.get("candidate_category_codes")))
-    relevance_terms = _frame_relevance_terms(frame)
-    target_terms = _frame_target_terms(frame)
     target_object_terms = list(dict.fromkeys(
         _as_text_list(frame.get("target_objects"))
         + _as_text_list(frame.get("targetObjects"))
     ))
+    result_terms = _frame_result_terms(frame)
+    target_terms = _frame_target_terms(frame)
     candidate_terms = _frame_candidate_terms(frame)
     category_label = get_category_display_name(place.category)
-    non_category_text = " ".join([
+    place_identity_text = " ".join([
         place.name,
         place.address,
         place.detail_location,
         place.source_name,
         _raw_search_text(place.raw),
-        " ".join(tag_data["verified_tags"]),
-        " ".join(tag_data["suggested_tags"]),
         " ".join(tag_data["warning_tags"]),
     ])
     category_text = " ".join([place.category, category_label])
-    has_target_evidence = bool(
-        (target_object_terms and _term_matches_text(category_text, target_object_terms))
-        or (target_terms and _term_matches_text(non_category_text, target_terms))
-    )
-    has_candidate_evidence = bool(
-        candidate_terms and (
-            _term_matches_text(non_category_text, candidate_terms)
-            or (not target_object_terms and _term_matches_text(category_text, candidate_terms))
+    trusted_tag_names = _tag_names_for_evidence(tag_data, trusted=True)
+    suggested_tag_names = [
+        detail.get("name")
+        for detail in tag_data.get("tag_details", [])
+        if _is_suggested_tag_detail(detail) and detail.get("name")
+    ]
+    candidate_tag_names = [
+        detail.get("name")
+        for detail in tag_data.get("tag_details", [])
+        if (
+            isinstance(detail, dict)
+            and detail.get("name")
+            and not _is_trusted_tag_detail(detail)
+            and not _is_suggested_tag_detail(detail)
         )
-    )
+    ]
+    trusted_tag_text = " ".join(trusted_tag_names)
+    suggested_tag_text = " ".join(suggested_tag_names)
+    candidate_tag_text = " ".join(candidate_tag_names)
 
     if category_codes and place.category in category_codes:
         matched_categories.append(place.category)
-        evidence.append({
-            "type": "category_code",
-            "value": place.category,
-            "label": category_label,
-        })
+        _append_frame_evidence(
+            evidence,
+            "category_code",
+            place.category,
+            label=category_label,
+        )
 
     if target_object_terms and _term_matches_text(category_text, target_object_terms):
-        evidence.append({
-            "type": "target_category_label",
-            "value": category_label,
-        })
+        _append_frame_evidence(evidence, "target_category_label", category_label)
+
+    if target_object_terms and _term_matches_text(place_identity_text, target_object_terms):
+        _append_frame_evidence(evidence, "target_place_text", place.name)
+
+    if result_terms and _term_matches_text(category_text, result_terms):
+        _append_frame_evidence(evidence, "result_category_label", category_label)
+
+    if result_terms and _term_matches_text(place_identity_text, result_terms):
+        _append_frame_evidence(evidence, "result_place_text", place.name)
 
     if candidate_terms and _term_matches_text(category_text, candidate_terms):
-        evidence.append({
-            "type": "category_label",
-            "value": category_label,
-        })
+        _append_frame_evidence(evidence, "category_label", category_label)
 
-    for tag_name in tag_data["verified_tags"]:
-        if _term_matches_text(tag_name, target_terms):
-            evidence.append({"type": "target_verified_tag", "value": tag_name})
-        elif _term_matches_text(tag_name, candidate_terms):
-            evidence.append({"type": "verified_tag", "value": tag_name})
+    if candidate_terms and _term_matches_text(place_identity_text, candidate_terms):
+        _append_frame_evidence(
+            evidence,
+            "candidate_place_text",
+            place.name,
+            source_strength="candidate" if not target_object_terms else "",
+        )
 
-    for tag_name in tag_data["suggested_tags"]:
+    for tag_name in trusted_tag_names:
         if _term_matches_text(tag_name, target_terms):
-            evidence.append({"type": "target_saved_tag", "value": tag_name})
+            _append_frame_evidence(
+                evidence,
+                "tag_direct",
+                tag_name,
+                source_strength="verified",
+            )
         elif _term_matches_text(tag_name, candidate_terms):
-            evidence.append({"type": "saved_tag", "value": tag_name})
+            _append_frame_evidence(
+                evidence,
+                "candidate_tag",
+                tag_name,
+                source_strength="candidate" if not target_object_terms else "",
+            )
+
+    for tag_name in suggested_tag_names:
+        if _term_matches_text(tag_name, target_terms):
+            _append_frame_evidence(
+                evidence,
+                "tag_direct",
+                tag_name,
+                source_strength="suggested",
+            )
+        elif _term_matches_text(tag_name, candidate_terms):
+            _append_frame_evidence(
+                evidence,
+                "candidate_tag",
+                tag_name,
+                source_strength="candidate" if not target_object_terms else "",
+            )
+
+    for tag_name in candidate_tag_names:
+        if _term_matches_text(tag_name, target_terms):
+            _append_frame_evidence(
+                evidence,
+                "tag_direct",
+                tag_name,
+                source_strength="candidate",
+            )
+        elif _term_matches_text(tag_name, candidate_terms):
+            _append_frame_evidence(
+                evidence,
+                "candidate_tag",
+                tag_name,
+                source_strength="candidate" if not target_object_terms else "",
+            )
+
+    if (
+        suggested_tag_text
+        and target_terms
+        and _term_matches_text(suggested_tag_text, target_terms)
+        and (
+            _term_matches_text(place_identity_text, target_terms)
+            or _term_matches_text(category_text, target_terms)
+            or _term_matches_text(candidate_tag_text, target_terms)
+        )
+    ):
+        _append_frame_evidence(
+            evidence,
+            "reinforced_suggested_tag",
+            suggested_tag_names[0],
+            source_strength="verified",
+        )
 
     place_natures = _infer_place_natures(place, tag_data)
     preferred_natures = set(_as_text_list(frame.get("preferred_place_natures")))
     if preferred_natures and preferred_natures.intersection(place_natures):
-        evidence.append({
-            "type": "place_nature",
-            "value": sorted(preferred_natures.intersection(place_natures))[0],
-        })
+        _append_frame_evidence(
+            evidence,
+            "place_nature",
+            sorted(preferred_natures.intersection(place_natures))[0],
+        )
 
     score_penalty = 0
     score_penalty_reason = ""
-    match_strength = "none"
+    evidence_tier = _evidence_tier(evidence)
+    match_strength = _match_strength_from_evidence_tier(evidence_tier)
     has_place_nature_evidence = any(item["type"] == "place_nature" for item in evidence)
     place_nature_can_be_medium = (
         not target_object_terms
         or _frame_requests_general_rest(frame)
         or _frame_requests_low_cost_public_space(frame)
     )
-    if has_target_evidence or any(item["type"].startswith("target_") for item in evidence):
-        match_strength = "strong"
-    elif (
-        (has_candidate_evidence and not target_object_terms)
-        or (has_place_nature_evidence and place_nature_can_be_medium)
+    if (
+        match_strength == "weak"
+        and (
+            (has_place_nature_evidence and place_nature_can_be_medium)
+            or (
+                not target_object_terms
+                and candidate_terms
+                and (
+                    _term_matches_text(place_identity_text, candidate_terms)
+                    or _term_matches_text(trusted_tag_text, candidate_terms)
+                    or _term_matches_text(suggested_tag_text, candidate_terms)
+                    or _term_matches_text(candidate_tag_text, candidate_terms)
+                )
+            )
+        )
     ):
         match_strength = "medium"
-    elif matched_categories:
-        match_strength = "weak"
+        evidence_tier = "candidate_direct"
 
     if _frame_requests_general_rest(frame):
         limited_natures = [
@@ -889,8 +1084,8 @@ def _evaluate_frame_relevance(place, tag_data, frame):
         and "commercial_rest_place" not in preferred_natures
         and not score_penalty
     ):
-        score_penalty = 34
-        score_penalty_reason = "commercial_rest_place_for_low_cost_public_space"
+            score_penalty = 34
+            score_penalty_reason = "commercial_rest_place_for_low_cost_public_space"
 
     if match_strength == "weak" and target_terms and not score_penalty:
         score_penalty = 28
@@ -903,7 +1098,12 @@ def _evaluate_frame_relevance(place, tag_data, frame):
 
     score = 0
     if matched_categories:
-        score += 70 if match_strength != "weak" else 45
+        if match_strength == "strong":
+            score += 70
+        elif match_strength == "medium":
+            score += 55
+        else:
+            score += 35
     score += min(30, len(evidence) * 10)
 
     return {
@@ -914,7 +1114,12 @@ def _evaluate_frame_relevance(place, tag_data, frame):
         "relevance_source": "frame_category_or_tag" if evidence else "",
         "place_natures": place_natures,
         "match_strength": match_strength,
-        "has_target_evidence": has_target_evidence,
+        "evidence_tier": evidence_tier,
+        "evidence_sort_rank": FRAME_EVIDENCE_TIER_RANKS.get(
+            evidence_tier,
+            FRAME_EVIDENCE_TIER_RANKS["none"],
+        ),
+        "has_target_evidence": evidence_tier in {"target_direct", "result_direct", "verified_direct"},
         "score_penalty": score_penalty,
         "score_penalty_reason": score_penalty_reason,
     }
@@ -1112,7 +1317,7 @@ def get_place_tag_data(place):
 
         if tag.tag_type == "warning" or tag.name in raw_warning_tags:
             warning_tags.append(tag.name)
-        elif place_tag.is_verified or place_tag.status == "confirmed":
+        elif _is_trusted_tag_detail(detail):
             verified_tags.append(tag.name)
         else:
             suggested_tags.append(tag.name)
@@ -1262,8 +1467,10 @@ def build_result_metadata(
     match_level,
     score_breakdown,
     required_tags=None,
+    frame_relevance=None,
 ):
     required_tags = required_tags or []
+    frame_relevance = frame_relevance if isinstance(frame_relevance, dict) else {}
     required_missing_tags = [
         tag for tag in required_tags
         if tag in missing_tags
@@ -1281,6 +1488,62 @@ def build_result_metadata(
         or tag_data["suggested_tags"]
         or tag_data["warning_tags"]
     )
+    evidence_tier = frame_relevance.get("evidence_tier") or ""
+
+    if evidence_tier in {"target_direct", "result_direct", "verified_direct"}:
+        source_type = "db_verified" if evidence_tier == "verified_direct" else "db_direct_evidence"
+        is_verified = evidence_tier == "verified_direct"
+        confidence = "high" if is_verified and not required_missing_tags else "medium"
+        caution = "" if is_verified else "장소명/카테고리/설명에서 요청 의도와 직접 맞는 근거가 확인됐습니다. 세부 정보는 방문 전 확인해 주세요."
+        if required_missing_tags:
+            caution = "직접 근거는 있지만 요청의 핵심 조건 일부는 아직 확인되지 않았습니다."
+        return {
+            "source_type": source_type,
+            "confidence": confidence,
+            "is_verified": is_verified,
+            "fallback_level": 1,
+            "missing_tags": missing_tags,
+            "required_missing_tags": required_missing_tags,
+            "caution_message": caution,
+            "evidence_label": "추천 근거 높음",
+            "evidence_description": "현재 사용자 의도와 직접 맞는 근거가 확인된 후보입니다.",
+        }
+
+    if evidence_tier in {"suggested_direct", "candidate_direct"}:
+        caution = "추천 후보이지만 검증된 직접 근거는 아니므로 방문 전 확인이 필요합니다."
+        if required_missing_tags:
+            caution = "요청의 핵심 조건 일부가 확인되지 않아 방문 전 확인이 필요합니다."
+        return {
+            "source_type": "db_candidate",
+            "confidence": "medium" if not required_missing_tags else "low",
+            "is_verified": False,
+            "fallback_level": 2,
+            "missing_tags": missing_tags,
+            "required_missing_tags": required_missing_tags,
+            "caution_message": caution,
+            "evidence_label": "추천 후보, 확인 필요",
+            "evidence_description": "후보/자동 생성 근거가 사용자 의도와 일부 맞지만 검증은 필요합니다.",
+        }
+
+    if evidence_tier == "category_only":
+        caution = "DB 카테고리만 맞고 요청 대상과 직접 맞는 근거는 부족합니다."
+        if missing_tags:
+            missing_labels = get_tag_display_names(
+                missing_tags[:3],
+                hidden_label="확인되지 않은 세부 조건",
+            )
+            caution = f"{caution} 확인되지 않은 조건: {', '.join(missing_labels)}."
+        return {
+            "source_type": "db_category_fallback",
+            "confidence": "low",
+            "is_verified": False,
+            "fallback_level": 5,
+            "missing_tags": missing_tags,
+            "required_missing_tags": required_missing_tags,
+            "caution_message": caution,
+            "evidence_label": "관련 근거 부족 후보",
+            "evidence_description": "카테고리/거리 기반 후보이며 현재 의도와 직접 맞는 근거는 부족합니다.",
+        }
 
     if verified_matches and not required_missing_tags and len(missing_tags) <= 1:
         return {
@@ -1291,6 +1554,8 @@ def build_result_metadata(
             "missing_tags": missing_tags,
             "required_missing_tags": required_missing_tags,
             "caution_message": "",
+            "evidence_label": "추천 근거 높음",
+            "evidence_description": "검증된 DB 태그가 사용자 조건과 일치한 후보입니다.",
         }
 
     if verified_matches:
@@ -1303,6 +1568,8 @@ def build_result_metadata(
             "missing_tags": missing_tags,
             "required_missing_tags": required_missing_tags,
             "caution_message": caution,
+            "evidence_label": "추천 근거 높음",
+            "evidence_description": "검증된 DB 태그 일부가 사용자 조건과 일치한 후보입니다.",
         }
 
     if candidate_matches or matched_tags:
@@ -1324,6 +1591,8 @@ def build_result_metadata(
             "missing_tags": missing_tags,
             "required_missing_tags": required_missing_tags,
             "caution_message": caution,
+            "evidence_label": "추천 후보, 확인 필요",
+            "evidence_description": "후보 태그가 일부 일치하지만 검증은 필요합니다.",
         }
 
     if match_level == "category_distance_fallback":
@@ -1352,6 +1621,8 @@ def build_result_metadata(
             "missing_tags": missing_tags,
             "required_missing_tags": required_missing_tags,
             "caution_message": caution,
+            "evidence_label": "관련 근거 부족 후보",
+            "evidence_description": "카테고리/거리 기반 후보이며 직접 근거는 부족합니다.",
         }
 
     return {
@@ -1362,12 +1633,15 @@ def build_result_metadata(
         "missing_tags": missing_tags,
         "required_missing_tags": required_missing_tags,
         "caution_message": "입력 조건과의 일치 근거가 부족하여 확인이 필요한 후보입니다.",
+        "evidence_label": "관련 근거 부족 후보",
+        "evidence_description": "현재 의도와 직접 맞는 근거가 부족한 후보입니다.",
     }
 
 
 def apply_score_cap(score, metadata, matched_tags, missing_tags, score_breakdown):
     cap = 100
     cap_reasons = []
+    frame_evidence_tier = score_breakdown.get("frame_evidence_tier") or ""
 
     if not metadata["is_verified"]:
         cap = min(cap, 75)
@@ -1393,6 +1667,13 @@ def apply_score_cap(score, metadata, matched_tags, missing_tags, score_breakdown
     if metadata["required_missing_tags"]:
         cap = min(cap, 60)
         cap_reasons.append("required_tags_missing")
+
+    if frame_evidence_tier in {"suggested_direct", "candidate_direct"}:
+        cap = min(cap, 72)
+        cap_reasons.append(f"frame_{frame_evidence_tier}_needs_verification")
+    elif frame_evidence_tier == "category_only":
+        cap = min(cap, 42)
+        cap_reasons.append("frame_category_only_without_direct_evidence")
 
     category_only = (
         score_breakdown.get("category", 0) > 0
@@ -1447,8 +1728,8 @@ def build_result_labels(metadata):
     return {
         "source_label": get_source_label(metadata.get("source_type")),
         "confidence_label": get_confidence_label(metadata.get("confidence")),
-        "fallback_label": get_fallback_label(fallback_level),
-        "fallback_description": get_fallback_description(fallback_level),
+        "fallback_label": metadata.get("evidence_label") or get_fallback_label(fallback_level),
+        "fallback_description": metadata.get("evidence_description") or get_fallback_description(fallback_level),
     }
 
 
@@ -1593,6 +1874,7 @@ def serialize_recommendation(
         match_level=match_level,
         score_breakdown=score_breakdown,
         required_tags=required_tags,
+        frame_relevance=frame_relevance,
     )
     if "score_cap" in score_breakdown:
         score_cap = score_breakdown.get("score_cap")
@@ -1693,6 +1975,8 @@ def serialize_recommendation(
         "relevance_score": frame_relevance.get("relevance_score", 0),
         "relevance_source": frame_relevance.get("relevance_source", ""),
         "frame_match_strength": frame_relevance.get("match_strength", ""),
+        "frame_evidence_tier": frame_relevance.get("evidence_tier", ""),
+        "evidence_sort_rank": frame_relevance.get("evidence_sort_rank"),
         "excluded_reason": frame_relevance.get("excluded_reason", ""),
         "place_natures": frame_relevance.get("place_natures", []),
         "plan_source": condition.get("plan_source", ""),
@@ -1877,6 +2161,8 @@ def search_db_recommendations(
         if frame_mode:
             score_breakdown["frame_match_strength"] = frame_relevance.get("match_strength", "")
             score_breakdown["frame_has_target_evidence"] = frame_relevance.get("has_target_evidence", False)
+            score_breakdown["frame_evidence_tier"] = frame_relevance.get("evidence_tier", "")
+            score_breakdown["frame_evidence_sort_rank"] = frame_relevance.get("evidence_sort_rank")
 
         missing_tags = _missing_tags(
             tag_data,
@@ -1900,6 +2186,7 @@ def search_db_recommendations(
             match_level=match_level,
             score_breakdown=score_breakdown,
             required_tags=context["required_tags"],
+            frame_relevance=frame_relevance,
         )
         score, score_cap, score_cap_reasons = apply_score_cap(
             score,
@@ -1942,7 +2229,14 @@ def search_db_recommendations(
             frame_relevance,
         ))
 
-    if ranking_policy == "urgent_nearest":
+    if frame_mode:
+        candidates.sort(key=lambda item: (
+            _frame_evidence_sort_rank(item[5]),
+            item[1],
+            -item[0],
+            item[2].id,
+        ))
+    elif ranking_policy == "urgent_nearest":
         candidates.sort(key=lambda item: (item[1], -item[0], item[2].id))
     else:
         candidates.sort(key=lambda item: (-item[0], item[1], item[2].id))

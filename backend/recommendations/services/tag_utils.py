@@ -48,11 +48,14 @@ CATEGORY_DISPLAY_NAMES = {
 }
 
 SOURCE_TYPE_LABELS = {
+    "db_direct_evidence": "DB 직접 근거 기반",
     "db_verified": "DB 검증 태그 기반",
     "db_candidate": "DB 후보 태그 기반",
     "db_category_fallback": "DB 카테고리 기반",
     "kakao_with_db_tags": "카카오+DB 태그 보강",
     "kakao_candidate": "카카오 검색 후보",
+    "web_evidence_candidate": "웹 근거 후보",
+    "web_reference": "웹 참고 근거",
 }
 
 CONFIDENCE_LABELS = {

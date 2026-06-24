@@ -629,14 +629,10 @@ def _has_gms_config():
     return bool(getattr(settings, "GMS_API_KEY", "") and getattr(settings, "GMS_API_URL", ""))
 
 
-def _call_gms_chat_json(query, system_prompt, max_completion_tokens):
+def _call_gms_chat_json(query, system_prompt, max_completion_tokens, *, model=None, timeout=None):
     api_key = getattr(settings, "GMS_API_KEY", "")
     api_url = getattr(settings, "GMS_API_URL", "")
-    model = getattr(
-        settings,
-        "AI_INTENT_MODEL",
-        getattr(settings, "GMS_MODEL", "gpt-5-nano"),
-    )
+    model = model or getattr(settings, "AI_INTENT_MODEL", getattr(settings, "GMS_MODEL", "gpt-5-nano"))
 
     if not _has_gms_config():
         return None
@@ -666,7 +662,7 @@ def _call_gms_chat_json(query, system_prompt, max_completion_tokens):
         api_url,
         headers=headers,
         json=payload,
-        timeout=getattr(settings, "AI_REQUEST_TIMEOUT", 4),
+        timeout=timeout or getattr(settings, "AI_REQUEST_TIMEOUT", 4),
     )
     response.raise_for_status()
     data = response.json()

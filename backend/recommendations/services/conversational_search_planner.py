@@ -45,6 +45,8 @@ ROUTER_ACTIONS = {
 BROAD_FRAME_TERMS = {
     "장소",
     "추천장소",
+    "추천장소",
+    "추천 장소",
     "갈만한곳",
     "갈만한데",
     "갈곳",
@@ -64,7 +66,42 @@ BROAD_FRAME_TERMS = {
     "무난한곳",
 }
 
+BROAD_FALLBACK_PLACE_TERMS = {
+    "장소",
+    "추천장소",
+    "추천 장소",
+    "공간",
+    "갈만한곳",
+    "갈만한 곳",
+    "갈만한데",
+    "갈만한 데",
+    "카페",
+    "쉼터",
+    "cafe",
+    "shelter",
+}
+
+BROAD_DEFAULT_PLACE_TERMS = {
+    "카페",
+    "쉼터",
+    "cafe",
+    "shelter",
+    "restaurant",
+    "식당",
+    "음식점",
+    "장소",
+    "추천장소",
+    "추천 장소",
+    "갈만한곳",
+    "갈만한 곳",
+    "쉴곳",
+    "쉴 곳",
+}
+
 BROAD_FRAME_CONFIDENCE_THRESHOLD = 0.58
+BROAD_FRAME_LOW_CONFIDENCE_THRESHOLD = 0.5
+BROAD_FRAME_CLARIFICATION_MESSAGE = "어떤 목적의 장소를 찾으시나요?"
+BROAD_FRAME_CLARIFICATION_OPTIONS = ["쉬기", "먹기", "산책", "작업", "조용한 곳"]
 
 AI_SCENARIO_ALIASES = {
     "study_room": "work_cafe",
@@ -616,6 +653,17 @@ def build_conversational_search_plan(
     if not normalized_query:
         return _finalize_router_plan(_empty_plan(query))
 
+    if _is_clarification_followup_context(previous_context):
+        return _finalize_router_plan(
+            _build_clarification_followup_search_plan(
+                normalized_query,
+                previous_context,
+                lat=lat,
+                lng=lng,
+                map_center=map_center,
+            )
+        )
+
     rule_plan = _build_rule_plan(
         normalized_query,
         lat=lat,
@@ -1021,6 +1069,417 @@ def _refine_previous_search_plan(query, previous_context):
     }
 
 
+def _is_clarification_followup_context(previous_context):
+    if not isinstance(previous_context, dict):
+        return False
+    if not previous_context.get("is_clarification_followup"):
+        return False
+    return any(
+        isinstance(previous_context.get(key), dict)
+        for key in ("search_plan", "pending_clarification_frame")
+    )
+
+
+def _rule_plan_has_searchable_evidence(rule_plan, lat=None, lng=None, map_center=None):
+    if not isinstance(rule_plan, dict) or rule_plan.get("action") != "search":
+        return False
+
+    execution_policy = rule_plan.get("execution_policy")
+    if isinstance(execution_policy, dict) and execution_policy.get("run_search") is False:
+        return False
+
+    search_plan = rule_plan.get("search_plan")
+    if not isinstance(search_plan, dict):
+        return False
+    intent_group = _clean_text(search_plan.get("intent_group") or search_plan.get("intentGroup"))
+    if not intent_group or intent_group == "general_place_search":
+        return False
+
+    target_terms = _sanitize_frame_list([
+        search_plan.get("targetQuery"),
+        search_plan.get("target_query"),
+        *(_normalize_text_list(search_plan.get("menu_keywords") or [])),
+        *(_normalize_text_list(search_plan.get("place_type_keywords") or [])),
+        *(_normalize_text_list(search_plan.get("kakaoKeywordCandidates") or [])),
+    ])
+    has_target_evidence = bool(target_terms and not _all_terms_are_broad(target_terms))
+    location = rule_plan.get("location") if isinstance(rule_plan.get("location"), dict) else {}
+    has_location_context = bool(
+        location.get("is_explicit")
+        or _has_coordinate_context(lat, lng, map_center)
+    )
+    return has_target_evidence and has_location_context
+
+
+def _get_context_location_value(context, *keys):
+    if not isinstance(context, dict):
+        return ""
+    return _clean_text(_first_text(*(context.get(key) for key in keys)))
+
+
+def _get_context_float(context, *keys):
+    if not isinstance(context, dict):
+        return None
+    for key in keys:
+        try:
+            value = float(context.get(key))
+        except (TypeError, ValueError):
+            continue
+        return value
+    return None
+
+
+def _usable_followup_frame_terms(values, original_query):
+    terms = _sanitize_frame_list(values or [])
+    if not terms or _all_terms_are_broad(terms, query=original_query):
+        return []
+    return terms
+
+
+def _merge_followup_location(query, previous_search_plan, frame, previous_context, lat=None, lng=None, map_center=None):
+    last_location_context = previous_context.get("last_resolved_location_context")
+    if not isinstance(last_location_context, dict):
+        last_location_context = {}
+
+    explicit_location, explicit_target = _extract_location_and_target(query)
+    explicit_location = _sanitize_ai_location_query(explicit_location)
+    answer_text = _clean_target_query(explicit_target or query)
+
+    preserved_anchor = _sanitize_ai_location_query(
+        _first_text(
+            frame.get("anchor_location"),
+            frame.get("anchorLocation"),
+            previous_search_plan.get("locationQuery"),
+            previous_search_plan.get("location_query"),
+            previous_search_plan.get("baseLocationQuery"),
+            previous_search_plan.get("base_location_query"),
+            last_location_context.get("locationQuery"),
+            last_location_context.get("anchorLocation"),
+            last_location_context.get("anchor_location"),
+        )
+    )
+    anchor_location = explicit_location or preserved_anchor
+
+    location_mode = _normalize_frame_location_mode(
+        _first_text(
+            ("explicit" if explicit_location else ""),
+            frame.get("location_mode"),
+            frame.get("locationMode"),
+            previous_search_plan.get("location_mode"),
+            previous_search_plan.get("locationMode"),
+            last_location_context.get("locationMode"),
+            last_location_context.get("location_mode"),
+        ),
+        anchor_location=anchor_location,
+    )
+    has_coordinate_context = (
+        _has_coordinate_context(lat, lng, map_center)
+        or _get_context_float(last_location_context, "lat", "latitude") is not None
+        or _get_context_float(last_location_context, "lng", "longitude") is not None
+    )
+    if not anchor_location and location_mode == "clarification_required" and has_coordinate_context:
+        location_mode = "current_context"
+
+    return anchor_location, location_mode, answer_text
+
+
+def _build_clarification_followup_search_plan(query, previous_context, lat=None, lng=None, map_center=None):
+    previous_context = previous_context if isinstance(previous_context, dict) else {}
+    previous_search_plan = previous_context.get("search_plan")
+    if not isinstance(previous_search_plan, dict):
+        previous_search_plan = {}
+
+    pending_frame = previous_context.get("pending_clarification_frame")
+    if not isinstance(pending_frame, dict):
+        pending_frame = (
+            previous_search_plan.get("place_intent_frame")
+            or previous_search_plan.get("placeIntentFrame")
+            or {}
+        )
+    if not isinstance(pending_frame, dict):
+        pending_frame = {}
+
+    original_query = _clean_text(
+        previous_context.get("previous_user_query")
+        or previous_context.get("original_query")
+        or previous_context.get("query")
+        or previous_search_plan.get("originalQuery")
+        or previous_search_plan.get("original_query")
+        or ""
+    )
+    answer = _clean_target_query(previous_context.get("clarification_answer") or query)
+    anchor_location, location_mode, answer_text = _merge_followup_location(
+        answer,
+        previous_search_plan,
+        pending_frame,
+        previous_context,
+        lat=lat,
+        lng=lng,
+        map_center=map_center,
+    )
+    answer_terms = _sanitize_frame_list([answer_text or answer])
+    if not answer_terms or _all_terms_are_broad(answer_terms, query=answer):
+        plan = _ai_frame_post_validation_clarification_plan(
+            query=original_query or query,
+            raw_plan={"confidence": previous_context.get("confidence", 0)},
+            search_plan=previous_search_plan,
+            frame=pending_frame,
+            reasons=["followup_answer_still_broad"],
+        )
+        plan["fallback_reason"] = "clarification_follow_up_still_broad"
+        return plan
+
+    combined_query = " ".join([original_query, answer]).strip() or query
+    if _can_use_ai_intent_interpreter():
+        ai_fallback_plan = _build_rule_plan(
+            combined_query,
+            lat=lat,
+            lng=lng,
+            map_center=map_center,
+            previous_context=None,
+        )
+        ai_plan, ai_error_reason = _build_ai_plan(combined_query, ai_fallback_plan)
+        if ai_plan:
+            normalized_ai_plan = _normalize_ai_plan(
+                ai_plan,
+                query=combined_query,
+                fallback_plan=ai_fallback_plan,
+                lat=lat,
+                lng=lng,
+                map_center=map_center,
+                previous_context=previous_context,
+            )
+            if normalized_ai_plan:
+                normalized_ai_plan["fallback_reason"] = "clarification_follow_up_ai_merge"
+                normalized_ai_plan["plan_source"] = normalized_ai_plan.get("plan_source") or "ai"
+                normalized_ai_plan["execution_mode"] = normalized_ai_plan.get("execution_mode") or "frame"
+                search_plan = normalized_ai_plan.get("search_plan")
+                if isinstance(search_plan, dict):
+                    search_plan["plan_source"] = search_plan.get("plan_source") or normalized_ai_plan["plan_source"]
+                    search_plan["execution_mode"] = search_plan.get("execution_mode") or normalized_ai_plan["execution_mode"]
+                normalized_ai_plan.setdefault("ai_debug", {})
+                normalized_ai_plan["ai_debug"]["clarification_follow_up_ai_merge"] = {
+                    "status": "used",
+                    "original_query": original_query,
+                    "answer": answer,
+                }
+                return normalized_ai_plan
+
+        plan = _ai_frame_post_validation_clarification_plan(
+            query=combined_query,
+            raw_plan={"confidence": previous_context.get("confidence", 0), "ai_fallback_reason": ai_error_reason},
+            search_plan=previous_search_plan,
+            frame=pending_frame,
+            reasons=["clarification_follow_up_ai_merge_failed"],
+        )
+        plan["fallback_reason"] = "clarification_follow_up_ai_merge_failed"
+        plan["ai_fallback_reason"] = ai_error_reason
+        return plan
+
+    existing_frame = (
+        _normalize_place_intent_frame(pending_frame, user_query=original_query or query)
+        if pending_frame
+        else {}
+    )
+    scenario, categories, kakao_keywords, preferred_tags = _pick_scenario(answer, answer_text or answer)
+    scenario, categories, kakao_keywords, preferred_tags = _apply_query_intent_overrides(
+        answer,
+        scenario,
+        categories,
+        kakao_keywords,
+        preferred_tags,
+    )
+    previous_categories = _normalize_categories(
+        existing_frame.get("candidate_category_codes")
+        or previous_search_plan.get("candidate_category_codes")
+        or previous_search_plan.get("categories")
+        or []
+    )
+    categories = categories or previous_categories
+    scenario = _normalize_scenario(
+        scenario
+        or previous_search_plan.get("scenario")
+        or "waiting_place"
+    )
+
+    existing_targets = _usable_followup_frame_terms(
+        existing_frame.get("target_objects") or existing_frame.get("targetObjects") or [],
+        original_query,
+    )
+    existing_result_terms = _usable_followup_frame_terms(
+        existing_frame.get("result_match_terms") or existing_frame.get("resultMatchTerms") or [],
+        original_query,
+    )
+    existing_place_types = _usable_followup_frame_terms(
+        existing_frame.get("candidate_place_types") or existing_frame.get("candidatePlaceTypes") or [],
+        original_query,
+    )
+    existing_search_queries = _usable_followup_frame_terms(
+        existing_frame.get("search_queries") or existing_frame.get("searchQueries") or [],
+        original_query,
+    )
+
+    target_objects = _unique([*existing_targets, *answer_terms])
+    result_match_terms = _unique([*existing_result_terms, *answer_terms])
+    candidate_place_types = _unique([*existing_place_types, *answer_terms])
+    search_query_terms = _unique([
+        *existing_search_queries,
+        *kakao_keywords,
+        *target_objects,
+        *result_match_terms,
+        *candidate_place_types,
+    ])
+    search_queries = _apply_anchor_location_to_keywords(anchor_location, search_query_terms)
+
+    constraints = _unique([
+        *_sanitize_frame_list(existing_frame.get("constraints") or []),
+        *_sanitize_requested_conditions(_extract_conditions(answer)),
+    ])
+    exclusions = _unique([
+        *_sanitize_frame_list(existing_frame.get("exclusions") or []),
+        *_extract_avoid_terms(answer),
+    ])
+    display_label = _clean_target_query(
+        _first_text(answer_text, *target_objects, existing_frame.get("display_label"))
+    )
+    ranking_policy = _normalize_ranking_policy(
+        existing_frame.get("ranking_policy")
+        or existing_frame.get("rankingPolicy")
+        or previous_search_plan.get("ranking_policy")
+        or previous_search_plan.get("rankingPolicy")
+    )
+
+    frame = {
+        **existing_frame,
+        "decision_action": "search",
+        "decisionAction": "search",
+        "can_search_now": True,
+        "canSearchNow": True,
+        "user_goal": _clean_text(existing_frame.get("user_goal")) or f"{display_label} 장소 찾기",
+        "anchor_location": anchor_location,
+        "anchorLocation": anchor_location,
+        "location_mode": location_mode,
+        "locationMode": location_mode,
+        "situation": existing_frame.get("situation") or _situation_for_intent_group(
+            _classify_intent_group(combined_query, display_label, scenario),
+            combined_query,
+            display_label,
+            scenario,
+        ),
+        "display_label": display_label,
+        "displayLabel": display_label,
+        "target_objects": target_objects,
+        "targetObjects": target_objects,
+        "candidate_category_codes": categories,
+        "candidateCategoryCodes": categories,
+        "candidate_place_types": candidate_place_types,
+        "candidatePlaceTypes": candidate_place_types,
+        "search_queries": search_queries,
+        "searchQueries": search_queries,
+        "result_match_terms": result_match_terms,
+        "resultMatchTerms": result_match_terms,
+        "constraints": constraints,
+        "exclusions": exclusions,
+        "preferred_place_natures": existing_frame.get("preferred_place_natures") or [],
+        "excluded_place_natures": existing_frame.get("excluded_place_natures") or [],
+        "ranking_policy": ranking_policy,
+        "rankingPolicy": ranking_policy,
+        "evidence": [
+            *(
+                existing_frame.get("evidence")
+                if isinstance(existing_frame.get("evidence"), list)
+                else []
+            ),
+            {"type": "clarification_answer", "value": answer},
+        ],
+        "missing_info": [],
+        "missingInfo": [],
+        "confidence": max(_normalize_frame_confidence(existing_frame.get("confidence"), 0.72), 0.72),
+    }
+    frame = _normalize_place_intent_frame(frame, user_query=combined_query)
+
+    post_validation_reasons = _get_ai_frame_post_validation_reasons(frame, combined_query)
+    if post_validation_reasons:
+        plan = _ai_frame_post_validation_clarification_plan(
+            query=combined_query,
+            raw_plan={"confidence": frame.get("confidence", 0)},
+            search_plan=previous_search_plan,
+            frame=frame,
+            reasons=post_validation_reasons,
+        )
+        plan["fallback_reason"] = "clarification_follow_up_post_validation"
+        return plan
+
+    search_plan = _search_plan_payload(
+        original_query=combined_query,
+        location_query=anchor_location,
+        target_query=display_label,
+        scenario=scenario,
+        categories=categories,
+        menu_keywords=_normalize_text_list(previous_search_plan.get("menu_keywords") or []),
+        place_type_keywords=candidate_place_types,
+        required_tags=_normalize_tags(previous_search_plan.get("required_tags") or []),
+        preferred_tags=_unique([
+            *_normalize_tags(previous_search_plan.get("preferred_tags") or []),
+            *preferred_tags,
+            *[tag for _, _, tag in _matched_condition_rules(answer) if tag],
+        ]),
+        requested_conditions=constraints,
+        kakao_keyword_candidates=search_queries,
+    )
+    search_plan.update({
+        "place_intent_frame": frame,
+        "placeIntentFrame": frame,
+        "location_mode": location_mode,
+        "locationMode": location_mode,
+        "anchor_location": anchor_location,
+        "anchorLocation": anchor_location,
+        "target_objects": target_objects,
+        "candidate_place_types": candidate_place_types,
+        "search_queries": search_queries,
+        "result_match_terms": result_match_terms,
+        "constraints": constraints,
+        "exclusions": exclusions,
+        "ranking_policy": ranking_policy,
+        "intent_group": _classify_intent_group(combined_query, display_label, scenario),
+        "execution_mode": "frame",
+        "plan_source": "clarification_follow_up",
+    })
+
+    return {
+        "action": "search",
+        "intent_type": "place_recommendation",
+        "user_intent_summary": f"{display_label} 장소를 찾습니다.",
+        "message": f"{display_label} 조건으로 이어서 찾아볼게요.",
+        "location": _location_payload(
+            anchor_location,
+            bool(anchor_location),
+            "" if anchor_location else "current_location",
+        ),
+        "targets": target_objects,
+        "conditions": constraints,
+        "preferences": search_plan["preferred_tags"],
+        "avoid": exclusions,
+        "search_plan": search_plan,
+        "execution_policy": _execution_policy(True, bool(anchor_location)),
+        "needs_clarification": False,
+        "clarification_question": "",
+        "clarification_options": [],
+        "confidence": 78,
+        "fallback_reason": "clarification_follow_up_merge",
+        "parser_provider": "rule",
+        "parser_fallback": True,
+        "plan_source": "clarification_follow_up",
+        "execution_mode": "frame",
+        "clarification_follow_up": {
+            "original_query": original_query,
+            "answer": answer,
+            "preserved_anchor_location": anchor_location,
+            "location_mode": location_mode,
+        },
+    }
+
+
 def _finalize_router_plan(plan):
     plan = plan or _empty_plan("")
     action = plan.get("action")
@@ -1050,13 +1509,23 @@ def _finalize_router_plan(plan):
 
     if action == "ask_clarification":
         plan["needs_clarification"] = True
-        plan["clarification_question"] = plan.get("clarification_question") or plan.get("message") or CLARIFICATION_MESSAGE
+        search_plan = plan.get("search_plan") if isinstance(plan.get("search_plan"), dict) else {}
+        frame = search_plan.get("place_intent_frame") if isinstance(search_plan.get("place_intent_frame"), dict) else {}
+        is_ai_plan = plan.get("parser_fallback") is False or plan.get("plan_source") == "ai"
+        question = plan.get("clarification_question") or plan.get("message") or ""
+        if is_ai_plan and _is_generic_clarification_text(question):
+            question = _contextual_ai_clarification_question(
+                search_plan.get("originalQuery") or search_plan.get("original_query") or "",
+                frame,
+            )
+        plan["clarification_question"] = question or CLARIFICATION_MESSAGE
         plan["message"] = plan.get("message") or plan["clarification_question"]
-        plan["clarification_options"] = _normalize_text_list(
+        raw_options = _normalize_text_list(
             plan.get("clarification_options")
             or plan.get("clarificationOptions")
-            or _default_clarification_options()
+            or []
         )
+        plan["clarification_options"] = raw_options if raw_options else ([] if is_ai_plan else _default_clarification_options())
         plan["execution_policy"] = _execution_policy(False, False)
         plan["type"] = "clarification"
         plan["can_search_now"] = False
@@ -1116,6 +1585,56 @@ def _finalize_router_plan(plan):
 
 def _default_clarification_options():
     return ["쉬는 곳", "먹을 곳", "산책할 곳", "작업할 곳"]
+
+
+def _is_generic_clarification_text(value):
+    compact = _compact(value)
+    generic_patterns = {
+        _compact(BROAD_FRAME_CLARIFICATION_MESSAGE),
+        _compact(CLARIFICATION_MESSAGE),
+        _compact(PURPOSE_CLARIFICATION_MESSAGE),
+        _compact("어떤 장소를 원하시나요?"),
+        _compact("좀 더 자세히 알려주세요."),
+    }
+    return not compact or compact in generic_patterns
+
+
+def _contextual_ai_clarification_question(query, frame):
+    frame = frame if isinstance(frame, dict) else {}
+    existing = _clean_text(
+        frame.get("clarification_question")
+        or frame.get("clarificationQuestion")
+        or ""
+    )
+    if existing and not _is_generic_clarification_text(existing):
+        return existing
+
+    intent_text = _clean_text(
+        frame.get("normalized_user_intent")
+        or frame.get("normalizedUserIntent")
+        or frame.get("user_goal")
+        or frame.get("userGoal")
+        or frame.get("display_label")
+        or frame.get("displayLabel")
+        or query
+    )
+    if intent_text:
+        return f'"{intent_text}" 상황에서 어떤 장소를 찾아야 할지 아직 확정하기 어렵습니다. 찾고 싶은 장소 방향을 조금 더 구체적으로 알려주세요.'
+    return "현재 문장만으로는 검색할 장소 방향을 확정하기 어렵습니다. 찾고 싶은 장소 방향을 조금 더 구체적으로 알려주세요."
+
+
+def _contextual_ai_clarification_options(frame):
+    frame = frame if isinstance(frame, dict) else {}
+    broad_options = {_compact(option) for option in BROAD_FRAME_CLARIFICATION_OPTIONS}
+    return [
+        option
+        for option in _normalize_text_list(
+            frame.get("clarification_options")
+            or frame.get("clarificationOptions")
+            or []
+        )
+        if _compact(option) and _compact(option) not in broad_options
+    ]
 
 
 def _sync_decision_to_frame(search_plan, plan):
@@ -1397,20 +1916,31 @@ def _build_ai_plan(query, fallback_plan):
         return None, "missing_gms_api_url"
 
     try:
-        return _call_gms_chat_json(
-            query=json.dumps(
-                {
-                    "query": query,
-                    "fallback_plan": fallback_plan,
-                },
-                ensure_ascii=False,
-            ),
-            system_prompt=CONVERSATIONAL_SEARCH_SYSTEM_PROMPT,
-            max_completion_tokens=900,
-        ), ""
-    except Exception as exc:
-        logger.debug("Conversational search planner AI call failed.", exc_info=True)
-        return None, f"ai_call_failed:{exc.__class__.__name__}"
+        max_attempts = int(getattr(settings, "CONVERSATIONAL_SEARCH_AI_MAX_ATTEMPTS", 2) or 2)
+    except (TypeError, ValueError):
+        max_attempts = 2
+    max_attempts = max(1, max_attempts)
+    last_error_reason = ""
+    for attempt_index in range(max_attempts):
+        try:
+            plan = _call_gms_chat_json(
+                query=json.dumps(
+                    {
+                        "query": query,
+                        "fallback_plan": fallback_plan,
+                    },
+                    ensure_ascii=False,
+                ),
+                system_prompt=CONVERSATIONAL_SEARCH_SYSTEM_PROMPT,
+                max_completion_tokens=900,
+            )
+            if isinstance(plan, dict):
+                plan["ai_retry_count"] = attempt_index
+            return plan, ""
+        except Exception as exc:
+            logger.debug("Conversational search planner AI call failed.", exc_info=True)
+            last_error_reason = f"ai_call_failed:{exc.__class__.__name__}"
+    return None, last_error_reason or "ai_call_failed"
 
 
 def _repair_ai_frame_location(query, frame, search_plan=None):
@@ -1593,6 +2123,7 @@ place_intent_frame 규칙:
 - candidate_place_types는 여러 개 가능하다. 실제 장소명이나 브랜드명이 아니라 장소 유형만 넣는다.
 - result_match_terms는 결과가 의도와 직접 맞는지 판단할 evidence 용어다. target_objects와 장소 유형을 모두 고려하되 실제 운영 여부는 단정하지 않는다.
 - search_queries는 검색 실행용 문구다. 명시 위치가 있으면 위치를 포함한 query를 우선한다.
+- 카페/쉼터/restaurant/식당/음식점처럼 넓은 기본 장소 유형은 사용자가 직접 말했거나 target_objects/result_match_terms/constraints/evidence와 직접 연결될 때만 넣는다. 확신할 수 없으면 기본 장소 유형을 채우지 말고 ask_clarification/out_of_scope로 둔다.
 - ranking_policy는 evidence_first, urgent_nearest, cost_sensitive, distance_first 중 하나를 사용한다. 긴급 생활 인프라는 urgent_nearest로 둔다.
 - anchor_location은 사용자가 말한 기준 위치다. 복합 위치를 임의로 잘라내지 않는다.
 - "하단역인데 화장실 급해"는 anchor_location "하단역", location_mode "explicit", target_objects ["화장실"], candidate_place_types ["공중화장실", "화장실"], ranking_policy "urgent_nearest"다.
@@ -2013,6 +2544,8 @@ def _normalize_ai_plan(raw_plan, query, fallback_plan, lat=None, lng=None, map_c
     normalized_search_plan["decision_action"] = action
     normalized_search_plan["decisionAction"] = action
     normalized_search_plan["can_search_now"] = action == "search" and not bool(raw_plan.get("needs_clarification"))
+    normalized_search_plan["ai_retry_count"] = int(raw_plan.get("ai_retry_count") or 0)
+    normalized_search_plan["aiRetryCount"] = normalized_search_plan["ai_retry_count"]
 
     needs_clarification = bool(raw_plan.get("needs_clarification")) or action == "ask_clarification"
     clarification_options = _normalize_text_list(
@@ -2048,6 +2581,7 @@ def _normalize_ai_plan(raw_plan, query, fallback_plan, lat=None, lng=None, map_c
         "fallback_reason": "ai_planner",
         "parser_provider": "gms",
         "parser_fallback": False,
+        "ai_retry_count": int(raw_plan.get("ai_retry_count") or 0),
         "execution_mode": (
             "frame"
             if action == "search" and has_valid_frame
@@ -2148,6 +2682,91 @@ def _has_coordinate_context(lat=None, lng=None, map_center=None):
         return map_center.get("lat") not in (None, "") and map_center.get("lng") not in (None, "")
 
     return False
+
+
+def _is_broad_default_place_term(value):
+    compact = _compact(value)
+    if not compact:
+        return False
+    return compact in {_compact(term) for term in BROAD_DEFAULT_PLACE_TERMS}
+
+
+def _remove_anchor_prefix(value, anchor_location=""):
+    text = _clean_text(value)
+    anchor = _clean_text(anchor_location)
+    if not text or not anchor:
+        return text
+    compact_text = _compact(text)
+    compact_anchor = _compact(anchor)
+    if compact_anchor and compact_text.startswith(compact_anchor):
+        return text[len(anchor):].strip()
+    return text
+
+
+def _has_direct_support_for_broad_default(term, *, query="", support_terms=None):
+    compact = _compact(term)
+    if not compact:
+        return False
+    if compact and compact in _compact(query):
+        return True
+    for support_term in support_terms or []:
+        support_compact = _compact(support_term)
+        if not support_compact:
+            continue
+        if compact == support_compact or compact in support_compact:
+            return True
+    return False
+
+
+def _strip_broad_default_terms(values, *, query="", support_terms=None, anchor_location=""):
+    kept = []
+    for value in _sanitize_frame_list(values or []):
+        core_value = _remove_anchor_prefix(value, anchor_location=anchor_location)
+        if (
+            _is_broad_default_place_term(core_value)
+            and not _has_direct_support_for_broad_default(
+                core_value,
+                query=query,
+                support_terms=support_terms,
+            )
+        ):
+            continue
+        kept.append(value)
+    return _unique(kept)
+
+
+def _strip_broad_default_frame_terms(frame, query=""):
+    if not isinstance(frame, dict):
+        return frame
+
+    evidence_terms = _frame_evidence_terms(frame)
+    direct_support_terms = _sanitize_frame_list([
+        *(_sanitize_frame_list(frame.get("target_objects") or frame.get("targetObjects") or [])),
+        *evidence_terms,
+        *(_sanitize_frame_list(frame.get("constraints") or [])),
+        frame.get("display_label"),
+        frame.get("displayLabel"),
+    ])
+    anchor_location = frame.get("anchor_location") or frame.get("anchorLocation") or ""
+    for key in (
+        "candidate_category_codes",
+        "candidateCategoryCodes",
+        "candidate_place_types",
+        "candidatePlaceTypes",
+        "search_queries",
+        "searchQueries",
+        "result_match_terms",
+        "resultMatchTerms",
+    ):
+        if key not in frame:
+            continue
+        frame[key] = _strip_broad_default_terms(
+            frame.get(key) or [],
+            query=query,
+            support_terms=direct_support_terms,
+            anchor_location=anchor_location,
+        )
+    return frame
 
 
 def _is_blocked_query(query):
@@ -2282,6 +2901,7 @@ def _normalize_place_intent_frame(raw_frame, user_query="", fallback=None):
             or []
         ),
         "ranking_policy": ranking_policy,
+        "evidence": raw_frame.get("evidence") or fallback.get("evidence") or [],
         "missing_info": _sanitize_frame_list(raw_frame.get("missing_info") or raw_frame.get("missingInfo") or fallback.get("missing_info") or []),
         "assumptions": _sanitize_frame_list(raw_frame.get("assumptions") or fallback.get("assumptions") or []),
         "clarification_question": _safe_frame_text(
@@ -2310,6 +2930,7 @@ def _normalize_place_intent_frame(raw_frame, user_query="", fallback=None):
             *frame["target_objects"],
             *frame["result_match_terms"],
         ])
+    frame = _strip_broad_default_frame_terms(frame, query=user_query)
     if frame["situation"] == "health_nearby":
         frame["safety_note"] = _sanitize_safety_note(frame["safety_note"] or HEALTH_NEARBY_MESSAGE)
     return frame
@@ -2571,24 +3192,38 @@ def _is_valid_place_intent_frame(frame):
     ])
 
 
-def _is_broad_frame_term(value):
+def _is_term_explicitly_requested(value, query):
+    compact_value = _compact(value)
+    compact_query = _compact(query)
+    if not compact_value or not compact_query:
+        return False
+    return compact_value in compact_query
+
+
+def _is_broad_frame_term(value, query=""):
     compact = _compact(value)
     if not compact:
         return True
 
-    if compact in BROAD_FRAME_TERMS:
+    compact_broad_terms = {_compact(term) for term in BROAD_FRAME_TERMS}
+    compact_fallback_terms = {_compact(term) for term in BROAD_FALLBACK_PLACE_TERMS}
+
+    if compact in compact_broad_terms:
         return True
+
+    if compact in compact_fallback_terms:
+        return not _is_term_explicitly_requested(value, query)
 
     return any(
         term in compact
-        for term in BROAD_FRAME_TERMS
+        for term in compact_broad_terms
         if len(term) >= 3
     ) and len(compact) <= 12
 
 
-def _all_terms_are_broad(values):
+def _all_terms_are_broad(values, query=""):
     terms = _sanitize_frame_list(values or [])
-    return bool(terms) and all(_is_broad_frame_term(term) for term in terms)
+    return bool(terms) and all(_is_broad_frame_term(term, query=query) for term in terms)
 
 
 def _frame_target_repeats_query(target_objects, query):
@@ -2606,6 +3241,48 @@ def _frame_target_repeats_query(target_objects, query):
     )
 
 
+def _has_urgent_search_evidence(frame, query=""):
+    if not isinstance(frame, dict):
+        return False
+
+    ranking_policy = _normalize_ranking_policy(
+        frame.get("ranking_policy") or frame.get("rankingPolicy") or ""
+    )
+    if ranking_policy != "urgent_nearest":
+        return False
+
+    evidence_terms = _sanitize_frame_list([
+        *(_sanitize_frame_list(frame.get("target_objects") or frame.get("targetObjects") or [])),
+        *(_sanitize_frame_list(frame.get("result_match_terms") or frame.get("resultMatchTerms") or [])),
+        *(_sanitize_frame_list(frame.get("candidate_place_types") or frame.get("candidatePlaceTypes") or [])),
+        *(_sanitize_frame_list(frame.get("constraints") or [])),
+    ])
+    return bool(evidence_terms and not _all_terms_are_broad(evidence_terms, query=query))
+
+
+def _frame_evidence_terms(frame):
+    if not isinstance(frame, dict):
+        return []
+
+    values = []
+    raw_evidence = frame.get("evidence") or frame.get("evidences") or []
+    if not isinstance(raw_evidence, list):
+        raw_evidence = [raw_evidence]
+
+    for item in raw_evidence:
+        if isinstance(item, dict):
+            values.extend([
+                item.get("value"),
+                item.get("text"),
+                item.get("term"),
+                item.get("label"),
+            ])
+        else:
+            values.append(item)
+
+    return _sanitize_frame_list(values)
+
+
 def _get_ai_frame_post_validation_reasons(frame, query):
     if not isinstance(frame, dict):
         return ["missing_frame"]
@@ -2615,6 +3292,7 @@ def _get_ai_frame_post_validation_reasons(frame, query):
     candidate_place_types = _sanitize_frame_list(frame.get("candidate_place_types") or frame.get("candidatePlaceTypes") or [])
     constraints = _sanitize_frame_list(frame.get("constraints") or [])
     exclusions = _sanitize_frame_list(frame.get("exclusions") or [])
+    evidence_terms = _frame_evidence_terms(frame)
     confidence = _normalize_frame_confidence(frame.get("confidence"))
     broad_context_terms = [
         frame.get("normalized_user_intent"),
@@ -2624,15 +3302,18 @@ def _get_ai_frame_post_validation_reasons(frame, query):
         frame.get("user_goal"),
         frame.get("userGoal"),
     ]
-    has_specific_basis = bool(result_match_terms and not _all_terms_are_broad(result_match_terms))
+    has_specific_basis = bool(
+        (result_match_terms and not _all_terms_are_broad(result_match_terms, query=query))
+        or (evidence_terms and not _all_terms_are_broad(evidence_terms, query=query))
+    )
     has_constraints = bool(constraints or exclusions)
     has_target_or_result_basis = bool(
         has_specific_basis
         or (
             target_objects
-            and not _all_terms_are_broad(target_objects)
+            and not _all_terms_are_broad(target_objects, query=query)
             and candidate_place_types
-            and not _all_terms_are_broad(candidate_place_types)
+            and not _all_terms_are_broad(candidate_place_types, query=query)
         )
     )
     reasons = []
@@ -2641,7 +3322,7 @@ def _get_ai_frame_post_validation_reasons(frame, query):
         not target_objects
         and (
             not has_specific_basis
-            or _all_terms_are_broad(candidate_place_types)
+            or _all_terms_are_broad(candidate_place_types, query=query)
         )
     ):
         reasons.append("missing_target_objects")
@@ -2652,19 +3333,19 @@ def _get_ai_frame_post_validation_reasons(frame, query):
             result_match_terms == target_objects
             and _frame_target_repeats_query(target_objects, query)
         )
-    ) and not has_constraints:
+    ) and not (has_constraints or evidence_terms):
         reasons.append("missing_result_match_terms")
 
     if (
         candidate_place_types
-        and _all_terms_are_broad(candidate_place_types)
+        and _all_terms_are_broad(candidate_place_types, query=query)
         and not has_specific_basis
         and not has_constraints
     ):
         reasons.append("broad_candidate_place_types")
 
     if (
-        any(_is_broad_frame_term(term) for term in broad_context_terms if _clean_text(term))
+        any(_is_broad_frame_term(term, query=query) for term in broad_context_terms if _clean_text(term))
         and not has_constraints
         and not has_target_or_result_basis
     ):
@@ -2675,18 +3356,21 @@ def _get_ai_frame_post_validation_reasons(frame, query):
         and not has_constraints
         and (
             not result_match_terms
-            or _all_terms_are_broad(result_match_terms)
+            or _all_terms_are_broad(result_match_terms, query=query)
         )
     ):
         reasons.append("low_confidence_broad_frame")
+
+    if confidence <= BROAD_FRAME_LOW_CONFIDENCE_THRESHOLD and not _has_urgent_search_evidence(frame, query=query):
+        reasons.append("low_confidence_without_urgent_evidence")
 
     if (
         _frame_target_repeats_query(target_objects, query)
         and not has_constraints
         and (
             not result_match_terms
-            or _all_terms_are_broad(result_match_terms)
-            or _all_terms_are_broad(candidate_place_types)
+            or _all_terms_are_broad(result_match_terms, query=query)
+            or _all_terms_are_broad(candidate_place_types, query=query)
         )
     ):
         reasons.append("target_repeats_raw_query_without_evidence")
@@ -2694,19 +3378,13 @@ def _get_ai_frame_post_validation_reasons(frame, query):
     return _unique(reasons)
 
 
+def get_ai_frame_post_validation_reasons(frame, query):
+    return _get_ai_frame_post_validation_reasons(frame, query)
+
+
 def _ai_frame_post_validation_clarification_plan(query, raw_plan, search_plan, frame, reasons):
-    question = (
-        _clean_text(raw_plan.get("clarification_question"))
-        or _clean_text(frame.get("clarification_question") or frame.get("clarificationQuestion"))
-        or "어떤 목적의 장소를 찾으시나요? 쉬는 곳, 먹을 곳, 산책할 곳, 작업할 곳 중 선택해 주세요."
-    )
-    options = _normalize_text_list(
-        raw_plan.get("clarification_options")
-        or raw_plan.get("clarificationOptions")
-        or frame.get("clarification_options")
-        or frame.get("clarificationOptions")
-        or _default_clarification_options()
-    )
+    question = _contextual_ai_clarification_question(query, frame)
+    options = _contextual_ai_clarification_options(frame)
     display_label = _clean_target_query(
         _first_text(
             frame.get("display_label"),
