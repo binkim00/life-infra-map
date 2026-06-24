@@ -19,7 +19,16 @@ const isNotificationMenuOpen = ref(false)
 const notificationMenuRef = ref(null)
 const accountMenuRef = ref(null)
 const sidebarProfileRef = ref(null)
+const mascotFetchPhase = ref('')
+const mascotFetchedPlaceName = ref('')
+const mascotRunX = ref('-36vw')
+const mascotRunY = ref('-17vh')
+const mascotRunMidX = ref('-18vw')
+const mascotRunMidY = ref('-9vh')
+const mascotRunNearX = ref('-30vw')
+const mascotRunNearY = ref('-14vh')
 let notificationTimer = null
+let mascotFetchTimer = null
 
 const handleLogout = async () => {
   closeAllDropdowns()
@@ -53,6 +62,71 @@ const currentUserContribution = computed(() => {
 
 const currentUserNicknameStyle = computed(() => {
   return authStore.user?.nickname_color ? { color: authStore.user.nickname_color } : {}
+})
+
+const mascotState = computed(() => {
+  const routeName = route.name || ''
+  const path = route.path
+
+  if (routeName === 'home') {
+    return { key: 'home', prop: '⌕', message: '필요한 장소 냄새 맡는 중' }
+  }
+
+  if (routeName === 'recommendation-test') {
+    return { key: 'map', prop: '⌖', message: '지도 위를 총총 탐색 중' }
+  }
+
+  if (path.startsWith('/boards')) {
+    if (routeName === 'board-create' || routeName === 'board-edit') {
+      return { key: 'write', prop: '✎', message: '글감을 또각또각 적는 중' }
+    }
+
+    return { key: 'board', prop: '▤', message: '게시글을 조용히 읽는 중' }
+  }
+
+  if (routeName === 'mypage') {
+    return { key: 'mypage', prop: '♡', message: '프로필을 반듯하게 정리 중' }
+  }
+
+  if (routeName === 'guide' || routeName === 'upgrade-guide') {
+    return { key: 'guide', prop: '?', message: '길을 콕 집어 알려주는 중' }
+  }
+
+  if (path.startsWith('/inquiries')) {
+    return { key: 'inquiry', prop: '♪', message: '문의 답변을 기다리는 중' }
+  }
+
+  if (routeName === 'settings') {
+    return { key: 'settings', prop: '⚙', message: '취향에 맞게 맞추는 중' }
+  }
+
+  if (path.startsWith('/admin')) {
+    return { key: 'admin', prop: '!', message: '관리 화면을 지키는 중' }
+  }
+
+  if (routeName === 'login' || routeName === 'signup') {
+    return { key: 'auth', prop: '•', message: '반갑게 맞이하는 중' }
+  }
+
+  return { key: 'default', prop: '·', message: '천천히 따라가는 중' }
+})
+
+const activeMascotState = computed(() => {
+  if (mascotFetchPhase.value === 'fetching') {
+    return { key: 'fetching', prop: '', message: '뼈다귀 마커로 달려가는 중' }
+  }
+
+  if (mascotFetchPhase.value === 'carrying') {
+    return {
+      key: 'carrying',
+      prop: '',
+      message: mascotFetchedPlaceName.value
+        ? `${mascotFetchedPlaceName.value} 마커 물고 있는 중`
+        : '뼈다귀 마커 물고 있는 중',
+    }
+  }
+
+  return mascotState.value
 })
 
 const formatNotificationTime = (value) => {
@@ -185,8 +259,79 @@ const startNotificationPolling = () => {
   notificationTimer = window.setInterval(fetchNotifications, 30000)
 }
 
+const clearMascotFetch = () => {
+  if (mascotFetchTimer) {
+    window.clearTimeout(mascotFetchTimer)
+    mascotFetchTimer = null
+  }
+
+  mascotFetchPhase.value = ''
+  mascotFetchedPlaceName.value = ''
+}
+
+const clamp = (value, min, max) => Math.min(max, Math.max(min, value))
+
+const setMascotRunTarget = (target) => {
+  const fallbackX = Math.round(window.innerWidth * -0.36)
+  const fallbackY = Math.round(window.innerHeight * -0.17)
+
+  if (!target || typeof target.clientX !== 'number' || typeof target.clientY !== 'number') {
+    mascotRunX.value = `${fallbackX}px`
+    mascotRunY.value = `${fallbackY}px`
+    mascotRunMidX.value = `${Math.round(fallbackX * 0.48)}px`
+    mascotRunMidY.value = `${Math.round(fallbackY * 0.48 - 18)}px`
+    mascotRunNearX.value = `${Math.round(fallbackX * 0.82)}px`
+    mascotRunNearY.value = `${Math.round(fallbackY * 0.82 + 8)}px`
+    return
+  }
+
+  const mascotElement = document.querySelector('.route-mascot')
+  const mascotStyle = mascotElement ? window.getComputedStyle(mascotElement) : null
+  const baseRight = Number.parseFloat(mascotStyle?.right || '28') || 28
+  const baseBottom = Number.parseFloat(mascotStyle?.bottom || '24') || 24
+  const baseWidth = mascotElement?.offsetWidth || 150
+  const baseHeight = mascotElement?.offsetHeight || 190
+  const baseLeft = window.innerWidth - baseRight - baseWidth
+  const baseTop = window.innerHeight - baseBottom - baseHeight
+  const fromX = baseLeft + baseWidth * 0.68
+  const fromY = baseTop + baseHeight * 0.7
+  const targetX = clamp(target.clientX - fromX, -(window.innerWidth - 116), 28)
+  const targetY = clamp(target.clientY - fromY, -(window.innerHeight - 128), 24)
+
+  mascotRunX.value = `${Math.round(targetX)}px`
+  mascotRunY.value = `${Math.round(targetY)}px`
+  mascotRunMidX.value = `${Math.round(targetX * 0.48)}px`
+  mascotRunMidY.value = `${Math.round(targetY * 0.48 - 18)}px`
+  mascotRunNearX.value = `${Math.round(targetX * 0.82)}px`
+  mascotRunNearY.value = `${Math.round(targetY * 0.82 + 8)}px`
+}
+
+const updateMascotFetchTarget = (event) => {
+  if (!mascotFetchPhase.value) return
+
+  mascotFetchedPlaceName.value = event.detail?.placeName || mascotFetchedPlaceName.value
+  setMascotRunTarget(event.detail?.target)
+}
+
+const triggerMascotFetch = (event) => {
+  if (mascotFetchTimer) {
+    window.clearTimeout(mascotFetchTimer)
+  }
+
+  mascotFetchedPlaceName.value = event.detail?.placeName || ''
+  setMascotRunTarget(event.detail?.target)
+  mascotFetchPhase.value = 'fetching'
+  mascotFetchTimer = window.setTimeout(() => {
+    mascotFetchPhase.value = 'carrying'
+    mascotFetchTimer = null
+  }, 1100)
+}
+
 onMounted(() => {
   document.addEventListener('click', handleDocumentClick)
+  window.addEventListener('place-marker-fetch', triggerMascotFetch)
+  window.addEventListener('place-marker-fetch-update', updateMascotFetchTarget)
+  window.addEventListener('place-marker-fetch-clear', clearMascotFetch)
 
   authStore.fetchMe()
     .then(() => {
@@ -221,12 +366,17 @@ watch(
   () => route.fullPath,
   () => {
     isSidebarAccountMenuOpen.value = false
+    clearMascotFetch()
     fetchNotifications()
   },
 )
 
 onBeforeUnmount(() => {
   document.removeEventListener('click', handleDocumentClick)
+  window.removeEventListener('place-marker-fetch', triggerMascotFetch)
+  window.removeEventListener('place-marker-fetch-update', updateMascotFetchTarget)
+  window.removeEventListener('place-marker-fetch-clear', clearMascotFetch)
+  clearMascotFetch()
 
   if (notificationTimer) {
     window.clearInterval(notificationTimer)
@@ -238,10 +388,22 @@ onBeforeUnmount(() => {
   <div class="app-shell" :class="{ 'is-sidebar-collapsed': isSidebarCollapsed, 'is-compact-mode': settingsStore.compactMode }">
     <aside class="app-sidebar">
       <RouterLink to="/" class="brand">
-        <span class="brand-mark">틈</span>
+        <span class="brand-mark" aria-hidden="true">
+          <span class="brand-pin">
+            <span class="brand-dog">
+              <span class="brand-dog-ear left"></span>
+              <span class="brand-dog-ear right"></span>
+              <span class="brand-dog-eye left"></span>
+              <span class="brand-dog-eye right"></span>
+              <span class="brand-dog-nose"></span>
+              <span class="brand-dog-mouth"></span>
+              <span class="brand-dog-cheek left"></span>
+              <span class="brand-dog-cheek right"></span>
+            </span>
+          </span>
+        </span>
         <span class="brand-text">
-          <strong>생활틈지도</strong>
-          <span>Life Infra Map</span>
+          <strong>여기일지도</strong>
         </span>
       </RouterLink>
 
@@ -542,6 +704,44 @@ onBeforeUnmount(() => {
         </template>
       </div>
 
+      <aside
+        class="route-mascot"
+        :style="{
+          '--mascot-run-x': mascotRunX,
+          '--mascot-run-y': mascotRunY,
+          '--mascot-run-mid-x': mascotRunMidX,
+          '--mascot-run-mid-y': mascotRunMidY,
+          '--mascot-run-near-x': mascotRunNearX,
+          '--mascot-run-near-y': mascotRunNearY,
+        }"
+        :class="[
+          `mascot-${activeMascotState.key}`,
+          {
+            'is-fetching': mascotFetchPhase === 'fetching',
+            'is-carrying': mascotFetchPhase === 'carrying',
+          },
+        ]"
+        aria-live="polite"
+      >
+        <div class="mascot-speech">{{ activeMascotState.message }}</div>
+        <div class="mascot-dog" aria-hidden="true">
+          <span class="mascot-ear left"></span>
+          <span class="mascot-ear right"></span>
+          <span class="mascot-head">
+            <span class="mascot-eye left"></span>
+            <span class="mascot-eye right"></span>
+            <span class="mascot-mouth"></span>
+          </span>
+          <span class="mascot-body">
+            <span class="mascot-paw left"></span>
+            <span class="mascot-paw right"></span>
+          </span>
+          <span class="mascot-tail"></span>
+          <span class="mascot-fetch-bone"></span>
+          <span v-if="activeMascotState.prop" class="mascot-prop">{{ activeMascotState.prop }}</span>
+        </div>
+      </aside>
+
       <RouterView />
     </div>
   </div>
@@ -559,8 +759,11 @@ body {
     BlinkMacSystemFont,
     "Segoe UI",
     sans-serif;
-  background: #f6f7fb;
-  color: #222;
+  background:
+    radial-gradient(circle at 8% 10%, rgba(255, 255, 255, 0.95), transparent 30%),
+    radial-gradient(circle at 88% 16%, rgba(255, 226, 187, 0.72), transparent 28%),
+    linear-gradient(180deg, #fffaf1 0%, #f6f8f4 55%, #eef4ed 100%);
+  color: #232323;
 }
 
 button,
@@ -572,7 +775,7 @@ input {
   min-height: 100vh;
   display: grid;
   grid-template-columns: 220px minmax(0, 1fr);
-  background: #f6f7fb;
+  background: transparent;
   transition: grid-template-columns 0.2s ease;
 }
 
@@ -589,49 +792,181 @@ input {
   display: flex;
   flex-direction: column;
   gap: 24px;
-  border-right: 1px solid #e5e8f0;
-  background: #ffffff;
+  border-right: 1px solid #eadfcd;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(255, 250, 241, 0.94)),
+    #ffffff;
+  box-shadow: 10px 0 30px rgba(49, 41, 31, 0.08);
   overflow: visible;
 }
 
 .brand {
   min-width: 0;
   display: flex;
-  gap: 10px;
+  gap: 11px;
   align-items: center;
   padding: 0 6px;
   text-decoration: none;
 }
 
 .brand-mark {
-  width: 34px;
-  height: 34px;
+  width: 48px;
+  height: 60px;
   flex-shrink: 0;
   display: grid;
   place-items: center;
-  border-radius: 10px;
-  background: #2563eb;
-  color: #ffffff;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #222222;
   font-size: 14px;
   font-weight: 900;
+  box-shadow: none;
+}
+
+.brand-pin {
+  position: relative;
+  width: 42px;
+  height: 58px;
+  display: grid;
+  place-items: start center;
+  filter: drop-shadow(0 4px 0 #dfc08f);
+}
+
+.brand-pin::before {
+  position: absolute;
+  top: 1px;
+  left: 0;
+  width: 42px;
+  height: 42px;
+  border: 3px solid #222222;
+  border-radius: 50% 50% 50% 0;
+  background: #d1a15e;
+  content: "";
+  transform: rotate(-45deg);
+  transform-origin: 50% 50%;
+}
+
+.brand-pin::after {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  width: 26px;
+  height: 26px;
+  border: 3px solid #222222;
+  border-radius: 50%;
+  background: #fffdf8;
+  content: "";
+}
+
+.brand-dog {
+  position: relative;
+  z-index: 1;
+  width: 22px;
+  height: 22px;
+  margin-top: 12px;
+  border: 0;
+  border-radius: 48% 48% 44% 44%;
+  background: #ffffff;
+}
+
+.brand-dog-ear {
+  position: absolute;
+  top: -2px;
+  z-index: 0;
+  width: 9px;
+  height: 8px;
+  border: 2px solid #222222;
+  border-radius: 58% 48% 58% 48%;
+  background: #ffffff;
+}
+
+.brand-dog-ear.left {
+  left: -5px;
+  transform: rotate(-28deg);
+}
+
+.brand-dog-ear.right {
+  right: -5px;
+  transform: rotate(28deg);
+}
+
+.brand-dog-eye {
+  position: absolute;
+  top: 7px;
+  z-index: 1;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: #111111;
+}
+
+.brand-dog-eye.left {
+  left: 6px;
+}
+
+.brand-dog-eye.right {
+  right: 6px;
+}
+
+.brand-dog-nose {
+  position: absolute;
+  left: 50%;
+  top: 12px;
+  z-index: 1;
+  width: 5px;
+  height: 3px;
+  border-radius: 50% 50% 45% 45%;
+  background: #111111;
+  transform: translateX(-50%);
+}
+
+.brand-dog-mouth {
+  position: absolute;
+  left: 50%;
+  bottom: 3px;
+  z-index: 1;
+  width: 8px;
+  height: 4px;
+  border-bottom: 2px solid #111111;
+  border-radius: 0 0 9px 9px;
+  transform: translateX(-50%);
+}
+
+.brand-dog-cheek {
+  display: none;
+}
+
+.brand-dog-cheek.left {
+  left: 1px;
+}
+
+.brand-dog-cheek.right {
+  right: 1px;
 }
 
 .brand-text {
   min-width: 0;
-  display: grid;
-  gap: 4px;
+  display: block;
 }
 
 .brand strong {
-  color: #111827;
-  font-size: 18px;
-  line-height: 1.3;
+  color: #222222;
+  font-family:
+    "Comic Sans MS",
+    "Segoe Print",
+    "Cafe24Ssurround",
+    "BM JUA",
+    "Malgun Gothic",
+    sans-serif;
+  font-size: 21px;
+  font-weight: 900;
+  line-height: 1.15;
+  letter-spacing: 0;
 }
 
-.brand span {
-  color: #667085;
-  font-size: 12px;
-  font-weight: 700;
+.brand .brand-mark {
+  color: inherit;
 }
 
 .sidebar-toggle {
@@ -644,19 +979,19 @@ input {
   padding: 0;
   display: grid;
   place-items: center;
-  border: 1px solid #d0d5dd;
-  border-left-color: #ffffff;
+  border: 1px solid #222222;
+  border-left-color: #fffaf1;
   border-radius: 0 8px 8px 0;
   background: #ffffff;
-  color: #2563eb;
+  color: #222222;
   cursor: pointer;
   transform: translateY(-50%);
   box-shadow: 5px 0 14px rgba(20, 35, 70, 0.16);
 }
 
 .sidebar-toggle:hover {
-  background: #eff6ff;
-  color: #1d4ed8;
+  background: #fff1d8;
+  color: #222222;
 }
 
 .sidebar-toggle-arrow {
@@ -683,13 +1018,13 @@ input {
   padding-top: 10px;
   display: grid;
   gap: 4px;
-  border-top: 1px solid #e5e8f0;
+  border-top: 1px solid #eadfcd;
 }
 
 .utility-link {
   padding-top: 9px;
   padding-bottom: 9px;
-  color: #475467;
+  color: #4f4a44;
 }
 
 .sidebar-profile {
@@ -701,8 +1036,9 @@ input {
   justify-content: space-between;
   gap: 8px;
   align-items: center;
-  border-top: 1px solid #e5e8f0;
-  background: #ffffff;
+  border-top: 1px solid #eadfcd;
+  background: #fffaf1;
+  border-radius: 14px;
 }
 
 .sidebar-profile-link {
@@ -749,7 +1085,7 @@ input {
 }
 
 .sidebar-profile-copy strong {
-  color: #111827;
+  color: #222222;
   font-size: 13px;
   font-weight: 900;
 }
@@ -768,7 +1104,7 @@ input {
 }
 
 .sidebar-profile-copy span {
-  color: #667085;
+  color: #7b7166;
   font-size: 11px;
   font-weight: 800;
 }
@@ -818,10 +1154,10 @@ input {
   padding: 10px;
   display: grid;
   gap: 6px;
-  border: 1px solid #e5e8f0;
+  border: 1px solid #eadfcd;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.98);
-  box-shadow: 0 18px 40px rgba(20, 35, 70, 0.18);
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 18px 40px rgba(49, 41, 31, 0.14);
   backdrop-filter: blur(10px);
 }
 
@@ -833,7 +1169,7 @@ input {
   gap: 8px;
   align-items: center;
   border-radius: 8px;
-  color: #344054;
+  color: #3b3834;
   font-size: 14px;
   font-weight: 800;
   text-decoration: none;
@@ -866,12 +1202,14 @@ input {
 }
 
 .nav-link:hover {
-  background: #f2f4f7;
+  background: #fff1d8;
+  color: #222222;
 }
 
 .nav-link.router-link-active {
-  background: #2563eb;
+  background: #222222;
   color: #ffffff;
+  box-shadow: 0 4px 0 #f2d7b0;
 }
 
 .notification-badge {
@@ -960,6 +1298,383 @@ input {
   padding-top: 68px;
 }
 
+.route-mascot {
+  position: fixed;
+  right: 28px;
+  bottom: 24px;
+  z-index: 70;
+  width: 150px;
+  pointer-events: none;
+  transform-origin: right bottom;
+  will-change: transform;
+}
+
+.mascot-speech {
+  position: relative;
+  margin: 0 0 8px auto;
+  width: max-content;
+  max-width: 190px;
+  padding: 9px 12px;
+  border: 2px solid #222222;
+  border-radius: 14px;
+  background: #ffffff;
+  color: #222222;
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 1.35;
+  box-shadow: 0 5px 0 #f2d7b0;
+}
+
+.mascot-speech::after {
+  position: absolute;
+  right: 28px;
+  bottom: -9px;
+  width: 14px;
+  height: 14px;
+  border-right: 2px solid #222222;
+  border-bottom: 2px solid #222222;
+  background: #ffffff;
+  content: "";
+  transform: rotate(45deg);
+}
+
+.mascot-dog {
+  position: relative;
+  width: 118px;
+  height: 138px;
+  margin-left: auto;
+  transform-origin: 50% 88%;
+  animation: mascot-idle 2.8s ease-in-out infinite;
+}
+
+.mascot-head,
+.mascot-body,
+.mascot-ear,
+.mascot-tail,
+.mascot-paw {
+  position: absolute;
+  border: 4px solid #222222;
+  background: #ffffff;
+}
+
+.mascot-head {
+  top: 7px;
+  left: 22px;
+  z-index: 3;
+  width: 78px;
+  height: 82px;
+  border-radius: 42% 46% 44% 40%;
+}
+
+.mascot-ear.left {
+  top: 18px;
+  left: 8px;
+  z-index: 2;
+  width: 42px;
+  height: 26px;
+  border-radius: 60% 36% 46% 52%;
+  transform: rotate(-16deg);
+}
+
+.mascot-ear.right {
+  top: 3px;
+  right: 3px;
+  z-index: 2;
+  width: 52px;
+  height: 30px;
+  border-radius: 46% 60% 48% 42%;
+  transform: rotate(17deg);
+}
+
+.mascot-eye {
+  position: absolute;
+  top: 33px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #222222;
+}
+
+.mascot-eye.left {
+  left: 21px;
+}
+
+.mascot-eye.right {
+  right: 22px;
+}
+
+.mascot-mouth {
+  position: absolute;
+  left: 36px;
+  bottom: 19px;
+  width: 18px;
+  height: 12px;
+  border-bottom: 3px solid #222222;
+  border-radius: 0 0 12px 12px;
+}
+
+.mascot-mouth::before {
+  position: absolute;
+  top: -4px;
+  left: 5px;
+  width: 6px;
+  height: 4px;
+  border-radius: 50%;
+  background: #222222;
+  content: "";
+}
+
+.mascot-body {
+  left: 31px;
+  bottom: 0;
+  z-index: 1;
+  width: 66px;
+  height: 68px;
+  border-radius: 46% 44% 30% 30%;
+}
+
+.mascot-paw {
+  bottom: -4px;
+  z-index: 4;
+  width: 18px;
+  height: 27px;
+  border-top: 0;
+  border-radius: 0 0 12px 12px;
+}
+
+.mascot-paw.left {
+  left: 45px;
+}
+
+.mascot-paw.right {
+  right: 29px;
+}
+
+.mascot-tail {
+  left: 8px;
+  bottom: 15px;
+  z-index: 0;
+  width: 36px;
+  height: 22px;
+  border-right: 0;
+  border-radius: 18px 0 0 18px;
+  transform-origin: 100% 50%;
+  animation: mascot-tail 0.8s ease-in-out infinite;
+}
+
+.mascot-prop {
+  position: absolute;
+  right: 4px;
+  bottom: 42px;
+  z-index: 6;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border: 3px solid #222222;
+  border-radius: 12px;
+  background: #fff1d8;
+  color: #222222;
+  font-size: 18px;
+  font-weight: 900;
+  box-shadow: 0 4px 0 #f2d7b0;
+}
+
+.mascot-fetch-bone {
+  position: absolute;
+  right: 7px;
+  bottom: 39px;
+  z-index: 7;
+  display: none;
+  width: 54px;
+  height: 54px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cg transform='rotate(-45 32 32)'%3E%3Cpath d='M21 18c-5.4-5.4-14.6-1.6-14.6 6.2 0 3.1 1.6 5.9 4.1 7.5-2.5 1.6-4.1 4.4-4.1 7.5 0 7.8 9.2 11.6 14.6 6.2l3.6-3.6h14.8l3.6 3.6c5.4 5.4 14.6 1.6 14.6-6.2 0-3.1-1.6-5.9-4.1-7.5 2.5-1.6 4.1-4.4 4.1-7.5 0-7.8-9.2-11.6-14.6-6.2l-3.6 3.6H24.6L21 18Z' fill='white' stroke='%23222222' stroke-width='4' stroke-linejoin='round'/%3E%3C/g%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-size: contain;
+  filter: drop-shadow(0 3px 0 rgba(242, 215, 176, 0.9));
+  transform: rotate(-8deg);
+  transform-origin: 18px 28px;
+}
+
+.route-mascot.is-fetching {
+  animation: mascot-run-to-marker 1.1s cubic-bezier(0.45, 0.02, 0.22, 1) forwards;
+}
+
+.route-mascot.is-carrying {
+  transform: translate(var(--mascot-run-x, -36vw), var(--mascot-run-y, -17vh));
+  transition: transform 0.16s ease-out;
+}
+
+.route-mascot.is-fetching .mascot-speech,
+.route-mascot.is-carrying .mascot-speech {
+  background: #fff8e9;
+  box-shadow: 0 5px 0 #dcb77e;
+}
+
+.route-mascot.is-fetching .mascot-dog {
+  animation: mascot-fast-run 0.32s ease-in-out infinite;
+}
+
+.route-mascot.is-carrying .mascot-dog {
+  animation: mascot-chew 0.72s ease-in-out infinite;
+}
+
+.route-mascot.is-fetching .mascot-fetch-bone,
+.route-mascot.is-carrying .mascot-fetch-bone {
+  display: block;
+}
+
+.route-mascot.is-fetching .mascot-fetch-bone {
+  animation: mascot-bone-swing 0.22s ease-in-out infinite;
+}
+
+.route-mascot.is-carrying .mascot-fetch-bone {
+  animation: mascot-bone-chew 0.48s ease-in-out infinite;
+}
+
+.route-mascot.is-fetching .mascot-prop,
+.route-mascot.is-carrying .mascot-prop {
+  display: none;
+}
+
+.mascot-home .mascot-dog {
+  animation-name: mascot-sniff;
+}
+
+.mascot-map .mascot-dog {
+  animation-name: mascot-hop;
+}
+
+.mascot-board .mascot-prop,
+.mascot-guide .mascot-prop {
+  background: #e9f6ff;
+}
+
+.mascot-write .mascot-prop,
+.mascot-mypage .mascot-prop {
+  background: #ffe8ef;
+}
+
+.mascot-settings .mascot-prop,
+.mascot-admin .mascot-prop {
+  background: #eeeeee;
+}
+
+.mascot-guide .mascot-paw.right,
+.mascot-mypage .mascot-paw.right,
+.mascot-auth .mascot-paw.right {
+  animation: mascot-wave 0.9s ease-in-out infinite;
+  transform-origin: 50% 0;
+}
+
+.mascot-board .mascot-head {
+  animation: mascot-read 1.8s ease-in-out infinite;
+}
+
+.mascot-inquiry .mascot-ear.left {
+  animation: mascot-listen 1.1s ease-in-out infinite;
+}
+
+@keyframes mascot-idle {
+  50% {
+    transform: translateY(-5px);
+  }
+}
+
+@keyframes mascot-sniff {
+  50% {
+    transform: translateY(-3px) rotate(-3deg);
+  }
+}
+
+@keyframes mascot-hop {
+  45% {
+    transform: translateY(-12px);
+  }
+}
+
+@keyframes mascot-tail {
+  50% {
+    transform: rotate(-12deg);
+  }
+}
+
+@keyframes mascot-wave {
+  50% {
+    transform: rotate(-22deg);
+  }
+}
+
+@keyframes mascot-read {
+  50% {
+    transform: rotate(3deg);
+  }
+}
+
+@keyframes mascot-listen {
+  50% {
+    transform: rotate(-24deg) translateY(2px);
+  }
+}
+
+@keyframes mascot-run-to-marker {
+  0% {
+    transform: translate(0, 0) scale(1);
+  }
+
+  42% {
+    transform: translate(var(--mascot-run-mid-x, -18vw), var(--mascot-run-mid-y, -9vh)) scale(1.04);
+  }
+
+  72% {
+    transform: translate(var(--mascot-run-near-x, -30vw), var(--mascot-run-near-y, -14vh)) scale(0.98);
+  }
+
+  100% {
+    transform: translate(var(--mascot-run-x, -36vw), var(--mascot-run-y, -17vh)) scale(1);
+  }
+}
+
+@keyframes mascot-fast-run {
+  25% {
+    transform: translateY(-8px) rotate(-5deg);
+  }
+
+  50% {
+    transform: translateY(1px) rotate(4deg);
+  }
+
+  75% {
+    transform: translateY(-7px) rotate(5deg);
+  }
+}
+
+@keyframes mascot-chew {
+  45% {
+    transform: translateY(-5px) rotate(-2deg);
+  }
+
+  70% {
+    transform: translateY(-2px) rotate(2deg);
+  }
+}
+
+@keyframes mascot-bone-swing {
+  50% {
+    transform: rotate(7deg) translateY(-2px);
+  }
+}
+
+@keyframes mascot-bone-chew {
+  45% {
+    transform: rotate(-2deg) translate(1px, 1px);
+  }
+
+  80% {
+    transform: rotate(-11deg) translate(-1px, -1px);
+  }
+}
+
 .app-shell.is-compact-mode .board-table th,
 .app-shell.is-compact-mode .board-table td,
 .app-shell.is-compact-mode .inquiry-table th,
@@ -978,6 +1693,70 @@ input {
 .app-shell.is-compact-mode .board-page,
 .app-shell.is-compact-mode .page {
   padding-top: 28px;
+}
+
+.board-page,
+.mypage,
+.guide-page,
+.upgrade-page,
+.page,
+.settings-page,
+.login-page,
+.signup-page {
+  background:
+    radial-gradient(circle at 12% 10%, rgba(255, 238, 209, 0.82), transparent 30%),
+    radial-gradient(circle at 88% 14%, rgba(233, 246, 255, 0.72), transparent 28%),
+    linear-gradient(180deg, #fffaf1 0%, #f8f6ef 100%) !important;
+}
+
+.board-container,
+.mypage-container,
+.guide-container,
+.upgrade-container,
+.page-container {
+  position: relative;
+}
+
+.board-table-wrap,
+.post-detail-card,
+.profile-card,
+.panel,
+.guide-board,
+.score-rule-panel,
+.tier-section,
+.status-card,
+.board-table-wrap,
+.notification-dropdown,
+.account-dropdown {
+  border-color: #222222 !important;
+}
+
+.board-table-wrap,
+.post-detail-card,
+.profile-card,
+.panel,
+.guide-board,
+.score-rule-panel,
+.tier-section,
+.status-card {
+  border-width: 2px !important;
+  box-shadow: 0 7px 0 #f2d7b0 !important;
+}
+
+.write-button,
+.back-button,
+.summary-card,
+.account-menu-button,
+.account-logout-button {
+  border-radius: 12px;
+}
+
+.write-button,
+.comment-form button,
+.comment-save-button,
+.modal-submit-button {
+  background: #222222 !important;
+  color: #ffffff !important;
 }
 
 .global-account-bar {
@@ -1001,12 +1780,12 @@ input {
   height: 42px;
   display: inline-grid;
   place-items: center;
-  border: 1px solid #e5e8f0;
+  border: 2px solid #222222;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.96);
-  color: #111827;
+  background: #ffffff;
+  color: #222222;
   text-decoration: none;
-  box-shadow: 0 10px 28px rgba(20, 35, 70, 0.12);
+  box-shadow: 0 5px 0 #f2d7b0;
   backdrop-filter: blur(8px);
   cursor: pointer;
 }
@@ -1132,15 +1911,15 @@ input {
   display: inline-flex;
   gap: 8px;
   align-items: center;
-  border: 1px solid #e5e8f0;
+  border: 2px solid #222222;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.96);
-  color: #344054;
+  background: #ffffff;
+  color: #222222;
   font-size: 14px;
   font-weight: 900;
   text-decoration: none;
   cursor: pointer;
-  box-shadow: 0 10px 28px rgba(20, 35, 70, 0.12);
+  box-shadow: 0 5px 0 #f2d7b0;
   backdrop-filter: blur(8px);
 }
 
@@ -1171,10 +1950,10 @@ input {
   padding: 10px;
   display: grid;
   gap: 6px;
-  border: 1px solid #e5e8f0;
+  border: 1px solid rgba(255, 255, 255, 0.64);
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.98);
-  box-shadow: 0 18px 40px rgba(20, 35, 70, 0.18);
+  box-shadow: 0 18px 40px rgba(0, 25, 34, 0.2);
   backdrop-filter: blur(10px);
 }
 
@@ -1261,21 +2040,21 @@ input {
 .global-auth-button {
   height: 42px;
   padding: 0 14px;
-  border: 1px solid #d0d5dd;
+  border: 2px solid #222222;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.96);
-  color: #344054;
+  background: #ffffff;
+  color: #222222;
   font-size: 14px;
   font-weight: 900;
   text-decoration: none;
   cursor: pointer;
-  box-shadow: 0 10px 28px rgba(20, 35, 70, 0.12);
+  box-shadow: 0 5px 0 #f2d7b0;
   backdrop-filter: blur(8px);
 }
 
 .global-auth-button.signup {
-  border-color: #2563eb;
-  background: #2563eb;
+  border-color: #222222;
+  background: #222222;
   color: #ffffff;
 }
 
@@ -1350,6 +2129,36 @@ input {
     grid-auto-flow: column;
     grid-auto-columns: max-content;
     overflow-x: auto;
+  }
+
+  .route-mascot {
+    right: 12px;
+    bottom: 12px;
+    width: 118px;
+    transform: scale(0.82);
+    transform-origin: right bottom;
+  }
+
+  .route-mascot.is-fetching {
+    animation-name: mascot-run-to-marker-mobile;
+  }
+
+  .route-mascot.is-carrying {
+    transform: translate(var(--mascot-run-x, -18vw), var(--mascot-run-y, -13vh)) scale(0.82);
+  }
+
+  @keyframes mascot-run-to-marker-mobile {
+    0% {
+      transform: translate(0, 0) scale(0.82);
+    }
+
+    48% {
+      transform: translate(var(--mascot-run-mid-x, -9vw), var(--mascot-run-mid-y, -7vh)) scale(0.86);
+    }
+
+    100% {
+      transform: translate(var(--mascot-run-x, -18vw), var(--mascot-run-y, -13vh)) scale(0.82);
+    }
   }
 }
 </style>

@@ -1,5 +1,5 @@
 <script setup>
-import { nextTick, onMounted, ref, watch } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 const props = defineProps({
   places: {
@@ -31,7 +31,7 @@ const props = defineProps({
   },
 })
 
-const emit = defineEmits(['select-place', 'center-change'])
+const emit = defineEmits(['select-place', 'center-change', 'marker-target-change'])
 
 const mapContainer = ref(null)
 
@@ -40,6 +40,7 @@ let markers = []
 let markerRecords = new Map()
 let activeInfoWindow = null
 let lastFitBoundsKey = null
+let markerTargetFrame = null
 
 const loadKakaoMapScript = () => {
   return new Promise((resolve, reject) => {
@@ -84,7 +85,10 @@ const initMap = () => {
     level: 4,
   })
 
-  window.kakao.maps.event.addListener(map, 'idle', emitMapViewport)
+  window.kakao.maps.event.addListener(map, 'idle', () => {
+    emitMapViewport()
+    emitSelectedMarkerTarget()
+  })
   emitMapViewport()
 }
 
@@ -125,47 +129,69 @@ const clearMarkers = () => {
   markerRecords = new Map()
 }
 
-const MARKER_COLORS = {
-  red: '#ef4444',
-  blue: '#2563eb',
-  green: '#16a34a',
-  gray: '#6b7280',
-}
-
-const getMarkerColor = (markerColor) => {
-  return MARKER_COLORS[markerColor] || markerColor || MARKER_COLORS.red
-}
-
-const createNumberMarkerImage = (label, markerColor = 'red') => {
+const createNumberMarkerImage = (label) => {
   const safeLabel = String(label || '')
-  const fontSize = safeLabel.length >= 2 ? 12 : 15
-  const color = getMarkerColor(markerColor)
+  const fontSize = safeLabel.length >= 2 ? 13 : 16
 
   const svg = `
-    <svg xmlns="http://www.w3.org/2000/svg" width="38" height="42" viewBox="0 0 38 42">
-      <path
-        d="M19 1 C9.6 1 2 8.6 2 18 C2 30.3 19 41 19 41 C19 41 36 30.3 36 18 C36 8.6 28.4 1 19 1 Z"
-        fill="#ffffff"
-        stroke="${color}"
-        stroke-width="3"
-      />
-      <circle cx="19" cy="18" r="12" fill="#ffffff" />
+    <svg xmlns="http://www.w3.org/2000/svg" width="54" height="54" viewBox="0 0 54 54">
+      <filter id="boneShadow" x="-10%" y="-20%" width="120%" height="140%">
+        <feDropShadow dx="0" dy="2" stdDeviation="1.3" flood-color="#1f2937" flood-opacity="0.25"/>
+      </filter>
+      <g transform="rotate(-45 27 27)" filter="url(#boneShadow)">
+        <path
+          d="M14.6 6.2
+             C16.4 2.9 20.8 1.8 24 4
+             C25.7 5.1 26.7 6.8 27 8.6
+             C27.3 6.8 28.3 5.1 30 4
+             C33.2 1.8 37.6 2.9 39.4 6.2
+             C41.4 9.8 39.8 14.2 36.3 15.8
+             L36.3 38.2
+             C39.8 39.8 41.4 44.2 39.4 47.8
+             C37.6 51.1 33.2 52.2 30 50
+             C28.3 48.9 27.3 47.2 27 45.4
+             C26.7 47.2 25.7 48.9 24 50
+             C20.8 52.2 16.4 51.1 14.6 47.8
+             C12.6 44.2 14.2 39.8 17.7 38.2
+             L17.7 15.8
+             C14.2 14.2 12.6 9.8 14.6 6.2 Z"
+          fill="#ffffff"
+          stroke="#222222"
+          stroke-width="4"
+          stroke-linejoin="round"
+        />
+      </g>
       <text
-        x="19"
-        y="23"
+        x="27"
+        y="27"
         text-anchor="middle"
+        dominant-baseline="middle"
         font-size="${fontSize}"
         font-weight="900"
         font-family="Arial, sans-serif"
-        fill="${color}"
+        fill="#222222"
+        paint-order="stroke"
+        stroke="#ffffff"
+        stroke-width="3"
+        stroke-linejoin="round"
+      >${safeLabel}</text>
+      <text
+        x="27"
+        y="27"
+        text-anchor="middle"
+        dominant-baseline="middle"
+        font-size="${fontSize}"
+        font-weight="900"
+        font-family="Arial, sans-serif"
+        fill="#222222"
       >${safeLabel}</text>
     </svg>
   `
 
   const imageSrc = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`
-  const imageSize = new window.kakao.maps.Size(38, 42)
+  const imageSize = new window.kakao.maps.Size(54, 54)
   const imageOption = {
-    offset: new window.kakao.maps.Point(19, 41),
+    offset: new window.kakao.maps.Point(27, 44),
   }
 
   return new window.kakao.maps.MarkerImage(imageSrc, imageSize, imageOption)
@@ -183,6 +209,57 @@ const createInfoWindow = (place) => {
         <span style="color:#667085;">${categoryText}${divider}${distanceText}</span>
       </div>
     `,
+  })
+}
+
+const getMarkerScreenTarget = (position) => {
+  if (!map || !mapContainer.value || !position) return null
+
+  const projection = map.getProjection()
+  const rect = mapContainer.value.getBoundingClientRect()
+  const point = typeof projection.containerPointFromCoords === 'function'
+    ? projection.containerPointFromCoords(position)
+    : projection.pointFromCoords(position)
+
+  if (!point || typeof point.x !== 'number' || typeof point.y !== 'number') {
+    return null
+  }
+
+  if (
+    point.x < -120
+    || point.y < -120
+    || point.x > rect.width + 120
+    || point.y > rect.height + 120
+  ) {
+    return null
+  }
+
+  return {
+    clientX: rect.left + point.x,
+    clientY: rect.top + point.y - 22,
+  }
+}
+
+const emitSelectedMarkerTarget = () => {
+  const selectedId = props.selectedPlace?.id || props.selectedPlaceId
+
+  if (!selectedId) return
+
+  const record = markerRecords.get(String(selectedId))
+
+  if (!record) return
+
+  emit('marker-target-change', record.place, getMarkerScreenTarget(record.position))
+}
+
+const scheduleSelectedMarkerTarget = () => {
+  if (markerTargetFrame) {
+    window.cancelAnimationFrame(markerTargetFrame)
+  }
+
+  markerTargetFrame = window.requestAnimationFrame(() => {
+    markerTargetFrame = null
+    emitSelectedMarkerTarget()
   })
 }
 
@@ -285,7 +362,7 @@ const renderMarkers = ({ fitBounds = false } = {}) => {
 
     window.kakao.maps.event.addListener(marker, 'click', () => {
       openMarkerByPlaceId(place.id, false)
-      emit('select-place', place)
+      emit('select-place', place, getMarkerScreenTarget(position))
     })
   })
 
@@ -295,6 +372,7 @@ const renderMarkers = ({ fitBounds = false } = {}) => {
 
   if (props.selectedPlaceId) {
     openMarkerByPlaceId(props.selectedPlaceId)
+    scheduleSelectedMarkerTarget()
   }
 }
 
@@ -304,9 +382,23 @@ onMounted(async () => {
     initMap()
     lastFitBoundsKey = props.fitBoundsKey
     renderMarkers({ fitBounds: true })
+    window.addEventListener('scroll', scheduleSelectedMarkerTarget, true)
+    window.addEventListener('resize', scheduleSelectedMarkerTarget)
   } catch (error) {
     console.error(error)
   }
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('scroll', scheduleSelectedMarkerTarget, true)
+  window.removeEventListener('resize', scheduleSelectedMarkerTarget)
+
+  if (markerTargetFrame) {
+    window.cancelAnimationFrame(markerTargetFrame)
+    markerTargetFrame = null
+  }
+
+  clearMarkers()
 })
 
 watch(
@@ -349,6 +441,7 @@ watch(
     }
 
     openMarkerByPlaceId(placeId)
+    scheduleSelectedMarkerTarget()
   },
 )
 
@@ -362,6 +455,7 @@ watch(
 
     openMarkerByPlaceId(place.id, false)
     focusSelectedPlaceOnMap(place)
+    scheduleSelectedMarkerTarget()
   },
   { deep: true },
 )
@@ -370,6 +464,7 @@ watch(
   () => props.layoutKey,
   () => {
     relayoutMap()
+    scheduleSelectedMarkerTarget()
   },
 )
 </script>

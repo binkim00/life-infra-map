@@ -19,6 +19,28 @@ const boardTitle = computed(() => {
   return '자유게시판'
 })
 
+const numberedPosts = computed(() => {
+  const normalPostCount = posts.value.filter((post) => !post.is_pinned).length
+  let normalPostIndex = 0
+
+  return posts.value.map((post) => {
+    if (post.is_pinned) {
+      return {
+        ...post,
+        displayNumber: '-',
+      }
+    }
+
+    const displayNumber = normalPostCount - normalPostIndex
+    normalPostIndex += 1
+
+    return {
+      ...post,
+      displayNumber,
+    }
+  })
+})
+
 const canWritePost = computed(() => {
   if (!authStore.isLoggedIn) {
     return false
@@ -135,11 +157,11 @@ onMounted(() => {
 
           <tbody>
             <tr
-              v-for="post in posts"
+              v-for="post in numberedPosts"
               :key="post.id"
               :class="{ pinned: post.is_pinned }"
             >
-              <td class="number-cell">{{ post.is_pinned ? '-' : post.id }}</td>
+              <td class="number-cell">{{ post.displayNumber }}</td>
               <td>
                 <span class="category-label" :class="post.board_type">
                   <span v-if="post.is_pinned" class="pin-dot">!</span>

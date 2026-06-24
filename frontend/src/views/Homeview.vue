@@ -9162,16 +9162,52 @@ const startNewConversationSearch = async () => {
   await focusPrimarySearchInput()
 }
 
-const selectPlace = (place) => {
-  selectedPlace.value = place
-  detailFrameError.value = false
-  isPlaceDetailCollapsed.value = false
+const getListMarkerTarget = (event) => {
+  const markerElement = event?.currentTarget?.querySelector?.('.place-list-marker')
+  const rect = markerElement?.getBoundingClientRect()
+
+  if (!rect) return null
+
+  return {
+    clientX: rect.left + rect.width / 2,
+    clientY: rect.top + rect.height / 2,
+  }
 }
 
-const selectPlaceFromList = (place) => {
+const dispatchMascotFetch = (place, target = null) => {
+  window.dispatchEvent(new CustomEvent('place-marker-fetch', {
+    detail: {
+      placeId: place?.id,
+      placeName: place?.name,
+      target,
+    },
+  }))
+}
+
+const updateMascotFetchTarget = (place, target = null) => {
+  if (!selectedPlace.value || String(selectedPlace.value.id) !== String(place?.id)) return
+
+  window.dispatchEvent(new CustomEvent('place-marker-fetch-update', {
+    detail: {
+      placeId: place?.id,
+      placeName: place?.name,
+      target,
+    },
+  }))
+}
+
+const selectPlace = (place, target = null) => {
   selectedPlace.value = place
   detailFrameError.value = false
   isPlaceDetailCollapsed.value = false
+  dispatchMascotFetch(place, target)
+}
+
+const selectPlaceFromList = (place, event) => {
+  selectedPlace.value = place
+  detailFrameError.value = false
+  isPlaceDetailCollapsed.value = false
+  dispatchMascotFetch(place, getListMarkerTarget(event))
 }
 
 const getPlaceReportQuery = (place) => {
@@ -9209,6 +9245,7 @@ const closePlaceCard = () => {
   selectedPlace.value = null
   detailFrameError.value = false
   isPlaceDetailCollapsed.value = false
+  window.dispatchEvent(new CustomEvent('place-marker-fetch-clear'))
 }
 
 const openDetailPanel = () => {
@@ -9783,7 +9820,7 @@ const handleDetailFrameError = () => {
                 <button
                   type="button"
                   class="place-list-select-button"
-                  @click="selectPlaceFromList(place)"
+                  @click="selectPlaceFromList(place, $event)"
                 >
                   <span class="place-list-marker" :class="getPlaceSourceClass(place)">
                     {{ place.markerLabel }}
@@ -9952,6 +9989,7 @@ const handleDetailFrameError = () => {
             :selected-place="selectedPlace"
             @center-change="handleMapViewportChange"
             @select-place="selectPlace"
+            @marker-target-change="updateMascotFetchTarget"
           />
 
           <aside
@@ -10219,12 +10257,30 @@ const handleDetailFrameError = () => {
 
 <style scoped>
 .home-page {
+  position: relative;
   min-height: 100vh;
-  padding: clamp(18px, 2vw, 28px);
+  padding: 24px;
   background:
-    radial-gradient(circle at top left, rgba(37, 99, 235, 0.12), transparent 28%),
-    radial-gradient(circle at bottom right, rgba(20, 184, 166, 0.12), transparent 30%),
-    linear-gradient(180deg, #ffffff 0%, #f6f7fb 100%);
+    radial-gradient(circle at 14% 18%, rgba(255, 237, 206, 0.82), transparent 28%),
+    radial-gradient(circle at 86% 12%, rgba(231, 242, 255, 0.84), transparent 28%),
+    linear-gradient(180deg, #fffaf1 0%, #f8f6ef 100%);
+}
+
+.home-page::before {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(90deg, rgba(34, 34, 34, 0.035) 1px, transparent 1px),
+    linear-gradient(180deg, rgba(34, 34, 34, 0.035) 1px, transparent 1px);
+  background-size: 38px 38px;
+  content: "";
+  mask-image: linear-gradient(180deg, black, transparent 78%);
+}
+
+.home-page > * {
+  position: relative;
+  z-index: 1;
 }
 
 .page-header {
@@ -10242,11 +10298,10 @@ const handleDetailFrameError = () => {
   padding: 6px;
   display: flex;
   gap: 6px;
-  background: rgba(255, 255, 255, 0.82);
-  border: 1px solid rgba(229, 232, 240, 0.9);
+  background: #ffffff;
+  border: 2px solid #222222;
   border-radius: 999px;
-  backdrop-filter: blur(14px);
-  box-shadow: 0 8px 24px rgba(20, 35, 70, 0.08);
+  box-shadow: 0 5px 0 #f2d7b0;
 }
 
 .tab-button {
@@ -10263,7 +10318,7 @@ const handleDetailFrameError = () => {
 }
 
 .tab-button.active {
-  background: #111827;
+  background: #222222;
   color: #ffffff;
   transform: translateY(-1px);
 }
@@ -10287,30 +10342,37 @@ const handleDetailFrameError = () => {
 }
 
 .intro {
-  margin-bottom: 28px;
+  max-width: 820px;
+  margin-bottom: 30px;
+  padding: 34px 28px 24px;
+  border: 3px solid #222222;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.86);
   text-align: center;
+  box-shadow: 0 8px 0 #f2d7b0;
   transition: margin 0.25s ease, opacity 0.25s ease, transform 0.25s ease;
 }
 
 .eyebrow {
   margin: 0 0 12px;
-  color: #2563eb;
+  color: #7b7166;
   font-size: 15px;
-  font-weight: 800;
+  font-weight: 900;
 }
 
 h1 {
   margin: 0;
-  color: #111827;
-  font-size: 42px;
+  color: #222222;
+  font-size: clamp(34px, 5vw, 54px);
   line-height: 1.25;
   letter-spacing: 0;
 }
 
 .description {
   margin: 16px 0 0;
-  color: #667085;
+  color: #4f4a44;
   font-size: 17px;
+  font-weight: 800;
 }
 
 .search-box {
@@ -10318,10 +10380,10 @@ h1 {
   padding: 9px;
   display: flex;
   gap: 8px;
-  background: rgba(255, 255, 255, 0.94);
-  border: 1px solid rgba(229, 232, 240, 0.95);
-  border-radius: 24px;
-  box-shadow: 0 22px 56px rgba(20, 35, 70, 0.14);
+  background: #ffffff;
+  border: 3px solid #222222;
+  border-radius: 20px;
+  box-shadow: 0 8px 0 #f2d7b0;
   transition: all 0.25s ease;
 }
 
@@ -10338,11 +10400,11 @@ h1 {
 .search-box button {
   padding: 0 28px;
   border: 0;
-  border-radius: 16px;
-  background: #111827;
+  border-radius: 14px;
+  background: #222222;
   color: #ffffff;
   font-size: 16px;
-  font-weight: 800;
+  font-weight: 900;
   cursor: pointer;
 }
 
@@ -10504,10 +10566,16 @@ h1 {
 
 .conversation-card-top,
 .map-header {
+  padding: 18px 20px;
   display: flex;
   justify-content: space-between;
   gap: 12px;
   align-items: flex-start;
+  margin-bottom: 12px;
+  border: 3px solid #222222;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: 0 8px 0 #f2d7b0;
 }
 
 .conversation-copy {
@@ -10529,8 +10597,9 @@ h1 {
 
 .map-header p {
   margin: 6px 0 0;
-  color: #667085;
+  color: #4f4a44;
   font-size: 14px;
+  font-weight: 800;
 }
 
 .map-header-actions {
@@ -10553,8 +10622,10 @@ h1 {
 }
 
 .map-location-button {
-  background: #eff6ff;
-  color: #1d4ed8;
+  background: #ffffff;
+  color: #222222;
+  border: 2px solid #222222;
+  box-shadow: 0 4px 0 #f2d7b0;
 }
 
 .map-location-button:hover:not(:disabled),
@@ -10595,14 +10666,15 @@ h1 {
 }
 
 .map-search-box {
-  margin: 0;
-  padding: 8px;
+  margin: 0 0 12px;
+  padding: 10px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
-  background: #f8fafc;
-  border: 1px solid #e5e8f0;
+  background: #ffffff;
+  border: 3px solid #222222;
   border-radius: 18px;
+  box-shadow: 0 6px 0 #f2d7b0;
 }
 
 .search-panel {
@@ -10621,7 +10693,7 @@ h1 {
 
 .search-panel--compact {
   max-height: 0;
-  margin-top: -4px;
+  margin: -4px 0 0;
   padding-top: 0;
   padding-bottom: 0;
   border-color: transparent;
@@ -10663,11 +10735,11 @@ h1 {
   min-height: 44px;
   padding: 0 16px;
   border: 0;
-  border-radius: 13px;
-  background: #111827;
+  border-radius: 10px;
+  background: #222222;
   color: #ffffff;
   font-size: 15px;
-  font-weight: 800;
+  font-weight: 900;
   cursor: pointer;
 }
 
@@ -10682,7 +10754,7 @@ h1 {
 }
 
 .map-ai-button {
-  background: #111827 !important;
+  background: #222222 !important;
 }
 
 .ai-preset-buttons {
@@ -11071,10 +11143,10 @@ h1 {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: #ffffff;
-  border: 1px solid #e5e8f0;
-  border-radius: 22px;
-  box-shadow: 0 18px 48px rgba(20, 35, 70, 0.12);
+  background: rgba(255, 255, 255, 0.96);
+  border: 3px solid #222222;
+  border-radius: 18px;
+  box-shadow: 0 8px 0 #f2d7b0;
   transition: width 0.25s ease, height 0.25s ease, transform 0.25s ease, opacity 0.25s ease, padding 0.25s ease;
 }
 
@@ -11102,7 +11174,7 @@ h1 {
 
 .place-list-label {
   margin: 0 0 4px;
-  color: #2563eb;
+  color: #7b7166;
   font-size: 13px;
   font-weight: 900;
 }
@@ -11549,7 +11621,7 @@ h1 {
 
 .place-list-item:hover,
 .place-list-item.active {
-  background: #eff6ff;
+  background: #fff1d8;
   border-radius: 12px;
 }
 
@@ -11585,28 +11657,41 @@ h1 {
 }
 
 .place-list-marker {
-  width: 28px;
-  height: 28px;
+  position: relative;
+  width: 54px;
+  height: 54px;
   flex-shrink: 0;
-  margin-top: 2px;
+  margin-top: -10px;
   display: grid;
   place-items: center;
-  border: 2px solid #ef4444;
-  border-radius: 999px;
-  background: #ffffff;
-  color: #ef4444;
-  font-size: 13px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #222222;
+  font-size: 12px;
   font-weight: 900;
+  isolation: isolate;
+}
+
+.place-list-marker::before {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='54' height='54' viewBox='0 0 54 54'%3E%3Cg transform='rotate(-45 27 27)'%3E%3Cpath d='M14.6 6.2 C16.4 2.9 20.8 1.8 24 4 C25.7 5.1 26.7 6.8 27 8.6 C27.3 6.8 28.3 5.1 30 4 C33.2 1.8 37.6 2.9 39.4 6.2 C41.4 9.8 39.8 14.2 36.3 15.8 L36.3 38.2 C39.8 39.8 41.4 44.2 39.4 47.8 C37.6 51.1 33.2 52.2 30 50 C28.3 48.9 27.3 47.2 27 45.4 C26.7 47.2 25.7 48.9 24 50 C20.8 52.2 16.4 51.1 14.6 47.8 C12.6 44.2 14.2 39.8 17.7 38.2 L17.7 15.8 C14.2 14.2 12.6 9.8 14.6 6.2 Z' fill='white' stroke='%23222222' stroke-width='4' stroke-linejoin='round'/%3E%3C/g%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
+  content: "";
 }
 
 .place-list-marker.source-db {
-  border-color: #2563eb;
-  color: #2563eb;
+  border-color: currentColor;
+  color: #222222;
 }
 
 .place-list-marker.source-base {
-  border-color: #16a34a;
-  color: #16a34a;
+  border-color: currentColor;
+  color: #222222;
 }
 
 .place-list-main {
@@ -11926,10 +12011,10 @@ h1 {
 :deep(.map) {
   height: min(720px, calc(100vh - clamp(190px, 20vh, 230px)));
   min-height: 520px;
-  border: 1px solid #e5e8f0;
-  border-radius: 24px;
+  border: 3px solid #222222;
+  border-radius: 20px;
+  box-shadow: 0 8px 0 #f2d7b0;
   overflow: hidden;
-  box-shadow: 0 18px 48px rgba(20, 35, 70, 0.12);
 }
 
 @keyframes aiPanelReveal {
@@ -12018,10 +12103,10 @@ h1 {
   display: flex;
   flex-direction: column;
   gap: clamp(14px, 1.1vw, 18px);
-  background: #ffffff;
-  border: 1px solid #e5e8f0;
-  border-radius: 22px;
-  box-shadow: 0 18px 48px rgba(20, 35, 70, 0.12);
+  background: rgba(255, 255, 255, 0.96);
+  border: 3px solid #222222;
+  border-radius: 18px;
+  box-shadow: 0 8px 0 #f2d7b0;
 }
 
 .split-place-card.has-kakao-detail {

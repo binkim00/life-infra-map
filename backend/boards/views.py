@@ -209,6 +209,8 @@ def post_list_create(request):
         else:
             posts = Post.objects.filter(board_type=board_type)
 
+        posts = posts.order_by("-is_pinned", "-created_at", "-id")
+
         serializer = PostListSerializer(
             posts,
             many=True,
