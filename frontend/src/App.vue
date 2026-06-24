@@ -20,7 +20,10 @@ const notificationMenuRef = ref(null)
 const accountMenuRef = ref(null)
 const sidebarProfileRef = ref(null)
 const mascotFetchPhase = ref('')
+const mascotFetchedPlaceId = ref(null)
 const mascotFetchedPlaceName = ref('')
+const mascotFetchedMarkerLabel = ref('')
+const isMarkerChoiceMenuOpen = ref(false)
 const mascotRunX = ref('-36vw')
 const mascotRunY = ref('-17vh')
 const mascotRunMidX = ref('-18vw')
@@ -266,7 +269,10 @@ const clearMascotFetch = () => {
   }
 
   mascotFetchPhase.value = ''
+  mascotFetchedPlaceId.value = null
   mascotFetchedPlaceName.value = ''
+  mascotFetchedMarkerLabel.value = ''
+  isMarkerChoiceMenuOpen.value = false
 }
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value))
@@ -306,10 +312,32 @@ const setMascotRunTarget = (target) => {
   mascotRunNearY.value = `${Math.round(targetY * 0.82 + 8)}px`
 }
 
+const handleMascotClick = () => {
+  if (mascotFetchPhase.value !== 'carrying' || !mascotFetchedPlaceId.value) return
+
+  window.dispatchEvent(new CustomEvent('place-marker-fetch-click', {
+    detail: {
+      placeId: mascotFetchedPlaceId.value,
+      placeName: mascotFetchedPlaceName.value,
+      markerLabel: mascotFetchedMarkerLabel.value,
+    },
+  }))
+}
+
+const handleMarkerChoiceMenuOpen = () => {
+  isMarkerChoiceMenuOpen.value = true
+}
+
+const handleMarkerChoiceMenuClose = () => {
+  isMarkerChoiceMenuOpen.value = false
+}
+
 const updateMascotFetchTarget = (event) => {
   if (!mascotFetchPhase.value) return
 
+  mascotFetchedPlaceId.value = event.detail?.placeId || mascotFetchedPlaceId.value
   mascotFetchedPlaceName.value = event.detail?.placeName || mascotFetchedPlaceName.value
+  mascotFetchedMarkerLabel.value = event.detail?.markerLabel || mascotFetchedMarkerLabel.value
   setMascotRunTarget(event.detail?.target)
 }
 
@@ -318,12 +346,17 @@ const triggerMascotFetch = (event) => {
     window.clearTimeout(mascotFetchTimer)
   }
 
+  mascotFetchedPlaceId.value = event.detail?.placeId || null
   mascotFetchedPlaceName.value = event.detail?.placeName || ''
+  mascotFetchedMarkerLabel.value = event.detail?.markerLabel || ''
   setMascotRunTarget(event.detail?.target)
   mascotFetchPhase.value = 'fetching'
   mascotFetchTimer = window.setTimeout(() => {
     mascotFetchPhase.value = 'carrying'
     mascotFetchTimer = null
+    window.dispatchEvent(new CustomEvent('place-marker-fetch-arrived', {
+      detail: event.detail || {},
+    }))
   }, 1100)
 }
 
@@ -332,6 +365,8 @@ onMounted(() => {
   window.addEventListener('place-marker-fetch', triggerMascotFetch)
   window.addEventListener('place-marker-fetch-update', updateMascotFetchTarget)
   window.addEventListener('place-marker-fetch-clear', clearMascotFetch)
+  window.addEventListener('place-marker-choice-open', handleMarkerChoiceMenuOpen)
+  window.addEventListener('place-marker-choice-close', handleMarkerChoiceMenuClose)
 
   authStore.fetchMe()
     .then(() => {
@@ -376,6 +411,8 @@ onBeforeUnmount(() => {
   window.removeEventListener('place-marker-fetch', triggerMascotFetch)
   window.removeEventListener('place-marker-fetch-update', updateMascotFetchTarget)
   window.removeEventListener('place-marker-fetch-clear', clearMascotFetch)
+  window.removeEventListener('place-marker-choice-open', handleMarkerChoiceMenuOpen)
+  window.removeEventListener('place-marker-choice-close', handleMarkerChoiceMenuClose)
   clearMascotFetch()
 
   if (notificationTimer) {
@@ -719,12 +756,13 @@ onBeforeUnmount(() => {
           {
             'is-fetching': mascotFetchPhase === 'fetching',
             'is-carrying': mascotFetchPhase === 'carrying',
+            'is-choice-menu-open': isMarkerChoiceMenuOpen,
           },
         ]"
         aria-live="polite"
       >
         <div class="mascot-speech">{{ activeMascotState.message }}</div>
-        <div class="mascot-dog" aria-hidden="true">
+        <div class="mascot-dog" aria-hidden="true" @click.stop="handleMascotClick">
           <span class="mascot-ear left"></span>
           <span class="mascot-ear right"></span>
           <span class="mascot-head">
@@ -737,7 +775,7 @@ onBeforeUnmount(() => {
             <span class="mascot-paw right"></span>
           </span>
           <span class="mascot-tail"></span>
-          <span class="mascot-fetch-bone"></span>
+          <span class="mascot-fetch-bone">{{ mascotFetchedMarkerLabel }}</span>
           <span v-if="activeMascotState.prop" class="mascot-prop">{{ activeMascotState.prop }}</span>
         </div>
       </aside>
@@ -1500,10 +1538,21 @@ input {
   display: none;
   width: 54px;
   height: 54px;
+  place-items: center;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cg transform='rotate(-45 32 32)'%3E%3Cpath d='M21 18c-5.4-5.4-14.6-1.6-14.6 6.2 0 3.1 1.6 5.9 4.1 7.5-2.5 1.6-4.1 4.4-4.1 7.5 0 7.8 9.2 11.6 14.6 6.2l3.6-3.6h14.8l3.6 3.6c5.4 5.4 14.6 1.6 14.6-6.2 0-3.1-1.6-5.9-4.1-7.5 2.5-1.6 4.1-4.4 4.1-7.5 0-7.8-9.2-11.6-14.6-6.2l-3.6 3.6H24.6L21 18Z' fill='white' stroke='%23222222' stroke-width='4' stroke-linejoin='round'/%3E%3C/g%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-size: contain;
+  color: #222222;
   filter: drop-shadow(0 3px 0 rgba(242, 215, 176, 0.9));
+  font-family: Arial, sans-serif;
+  font-size: 16px;
+  font-weight: 900;
+  line-height: 1;
+  text-shadow:
+    -1px -1px 0 #ffffff,
+    1px -1px 0 #ffffff,
+    -1px 1px 0 #ffffff,
+    1px 1px 0 #ffffff;
   transform: rotate(-8deg);
   transform-origin: 18px 28px;
 }
@@ -1513,14 +1562,27 @@ input {
 }
 
 .route-mascot.is-carrying {
-  transform: translate(var(--mascot-run-x, -36vw), var(--mascot-run-y, -17vh));
+  z-index: 2;
+  transform: translate(var(--mascot-run-x, -36vw), calc(var(--mascot-run-y, -17vh) - 10px));
   transition: transform 0.16s ease-out;
+}
+
+.route-mascot.is-carrying .mascot-dog {
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.route-mascot.is-choice-menu-open {
+  z-index: 0;
+}
+
+.route-mascot.is-choice-menu-open .mascot-dog {
+  pointer-events: none;
 }
 
 .route-mascot.is-fetching .mascot-speech,
 .route-mascot.is-carrying .mascot-speech {
-  background: #fff8e9;
-  box-shadow: 0 5px 0 #dcb77e;
+  display: none;
 }
 
 .route-mascot.is-fetching .mascot-dog {
@@ -1531,6 +1593,7 @@ input {
 }
 
 .route-mascot.is-carrying .mascot-dog {
+  transform-origin: 100% 100%;
   animation: mascot-chew 0.72s ease-in-out infinite;
 }
 
@@ -1544,7 +1607,7 @@ input {
 }
 
 .route-mascot.is-carrying .mascot-fetch-bone {
-  display: block;
+  display: grid;
 }
 
 .route-mascot.is-carrying .mascot-fetch-bone {
@@ -1682,12 +1745,17 @@ input {
 }
 
 @keyframes mascot-chew {
+  0%,
+  100% {
+    transform: scale(0.5);
+  }
+
   45% {
-    transform: translateY(-5px) rotate(-2deg);
+    transform: translateY(-5px) rotate(-2deg) scale(0.5);
   }
 
   70% {
-    transform: translateY(-2px) rotate(2deg);
+    transform: translateY(-2px) rotate(2deg) scale(0.5);
   }
 }
 
@@ -2170,7 +2238,8 @@ input {
   }
 
   .route-mascot.is-carrying {
-    transform: translate(var(--mascot-run-x, -18vw), var(--mascot-run-y, -13vh)) scale(0.82);
+    z-index: 2;
+    transform: translate(var(--mascot-run-x, -18vw), calc(var(--mascot-run-y, -13vh) - 8px)) scale(0.82);
   }
 
   @keyframes mascot-run-to-marker-mobile {
