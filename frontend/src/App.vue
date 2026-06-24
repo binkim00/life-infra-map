@@ -63,6 +63,49 @@ const currentUserContribution = computed(() => {
   return authStore.user?.contribution ?? authStore.user?.score ?? 0
 })
 
+const mascotTierValues = new Set([
+  'iron',
+  'bronze',
+  'silver',
+  'gold',
+  'platinum',
+  'diamond',
+  'master',
+  'challenger',
+])
+
+const currentMascotTier = computed(() => {
+  const tier = String(authStore.user?.tier || '').toLowerCase()
+
+  return mascotTierValues.has(tier) ? tier : 'iron'
+})
+
+const currentMascotImageStyle = computed(() => {
+  if (!authStore.isLoggedIn) {
+    return {
+      '--mascot-idle-image': 'none',
+      '--mascot-run-1': 'url("/mascot-run/dog-run-1.png")',
+      '--mascot-run-2': 'url("/mascot-run/dog-run-2.png")',
+      '--mascot-run-3': 'url("/mascot-run/dog-run-3.png")',
+      '--mascot-run-4': 'url("/mascot-run/dog-run-4.png")',
+      '--mascot-run-5': 'url("/mascot-run/dog-run-5.png")',
+      '--mascot-run-6': 'url("/mascot-run/dog-run-6.png")',
+    }
+  }
+
+  const basePath = `/mascot-tiers/${currentMascotTier.value}`
+
+  return {
+    '--mascot-idle-image': `url("${basePath}/idle.png")`,
+    '--mascot-run-1': `url("${basePath}/run-1.png")`,
+    '--mascot-run-2': `url("${basePath}/run-2.png")`,
+    '--mascot-run-3': `url("${basePath}/run-3.png")`,
+    '--mascot-run-4': `url("${basePath}/run-4.png")`,
+    '--mascot-run-5': `url("${basePath}/run-5.png")`,
+    '--mascot-run-6': `url("${basePath}/run-6.png")`,
+  }
+})
+
 const currentUserNicknameStyle = computed(() => {
   return authStore.user?.nickname_color ? { color: authStore.user.nickname_color } : {}
 })
@@ -744,6 +787,7 @@ onBeforeUnmount(() => {
       <aside
         class="route-mascot"
         :style="{
+          ...currentMascotImageStyle,
           '--mascot-run-x': mascotRunX,
           '--mascot-run-y': mascotRunY,
           '--mascot-run-mid-x': mascotRunMidX,
@@ -754,6 +798,7 @@ onBeforeUnmount(() => {
         :class="[
           `mascot-${activeMascotState.key}`,
           {
+            'is-tier-mascot': authStore.isLoggedIn,
             'is-fetching': mascotFetchPhase === 'fetching',
             'is-carrying': mascotFetchPhase === 'carrying',
             'is-choice-menu-open': isMarkerChoiceMenuOpen,
@@ -773,6 +818,9 @@ onBeforeUnmount(() => {
           <span class="mascot-body">
             <span class="mascot-paw left"></span>
             <span class="mascot-paw right"></span>
+          </span>
+          <span class="mascot-collar">
+            <span class="mascot-pendant"></span>
           </span>
           <span class="mascot-tail"></span>
           <span class="mascot-fetch-bone">{{ mascotFetchedMarkerLabel }}</span>
@@ -1385,16 +1433,34 @@ input {
   animation: mascot-idle 2.8s ease-in-out infinite;
 }
 
+.route-mascot.is-tier-mascot .mascot-dog {
+  width: 132px;
+  height: 152px;
+}
+
 .mascot-dog::before {
   position: absolute;
   inset: 0;
   z-index: 8;
   display: none;
-  background-image: url("/mascot-run/dog-run-1.png");
+  background-image: var(--mascot-run-1);
   background-position: center;
   background-repeat: no-repeat;
   background-size: contain;
   content: "";
+}
+
+.mascot-dog::after {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: none;
+  background-image: var(--mascot-idle-image);
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: contain;
+  content: "";
+  pointer-events: none;
 }
 
 .mascot-head,
@@ -1405,6 +1471,27 @@ input {
   position: absolute;
   border: 4px solid #222222;
   background: #ffffff;
+}
+
+.mascot-head,
+.mascot-body,
+.mascot-ear,
+.mascot-tail,
+.mascot-paw,
+.mascot-collar {
+  opacity: 0;
+}
+
+.route-mascot.is-tier-mascot .mascot-dog::after {
+  display: block;
+}
+
+.route-mascot:not(.is-tier-mascot) .mascot-head,
+.route-mascot:not(.is-tier-mascot) .mascot-body,
+.route-mascot:not(.is-tier-mascot) .mascot-ear,
+.route-mascot:not(.is-tier-mascot) .mascot-tail,
+.route-mascot:not(.is-tier-mascot) .mascot-paw {
+  opacity: 1;
 }
 
 .mascot-head {
@@ -1512,6 +1599,24 @@ input {
   animation: mascot-tail 0.8s ease-in-out infinite;
 }
 
+.mascot-collar {
+  position: absolute;
+  top: 75px;
+  left: 20px;
+  z-index: 5;
+  width: 96px;
+  height: 74px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 140'%3E%3Cpath d='M28 25 C61 49 119 49 152 25 L158 48 C121 79 59 79 22 48 Z' fill='%230d47a1' stroke='%23222222' stroke-width='8' stroke-linejoin='round'/%3E%3Cpath d='M30 27 C62 48 118 48 150 27' fill='none' stroke='%23f6bf49' stroke-width='5' stroke-linecap='round'/%3E%3Cpath d='M25 48 C61 78 119 78 155 48' fill='none' stroke='%23f6bf49' stroke-width='5' stroke-linecap='round'/%3E%3Cpath d='M82 67 L98 67 L98 94 L82 94 Z' fill='%23f6bf49' stroke='%23222222' stroke-width='7' stroke-linejoin='round'/%3E%3Ccircle cx='90' cy='104' r='31' fill='%23062e6f' stroke='%23222222' stroke-width='8'/%3E%3Ccircle cx='90' cy='104' r='25' fill='%2308337b' stroke='%23f6bf49' stroke-width='5'/%3E%3Cpath d='M90 72 C95 91 104 99 123 104 C104 109 95 117 90 136 C85 117 76 109 57 104 C76 99 85 91 90 72 Z' fill='%23f6bf49' stroke='%2301183d' stroke-width='3' stroke-linejoin='round'/%3E%3Cpath d='M90 84 L101 104 L90 125 L79 104 Z' fill='%232fd7ff' stroke='%23ffffff' stroke-width='3' stroke-linejoin='round'/%3E%3Cpath d='M72 104 L90 95 L108 104 L90 113 Z' fill='%23005bd8' opacity='0.95'/%3E%3Cpath d='M90 84 L90 125 M79 104 L101 104' stroke='%2301183d' stroke-width='2' stroke-linecap='round' opacity='0.8'/%3E%3C/svg%3E");
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: contain;
+  pointer-events: none;
+}
+
+.mascot-pendant {
+  display: none;
+}
+
 .mascot-prop {
   position: absolute;
   right: 4px;
@@ -1600,6 +1705,10 @@ input {
 .route-mascot.is-fetching .mascot-dog::before {
   display: block;
   animation: mascot-run-frame 0.54s steps(1, end) infinite;
+}
+
+.route-mascot.is-fetching .mascot-dog::after {
+  display: none;
 }
 
 .route-mascot.is-fetching .mascot-dog > span {
@@ -1720,27 +1829,27 @@ input {
 @keyframes mascot-run-frame {
   0%,
   100% {
-    background-image: url("/mascot-run/dog-run-1.png");
+    background-image: var(--mascot-run-1);
   }
 
   16.67% {
-    background-image: url("/mascot-run/dog-run-2.png");
+    background-image: var(--mascot-run-2);
   }
 
   33.33% {
-    background-image: url("/mascot-run/dog-run-3.png");
+    background-image: var(--mascot-run-3);
   }
 
   50% {
-    background-image: url("/mascot-run/dog-run-4.png");
+    background-image: var(--mascot-run-4);
   }
 
   66.67% {
-    background-image: url("/mascot-run/dog-run-5.png");
+    background-image: var(--mascot-run-5);
   }
 
   83.33% {
-    background-image: url("/mascot-run/dog-run-6.png");
+    background-image: var(--mascot-run-6);
   }
 }
 
