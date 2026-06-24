@@ -32,6 +32,8 @@ const mascotRunNearX = ref('-30vw')
 const mascotRunNearY = ref('-14vh')
 let notificationTimer = null
 let mascotFetchTimer = null
+const TIER_UP_NOTIFICATION_TITLE = '등급 승급 안내'
+const handledTierUpNotificationIds = new Set()
 
 const handleLogout = async () => {
   closeAllDropdowns()
@@ -219,7 +221,25 @@ const fetchNotifications = async () => {
 
   try {
     const response = await getNotifications()
-    notifications.value = response.data
+    const fetchedNotifications = response.data
+    notifications.value = fetchedNotifications
+
+    const newTierUpNotifications = fetchedNotifications.filter((notification) => {
+      const notificationKey = notification.id ?? `${notification.created_at}-${notification.message}`
+      return (
+        !notification.is_read
+        && notification.title === TIER_UP_NOTIFICATION_TITLE
+        && !handledTierUpNotificationIds.has(notificationKey)
+      )
+    })
+
+    if (newTierUpNotifications.length > 0) {
+      newTierUpNotifications.forEach((notification) => {
+        const notificationKey = notification.id ?? `${notification.created_at}-${notification.message}`
+        handledTierUpNotificationIds.add(notificationKey)
+      })
+      await authStore.fetchMe()
+    }
   } catch (error) {
     console.error(error)
   }
@@ -302,7 +322,7 @@ const startNotificationPolling = () => {
     window.clearInterval(notificationTimer)
   }
 
-  notificationTimer = window.setInterval(fetchNotifications, 30000)
+  notificationTimer = window.setInterval(fetchNotifications, 10000)
 }
 
 const clearMascotFetch = () => {

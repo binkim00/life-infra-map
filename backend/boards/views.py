@@ -9,6 +9,10 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
 from accounts.serializers import get_or_create_profile
+from accounts.tier_notifications import (
+    get_current_user_tier,
+    notify_tier_upgrade_if_needed,
+)
 from .models import (
     Comment,
     CommentDislike,
@@ -241,10 +245,12 @@ def post_list_create(request):
         serializer = PostDetailSerializer(data=request.data)
 
         if serializer.is_valid():
+            previous_tier = get_current_user_tier(request.user)
             post = serializer.save(
                 author=request.user,
                 is_pinned=board_type == "notice",
             )
+            notify_tier_upgrade_if_needed(request.user, previous_tier)
             result_serializer = PostDetailSerializer(
                 post,
                 context={"request": request},
@@ -341,6 +347,7 @@ def comment_create(request, post_id):
     serializer = CommentSerializer(data=request.data)
 
     if serializer.is_valid():
+        previous_tier = get_current_user_tier(request.user)
         parent = None
         parent_id = request.data.get("parent")
 
@@ -385,6 +392,8 @@ def comment_create(request, post_id):
                 target_post=post,
                 target_comment=comment,
             )
+
+        notify_tier_upgrade_if_needed(request.user, previous_tier)
 
         result_serializer = CommentSerializer(
             comment,
