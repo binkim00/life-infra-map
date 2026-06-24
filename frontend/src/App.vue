@@ -1347,6 +1347,18 @@ input {
   animation: mascot-idle 2.8s ease-in-out infinite;
 }
 
+.mascot-dog::before {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  display: none;
+  background-image: url("/mascot-run/dog-run-1.png");
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: contain;
+  content: "";
+}
+
 .mascot-head,
 .mascot-body,
 .mascot-ear,
@@ -1512,20 +1524,27 @@ input {
 }
 
 .route-mascot.is-fetching .mascot-dog {
-  animation: mascot-fast-run 0.32s ease-in-out infinite;
+  width: 176px;
+  height: 176px;
+  margin-right: -18px;
+  animation: none;
 }
 
 .route-mascot.is-carrying .mascot-dog {
   animation: mascot-chew 0.72s ease-in-out infinite;
 }
 
-.route-mascot.is-fetching .mascot-fetch-bone,
-.route-mascot.is-carrying .mascot-fetch-bone {
+.route-mascot.is-fetching .mascot-dog::before {
   display: block;
+  animation: mascot-run-frame 0.54s steps(1, end) infinite;
 }
 
-.route-mascot.is-fetching .mascot-fetch-bone {
-  animation: mascot-bone-swing 0.22s ease-in-out infinite;
+.route-mascot.is-fetching .mascot-dog > span {
+  opacity: 0;
+}
+
+.route-mascot.is-carrying .mascot-fetch-bone {
+  display: block;
 }
 
 .route-mascot.is-carrying .mascot-fetch-bone {
@@ -1635,17 +1654,30 @@ input {
   }
 }
 
-@keyframes mascot-fast-run {
-  25% {
-    transform: translateY(-8px) rotate(-5deg);
+@keyframes mascot-run-frame {
+  0%,
+  100% {
+    background-image: url("/mascot-run/dog-run-1.png");
+  }
+
+  16.67% {
+    background-image: url("/mascot-run/dog-run-2.png");
+  }
+
+  33.33% {
+    background-image: url("/mascot-run/dog-run-3.png");
   }
 
   50% {
-    transform: translateY(1px) rotate(4deg);
+    background-image: url("/mascot-run/dog-run-4.png");
   }
 
-  75% {
-    transform: translateY(-7px) rotate(5deg);
+  66.67% {
+    background-image: url("/mascot-run/dog-run-5.png");
+  }
+
+  83.33% {
+    background-image: url("/mascot-run/dog-run-6.png");
   }
 }
 
@@ -1656,12 +1688,6 @@ input {
 
   70% {
     transform: translateY(-2px) rotate(2deg);
-  }
-}
-
-@keyframes mascot-bone-swing {
-  50% {
-    transform: rotate(7deg) translateY(-2px);
   }
 }
 

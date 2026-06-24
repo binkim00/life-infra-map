@@ -9238,6 +9238,11 @@ const selectPlace = (place, target = null) => {
 }
 
 const selectPlaceFromList = (place, event) => {
+  if (selectedPlace.value && String(selectedPlace.value.id) === String(place?.id)) {
+    closePlaceCard()
+    return
+  }
+
   selectedPlace.value = place
   detailFrameError.value = false
   isPlaceDetailCollapsed.value = false
