@@ -6686,6 +6686,27 @@ const getFiniteSearchLogCount = (value, fallback = 0) => {
   return Math.max(0, Math.trunc(numericValue))
 }
 
+const SEARCH_LOG_TEXT_LIMITS = {
+  query: 255,
+  searchMode: 50,
+  scenario: 50,
+  locationHint: 100,
+  targetQuery: 255,
+  categoryHint: 50,
+}
+
+const getSearchLogText = (value, maxLength) => {
+  const text = getTextValue(value)
+  return maxLength ? text.slice(0, maxLength) : text
+}
+
+const getSearchLogCoordinate = (value) => {
+  const numericValue = Number(value)
+  if (!Number.isFinite(numericValue)) return null
+
+  return Number(numericValue.toFixed(6))
+}
+
 const buildSearchLogPayload = ({
   query,
   searchMode = '',
@@ -6701,7 +6722,10 @@ const buildSearchLogPayload = ({
   aiWebResultCount = 0,
 } = {}) => {
   const visibleResults = Array.isArray(results) ? results : []
-  const normalizedQuery = getTextValue(query || searchPlan?.originalQuery || searchPlan?.normalizedQuery)
+  const normalizedQuery = getSearchLogText(
+    query || searchPlan?.originalQuery || searchPlan?.normalizedQuery,
+    SEARCH_LOG_TEXT_LIMITS.query,
+  )
   const menuKeywords = getFirstSearchLogList(
     condition?.menu_keywords,
     condition?.menuKeywords,
@@ -6731,26 +6755,34 @@ const buildSearchLogPayload = ({
 
   return {
     query: normalizedQuery,
-    search_mode: getTextValue(searchMode || searchPlan?.searchMode),
-    scenario: getTextValue(scenario || condition?.scenario || searchPlan?.scenario),
+    search_mode: getSearchLogText(
+      searchMode || searchPlan?.searchMode,
+      SEARCH_LOG_TEXT_LIMITS.searchMode,
+    ),
+    scenario: getSearchLogText(
+      scenario || condition?.scenario || searchPlan?.scenario,
+      SEARCH_LOG_TEXT_LIMITS.scenario,
+    ),
     location_hint: getSearchLogLocationHint({
       searchPlan,
       baseLabel,
       locationHint,
     }),
-    lat: Number.isFinite(Number(center?.lat)) ? Number(center.lat) : null,
-    lng: Number.isFinite(Number(center?.lng)) ? Number(center.lng) : null,
-    target_query: getTextValue(
+    lat: getSearchLogCoordinate(center?.lat),
+    lng: getSearchLogCoordinate(center?.lng),
+    target_query: getSearchLogText(
       condition?.targetQuery ||
       condition?.target_query ||
       searchPlan?.targetQuery ||
       searchPlan?.targetKeyword ||
       normalizedQuery,
-    ).slice(0, 255),
-    category_hint: getTextValue(
+      SEARCH_LOG_TEXT_LIMITS.targetQuery,
+    ),
+    category_hint: getSearchLogText(
       condition?.categoryHint ||
       condition?.category_hint ||
       searchPlan?.categoryHint,
+      SEARCH_LOG_TEXT_LIMITS.categoryHint,
     ),
     requested_conditions: getFirstSearchLogList(
       condition?.requested_conditions,
@@ -6787,8 +6819,10 @@ const saveSearchLogSilently = async (payload) => {
     await saveSearchLog(payload)
   } catch (error) {
     if (import.meta.env.DEV) {
-      console.debug('[SearchLog] save skipped', {
+      console.debug('[SearchLog] save failed', {
         status: error?.response?.status || 'request_failed',
+        responseData: error?.response?.data || null,
+        payload,
       })
     }
   }
@@ -9991,15 +10025,16 @@ const handleDetailFrameError = () => {
             @select-place="selectPlace"
             @marker-target-change="updateMascotFetchTarget"
           />
+        </div>
 
-          <aside
-            v-if="selectedPlace"
-            class="place-detail-panel"
-            :class="{
-              'is-compact-detail': !hasKakaoDetail(selectedPlace),
-              'is-collapsed': isPlaceDetailCollapsed,
-            }"
-          >
+        <aside
+          v-if="selectedPlace"
+          class="place-detail-panel"
+          :class="{
+            'is-compact-detail': !hasKakaoDetail(selectedPlace),
+            'is-collapsed': isPlaceDetailCollapsed,
+          }"
+        >
             <div v-if="isPlaceDetailCollapsed" class="detail-collapsed-bar">
               <button
                 type="button"
@@ -10247,8 +10282,7 @@ const handleDetailFrameError = () => {
                 </a>
               </div>
             </div>
-          </aside>
-        </div>
+        </aside>
       </div>
     </section>
 
@@ -10457,7 +10491,7 @@ h1 {
 .conversation-search-card {
   width: min(1180px, 100%);
   margin: 0 auto 14px;
-  padding: clamp(14px, 1.6vw, 20px);
+  padding: clamp(14px, 1.6vw, 20px) 0;
   display: grid;
   gap: 12px;
   border: 1px solid rgba(229, 232, 240, 0.95);
@@ -10469,7 +10503,7 @@ h1 {
 }
 
 .conversation-search-card.has-results {
-  padding: 14px;
+  padding: 14px 0;
   transform: translateY(-8px);
 }
 
@@ -10480,7 +10514,7 @@ h1 {
 .search-experience.has-results .search-hero-card {
   width: min(1040px, 100%);
   margin-bottom: 6px;
-  padding: 12px;
+  padding: 12px 0;
   border-radius: 20px;
   box-shadow: 0 14px 38px rgba(20, 35, 70, 0.1);
 }
@@ -10639,11 +10673,17 @@ h1 {
 }
 
 .map-parser-status {
-  margin-bottom: 12px;
+  box-sizing: border-box;
+  width: min(1180px, 100%);
+  margin: 0 auto 12px;
   padding: 10px 12px;
   display: grid;
   gap: 3px;
   border-radius: 8px;
+}
+
+.search-experience.has-results .map-parser-status {
+  width: min(1040px, 100%);
 }
 
 .map-parser-status strong {
@@ -11097,6 +11137,7 @@ h1 {
 }
 
 .map-content {
+  --workspace-height: min(720px, calc(100vh - clamp(190px, 20vh, 230px)));
   width: min(1400px, 100%);
   margin: 0 auto;
   position: relative;
@@ -11123,22 +11164,22 @@ h1 {
 }
 
 .map-content.has-result-list.has-selected-place {
-  grid-template-columns: clamp(340px, 26vw, 420px) minmax(0, 1fr);
+  grid-template-columns: clamp(340px, 25vw, 400px) minmax(0, 1fr) clamp(320px, 24vw, 420px);
 }
 
 .map-content.has-result-list.has-selected-place.is-list-collapsed {
-  grid-template-columns: 84px minmax(0, 1fr);
+  grid-template-columns: 84px minmax(0, 1fr) clamp(320px, 24vw, 420px);
 }
 
 .map-content.has-selected-place:not(.has-result-list) {
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) clamp(320px, 24vw, 420px);
 }
 
 .place-list-panel {
   position: relative;
   z-index: 10;
-  height: min(620px, calc(100vh - clamp(220px, 24vh, 270px)));
-  min-height: 420px;
+  height: var(--workspace-height);
+  min-height: 520px;
   padding: clamp(12px, 1vw, 16px);
   display: flex;
   flex-direction: column;
@@ -11944,7 +11985,14 @@ h1 {
   min-width: 0;
   position: relative;
   z-index: 1;
+  height: var(--workspace-height);
+  min-height: 520px;
   transition: transform 0.25s ease, opacity 0.25s ease;
+}
+
+.map-area :deep(.map-section) {
+  height: 100%;
+  min-height: inherit;
 }
 
 .map-loading-overlay {
@@ -12009,8 +12057,8 @@ h1 {
 }
 
 :deep(.map) {
-  height: min(720px, calc(100vh - clamp(190px, 20vh, 230px)));
-  min-height: 520px;
+  height: 100%;
+  min-height: 0;
   border: 3px solid #222222;
   border-radius: 20px;
   box-shadow: 0 8px 0 #f2d7b0;
@@ -12032,31 +12080,24 @@ h1 {
 }
 
 .place-detail-panel {
-  position: absolute;
-  top: clamp(14px, 1.2vw, 20px);
-  right: clamp(14px, 1.2vw, 20px);
-  bottom: clamp(14px, 1.2vw, 20px);
+  min-width: 0;
+  position: relative;
   z-index: 8;
-  width: min(clamp(340px, 26vw, 480px), calc(100% - 28px));
-  min-height: 0;
-  overflow-y: auto;
+  width: 100%;
+  height: var(--workspace-height);
+  min-height: 520px;
+  overflow: visible;
 }
 
 .place-detail-panel.is-collapsed {
-  top: auto;
-  left: auto;
-  bottom: clamp(14px, 1.2vw, 20px);
-  width: min(360px, calc(100% - 28px));
   overflow: visible;
 }
 
 .place-detail-panel.is-compact-detail {
-  bottom: auto;
-  max-height: calc(100% - 28px);
+  max-height: none;
 }
 
 .place-detail-panel.is-collapsed.is-compact-detail {
-  bottom: clamp(14px, 1.2vw, 20px);
   max-height: none;
 }
 
@@ -12097,12 +12138,15 @@ h1 {
 }
 
 .split-place-card {
-  height: auto;
-  min-height: 100%;
+  box-sizing: border-box;
+  height: 100%;
+  min-height: 0;
   padding: clamp(16px, 1.2vw, 22px);
   display: flex;
   flex-direction: column;
   gap: clamp(14px, 1.1vw, 18px);
+  overflow-x: hidden;
+  overflow-y: auto;
   background: rgba(255, 255, 255, 0.96);
   border: 3px solid #222222;
   border-radius: 18px;
@@ -12110,8 +12154,8 @@ h1 {
 }
 
 .split-place-card.has-kakao-detail {
-  height: auto;
-  min-height: 100%;
+  height: 100%;
+  min-height: 0;
   display: flex;
   flex-direction: column;
 }
@@ -12238,14 +12282,39 @@ h1 {
 }
 
 .tag-list {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  flex: 0 0 auto;
   display: flex;
   flex-wrap: nowrap;
   gap: 8px;
   overflow-x: auto;
   overflow-y: hidden;
-  padding-bottom: 12px;
+  overscroll-behavior-x: contain;
+  padding: 0 2px 12px 0;
   border-bottom: 1px solid #eef0f4;
+  scrollbar-gutter: stable;
   scrollbar-width: thin;
+}
+
+.tag-list::-webkit-scrollbar {
+  height: 8px;
+}
+
+.tag-list::-webkit-scrollbar-track {
+  border-radius: 999px;
+  background: #f2f4f7;
+}
+
+.tag-list::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: #cbd5e1;
+}
+
+.tag-list::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
 }
 
 .tag-chip {
@@ -12482,6 +12551,19 @@ h1 {
     order: 1;
   }
 
+  .place-detail-panel {
+    order: 3;
+    width: 100%;
+    height: auto;
+    min-height: 0;
+  }
+
+  .split-place-card,
+  .split-place-card.has-kakao-detail {
+    height: auto;
+    min-height: 0;
+  }
+
   .place-list-panel {
     order: 2;
     position: relative;
@@ -12595,7 +12677,7 @@ h1 {
   }
 
   .conversation-search-card {
-    padding: 12px;
+    padding: 12px 0;
     border-radius: 18px;
   }
 
@@ -12667,6 +12749,26 @@ h1 {
 
   .map-area {
     order: 2;
+    height: auto;
+    min-height: 0;
+  }
+
+  .map-area :deep(.map-section) {
+    height: auto;
+    min-height: 0;
+  }
+
+  .place-detail-panel {
+    order: 3;
+    position: relative;
+    top: auto;
+    right: auto;
+    bottom: auto;
+    left: auto;
+    width: 100%;
+    height: auto;
+    min-height: 0;
+    max-height: none;
   }
 
   .place-list {
@@ -12841,28 +12943,27 @@ h1 {
   }
 
   .place-detail-panel {
-    top: auto;
-    right: 8px;
-    bottom: 8px;
-    left: 8px;
-    width: auto;
-    max-height: 58%;
+    position: relative;
+    right: auto;
+    bottom: auto;
+    left: auto;
+    width: 100%;
+    height: auto;
+    min-height: 0;
+    max-height: none;
   }
 
   .place-detail-panel.is-collapsed {
-    right: 8px;
-    bottom: 8px;
-    left: 8px;
-    width: auto;
     max-height: none;
   }
 
   .place-detail-panel.is-compact-detail {
-    max-height: 58%;
+    max-height: none;
   }
 
   .split-place-card,
   .split-place-card.has-kakao-detail {
+    height: auto;
     min-height: 0;
   }
 
@@ -12916,7 +13017,7 @@ h1 {
   }
 
   .conversation-search-card {
-    padding: 10px;
+    padding: 10px 0;
     border-radius: 16px;
   }
 

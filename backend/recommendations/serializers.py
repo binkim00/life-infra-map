@@ -1,5 +1,6 @@
 import json
 import os
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 from rest_framework import serializers
 
@@ -58,6 +59,22 @@ class UserSearchLogSerializer(serializers.ModelSerializer):
         "preferred_tags",
         "negative_tags",
     }
+    coordinate_fields = {"lat", "lng"}
+    count_fields = {
+        "result_count",
+        "db_result_count",
+        "kakao_result_count",
+        "ai_web_result_count",
+    }
+    text_field_max_lengths = {
+        "query": 255,
+        "search_mode": 50,
+        "scenario": 50,
+        "location_hint": 100,
+        "target_query": 255,
+        "category_hint": 50,
+    }
+    coordinate_quantizer = Decimal("0.000001")
 
     class Meta:
         model = UserSearchLog
@@ -85,6 +102,48 @@ class UserSearchLogSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["id", "created_at"]
 
+    def sanitize_text_value(self, value, max_length):
+        if value is None:
+            return ""
+
+        return str(value).strip()[:max_length]
+
+    def sanitize_coordinate_value(self, value, field_name):
+        if value in (None, ""):
+            return None
+
+        try:
+            decimal_value = Decimal(str(value).strip())
+        except (InvalidOperation, ValueError):
+            return None
+
+        if not decimal_value.is_finite():
+            return None
+
+        minimum_value, maximum_value = (
+            (Decimal("-90"), Decimal("90"))
+            if field_name == "lat"
+            else (Decimal("-180"), Decimal("180"))
+        )
+        if decimal_value < minimum_value or decimal_value > maximum_value:
+            return None
+
+        return decimal_value.quantize(
+            self.coordinate_quantizer,
+            rounding=ROUND_HALF_UP,
+        )
+
+    def sanitize_count_value(self, value):
+        if value in (None, ""):
+            return 0
+
+        try:
+            numeric_value = int(Decimal(str(value).strip()))
+        except (InvalidOperation, ValueError):
+            return 0
+
+        return max(numeric_value, 0)
+
     def to_internal_value(self, data):
         allowed = set(self.fields.keys()) - set(self.Meta.read_only_fields)
         filtered_data = {
@@ -92,6 +151,35 @@ class UserSearchLogSerializer(serializers.ModelSerializer):
             for key, value in data.items()
             if key in allowed
         }
+
+        for field_name, max_length in self.text_field_max_lengths.items():
+            if field_name in filtered_data:
+                filtered_data[field_name] = self.sanitize_text_value(
+                    filtered_data[field_name],
+                    max_length,
+                )
+
+        for field_name in self.coordinate_fields:
+            if field_name in filtered_data:
+                filtered_data[field_name] = self.sanitize_coordinate_value(
+                    filtered_data[field_name],
+                    field_name,
+                )
+
+        for field_name in self.count_fields:
+            if field_name in filtered_data:
+                filtered_data[field_name] = self.sanitize_count_value(
+                    filtered_data[field_name],
+                )
+
+        for field_name in self.list_json_fields:
+            if field_name in filtered_data:
+                filtered_data[field_name] = parse_label_list(filtered_data[field_name])
+
+        snapshot = filtered_data.get("search_plan_snapshot")
+        if snapshot is not None and not isinstance(snapshot, dict):
+            filtered_data["search_plan_snapshot"] = {}
+
         return super().to_internal_value(filtered_data)
 
     def validate_query(self, value):

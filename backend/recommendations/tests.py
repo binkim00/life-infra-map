@@ -212,6 +212,56 @@ class RecommendationSearchTests(TestCase):
         self.assertEqual(search_log.ai_web_result_count, 0)
         self.assertEqual(search_log.search_plan_snapshot["targetQuery"], "소금빵 맛집")
 
+    def test_search_log_accepts_frontend_payload_edge_values(self):
+        response = self.client.post(
+            "/api/recommendations/search-logs/",
+            data=json.dumps({
+                "query": "긴 검색어" * 100,
+                "search_mode": "recommendation_query_with_extra_context_that_is_too_long" * 2,
+                "scenario": "restaurant_with_extra_context_that_is_too_long" * 2,
+                "location_hint": "부산 강서구" * 20,
+                "lat": 35.123456789,
+                "lng": 129.123456789,
+                "target_query": "",
+                "category_hint": "category" * 20,
+                "requested_conditions": "콘센트, 조용함",
+                "menu_keywords": {"label": "소금빵"},
+                "place_type_keywords": None,
+                "preferred_tags": [{"displayName": "실내쉼터"}],
+                "negative_tags": "[\"혼잡\"]",
+                "result_count": "5.8",
+                "db_result_count": -1,
+                "kakao_result_count": None,
+                "ai_web_result_count": "bad-count",
+                "search_plan_snapshot": ["invalid"],
+            }, ensure_ascii=False),
+            content_type="application/json",
+            **self._auth_headers(),
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(UserSearchLog.objects.count(), 1)
+
+        search_log = UserSearchLog.objects.get(id=response.json()["id"])
+        self.assertEqual(len(search_log.query), 255)
+        self.assertEqual(len(search_log.search_mode), 50)
+        self.assertEqual(len(search_log.scenario), 50)
+        self.assertEqual(len(search_log.location_hint), 100)
+        self.assertEqual(search_log.target_query, "")
+        self.assertEqual(len(search_log.category_hint), 50)
+        self.assertEqual(str(search_log.lat), "35.123457")
+        self.assertEqual(str(search_log.lng), "129.123457")
+        self.assertEqual(search_log.requested_conditions, ["콘센트", "조용함"])
+        self.assertEqual(search_log.menu_keywords, ["소금빵"])
+        self.assertEqual(search_log.place_type_keywords, [])
+        self.assertEqual(search_log.preferred_tags, ["실내쉼터"])
+        self.assertEqual(search_log.negative_tags, ["혼잡"])
+        self.assertEqual(search_log.result_count, 5)
+        self.assertEqual(search_log.db_result_count, 0)
+        self.assertEqual(search_log.kakao_result_count, 0)
+        self.assertEqual(search_log.ai_web_result_count, 0)
+        self.assertEqual(search_log.search_plan_snapshot, {})
+
     def test_search_log_requires_authenticated_user(self):
         response = self.client.post(
             "/api/recommendations/search-logs/",
