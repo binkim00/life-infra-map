@@ -26,8 +26,8 @@ const statusLabels = {
 
 const reportContributionRewards = {
   tag_suggestion: 10,
-  wrong_info: 8,
-  edit_place: 12,
+  wrong_info: 5,
+  edit_place: 5,
   new_place: 20,
 }
 

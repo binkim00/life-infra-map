@@ -485,8 +485,13 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="app-shell" :class="{ 'is-sidebar-collapsed': isSidebarCollapsed, 'is-compact-mode': settingsStore.compactMode }">
-    <aside class="app-sidebar">
+  <div
+    class="app-shell"
+    :class="{
+      'is-compact-mode': settingsStore.compactMode,
+    }"
+  >
+    <header class="app-header">
       <RouterLink to="/" class="brand">
         <span class="brand-mark" aria-hidden="true">
           <span class="brand-pin">
@@ -507,21 +512,7 @@ onBeforeUnmount(() => {
         </span>
       </RouterLink>
 
-      <button
-        type="button"
-        class="sidebar-toggle"
-        :aria-expanded="!isSidebarCollapsed"
-        :aria-label="isSidebarCollapsed ? '사이드바 열기' : '사이드바 접기'"
-        @click="isSidebarCollapsed = !isSidebarCollapsed"
-      >
-        <span
-          class="sidebar-toggle-arrow"
-          :class="{ 'is-collapsed': isSidebarCollapsed }"
-          aria-hidden="true"
-        ></span>
-      </button>
-
-      <nav class="side-nav" aria-label="페이지 이동">
+      <nav class="side-nav top-nav" aria-label="페이지 이동">
         <RouterLink to="/" class="nav-link">
           <span class="nav-icon" aria-hidden="true">
             <svg viewBox="0 0 24 24">
@@ -598,7 +589,7 @@ onBeforeUnmount(() => {
         </RouterLink>
       </nav>
 
-      <nav class="sidebar-bottom-nav" aria-label="설정 및 이용가이드">
+      <nav class="sidebar-bottom-nav top-utility-nav" aria-label="설정 및 이용가이드">
         <RouterLink to="/settings" class="nav-link utility-link">
           <span class="nav-icon" aria-hidden="true">
             <svg viewBox="0 0 24 24">
@@ -632,65 +623,6 @@ onBeforeUnmount(() => {
         </RouterLink>
       </nav>
 
-      <div v-if="authStore.isLoggedIn" ref="sidebarProfileRef" class="sidebar-profile">
-        <button
-          type="button"
-          class="sidebar-profile-link"
-          :aria-expanded="isSidebarAccountMenuOpen"
-          @click="toggleSidebarAccountMenu"
-        >
-          <span class="sidebar-avatar">
-            <img
-              v-if="authStore.user?.profile_image_url"
-              :src="authStore.user.profile_image_url"
-              :alt="authStore.user?.nickname || authStore.user?.username"
-            />
-            <span v-else class="default-avatar" aria-hidden="true"></span>
-          </span>
-          <span class="sidebar-profile-copy">
-            <strong class="sidebar-nickname-line">
-              <span :style="currentUserNicknameStyle">
-                {{ authStore.user?.nickname || authStore.user?.username }}
-              </span>
-              <img
-                v-if="authStore.user?.tier"
-                :src="currentUserTierIcon"
-                :alt="currentUserTierLabel"
-                class="sidebar-tier-icon"
-              />
-            </strong>
-            <span>{{ currentUserTierLabel }} · 기여도 {{ currentUserContribution }}</span>
-          </span>
-        </button>
-
-        <div v-if="isSidebarAccountMenuOpen" class="sidebar-account-dropdown">
-          <RouterLink
-            :to="{ path: '/mypage', query: { section: 'profile' } }"
-            class="account-menu-button"
-            :class="{ active: isMypageActive }"
-            @click="isSidebarAccountMenuOpen = false"
-          >
-            <span>마이페이지</span>
-          </RouterLink>
-
-          <RouterLink
-            to="/inquiries/my"
-            class="account-menu-button"
-            :class="{ active: isCustomerCenterActive }"
-            @click="isSidebarAccountMenuOpen = false"
-          >
-            <span>고객센터</span>
-          </RouterLink>
-
-          <button type="button" class="account-logout-button" @click="handleLogout">
-            로그아웃
-          </button>
-        </div>
-
-      </div>
-    </aside>
-
-    <div class="app-main">
       <div class="global-account-bar">
         <template v-if="authStore.isLoggedIn">
           <div ref="notificationMenuRef" class="global-notification-menu">
@@ -803,7 +735,9 @@ onBeforeUnmount(() => {
           </RouterLink>
         </template>
       </div>
+    </header>
 
+    <div class="app-main">
       <aside
         class="route-mascot"
         :style="{
@@ -878,32 +812,31 @@ input {
 }
 
 .app-shell {
+  position: relative;
   min-height: 100vh;
-  display: grid;
-  grid-template-columns: 220px minmax(0, 1fr);
-  background: transparent;
-  transition: grid-template-columns 0.2s ease;
-}
-
-.app-shell.is-sidebar-collapsed {
-  grid-template-columns: 72px minmax(0, 1fr);
-}
-
-.app-sidebar {
-  position: sticky;
-  top: 0;
-  z-index: 60;
-  height: 100vh;
-  padding: 22px 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
-  border-right: 1px solid #eadfcd;
+  display: block;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(255, 250, 241, 0.94)),
-    #ffffff;
-  box-shadow: 10px 0 30px rgba(49, 41, 31, 0.08);
+    linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 250, 241, 0.34)),
+    url("/homepage-background.png") center / cover no-repeat fixed;
+}
+
+.app-header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 80;
+  min-height: 76px;
+  padding: 10px 24px;
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.34);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.34), rgba(255, 255, 255, 0.08));
+  box-shadow: none;
   overflow: visible;
+  backdrop-filter: blur(14px);
 }
 
 .brand {
@@ -1114,17 +1047,32 @@ input {
 }
 
 .side-nav {
-  display: grid;
+  min-width: 0;
+  display: flex;
   gap: 8px;
+  align-items: center;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.side-nav::-webkit-scrollbar {
+  display: none;
 }
 
 .sidebar-bottom-nav {
-  margin-top: auto;
-  margin-bottom: -12px;
-  padding-top: 10px;
-  display: grid;
-  gap: 4px;
-  border-top: 1px solid #eadfcd;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.top-nav {
+  flex: 1 1 auto;
+}
+
+.top-utility-nav {
+  flex: 0 0 auto;
+  padding-left: 12px;
+  border-left: 1px solid #eadfcd;
 }
 
 .utility-link {
@@ -1268,7 +1216,7 @@ input {
 }
 
 .nav-link {
-  width: 100%;
+  width: auto;
   padding: 11px 12px;
   display: flex;
   justify-content: flex-start;
@@ -1332,76 +1280,10 @@ input {
   line-height: 1;
 }
 
-.app-shell.is-sidebar-collapsed .app-sidebar {
-  padding: 22px 10px;
-  align-items: center;
-}
-
-.app-shell.is-sidebar-collapsed .brand {
-  padding: 0;
-}
-
-.app-shell.is-sidebar-collapsed .brand-text,
-.app-shell.is-sidebar-collapsed .nav-text {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  white-space: nowrap;
-}
-
-.app-shell.is-sidebar-collapsed .sidebar-toggle {
-  right: -25px;
-}
-
-.app-shell.is-sidebar-collapsed .side-nav {
-  width: 100%;
-}
-
-.app-shell.is-sidebar-collapsed .sidebar-profile {
-  width: 100%;
-  padding: 8px;
-  place-items: center;
-}
-
-.app-shell.is-sidebar-collapsed .sidebar-profile-link {
-  justify-content: center;
-}
-
-.app-shell.is-sidebar-collapsed .sidebar-profile-copy {
-  display: none;
-}
-
-.app-shell.is-sidebar-collapsed .sidebar-bottom-nav {
-  width: 100%;
-}
-
-.app-shell.is-sidebar-collapsed .nav-link {
-  justify-content: center;
-  padding: 8px;
-}
-
-.app-shell.is-sidebar-collapsed .nav-icon {
-  width: 32px;
-  height: 32px;
-}
-
-.app-shell.is-sidebar-collapsed .nav-icon svg {
-  width: 23px;
-  height: 23px;
-}
-
-.app-shell.is-sidebar-collapsed .notification-badge {
-  position: absolute;
-  top: 4px;
-  right: 4px;
-}
-
 .app-main {
   min-width: 0;
   position: relative;
-  padding-top: 68px;
+  padding-top: 96px;
 }
 
 .route-mascot {
@@ -1924,12 +1806,19 @@ input {
 .upgrade-page,
 .page,
 .settings-page,
+.preference-page,
 .login-page,
-.signup-page {
-  background:
-    radial-gradient(circle at 12% 10%, rgba(255, 238, 209, 0.82), transparent 30%),
-    radial-gradient(circle at 88% 14%, rgba(233, 246, 255, 0.72), transparent 28%),
-    linear-gradient(180deg, #fffaf1 0%, #f8f6ef 100%) !important;
+.signup-page,
+.auth-page,
+.notification-page,
+.admin-board-page,
+.admin-report-page,
+.profile-page,
+.reports-page,
+.history-page,
+.report-page,
+.place-report-page {
+  background: transparent !important;
 }
 
 .board-container,
@@ -1983,14 +1872,13 @@ input {
 }
 
 .global-account-bar {
-  position: fixed;
-  top: 16px;
-  right: 24px;
-  z-index: 80;
+  position: relative;
+  z-index: 1;
+  flex: 0 0 auto;
   display: flex;
   gap: 8px;
   align-items: center;
-  max-width: calc(100vw - 48px);
+  max-width: none;
 }
 
 .global-notification-menu {
@@ -2263,6 +2151,8 @@ input {
 .global-auth-button {
   height: 42px;
   padding: 0 14px;
+  display: inline-flex;
+  align-items: center;
   border: 2px solid #222222;
   border-radius: 999px;
   background: #ffffff;
@@ -2281,35 +2171,46 @@ input {
   color: #ffffff;
 }
 
+.global-auth-button.logout {
+  background: #ffffff;
+  color: #222222;
+}
+
 @media (max-width: 820px) {
   .app-shell {
-    grid-template-columns: 1fr;
+    min-height: 100vh;
   }
 
-  .app-shell.is-sidebar-collapsed {
-    grid-template-columns: 1fr;
-  }
-
-  .app-sidebar {
-    position: sticky;
-    z-index: 20;
-    height: auto;
-    padding: 12px 16px;
-    flex-direction: row;
-    align-items: center;
-    justify-content: space-between;
-    border-right: 0;
-    border-bottom: 1px solid #e5e8f0;
+  .app-header {
+    min-height: 0;
+    padding: 10px 12px;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 8px 10px;
   }
 
   .app-main {
-    padding-top: 72px;
+    padding-top: 126px;
   }
 
   .global-account-bar {
-    top: 72px;
-    right: 12px;
-    max-width: calc(100vw - 24px);
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: end;
+  }
+
+  .top-nav {
+    grid-column: 1 / -1;
+    width: 100%;
+    padding-bottom: 2px;
+  }
+
+  .top-utility-nav {
+    grid-column: 1 / -1;
+    width: 100%;
+    padding-left: 0;
+    border-left: 0;
+    overflow-x: auto;
   }
 
   .global-user-link {
@@ -2317,34 +2218,6 @@ input {
   }
 
   .sidebar-toggle {
-    display: none;
-  }
-
-  .app-shell.is-sidebar-collapsed .app-sidebar {
-    padding: 12px 16px;
-    align-items: center;
-  }
-
-  .app-shell.is-sidebar-collapsed .brand-text {
-    position: static;
-    width: auto;
-    height: auto;
-    overflow: visible;
-    clip: auto;
-    white-space: normal;
-  }
-
-  .app-shell.is-sidebar-collapsed .side-nav {
-    display: none;
-  }
-
-  .sidebar-bottom-nav,
-  .sidebar-profile,
-  .app-shell.is-sidebar-collapsed .sidebar-profile {
-    display: none;
-  }
-
-  .app-shell.is-sidebar-collapsed .sidebar-toggle {
     display: none;
   }
 

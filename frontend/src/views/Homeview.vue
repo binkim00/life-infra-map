@@ -10376,22 +10376,15 @@ onBeforeUnmount(() => {
   position: relative;
   min-height: 100vh;
   padding: 24px;
-  background:
-    radial-gradient(circle at 14% 18%, rgba(255, 237, 206, 0.82), transparent 28%),
-    radial-gradient(circle at 86% 12%, rgba(231, 242, 255, 0.84), transparent 28%),
-    linear-gradient(180deg, #fffaf1 0%, #f8f6ef 100%);
+  background: transparent;
 }
 
 .home-page::before {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  background:
-    linear-gradient(90deg, rgba(34, 34, 34, 0.035) 1px, transparent 1px),
-    linear-gradient(180deg, rgba(34, 34, 34, 0.035) 1px, transparent 1px);
-  background-size: 38px 38px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.24), rgba(255, 250, 241, 0.48));
   content: "";
-  mask-image: linear-gradient(180deg, black, transparent 78%);
 }
 
 .home-page > * {
