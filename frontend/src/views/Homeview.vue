@@ -167,6 +167,15 @@ const SCENARIO_DISPLAY_LABELS = {
   restaurant: '식당/맛집',
   blocked: '검색 불가',
 }
+const INTENT_GROUP_DISPLAY_LABELS = {
+  urgent_toilet: '화장실',
+  quiet_rest_place: '조용히 쉴 곳',
+  work_place: '작업할 곳',
+  health_nearby: '약국/병원',
+  food_place: '식당/맛집',
+  walk_healing: '산책/힐링',
+  smoking_area: '흡연 가능한 곳',
+}
 const CATEGORY_KAKAO_KEYWORDS = {
   cafe: '카페',
   shelter: '쉼터',
@@ -862,17 +871,41 @@ const mapParserStatus = computed(() => {
     return null
   }
 
-  if (!mapAiParse.value.parser_fallback && mapAiParse.value.parser_provider === 'gms') {
+  const parserProvider = getTextValue(mapAiParse.value.parser_provider)
+  const parserFallback = mapAiParse.value.parser_fallback === true
+  const executionMode = getTextValue(
+    mapAiParse.value.execution_mode ||
+    activeSearchPlan.value?.execution_mode ||
+    activeSearchPlan.value?.executionMode,
+  )
+  const planSource = getTextValue(
+    mapAiParse.value.plan_source ||
+    activeSearchPlan.value?.plan_source ||
+    activeSearchPlan.value?.planSource,
+  )
+  const hasAiFrame = executionMode === 'frame' && planSource !== 'legacy_fallback'
+
+  if (!parserFallback && (parserProvider === 'gms' || hasAiFrame)) {
     return {
       label: 'AI 사용',
-      detail: 'GMS가 자연어를 추천 조건으로 해석했습니다.',
+      detail: hasAiFrame
+        ? 'AI가 자연어를 장소 의도 frame으로 해석했습니다.'
+        : 'GMS가 자연어를 추천 조건으로 해석했습니다.',
       className: 'ai',
     }
   }
 
+  const fallbackReason = getTextValue(
+    mapAiParse.value.ai_fallback_reason ||
+    mapAiParse.value.fallback_reason ||
+    activeSearchPlan.value?.fallbackReason,
+  )
+
   return {
     label: '규칙 기반 파서 사용',
-    detail: 'AI 호출이 없거나 실패해서 키워드 규칙으로 추천 조건을 해석했습니다.',
+    detail: fallbackReason
+      ? `AI 호출이 없거나 실패해서 키워드 규칙으로 추천 조건을 해석했습니다. (${fallbackReason})`
+      : 'AI 호출이 없거나 실패해서 키워드 규칙으로 추천 조건을 해석했습니다.',
     className: 'fallback',
   }
 })
@@ -904,6 +937,12 @@ const getAiWebSearchSignalParts = (query = '', condition = {}, searchPlan = {}) 
     searchPlan?.target_keyword,
     searchPlan?.categoryHint,
     searchPlan?.category_hint,
+    searchPlan?.displayLabel,
+    searchPlan?.display_label,
+    searchPlan?.intentGroup,
+    searchPlan?.intent_group,
+    getFrameDisplayLabel(searchPlan),
+    getFrameAnchorLocation(searchPlan),
     ...(Array.isArray(condition?.keywords) ? condition.keywords : []),
     ...(Array.isArray(condition?.menu_keywords) ? condition.menu_keywords : []),
     ...(Array.isArray(condition?.place_type_keywords) ? condition.place_type_keywords : []),
@@ -915,6 +954,11 @@ const getAiWebSearchSignalParts = (query = '', condition = {}, searchPlan = {}) 
     ...(Array.isArray(searchPlan?.place_type_keywords) ? searchPlan.place_type_keywords : []),
     ...(Array.isArray(searchPlan?.requestedConditions) ? searchPlan.requestedConditions : []),
     ...(Array.isArray(searchPlan?.requested_conditions) ? searchPlan.requested_conditions : []),
+    ...getFrameCandidatePlaceTypes(searchPlan),
+    ...getFrameConstraints(searchPlan),
+    ...getFrameExclusions(searchPlan),
+    ...getFrameWebSearchQueries(searchPlan),
+    ...getPlanKakaoKeywordCandidates(searchPlan),
   ]
 }
 
@@ -943,6 +987,9 @@ const getAiWebSearchCategories = (condition = {}, searchPlan = {}) => {
     condition?.scenario,
     searchPlan?.categoryHint,
     searchPlan?.category_hint,
+    searchPlan?.intentGroup,
+    searchPlan?.intent_group,
+    getSearchPlanFrame(searchPlan)?.situation,
   ].map((value) => getTextValue(value))
 }
 
@@ -972,6 +1019,8 @@ const isAiWebSearchInfraBlockedTopic = (query = '', condition = {}, searchPlan =
     searchPlan?.target_query,
     searchPlan?.targetKeyword,
     searchPlan?.target_keyword,
+    getFrameDisplayLabel(searchPlan),
+    ...getFrameCandidatePlaceTypes(searchPlan),
     condition?.keyword,
     query,
   ].filter(Boolean).join(' '))
@@ -1035,10 +1084,18 @@ const shouldSuggestAiWebSearch = computed(() => {
   const searchPlan = context.searchPlan || {}
   const explicitRequest = Boolean(summary.explicit_web_request) ||
     hasExplicitAiWebSearchRequest(context.query, context.condition, searchPlan)
+  const infraTopic = Boolean(summary.infra_blocked_topic) ||
+    isAiWebSearchInfraBlockedTopic(context.query, context.condition, searchPlan)
   const helpfulTopic = Boolean(summary.web_helpful_topic) ||
     isAiWebSearchHelpfulTopic(context.query, context.condition, searchPlan)
 
-  if (summary.infra_blocked_topic || isAiWebSearchInfraBlockedTopic(context.query, context.condition, searchPlan)) {
+  if (
+    infraTopic &&
+    !explicitRequest &&
+    strongEvidenceCount > 0 &&
+    totalCount >= AI_WEB_SEARCH_MIN_TOTAL_RESULTS &&
+    lowConfidenceCount < Math.max(1, Math.ceil(totalCount / 2))
+  ) {
     return false
   }
 
@@ -1046,7 +1103,7 @@ const shouldSuggestAiWebSearch = computed(() => {
     return true
   }
 
-  if (!helpfulTopic) {
+  if (!helpfulTopic && !infraTopic && !isFrameDrivenSearch(searchPlan)) {
     return false
   }
 
@@ -1150,11 +1207,25 @@ const setClarificationThread = (query, plan, message) => {
   const partialSearchPlan = plan?.search_plan && typeof plan.search_plan === 'object'
     ? { ...plan.search_plan }
     : {}
-  const partialConditions = getPlannerList(
-    getSearchPlanValue(partialSearchPlan, 'requestedConditions', 'requested_conditions', 'conditions') ||
-    plan?.conditions ||
+  const partialFrame = getSearchPlanFrame(partialSearchPlan)
+  const partialCandidatePlaceTypes = getFrameCandidatePlaceTypes(partialSearchPlan)
+  const partialConstraints = getFrameConstraints(partialSearchPlan)
+  const partialExclusions = getFrameExclusions(partialSearchPlan)
+  const clarificationOptions = getPlannerList(
+    plan?.clarification_options ||
+    plan?.clarificationOptions ||
+    partialFrame?.clarification_options ||
+    partialFrame?.clarificationOptions ||
     [],
   )
+  const partialConditions = [
+    ...getPlannerList(
+      getSearchPlanValue(partialSearchPlan, 'requestedConditions', 'requested_conditions', 'conditions') ||
+      plan?.conditions ||
+      [],
+    ),
+    ...partialConstraints,
+  ].filter((condition, index, list) => condition && list.indexOf(condition) === index)
 
   pendingClarification.value = {
     original_query: userText,
@@ -1168,9 +1239,25 @@ const setClarificationThread = (query, plan, message) => {
       scenario: getPlannerText(partialSearchPlan.scenario),
       conditions: partialConditions,
       requestedConditions: partialConditions,
+      place_intent_frame: partialFrame,
+      placeIntentFrame: partialFrame,
+      candidate_place_types: partialCandidatePlaceTypes,
+      candidatePlaceTypes: partialCandidatePlaceTypes,
+      constraints: partialConstraints,
+      exclusions: partialExclusions,
+      display_label: getFrameDisplayLabel(partialSearchPlan),
+      displayLabel: getFrameDisplayLabel(partialSearchPlan),
+      web_search_queries: getFrameWebSearchQueries(partialSearchPlan),
+      webSearchQueries: getFrameWebSearchQueries(partialSearchPlan),
+      kakaoKeywordCandidates: getPlanKakaoKeywordCandidates(partialSearchPlan),
+      kakaoKeywords: getPlanKakaoKeywordCandidates(partialSearchPlan),
+      intent_group: getPlannerText(getSearchPlanValue(partialSearchPlan, 'intent_group', 'intentGroup')),
+      intentGroup: getPlannerText(getSearchPlanValue(partialSearchPlan, 'intent_group', 'intentGroup')),
     },
     missing_field: 'location',
     clarification_question: assistantText,
+    clarification_options: clarificationOptions,
+    clarificationOptions,
     message: assistantText,
   }
   conversationModeStarted.value = true
@@ -1194,11 +1281,42 @@ const shouldShowClarificationThread = computed(() => {
 })
 
 const shouldShowFollowUpInput = computed(() => {
+  return Boolean(pendingClarification.value)
+})
+
+const isClarificationOnlyState = computed(() => {
   return Boolean(
     pendingClarification.value &&
-    pendingClarification.value.missing_field === 'location',
+    !isSearchingMap.value &&
+    !displayResults.value.length &&
+    !baseLocationCandidates.value.length,
   )
 })
+
+const clarificationOptions = computed(() => {
+  return getPlannerList(
+    pendingClarification.value?.clarification_options ||
+    pendingClarification.value?.clarificationOptions ||
+    [],
+  )
+})
+
+const getActiveSearchBaseLabel = () => {
+  const plan = activeSearchPlan.value || {}
+  const explicitLocation = getTextValue(
+    plan.locationQuery ||
+    plan.location_query ||
+    plan.baseLocationQuery ||
+    plan.base_location_query ||
+    getFrameAnchorLocation(plan),
+  )
+
+  if (explicitLocation) {
+    return `${explicitLocation} 기준`
+  }
+
+  return '현재 위치 기준'
+}
 
 const searchConversationTitle = computed(() => {
   const query = mapSearchKeyword.value.trim() || searchKeyword.value.trim()
@@ -1208,11 +1326,11 @@ const searchConversationTitle = computed(() => {
   }
 
   if (pendingClarification.value) {
-    return '검색 조건을 조금 더 알려주세요.'
+    return 'AI가 조건을 조금 더 확인하려고 합니다.'
   }
 
   if (displayResults.value.length && query) {
-    return `현재 위치 기준으로 “${query}” 결과를 찾았어요.`
+    return `${getActiveSearchBaseLabel()}으로 “${query}” 결과를 찾았어요.`
   }
 
   if (query) {
@@ -1254,8 +1372,16 @@ const searchConversationChips = computed(() => {
   const chips = []
   const query = mapSearchKeyword.value.trim()
   const target = getTextValue(activeSearchPlan.value?.targetQuery || activeSearchPlan.value?.targetKeyword)
+  const frameLabel = getFrameDisplayLabel(activeSearchPlan.value)
+  const displayLabel = getTextValue(activeSearchPlan.value?.displayLabel || activeSearchPlan.value?.display_label)
+  const intentGroupLabel = getIntentGroupDisplayLabel(
+    activeSearchPlan.value?.intentGroup || activeSearchPlan.value?.intent_group || '',
+  )
   const scenarioLabel = getScenarioDisplayLabel(activeSearchPlan.value?.recommendationIntent || '')
-  const category = scenarioLabel ||
+  const category = frameLabel ||
+    displayLabel ||
+    intentGroupLabel ||
+    scenarioLabel ||
     getTextValue(activeSearchPlan.value?.categoryKeyword || activeSearchPlan.value?.categoryHint)
 
   if (query) {
@@ -2445,6 +2571,564 @@ const getPlannerBoolean = (value, fallback = null) => {
   return fallback
 }
 
+const getSearchPlanFrame = (searchPlan = {}) => {
+  const frame = searchPlan?.place_intent_frame || searchPlan?.placeIntentFrame || {}
+  return frame && typeof frame === 'object' && !Array.isArray(frame) ? frame : {}
+}
+
+const getFrameCandidatePlaceTypes = (searchPlan = {}) => {
+  const frame = getSearchPlanFrame(searchPlan)
+  const frameCandidates = getPlannerList(
+    getSearchPlanValue(frame, 'candidate_place_types', 'candidatePlaceTypes'),
+  )
+  if (frameCandidates.length) return frameCandidates
+
+  return getPlannerList(
+    getSearchPlanValue(searchPlan, 'candidatePlaceTypes', 'candidate_place_types') ||
+    getSearchPlanValue(searchPlan, 'categoryCandidates', 'category_candidates') ||
+    getSearchPlanValue(searchPlan, 'place_type_keywords', 'placeTypeKeywords'),
+  )
+}
+
+const getFrameTargetObjects = (searchPlan = {}) => {
+  const frame = getSearchPlanFrame(searchPlan)
+  const frameTargets = getPlannerList(
+    getSearchPlanValue(frame, 'target_objects', 'targetObjects'),
+  )
+  if (frameTargets.length) return frameTargets
+
+  return getPlannerList(
+    getSearchPlanValue(searchPlan, 'targetObjects', 'target_objects'),
+  )
+}
+
+const getFrameConstraints = (searchPlan = {}) => {
+  const frame = getSearchPlanFrame(searchPlan)
+  const frameConstraints = getPlannerList(
+    getSearchPlanValue(frame, 'constraints', 'required_conditions', 'requiredConditions'),
+  )
+  if (frameConstraints.length) return frameConstraints
+
+  return getPlannerList(
+    getSearchPlanValue(searchPlan, 'constraints', 'requiredConditions', 'required_conditions'),
+  )
+}
+
+const getFrameExclusions = (searchPlan = {}) => {
+  const frame = getSearchPlanFrame(searchPlan)
+  const frameExclusions = getPlannerList(
+    getSearchPlanValue(frame, 'exclusions', 'excluded_categories', 'excludedCategories'),
+  )
+  if (frameExclusions.length) return frameExclusions
+
+  return getPlannerList(
+    getSearchPlanValue(searchPlan, 'exclusions', 'excludedCategories', 'excluded_categories'),
+  )
+}
+
+const getFrameAnchorLocation = (searchPlan = {}) => {
+  const frame = getSearchPlanFrame(searchPlan)
+  return getPlannerText(
+    getSearchPlanValue(frame, 'anchor_location', 'anchorLocation', 'location') ||
+    getSearchPlanValue(searchPlan, 'anchorLocation', 'anchor_location', 'locationQuery', 'baseLocationQuery'),
+  )
+}
+
+const getResolvedSearchPlanLocationQuery = (searchPlan = {}) => {
+  return getPlannerText(
+    getSearchPlanValue(searchPlan, 'locationQuery', 'location_query', 'baseLocationQuery', 'base_location_query') ||
+    getFrameAnchorLocation(searchPlan) ||
+    searchPlan.baseKeyword,
+  )
+}
+
+const syncFrameLocationToSearchPlan = (searchPlan = {}) => {
+  if (!searchPlan || typeof searchPlan !== 'object') return searchPlan
+
+  const frame = getSearchPlanFrame(searchPlan)
+  const frameAnchor = getPlannerText(getSearchPlanValue(frame, 'anchor_location', 'anchorLocation'))
+  if (!frameAnchor) return searchPlan
+
+  frame.anchor_location = frameAnchor
+  frame.anchorLocation = frameAnchor
+  frame.location_mode = 'explicit'
+  frame.locationMode = 'explicit'
+
+  searchPlan.place_intent_frame = frame
+  searchPlan.placeIntentFrame = frame
+  searchPlan.locationQuery = frameAnchor
+  searchPlan.location_query = frameAnchor
+  searchPlan.baseLocationQuery = frameAnchor
+  searchPlan.base_location_query = frameAnchor
+  searchPlan.anchorLocation = frameAnchor
+  searchPlan.anchor_location = frameAnchor
+  searchPlan.locationMode = 'explicit'
+  searchPlan.location_mode = 'explicit'
+  searchPlan.hasBaseLocation = true
+  searchPlan.hasExplicitLocation = true
+  searchPlan.has_explicit_location = true
+  searchPlan.locationResolutionRequired = true
+  searchPlan.location_resolution_required = true
+  searchPlan.explicitCurrentContext = false
+  searchPlan.searchMode = 'region_search'
+  searchPlan.baseKeyword = frameAnchor
+
+  return searchPlan
+}
+
+const getFrameDisplayLabel = (searchPlan = {}) => {
+  const frame = getSearchPlanFrame(searchPlan)
+  return getPlannerText(
+    getSearchPlanValue(frame, 'display_label', 'displayLabel') ||
+    getSearchPlanValue(searchPlan, 'displayLabel', 'display_label'),
+  )
+}
+
+const getFrameWebSearchQueries = (searchPlan = {}) => {
+  const frame = getSearchPlanFrame(searchPlan)
+  const frameQueries = getPlannerList(
+    getSearchPlanValue(frame, 'search_queries', 'searchQueries', 'web_search_queries', 'webSearchQueries'),
+  )
+  if (frameQueries.length) return frameQueries
+
+  return getPlannerList(
+    getSearchPlanValue(searchPlan, 'webSearchQueries', 'web_search_queries'),
+  )
+}
+
+const getFrameResultMatchTerms = (searchPlan = {}) => {
+  const frame = getSearchPlanFrame(searchPlan)
+  return [...new Set([
+    ...getFrameTargetObjects(searchPlan),
+    ...getPlannerList(
+    getSearchPlanValue(frame, 'result_match_terms', 'resultMatchTerms'),
+    ),
+  ].filter(Boolean))]
+}
+
+const getFrameRankingPolicy = (searchPlan = {}) => {
+  const frame = getSearchPlanFrame(searchPlan)
+  return getPlannerText(
+    getSearchPlanValue(frame, 'ranking_policy', 'rankingPolicy') ||
+    getSearchPlanValue(searchPlan, 'rankingPolicy', 'ranking_policy'),
+  )
+}
+
+const getFrameCandidateCategoryCodes = (searchPlan = {}) => {
+  const frame = getSearchPlanFrame(searchPlan)
+  return getPlannerList(
+    getSearchPlanValue(frame, 'candidate_category_codes', 'candidateCategoryCodes') ||
+    getSearchPlanValue(searchPlan, 'candidateCategoryCodes', 'candidate_category_codes'),
+  )
+}
+
+const getFrameLocationMode = (searchPlan = {}) => {
+  const frame = getSearchPlanFrame(searchPlan)
+  return getPlannerText(
+    getSearchPlanValue(frame, 'location_mode', 'locationMode') ||
+    getSearchPlanValue(searchPlan, 'locationMode', 'location_mode'),
+  )
+}
+
+const hasValidSearchIntentFrame = (searchPlan = {}) => {
+  const frame = getSearchPlanFrame(searchPlan)
+  if (!Object.keys(frame).length) return false
+
+  const locationMode = getFrameLocationMode(searchPlan)
+  const hasLocationMode = ['explicit', 'current_context', 'clarification_required'].includes(locationMode)
+  const hasGoal = Boolean(getPlannerText(frame.user_goal || frame.userGoal))
+  const hasLabel = Boolean(getFrameDisplayLabel(searchPlan))
+  const hasSearchTarget = Boolean(
+    getFrameCandidatePlaceTypes(searchPlan).length ||
+    getFrameWebSearchQueries(searchPlan).length,
+  )
+  const hasExplicitAnchor = locationMode !== 'explicit' || Boolean(getFrameAnchorLocation(searchPlan))
+
+  return hasGoal && hasLabel && hasSearchTarget && hasLocationMode && hasExplicitAnchor
+}
+
+const getIntentGroupDisplayLabel = (intentGroup = '') => {
+  const value = getTextValue(intentGroup)
+  return INTENT_GROUP_DISPLAY_LABELS[value] || value
+}
+
+const getPlanKakaoKeywordCandidates = (searchPlan = {}) => {
+  return getPlannerList(
+    getSearchPlanValue(searchPlan, 'kakaoKeywordCandidates', 'kakao_keyword_candidates') ||
+    getSearchPlanValue(searchPlan, 'kakaoKeywords', 'kakao_keywords'),
+  )
+}
+
+const getScenarioFallbackKakaoKeyword = (searchPlan = {}) => {
+  const scenario = getPlannerText(searchPlan?.scenario || searchPlan?.recommendationIntent)
+  return scenario ? AI_SCENARIO_KAKAO_KEYWORDS[scenario] || '' : ''
+}
+
+const isFrameDrivenSearch = (searchPlan = {}) => {
+  return Boolean(
+    hasValidSearchIntentFrame(searchPlan) ||
+    searchPlan?.executionMode === 'frame' ||
+    searchPlan?.execution_mode === 'frame',
+  )
+}
+
+const getScenarioFallbackKeywordSet = (searchPlan = {}) => {
+  const scenario = getPlannerText(searchPlan?.scenario || searchPlan?.recommendationIntent)
+  return new Set([
+    ...(scenario && INTENT_KAKAO_KEYWORD_CANDIDATES[scenario]
+      ? INTENT_KAKAO_KEYWORD_CANDIDATES[scenario]
+      : []),
+    getScenarioFallbackKakaoKeyword(searchPlan),
+  ].filter(Boolean).map(normalizeLocationText))
+}
+
+const isOnlyScenarioFallbackKeyword = (keywords = [], searchPlan = {}) => {
+  const scenarioKeyword = getScenarioFallbackKakaoKeyword(searchPlan)
+  if (!scenarioKeyword || keywords.length !== 1) return false
+
+  return normalizeLocationText(keywords[0]) === normalizeLocationText(scenarioKeyword)
+}
+
+const isLocationOnlyKeyword = (keyword = '', searchPlan = {}) => {
+  const keywordText = normalizeLocationText(keyword)
+  if (!keywordText) return false
+
+  return [
+    getFrameAnchorLocation(searchPlan),
+    searchPlan?.locationQuery,
+    searchPlan?.location_query,
+    searchPlan?.baseLocationQuery,
+    searchPlan?.base_location_query,
+    searchPlan?.baseKeyword,
+  ].some((location) => {
+    const locationText = normalizeLocationText(location)
+    return locationText && keywordText === locationText
+  })
+}
+
+const normalizePlanExclusionTerm = (value = '') => {
+  return getTextValue(value)
+    .replace(/(?:제외해줘|제외한|제외|빼고|말고|아닌|아님|금지)/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+const getExcludedTermsFromPlan = (searchPlan = {}) => {
+  const frame = getSearchPlanFrame(searchPlan)
+  const excludedCategories = getPlannerList(
+    getSearchPlanValue(frame, 'excluded_categories', 'excludedCategories') ||
+    getSearchPlanValue(searchPlan, 'excludedCategories', 'excluded_categories'),
+  )
+  const categoryTerms = excludedCategories.flatMap((category) => {
+    return [
+      category,
+      CATEGORY_KAKAO_KEYWORDS[category],
+    ].filter(Boolean)
+  })
+  const exclusionTerms = [
+    ...getFrameExclusions(searchPlan),
+    ...categoryTerms,
+  ]
+
+  return [...new Set(
+    exclusionTerms
+      .map(normalizePlanExclusionTerm)
+      .filter(Boolean)
+      .map((term) => normalizeLocationText(term)),
+  )]
+}
+
+const keywordMatchesExclusions = (keyword = '', excludedTerms = []) => {
+  const keywordText = normalizeLocationText(keyword)
+  if (!keywordText) return false
+
+  return excludedTerms.some((term) => {
+    return term && keywordText.includes(term)
+  })
+}
+
+const filterKeywordsByExclusions = (keywords = [], searchPlan = {}) => {
+  const excludedTerms = getExcludedTermsFromPlan(searchPlan)
+  const uniqueKeywords = [...new Set(
+    getPlannerList(keywords)
+      .map(getTextValue)
+      .filter(Boolean),
+  )]
+
+  if (!excludedTerms.length) return uniqueKeywords
+
+  return uniqueKeywords.filter((keyword) => {
+    return !keywordMatchesExclusions(keyword, excludedTerms)
+  })
+}
+
+const getPlaceExclusionText = (place = {}) => {
+  return normalizeLocationText([
+    place.category_name,
+    place.category_group_name,
+    place.categoryGroupName,
+    place.category,
+    place.rawCategory,
+    place.place_name,
+    place.name,
+    ...getTagTextValues(place.tags),
+    ...getTagTextValues(place.verifiedTags || place.verified_tags),
+    ...getTagTextValues(place.suggestedTags || place.suggested_tags),
+    ...toDisplayList(place.placeNatures || place.place_natures),
+  ].filter(Boolean).join(' '))
+}
+
+const isPlaceExcludedByPlan = (place = {}, searchPlan = {}) => {
+  const excludedTerms = getExcludedTermsFromPlan(searchPlan)
+  if (!excludedTerms.length) return false
+
+  const placeText = getPlaceExclusionText(place)
+  return excludedTerms.some((term) => term && placeText.includes(term))
+}
+
+const filterPlacesByPlanExclusions = (places = [], searchPlan = {}) => {
+  if (!getExcludedTermsFromPlan(searchPlan).length) return places
+  return places.filter((place) => !isPlaceExcludedByPlan(place, searchPlan))
+}
+
+const buildFrameBasedKakaoKeywords = (
+  searchPlan = {},
+  {
+    includeWebQueries = false,
+  } = {},
+) => {
+  if (isFrameDrivenSearch(searchPlan)) {
+    const locationQuery = getResolvedSearchPlanLocationQuery(searchPlan)
+    const searchQueries = getFrameWebSearchQueries(searchPlan)
+    const targetAndResultTerms = [
+      ...getFrameTargetObjects(searchPlan),
+      ...getFrameResultMatchTerms(searchPlan),
+    ]
+    const candidatePlaceTypes = getFrameCandidatePlaceTypes(searchPlan)
+    const candidates = [
+      ...searchQueries,
+      ...applyLocationToSearchKeywords(locationQuery, targetAndResultTerms),
+      ...applyLocationToSearchKeywords(locationQuery, candidatePlaceTypes),
+      ...targetAndResultTerms,
+      ...candidatePlaceTypes,
+    ]
+
+    return filterKeywordsByExclusions(
+      [...new Set(candidates.map(getTextValue).filter(Boolean))],
+      searchPlan,
+    )
+  }
+
+  const planKakaoKeywords = getPlanKakaoKeywordCandidates(searchPlan)
+  const frameCandidates = getFrameCandidatePlaceTypes(searchPlan)
+  const frameSearchQueries = isFrameDrivenSearch(searchPlan)
+    ? getFrameWebSearchQueries(searchPlan)
+    : []
+  const frameCandidateSet = new Set(frameCandidates.map(normalizeLocationText))
+  const scenarioFallbackKeywordSet = getScenarioFallbackKeywordSet(searchPlan)
+  const deferScenarioFallback = isOnlyScenarioFallbackKeyword(planKakaoKeywords, searchPlan) &&
+    frameCandidates.length > 0
+  const candidates = [
+    ...frameSearchQueries,
+    ...(deferScenarioFallback ? frameCandidates : planKakaoKeywords),
+    ...(deferScenarioFallback ? planKakaoKeywords : frameCandidates),
+    ...(includeWebQueries && !isFrameDrivenSearch(searchPlan) ? getFrameWebSearchQueries(searchPlan) : []),
+  ]
+
+  const filteredCandidates = isFrameDrivenSearch(searchPlan)
+    ? candidates.filter((keyword) => {
+      const keywordText = normalizeLocationText(keyword)
+      if (!keywordText) return false
+      if (frameCandidates.length && isLocationOnlyKeyword(keyword, searchPlan)) return false
+      if (
+        frameCandidates.length &&
+        scenarioFallbackKeywordSet.has(keywordText) &&
+        !frameCandidateSet.has(keywordText)
+      ) {
+        return false
+      }
+      return true
+    })
+    : candidates
+
+  return filterKeywordsByExclusions(filteredCandidates, searchPlan)
+}
+
+const applyLocationToSearchKeywords = (locationQuery = '', keywords = []) => {
+  const locationText = getTextValue(locationQuery)
+
+  return getPlannerList(keywords).map((keyword) => {
+    const keywordText = getTextValue(keyword)
+    if (!locationText || normalizeLocationText(keywordText).includes(normalizeLocationText(locationText))) {
+      return keywordText
+    }
+
+    return `${locationText} ${keywordText}`.trim()
+  })
+}
+
+const getSearchPlanDebugSnapshot = (searchPlan = {}, extra = {}) => {
+  return {
+    ...extra,
+    parserProvider: searchPlan?.parser_provider || searchPlan?.parserProvider || '',
+    parserFallback: searchPlan?.parser_fallback ?? searchPlan?.parserFallback ?? null,
+    planSource: searchPlan?.plan_source || searchPlan?.planSource || '',
+    executionMode: searchPlan?.execution_mode || searchPlan?.executionMode || '',
+    locationMode: getFrameLocationMode(searchPlan) || searchPlan?.location_mode || searchPlan?.locationMode || '',
+    anchorLocation: getFrameAnchorLocation(searchPlan),
+    locationQuery: getResolvedSearchPlanLocationQuery(searchPlan),
+    aiFallbackReason: searchPlan?.ai_fallback_reason || searchPlan?.aiFallbackReason || '',
+    aiDebug: searchPlan?.ai_debug || searchPlan?.aiDebug || null,
+    targetQuery: searchPlan?.targetQuery || searchPlan?.target_query || '',
+    recommendationIntent: searchPlan?.recommendationIntent || searchPlan?.scenario || '',
+    displayLabel: getFrameDisplayLabel(searchPlan) || searchPlan?.displayLabel || searchPlan?.display_label || '',
+    placeIntentFrame: getSearchPlanFrame(searchPlan),
+    targetObjects: getFrameTargetObjects(searchPlan),
+    candidatePlaceTypes: getFrameCandidatePlaceTypes(searchPlan),
+    constraints: getFrameConstraints(searchPlan),
+    exclusions: getFrameExclusions(searchPlan),
+    rankingPolicy: getFrameRankingPolicy(searchPlan),
+    kakaoKeywordCandidates: buildFrameBasedKakaoKeywords(searchPlan, { includeWebQueries: false }),
+    webSearchQueries: filterKeywordsByExclusions(getFrameWebSearchQueries(searchPlan), searchPlan),
+  }
+}
+
+const getRecommendationIntentForScoring = (recommendationIntent = '', searchPlan = {}) => {
+  if (isFrameDrivenSearch(searchPlan)) {
+    return getFramePolicyRecommendationIntent(searchPlan)
+  }
+
+  return recommendationIntent
+}
+
+const getFramePolicyRecommendationIntent = (searchPlan = {}) => {
+  const frameText = normalizeLocationText([
+    searchPlan?.scenario,
+    searchPlan?.recommendationIntent,
+    searchPlan?.intentGroup,
+    searchPlan?.intent_group,
+    getSearchPlanFrame(searchPlan)?.situation,
+    getFrameDisplayLabel(searchPlan),
+    ...getFrameCandidateCategoryCodes(searchPlan),
+    ...getFrameCandidatePlaceTypes(searchPlan),
+    ...getFrameConstraints(searchPlan),
+    ...getFrameResultMatchTerms(searchPlan),
+  ].filter(Boolean).join(' '))
+
+  if (
+    (frameText.includes('cafe') || frameText.includes('카페')) &&
+    ['작업', '노트북', '콘센트', '와이파이', 'wifi', '공부', '스터디'].some((keyword) => {
+      return frameText.includes(normalizeLocationText(keyword))
+    })
+  ) {
+    return 'work_cafe'
+  }
+
+  if (['산책', '힐링', '걷기', 'walkhealing'].some((keyword) => {
+    return frameText.includes(normalizeLocationText(keyword))
+  })) {
+    return 'walk_healing'
+  }
+
+  if (['쉴', '쉼', '휴식', '휴게', '조용'].some((keyword) => {
+    return frameText.includes(normalizeLocationText(keyword))
+  })) {
+    return 'waiting_place'
+  }
+
+  return ''
+}
+
+const hasKakaoWorkCafeEvidence = (place = {}, savedTagData = {}) => {
+  const evidenceText = normalizeLocationText([
+    place.place_name,
+    place.name,
+    place.category_name,
+    place.category,
+    ...getTagTextValues(savedTagData.suggested_tags),
+    ...getTagTextValues(savedTagData.verified_tags),
+    ...getTagDetailTextValues(savedTagData.tag_details),
+  ].filter(Boolean).join(' '))
+
+  return [
+    ...WORK_CAFE_PREFERRED_TAGS,
+    '노트북',
+    '작업',
+    '공부',
+    '조용',
+    '와이파이',
+    'wifi',
+    'wi-fi',
+    '콘센트',
+    '전원',
+    '충전',
+    '스터디',
+  ].some((keyword) => {
+    return evidenceText.includes(normalizeLocationText(keyword))
+  })
+}
+
+const getFrameDirectMatchText = (place = {}) => {
+  return normalizeLocationText([
+    place.category,
+    place.category_name,
+    place.category_group_name,
+    place.categoryGroupName,
+    place.rawCategory,
+    ...toDisplayList(place.matchedCategoryCodes || place.matched_category_codes),
+    ...getTagTextValues(place.matchedTags || place.matched_tags),
+    ...getTagTextValues(place.matchedTagLabels || place.matched_tag_labels),
+    ...getTagTextValues(place.verifiedTags || place.verified_tags),
+    ...getTagTextValues(place.suggestedTags || place.suggested_tags),
+    ...getTagTextValues(place.tags),
+  ].filter(Boolean).join(' '))
+}
+
+const isFrameDirectMatchedPlace = (place = {}, searchPlan = {}) => {
+  if (Number(place.relevanceScore || place.relevance_score || 0) > 0) {
+    return true
+  }
+
+  if (toArray(place.matchedEvidence || place.matched_evidence).length > 0) {
+    return true
+  }
+
+  const matchTerms = [
+    ...getFrameCandidateCategoryCodes(searchPlan),
+    ...getFrameResultMatchTerms(searchPlan),
+    ...getFrameCandidatePlaceTypes(searchPlan),
+  ]
+  if (!matchTerms.length) return true
+
+  const matchText = getFrameDirectMatchText(place)
+  return matchTerms.some((matchTerm) => {
+    const termText = normalizeLocationText(matchTerm)
+    return termText && matchText.includes(termText)
+  })
+}
+
+const getFrameDirectMatchCount = (results = [], searchPlan = {}) => {
+  if (!isFrameDrivenSearch(searchPlan)) return results.length
+  return results.filter((place) => isFrameDirectMatchedPlace(place, searchPlan)).length
+}
+
+const filterFrameDirectMatchedResults = (results = [], searchPlan = {}) => {
+  if (!isFrameDrivenSearch(searchPlan)) return results
+  return results.filter((place) => isFrameDirectMatchedPlace(place, searchPlan))
+}
+
+const buildFrameFallbackQueries = (searchPlan = {}, { includeLocation = true } = {}) => {
+  const frameKeywords = buildFrameBasedKakaoKeywords(searchPlan, { includeWebQueries: false })
+  const locationQuery = includeLocation ? getResolvedSearchPlanLocationQuery(searchPlan) : ''
+
+  return filterKeywordsByExclusions(
+    includeLocation && locationQuery
+      ? applyLocationToSearchKeywords(locationQuery, frameKeywords)
+      : frameKeywords,
+    searchPlan,
+  )
+}
+
 const getConversationalPreviousContext = () => {
   if (!activeSearchPlan.value || !displayResults.value.length) {
     return null
@@ -2461,12 +3145,21 @@ const getConversationalPreviousContext = () => {
       menu_keywords: activeSearchPlan.value.menu_keywords || [],
       place_type_keywords: activeSearchPlan.value.place_type_keywords || [],
       requestedConditions: activeSearchPlan.value.requestedConditions || [],
+      place_intent_frame: activeSearchPlan.value.placeIntentFrame || activeSearchPlan.value.place_intent_frame || {},
+      candidate_place_types: activeSearchPlan.value.candidatePlaceTypes || [],
+      constraints: activeSearchPlan.value.constraints || [],
+      exclusions: activeSearchPlan.value.exclusions || [],
+      excluded_categories: activeSearchPlan.value.excludedCategories || [],
+      display_label: activeSearchPlan.value.displayLabel || '',
+      web_search_queries: activeSearchPlan.value.webSearchQueries || [],
+      kakaoKeywordCandidates: activeSearchPlan.value.kakaoKeywordCandidates || [],
+      intent_group: activeSearchPlan.value.intentGroup || '',
     },
     result_count: displayResults.value.length,
   }
 }
 
-const resolveConversationalSearchPlan = async (keyword, previousContext = null) => {
+const resolveConversationalSearchPlan = async (keyword, previousContext = null, extraPayload = {}) => {
   try {
     loadingMessage.value = '검색 의도 해석 중'
     const data = await buildConversationalSearchPlan({
@@ -2475,6 +3168,7 @@ const resolveConversationalSearchPlan = async (keyword, previousContext = null) 
       lng: mapCenter.value?.lng ?? null,
       mapCenter: mapCenter.value || null,
       previousContext,
+      ...extraPayload,
     })
 
     if (import.meta.env.DEV) {
@@ -2485,72 +3179,189 @@ const resolveConversationalSearchPlan = async (keyword, previousContext = null) 
         targetQuery: data?.search_plan?.targetQuery,
         needsClarification: data?.needs_clarification,
         provider: data?.parser_provider,
+        parserProvider: data?.parser_provider,
+        parserFallback: data?.parser_fallback,
+        planSource: data?.plan_source,
+        executionMode: data?.execution_mode,
+        fallbackReason: data?.fallback_reason,
+        aiFallbackReason: data?.ai_fallback_reason,
+        aiDebug: data?.ai_debug,
+        ...getSearchPlanDebugSnapshot(data?.search_plan || {}, {
+          rawQuery: keyword,
+        }),
       })
     }
 
     return data && typeof data === 'object' ? data : null
   } catch (error) {
     if (import.meta.env.DEV) {
-      console.warn('[대화형 검색 해석] fallback to local planner')
+      console.warn('[대화형 검색 해석] fallback to local planner', {
+        message: error?.message || '',
+        status: error?.response?.status || null,
+        responseData: error?.response?.data || null,
+      })
     }
     return null
   }
 }
 
+const buildClarificationFollowUpPayload = (pending = null, answer = '') => {
+  if (!pending) return {}
+
+  const previousSearchPlan = pending.partial_search_plan || pending.plan?.search_plan || {}
+  const pendingFrame = getSearchPlanFrame(previousSearchPlan)
+  const previousSearchContext = {
+    query: pending.original_query || pending.query || '',
+    search_plan: previousSearchPlan,
+    pending_clarification_frame: pendingFrame,
+    is_clarification_followup: true,
+    clarification_answer: answer,
+    original_query: pending.original_query || pending.query || '',
+  }
+
+  return {
+    previousContext: previousSearchContext,
+    previous_context: previousSearchContext,
+    previous_search_context: previousSearchContext,
+    previous_search_plan: previousSearchPlan,
+    pending_clarification_frame: pendingFrame,
+    is_clarification_followup: true,
+    clarification_answer: answer,
+    original_query: pending.original_query || pending.query || '',
+  }
+}
+
 const adaptConversationalSearchPlan = (conversationalPlan, originalQuery) => {
-  const basePlan = buildSearchPlan(originalQuery)
   const plan = conversationalPlan?.search_plan || {}
+  const hasAiFramePlan = hasValidSearchIntentFrame(plan) &&
+    conversationalPlan?.parser_fallback !== true &&
+    conversationalPlan?.plan_source !== 'legacy_fallback'
+  const basePlan = hasAiFramePlan
+    ? {
+      originalQuery,
+      normalizedQuery: originalQuery,
+      locationQuery: '',
+      baseLocationQuery: '',
+      hasBaseLocation: false,
+      explicitCurrentContext: true,
+      searchMode: 'current_context',
+      baseKeyword: '',
+      targetQuery: getFrameDisplayLabel(plan) || originalQuery,
+      targetKeyword: getFrameDisplayLabel(plan) || originalQuery,
+      targetType: '',
+      categoryHint: '',
+      categoryKeyword: '',
+      recommendationIntent: getPlannerText(plan?.scenario || ''),
+      requestedConditions: [],
+      preferredTags: [],
+      negativeTags: [],
+      kakaoKeywordCandidates: [],
+      mainPlaceFallbackKeyword: '',
+      confidence: conversationalPlan?.confidence ?? null,
+      fallbackReason: conversationalPlan?.fallback_reason || '',
+    }
+    : buildSearchPlan(originalQuery)
 
   if (!plan || typeof plan !== 'object') {
     return basePlan
   }
 
-  const locationQuery = getPlannerText(getSearchPlanValue(plan, 'locationQuery', 'location_query'))
+  const frameLocationMode = getFrameLocationMode(plan)
+  const frameAnchorLocation = getFrameAnchorLocation(plan)
+  const locationQuery = getPlannerText(
+    getResolvedSearchPlanLocationQuery(plan) ||
+    (frameLocationMode === 'explicit' ? frameAnchorLocation : ''),
+  )
   const hasExplicitLocation = getPlannerBoolean(
     getSearchPlanValue(plan, 'has_explicit_location'),
-    Boolean(locationQuery),
+    Boolean(locationQuery || frameLocationMode === 'explicit'),
   )
   const locationResolutionRequired = getPlannerBoolean(
     getSearchPlanValue(plan, 'location_resolution_required'),
-    Boolean(locationQuery),
+    Boolean(locationQuery || frameLocationMode === 'explicit'),
   )
   const shouldUseLocationQuery = Boolean(locationQuery && hasExplicitLocation && locationResolutionRequired)
   const targetQuery = getPlannerText(
     getSearchPlanValue(plan, 'targetQuery', 'target_query') ||
+    getFrameDisplayLabel(plan) ||
     basePlan.targetQuery ||
     originalQuery,
   )
-  const categories = getPlannerList(plan.categories)
+  const placeIntentFrame = getSearchPlanFrame(plan)
+  const candidatePlaceTypes = getFrameCandidatePlaceTypes(plan)
+  const targetObjects = getFrameTargetObjects(plan)
+  const frameConstraints = getFrameConstraints(plan)
+  const exclusions = getFrameExclusions(plan)
+  const excludedCategories = getPlannerList(
+    getSearchPlanValue(placeIntentFrame, 'excluded_categories', 'excludedCategories') ||
+    getSearchPlanValue(plan, 'excludedCategories', 'excluded_categories'),
+  )
+  const displayLabel = getFrameDisplayLabel(plan)
+  const displayLabelSource = getPlannerText(
+    getSearchPlanValue(placeIntentFrame, 'display_label_source', 'displayLabelSource') ||
+    getSearchPlanValue(plan, 'displayLabelSource', 'display_label_source'),
+  )
+  const webSearchQueries = filterKeywordsByExclusions(getFrameWebSearchQueries(plan), plan)
+  const intentGroup = getPlannerText(
+    getSearchPlanValue(plan, 'intentGroup', 'intent_group') ||
+    getSearchPlanValue(placeIntentFrame, 'intent_group', 'intentGroup', 'situation'),
+  )
+  const categoryCandidates = getPlannerList(
+    getSearchPlanValue(plan, 'categoryCandidates', 'category_candidates'),
+  )
+  const categories = [
+    ...getPlannerList(plan.categories),
+    ...categoryCandidates,
+  ].filter((category, index, list) => category && list.indexOf(category) === index)
   const categoryHint = getPlannerText(getSearchPlanValue(plan, 'categoryHint', 'category_hint')) ||
     categories[0] ||
-    basePlan.categoryHint
+    (hasAiFramePlan ? '' : basePlan.categoryHint)
   const categoryKeyword = CATEGORY_KAKAO_KEYWORDS[categoryHint] || basePlan.categoryKeyword
   const recommendationIntent = getPlannerText(plan.scenario) || basePlan.recommendationIntent
   const menuKeywords = getPlannerList(plan.menu_keywords)
-  const placeTypeKeywords = getPlannerList(plan.place_type_keywords)
-  const requestedConditions = getPlannerList(
-    getSearchPlanValue(plan, 'requestedConditions', 'requested_conditions') ||
-    conversationalPlan.conditions ||
-    basePlan.requestedConditions,
-  )
+  const placeTypeKeywords = [
+    ...getPlannerList(getSearchPlanValue(plan, 'place_type_keywords', 'placeTypeKeywords')),
+    ...candidatePlaceTypes,
+  ].filter((keyword, index, list) => keyword && list.indexOf(keyword) === index)
+  const requestedConditions = [
+    ...getPlannerList(
+      getSearchPlanValue(plan, 'requestedConditions', 'requested_conditions') ||
+      conversationalPlan.conditions ||
+      (hasAiFramePlan ? [] : basePlan.requestedConditions),
+    ),
+    ...frameConstraints,
+  ].filter((condition, index, list) => condition && list.indexOf(condition) === index)
   const preferredTags = getPlannerList(plan.preferred_tags).length
     ? getPlannerList(plan.preferred_tags)
-    : basePlan.preferredTags
+    : (hasAiFramePlan ? [] : basePlan.preferredTags)
   const negativeTags = getPlannerList(plan.negative_tags).length
     ? getPlannerList(plan.negative_tags)
-    : basePlan.negativeTags
+    : (hasAiFramePlan ? [] : basePlan.negativeTags)
   const targetType = getPlannerText(getSearchPlanValue(plan, 'targetType', 'target_type')) ||
-    getTargetType({ targetQuery, categoryHint })
-  const kakaoKeywordCandidates = getPlannerList(
-    getSearchPlanValue(plan, 'kakaoKeywordCandidates', 'kakao_keyword_candidates'),
+    (hasAiFramePlan ? '' : getTargetType({ targetQuery, categoryHint }))
+  const fallbackKakaoKeywordCandidates = getKakaoKeywordCandidates({
+    targetQuery,
+    targetType,
+    categoryKeyword,
+    recommendationIntent,
+  })
+  const hasFramePlaceTypes = candidatePlaceTypes.length > 0
+  const hasBackendKakaoCandidates = getPlanKakaoKeywordCandidates(plan).length > 0
+  const kakaoKeywordCandidates = filterKeywordsByExclusions(
+    hasFramePlaceTypes || hasBackendKakaoCandidates
+      ? buildFrameBasedKakaoKeywords(plan, { includeWebQueries: false })
+      : fallbackKakaoKeywordCandidates,
+    plan,
   )
 
-  return {
+  const adaptedPlan = {
     ...basePlan,
     originalQuery,
     normalizedQuery: originalQuery,
     locationQuery: shouldUseLocationQuery ? locationQuery : '',
     baseLocationQuery: shouldUseLocationQuery ? locationQuery : '',
+    anchorLocation: shouldUseLocationQuery ? locationQuery : frameAnchorLocation,
+    anchor_location: shouldUseLocationQuery ? locationQuery : frameAnchorLocation,
     hasBaseLocation: shouldUseLocationQuery,
     hasExplicitLocation: shouldUseLocationQuery,
     locationResolutionRequired: shouldUseLocationQuery,
@@ -2566,14 +3377,54 @@ const adaptConversationalSearchPlan = (conversationalPlan, originalQuery) => {
     requestedConditions,
     preferredTags,
     negativeTags,
-    kakaoKeywordCandidates: kakaoKeywordCandidates.length
-      ? kakaoKeywordCandidates
-      : getKakaoKeywordCandidates({
-        targetQuery,
-        targetType,
-        categoryKeyword,
-        recommendationIntent,
-      }),
+    place_intent_frame: placeIntentFrame,
+    placeIntentFrame: placeIntentFrame,
+    target_objects: targetObjects,
+    targetObjects,
+    candidate_place_types: candidatePlaceTypes,
+    candidatePlaceTypes,
+    constraints: frameConstraints,
+    exclusions,
+    excluded_categories: excludedCategories,
+    excludedCategories,
+    display_label: displayLabel,
+    displayLabel,
+    display_label_source: displayLabelSource,
+    displayLabelSource,
+    web_search_queries: webSearchQueries,
+    webSearchQueries,
+    kakaoKeywordCandidates,
+    kakao_keywords: kakaoKeywordCandidates,
+    kakaoKeywords: kakaoKeywordCandidates,
+    categoryCandidates,
+    intent_group: intentGroup,
+    intentGroup,
+    location_mode: frameLocationMode,
+    locationMode: frameLocationMode,
+    candidate_category_codes: getFrameCandidateCategoryCodes(plan),
+    candidateCategoryCodes: getFrameCandidateCategoryCodes(plan),
+    result_match_terms: getFrameResultMatchTerms(plan),
+    resultMatchTerms: getFrameResultMatchTerms(plan),
+    ranking_policy: getFrameRankingPolicy(plan),
+    rankingPolicy: getFrameRankingPolicy(plan),
+    decision_action: conversationalPlan?.decision_action || conversationalPlan?.action || plan?.decision_action || '',
+    decisionAction: conversationalPlan?.decisionAction || conversationalPlan?.decision_action || conversationalPlan?.action || plan?.decisionAction || '',
+    can_search_now: conversationalPlan?.can_search_now ?? plan?.can_search_now ?? conversationalPlan?.action === 'search',
+    canSearchNow: conversationalPlan?.canSearchNow ?? conversationalPlan?.can_search_now ?? plan?.canSearchNow ?? plan?.can_search_now ?? conversationalPlan?.action === 'search',
+    clarification_options: getPlannerList(conversationalPlan?.clarification_options || conversationalPlan?.clarificationOptions || plan?.clarification_options || plan?.clarificationOptions || []),
+    clarificationOptions: getPlannerList(conversationalPlan?.clarification_options || conversationalPlan?.clarificationOptions || plan?.clarification_options || plan?.clarificationOptions || []),
+    parser_provider: conversationalPlan?.parser_provider || plan?.parser_provider || '',
+    parserProvider: conversationalPlan?.parser_provider || plan?.parserProvider || '',
+    parser_fallback: conversationalPlan?.parser_fallback ?? plan?.parser_fallback ?? null,
+    parserFallback: conversationalPlan?.parser_fallback ?? plan?.parserFallback ?? null,
+    execution_mode: hasAiFramePlan ? 'frame' : (conversationalPlan?.execution_mode || 'legacy'),
+    executionMode: hasAiFramePlan ? 'frame' : (conversationalPlan?.execution_mode || 'legacy'),
+    plan_source: hasAiFramePlan ? (conversationalPlan?.plan_source || 'ai') : (conversationalPlan?.plan_source || 'legacy_fallback'),
+    planSource: hasAiFramePlan ? (conversationalPlan?.plan_source || 'ai') : (conversationalPlan?.plan_source || 'legacy_fallback'),
+    ai_fallback_reason: conversationalPlan?.ai_fallback_reason || plan?.ai_fallback_reason || '',
+    aiFallbackReason: conversationalPlan?.ai_fallback_reason || plan?.aiFallbackReason || '',
+    ai_debug: conversationalPlan?.ai_debug || plan?.ai_debug || null,
+    aiDebug: conversationalPlan?.ai_debug || plan?.aiDebug || null,
     menu_keywords: menuKeywords,
     place_type_keywords: placeTypeKeywords,
     conversationalSearchPlan: conversationalPlan,
@@ -2583,6 +3434,15 @@ const adaptConversationalSearchPlan = (conversationalPlan, originalQuery) => {
     fallbackReason: conversationalPlan?.fallback_reason || basePlan.fallbackReason,
     aiSearchPlanApplied: true,
   }
+  syncFrameLocationToSearchPlan(adaptedPlan)
+
+  if (import.meta.env.DEV) {
+    console.debug('[대화형 검색 해석 적용]', getSearchPlanDebugSnapshot(adaptedPlan, {
+      rawQuery: originalQuery,
+    }))
+  }
+
+  return adaptedPlan
 }
 
 const CLARIFICATION_CURRENT_CONTEXT_ANSWERS = [
@@ -2708,8 +3568,19 @@ const buildClarificationFollowUpPlan = (answer = '') => {
   const combinedMessage = useCurrentContext
     ? `현재 위치 기준으로 ${targetText}을 찾아볼게요.`
     : `${locationAnswer}에서 ${targetText}을 찾아볼게요.`
+  const currentFrame = getSearchPlanFrame(partialPlan)
+  const nextFrame = Object.keys(currentFrame).length
+    ? {
+      ...currentFrame,
+      anchor_location: useCurrentContext
+        ? (currentFrame.anchor_location || currentFrame.anchorLocation || '')
+        : locationAnswer,
+    }
+    : currentFrame
   const searchPlan = {
     ...partialPlan,
+    place_intent_frame: nextFrame,
+    placeIntentFrame: nextFrame,
     locationQuery: useCurrentContext ? '' : locationAnswer,
     baseLocationQuery: useCurrentContext ? '' : locationAnswer,
     has_explicit_location: !useCurrentContext,
@@ -2784,6 +3655,14 @@ const submitClarificationFollowUp = async () => {
   await performUnifiedMapSearch()
 }
 
+const submitClarificationOption = async (option = '') => {
+  const answer = String(option || '').trim()
+  if (!answer || isSearchingMap.value) return
+
+  followUpInput.value = answer
+  await submitClarificationFollowUp()
+}
+
 const isNaturalLanguageScenarioSearch = (searchPlan = {}, rawQuery = '') => {
   const scenario = getPlannerText(searchPlan.scenario)
   if (!['waiting_place', 'work_cafe', 'walk_healing'].includes(scenario)) return false
@@ -2810,6 +3689,14 @@ const shouldAskLocationChoiceBeforeSearch = ({
   const searchPlan = conversationalPlan.search_plan || {}
   const locationQuery = getPlannerText(getSearchPlanValue(searchPlan, 'locationQuery', 'location_query'))
   if (locationQuery) return false
+  if (getFrameAnchorLocation(searchPlan)) return false
+  if (isFrameDrivenSearch(searchPlan)) {
+    return getFrameLocationMode(searchPlan) === 'clarification_required'
+  }
+
+  if (getFrameCandidatePlaceTypes(searchPlan).length && !isNaturalLanguageScenarioSearch(searchPlan, rawQuery)) {
+    return false
+  }
 
   const hasExplicitLocation = getPlannerBoolean(
     getSearchPlanValue(searchPlan, 'has_explicit_location'),
@@ -3132,6 +4019,23 @@ const getPlaceTextForRule = (place = {}, extraTags = []) => {
     place.__fallbackQuery,
     place.fallbackQuery,
     place.kakaoFallbackQuery,
+    ...extraTags,
+  ].filter(Boolean).join(' '))
+}
+
+const getStructuredPlaceEvidenceText = (place = {}, extraTags = []) => {
+  return normalizeLocationText([
+    place.place_name,
+    place.name,
+    place.category_name,
+    place.category_group_name,
+    place.categoryGroupName,
+    place.category,
+    place.rawCategory,
+    ...getTagTextValues(place.tags),
+    ...getTagTextValues(place.matchedTags || place.matched_tags),
+    ...getTagTextValues(place.verifiedTags || place.verified_tags),
+    ...getTagTextValues(place.suggestedTags || place.suggested_tags),
     ...extraTags,
   ].filter(Boolean).join(' '))
 }
@@ -4902,37 +5806,92 @@ const getRecommendScore = (place) => {
   return Number.isFinite(score) ? score : 0
 }
 
+const getPlaceFrameMatchStrength = (place = {}) => {
+  return getTextValue(place.frameMatchStrength || place.frame_match_strength).toLowerCase()
+}
+
+const getPlaceScoreCapReasons = (place = {}) => {
+  return toDisplayList(place.scoreCapReasons || place.score_cap_reasons || place.score_breakdown?.score_cap_reasons)
+}
+
+const isWeakFrameFallbackRecommendation = (place = {}) => {
+  const frameMatchStrength = getPlaceFrameMatchStrength(place)
+  const scoreCapReasons = getPlaceScoreCapReasons(place)
+
+  return (
+    frameMatchStrength === 'weak' ||
+    scoreCapReasons.includes('frame_weak_category_fallback') ||
+    scoreCapReasons.includes('category_fallback') ||
+    (
+      isFrameDrivenSearch(activeSearchPlan.value || {}) &&
+      isCategoryFallbackRecommendation(place)
+    )
+  )
+}
+
+const getFrameEvidenceSortRank = (place = {}) => {
+  const searchPlan = activeSearchPlan.value || {}
+  if (!isFrameDrivenSearch(searchPlan)) return 0
+
+  const frameMatchStrength = getPlaceFrameMatchStrength(place)
+  if (frameMatchStrength === 'strong') return 7
+  if (frameMatchStrength === 'medium') return 5
+  if (frameMatchStrength === 'weak') return 1
+
+  const evidenceText = getStructuredPlaceEvidenceText(place)
+  const targetTerms = [
+    ...getFrameTargetObjects(searchPlan),
+    ...getFrameResultMatchTerms(searchPlan),
+  ]
+  const candidateTerms = [
+    ...getFrameCandidatePlaceTypes(searchPlan),
+    ...getFrameCandidateCategoryCodes(searchPlan),
+  ]
+
+  if (hasNormalizedKeywordMatch(evidenceText, targetTerms)) return 6
+  if (hasNormalizedKeywordMatch(evidenceText, candidateTerms)) return 4
+  if (isCategoryFallbackRecommendation(place)) return 0
+
+  return 1
+}
+
 const getRecommendationSortScore = (place) => {
   const baseScore = getRecommendScore(place)
+  const weakFrameFallback = isWeakFrameFallbackRecommendation(place)
+  const frameRank = getFrameEvidenceSortRank(place)
   const sourceBonusMap = {
     'DB추천': 35,
     '카카오+DB': 32,
     '카카오': 0,
   }
-  const sourceBonus = sourceBonusMap[place?.sourceLabel] || 0
+  const sourceBonus = weakFrameFallback ? 0 : (sourceBonusMap[place?.sourceLabel] || 0)
   const waitingPenalty = place?.waitingPlacePenalty || 0
   const mainPlaceScore = place?.mainPlaceScore || 0
   const ancillaryPenalty = place?.ancillaryPlacePenalty || 0
   const intentMismatchPenalty = place?.intentMismatchPenalty || 0
   const placeShapeScore = mainPlaceScore - ancillaryPenalty - intentMismatchPenalty
+  const weakFramePenalty = weakFrameFallback ? 85 : 0
 
   if (place?.resultType === 'kakao_takeout_untagged') {
-    return baseScore + sourceBonus + placeShapeScore - 35 - waitingPenalty
+    return baseScore + sourceBonus + placeShapeScore - 35 - waitingPenalty - weakFramePenalty
   }
 
   if (place?.resultType === 'kakao_only') {
-    return baseScore + sourceBonus + placeShapeScore - 20 - waitingPenalty
+    return baseScore + sourceBonus + placeShapeScore - 20 - waitingPenalty - weakFramePenalty
   }
 
   if (place?.resultType === 'kakao_tag_weak') {
-    return baseScore + sourceBonus + placeShapeScore - 12 - waitingPenalty
+    return baseScore + sourceBonus + placeShapeScore - 12 - waitingPenalty - weakFramePenalty
   }
 
   if (place?.resultType === 'kakao_fallback_candidate') {
-    return baseScore + sourceBonus + placeShapeScore - 75 - waitingPenalty
+    const fallbackPenalty = frameRank >= 6
+      ? 18
+      : (frameRank >= 4 ? 35 : 75)
+    return baseScore + sourceBonus + placeShapeScore - fallbackPenalty - waitingPenalty
   }
 
-  return baseScore + sourceBonus + placeShapeScore - waitingPenalty
+  return baseScore + sourceBonus + placeShapeScore - waitingPenalty - weakFramePenalty
 }
 
 const isLowConfidenceWalkHealingFallback = (place = {}) => {
@@ -5135,6 +6094,12 @@ const compareByDistance = (firstPlace, secondPlace) => {
 }
 
 const compareForGeneralSearch = (firstPlace, secondPlace) => {
+  const frameRankDifference = getFrameEvidenceSortRank(secondPlace) - getFrameEvidenceSortRank(firstPlace)
+
+  if (frameRankDifference !== 0) {
+    return frameRankDifference
+  }
+
   const sourceRankDifference =
     getResultSourceRank(firstPlace) - getResultSourceRank(secondPlace)
 
@@ -5154,6 +6119,12 @@ const compareForGeneralSearch = (firstPlace, secondPlace) => {
 }
 
 const compareForRecommendationSearch = (firstPlace, secondPlace) => {
+  const frameRankDifference = getFrameEvidenceSortRank(secondPlace) - getFrameEvidenceSortRank(firstPlace)
+
+  if (frameRankDifference !== 0) {
+    return frameRankDifference
+  }
+
   const menuRankDifference = getMenuSearchSortRank(secondPlace) - getMenuSearchSortRank(firstPlace)
 
   if (menuRankDifference !== 0) {
@@ -5171,6 +6142,12 @@ const compareForRecommendationSearch = (firstPlace, secondPlace) => {
 }
 
 const compareForConfidenceSearch = (firstPlace, secondPlace) => {
+  const frameRankDifference = getFrameEvidenceSortRank(secondPlace) - getFrameEvidenceSortRank(firstPlace)
+
+  if (frameRankDifference !== 0) {
+    return frameRankDifference
+  }
+
   const confidenceDifference = getConfidenceRank(secondPlace) - getConfidenceRank(firstPlace)
 
   if (confidenceDifference !== 0) {
@@ -5225,34 +6202,45 @@ const convertKakaoPlaces = (
     isAncillaryIntent = false,
     fallbackCandidate = false,
     requestedConditions = [],
+    searchPlan = null,
   } = {},
 ) => {
   return toArray(places).map((place) => {
     const savedTagData = savedTagDataByExternalId[String(place.id)] || {}
     const rawScores = savedTagData.raw_scores || {}
     const hasTagData = hasSavedTagMatch(savedTagData)
+    const recommendationIntentForScoring = getRecommendationIntentForScoring(
+      recommendationIntent,
+      searchPlan || {},
+    )
     const recommendationData = calculateKakaoTagRecommendation({
       place,
       savedTagData,
       query,
       center,
       preferredTags,
-      recommendationIntent,
+      recommendationIntent: recommendationIntentForScoring,
     })
     const takeoutHeavy = isTakeoutHeavyCafeCandidate(place)
-    const waitingSuitability = recommendationIntent === 'waiting_place'
+    const waitingSuitability = recommendationIntentForScoring === 'waiting_place'
       ? getWaitingPlaceSuitability(place, savedTagData)
       : { excluded: false, penalty: 0 }
-    const walkHealingSuitability = recommendationIntent === 'walk_healing'
+    const walkHealingSuitability = recommendationIntentForScoring === 'walk_healing'
       ? getWalkHealingSuitability({ place, query })
       : { excluded: false, penalty: 0, bonus: 0, reason: null }
     const ancillaryAdjustment = getAncillaryPlaceAdjustment({
       place,
       query,
       categoryHint,
-      recommendationIntent,
+      recommendationIntent: recommendationIntentForScoring,
       isAncillaryIntent,
     })
+    const workCafeHasEvidence = recommendationIntentForScoring === 'work_cafe'
+      ? hasKakaoWorkCafeEvidence(place, savedTagData)
+      : false
+    const workCafeFallbackPenalty = recommendationIntentForScoring === 'work_cafe' && !workCafeHasEvidence
+      ? (takeoutHeavy ? 22 : 14)
+      : 0
     const fallbackScore = getKakaoFallbackCandidateScore({
       place,
       center,
@@ -5262,8 +6250,15 @@ const convertKakaoPlaces = (
       waitingPlacePenalty: recommendationData.waitingPlacePenalty || waitingSuitability.penalty || 0,
       walkHealingPenalty: walkHealingSuitability.penalty || 0,
       walkHealingBonus: walkHealingSuitability.bonus || 0,
+      workCafePenalty: workCafeFallbackPenalty,
     })
-    const fallbackReason = 'DB 추천 결과가 부족해 카카오 검색 결과를 낮은 신뢰도 후보로 함께 표시합니다. 외부 검색 결과이므로 방문 전 세부 조건 확인이 필요합니다.'
+    const fallbackReason = [
+      'DB 추천 결과가 부족해 카카오 검색 결과를 낮은 신뢰도 후보로 함께 표시합니다.',
+      workCafeFallbackPenalty
+        ? '작업/노트북/콘센트/와이파이 같은 근거가 부족해 후순위로 반영했습니다.'
+        : '',
+      '외부 검색 결과이므로 방문 전 세부 조건 확인이 필요합니다.',
+    ].filter(Boolean).join(' ')
 
     return mergeRequestedConditionReview({
       id: `kakao-${place.id}`,
@@ -5355,6 +6350,8 @@ const convertKakaoPlaces = (
       preferredTags,
       preferredMatchCount: recommendationData.preferredMatchCount || 0,
       takeoutHeavy,
+      workCafeHasEvidence,
+      workCafeFallbackPenalty,
       waitingPlacePenalty: recommendationData.waitingPlacePenalty || waitingSuitability.penalty || 0,
       waitingPlaceExcluded: recommendationData.waitingPlaceExcluded || waitingSuitability.excluded || false,
       waitingPlacePenaltyReason: recommendationData.waitingPlacePenaltyReason || waitingSuitability.reason || null,
@@ -5386,6 +6383,7 @@ const convertKakaoPlaces = (
   }).filter((place) => {
     if (recommendationIntent === 'waiting_place' && place.waitingPlaceExcluded) return false
     if (recommendationIntent === 'walk_healing' && place.walkHealingExcluded) return false
+    if (isPlaceExcludedByPlan(place, searchPlan || {})) return false
     return true
   })
 }
@@ -5417,6 +6415,7 @@ const getKakaoFallbackCandidateScore = ({
   waitingPlacePenalty = 0,
   walkHealingPenalty = 0,
   walkHealingBonus = 0,
+  workCafePenalty = 0,
 } = {}) => {
   const distance = center
     ? getDistanceMetersBetweenPlaces(
@@ -5439,7 +6438,10 @@ const getKakaoFallbackCandidateScore = ({
     -12,
     Math.min(8, mainPlaceScore - ancillaryPlacePenalty - intentMismatchPenalty),
   )
-  const penalty = Math.min(24, Math.round((waitingPlacePenalty + walkHealingPenalty) / 10))
+  const penalty = Math.min(
+    32,
+    Math.round((waitingPlacePenalty + walkHealingPenalty) / 10) + workCafePenalty,
+  )
 
   return Math.max(
     40,
@@ -5486,7 +6488,17 @@ const shouldRunKakaoRecommendationFallback = ({
   categoryHint = '',
   data = {},
   menuProfile = null,
+  parsedIntent = null,
 } = {}) => {
+  const frameDirectMatchCount = getFrameDirectMatchCount(dbResults, parsedIntent || {})
+  if (
+    isFrameDrivenSearch(parsedIntent || {}) &&
+    getFrameCandidatePlaceTypes(parsedIntent || {}).length &&
+    frameDirectMatchCount < KAKAO_FALLBACK_MIN_RESULTS
+  ) {
+    return true
+  }
+
   const resolvedMenuProfile = menuProfile || getMenuSearchProfile({ query, data })
   if (
     resolvedMenuProfile.menuIntent &&
@@ -5699,6 +6711,39 @@ const buildKakaoRecommendationFallbackQueries = ({
   parsedIntent = null,
 } = {}) => {
   const condition = getRecommendationConditionData(data)
+  const searchPlan = parsedIntent || {}
+  const planKakaoKeywords = filterKeywordsByExclusions(
+    buildFrameBasedKakaoKeywords(searchPlan, { includeWebQueries: false }),
+    searchPlan,
+  )
+  const frameCandidateQueries = filterKeywordsByExclusions(
+    getFrameCandidatePlaceTypes(searchPlan),
+    searchPlan,
+  )
+  const frameWebQueries = filterKeywordsByExclusions(
+    getFrameWebSearchQueries(searchPlan),
+    searchPlan,
+  )
+  if (isFrameDrivenSearch(searchPlan)) {
+    const frameFallbackQueries = [
+      ...buildFrameFallbackQueries(searchPlan, { includeLocation: true }),
+      ...planKakaoKeywords,
+      ...frameCandidateQueries,
+      ...frameWebQueries,
+    ]
+    const fallbackQueries = filterKeywordsByExclusions(frameFallbackQueries, searchPlan)
+      .slice(0, KAKAO_FALLBACK_MAX_QUERIES)
+
+    if (import.meta.env.DEV) {
+      console.debug('[카카오 fallback query 생성]', getSearchPlanDebugSnapshot(searchPlan, {
+        rawQuery: query,
+        fallbackQueries,
+      }))
+    }
+
+    return fallbackQueries
+  }
+
   const walkHealingIntent = isWalkHealingSearchIntent({
     query,
     data,
@@ -5706,14 +6751,28 @@ const buildKakaoRecommendationFallbackQueries = ({
   })
 
   if (walkHealingIntent) {
-    const walkQueries = [...WALK_HEALING_FALLBACK_QUERIES]
+    const walkQueries = [
+      ...planKakaoKeywords,
+      ...frameCandidateQueries,
+      ...frameWebQueries,
+      ...WALK_HEALING_FALLBACK_QUERIES,
+    ]
 
     if (hasExplicitWalkCafeIntent(query, parsedIntent)) {
       walkQueries.push('산책 카페', '공원 카페', '카페')
     }
 
-    return [...new Set(walkQueries.filter(Boolean))]
+    const fallbackQueries = filterKeywordsByExclusions(walkQueries, searchPlan)
       .slice(0, KAKAO_WALK_HEALING_FALLBACK_MAX_QUERIES)
+
+    if (import.meta.env.DEV) {
+      console.debug('[카카오 fallback query 생성]', getSearchPlanDebugSnapshot(searchPlan, {
+        rawQuery: query,
+        fallbackQueries,
+      }))
+    }
+
+    return fallbackQueries
   }
 
   const textForRules = normalizeLocationText([
@@ -5744,20 +6803,28 @@ const buildKakaoRecommendationFallbackQueries = ({
     ...toDisplayList(condition?.required_tag_labels),
   ]
   const candidates = [
+    ...planKakaoKeywords,
+    ...frameCandidateQueries,
+    ...frameWebQueries,
     ...foodMenuQueries,
     ...ruleQueries,
     ...getKakaoFallbackCategoryKeywords(categories),
-    ...toDisplayList(parsedIntent?.kakaoKeywordCandidates),
-    getKakaoKeywordForAiSearch(data, query),
+    getKakaoKeywordForAiSearch(data, query, parsedIntent),
     ...conditionKeywords,
     query,
   ]
 
-  return [...new Set(
-    candidates
-      .map((keyword) => getTextValue(keyword))
-      .filter(Boolean),
-  )].slice(0, KAKAO_FALLBACK_MAX_QUERIES)
+  const fallbackQueries = filterKeywordsByExclusions(candidates, searchPlan)
+    .slice(0, KAKAO_FALLBACK_MAX_QUERIES)
+
+  if (import.meta.env.DEV) {
+    console.debug('[카카오 fallback query 생성]', getSearchPlanDebugSnapshot(searchPlan, {
+      rawQuery: query,
+      fallbackQueries,
+    }))
+  }
+
+  return fallbackQueries
 }
 
 const isWalkHealingSearchIntent = ({
@@ -5866,8 +6933,16 @@ const buildWalkHealingLocationQueries = (locationQuery = '') => {
   })
 }
 
-const buildWalkHealingFallbackStages = ({ locationQuery = '', includeCafe = false } = {}) => {
+const buildWalkHealingFallbackStages = ({
+  locationQuery = '',
+  includeCafe = false,
+  searchPlan = null,
+} = {}) => {
+  const frameQueries = buildFrameBasedKakaoKeywords(searchPlan || {}, {
+    includeWebQueries: true,
+  })
   const baseQueries = [
+    ...frameQueries,
     ...WALK_HEALING_FALLBACK_QUERIES,
     ...(includeCafe ? ['산책 카페', '공원 카페', '카페'] : []),
   ]
@@ -5892,7 +6967,7 @@ const buildWalkHealingFallbackStages = ({ locationQuery = '', includeCafe = fals
 
   return stages.map((stage) => ({
     ...stage,
-    queries: [...new Set(stage.queries.filter(Boolean))],
+    queries: filterKeywordsByExclusions(stage.queries, searchPlan || {}),
   })).filter((stage) => stage.queries.length)
 }
 
@@ -5900,7 +6975,19 @@ const getKakaoFallbackAllowedKeywords = ({
   recommendationIntent = '',
   categoryHint = '',
   query = '',
+  searchPlan = null,
 } = {}) => {
+  if (isFrameDrivenSearch(searchPlan || {})) {
+    return [
+      ...getFrameTargetObjects(searchPlan || {}),
+      ...getFrameResultMatchTerms(searchPlan || {}),
+      ...getFrameCandidatePlaceTypes(searchPlan || {}),
+      ...getFrameCandidateCategoryCodes(searchPlan || {}),
+    ].filter((keyword, index, keywords) => {
+      return keyword && keywords.indexOf(keyword) === index
+    })
+  }
+
   const text = normalizeLocationText(`${recommendationIntent} ${categoryHint} ${query}`)
   const foodMenuKeywords = buildFoodMenuFallbackQueries({ query })
 
@@ -5951,12 +7038,20 @@ const isRelevantKakaoFallbackCandidate = ({
   query = '',
   recommendationIntent = '',
   categoryHint = '',
+  searchPlan = null,
 } = {}) => {
-  const placeText = getPlaceTextForRule(place)
-  const allowedKeywords = getKakaoFallbackAllowedKeywords({
+  const recommendationIntentForScoring = getRecommendationIntentForScoring(
     recommendationIntent,
+    searchPlan || {},
+  )
+  const placeText = isFrameDrivenSearch(searchPlan || {})
+    ? getStructuredPlaceEvidenceText(place)
+    : getPlaceTextForRule(place)
+  const allowedKeywords = getKakaoFallbackAllowedKeywords({
+    recommendationIntent: recommendationIntentForScoring,
     categoryHint,
     query,
+    searchPlan,
   })
 
   if (!allowedKeywords.length) {
@@ -5967,7 +7062,7 @@ const isRelevantKakaoFallbackCandidate = ({
     return placeText.includes(normalizeLocationText(keyword))
   })
 
-  if (recommendationIntent === 'walk_healing') {
+  if (recommendationIntentForScoring === 'walk_healing') {
     return !getWalkHealingSuitability({
       place,
       query,
@@ -5978,7 +7073,7 @@ const isRelevantKakaoFallbackCandidate = ({
     return false
   }
 
-  if (recommendationIntent === 'waiting_place') {
+  if (recommendationIntentForScoring === 'waiting_place') {
     const blockedKeywords = ['음식점', '식당', '술집', '주점', '노래방', '편의점']
     return !blockedKeywords.some((keyword) => placeText.includes(normalizeLocationText(keyword)))
   }
@@ -5993,6 +7088,7 @@ const filterKakaoFallbackRawPlaces = ({
   query = '',
   recommendationIntent = '',
   categoryHint = '',
+  searchPlan = null,
 } = {}) => {
   return places.filter((place) => {
     const hasUrl = Boolean(place?.place_url || isKakaoPlaceId(place?.id))
@@ -6010,11 +7106,16 @@ const filterKakaoFallbackRawPlaces = ({
       }
     }
 
+    if (isPlaceExcludedByPlan(place, searchPlan || {})) {
+      return false
+    }
+
     return isRelevantKakaoFallbackCandidate({
       place,
       query,
       recommendationIntent,
       categoryHint,
+      searchPlan,
     })
   }).slice(0, KAKAO_FALLBACK_MAX_RESULTS)
 }
@@ -6033,13 +7134,16 @@ const runKakaoRecommendationFallbackSearch = async ({
   requestedConditions = [],
   radius = SEARCH_RADIUS,
 } = {}) => {
-  const fallbackSearchQueries = Array.isArray(fallbackQueries)
-    ? fallbackQueries
-    : buildKakaoRecommendationFallbackQueries({
-      query,
-      data,
-      parsedIntent,
-    })
+  const fallbackSearchQueries = filterKeywordsByExclusions(
+    Array.isArray(fallbackQueries)
+      ? fallbackQueries
+      : buildKakaoRecommendationFallbackQueries({
+        query,
+        data,
+        parsedIntent,
+      }),
+    parsedIntent || {},
+  )
 
   if (!fallbackSearchQueries.length) {
     return {
@@ -6089,6 +7193,7 @@ const runKakaoRecommendationFallbackSearch = async ({
         query,
         recommendationIntent,
         categoryHint,
+        searchPlan: parsedIntent,
       })
 
       console.debug('[메뉴 fallback query 결과]', {
@@ -6111,6 +7216,7 @@ const runKakaoRecommendationFallbackSearch = async ({
     query,
     recommendationIntent,
     categoryHint,
+    searchPlan: parsedIntent,
   })
   const savedTagDataByExternalId = await searchKakaoSavedTags(filteredPlaces)
 
@@ -6124,6 +7230,7 @@ const runKakaoRecommendationFallbackSearch = async ({
       isAncillaryIntent,
       fallbackCandidate: true,
       requestedConditions,
+      searchPlan: parsedIntent,
     }),
     rawCount,
     dedupedCount: dedupedRawPlaces.length,
@@ -6153,6 +7260,7 @@ const runWalkHealingFallbackSearch = async ({
   const stages = buildWalkHealingFallbackStages({
     locationQuery,
     includeCafe: hasExplicitWalkCafeIntent(query, parsedIntent),
+    searchPlan: parsedIntent,
   })
   const summary = {
     results: [],
@@ -6383,6 +7491,7 @@ const convertRecommendationPlaces = (
     preferredTags = [],
     recommendationIntent = '',
     requestedConditions = [],
+    searchPlan = null,
   } = {},
 ) => {
   return toArray(places).map((place) => {
@@ -6450,6 +7559,17 @@ const convertRecommendationPlaces = (
       tagDetails: toArray(place.tag_details),
       matchedTagLabels: toDisplayList(place.matched_tag_labels),
       missingTagLabels: toDisplayList(place.missing_tag_labels),
+      matchedEvidence: toArray(place.matched_evidence),
+      matchedCategoryCodes: toDisplayList(place.matched_category_codes),
+      relevanceScore: Number(place.relevance_score || 0),
+      relevanceSource: getTextValue(place.relevance_source),
+      frameMatchStrength: getTextValue(place.frame_match_strength || place.frameMatchStrength),
+      frame_match_strength: getTextValue(place.frame_match_strength || place.frameMatchStrength),
+      scoreCapReasons: toDisplayList(place.score_breakdown?.score_cap_reasons),
+      score_cap_reasons: toDisplayList(place.score_breakdown?.score_cap_reasons),
+      executionMode: getTextValue(place.execution_mode),
+      planSource: getTextValue(place.plan_source),
+      placeNatures: toDisplayList(place.place_natures),
       recommendationSourceLabel: getTextValue(place.source_label),
       recommendationConfidenceLabel: getTextValue(place.confidence_label),
       recommendationFallbackLabel: getTextValue(place.fallback_label),
@@ -6485,7 +7605,9 @@ const convertRecommendationPlaces = (
       console.warn('[추천 결과 변환 실패]', { place, error })
       return null
     }
-  }).filter(Boolean)
+  }).filter(Boolean).filter((place) => {
+    return !isPlaceExcludedByPlan(place, searchPlan || {})
+  })
 }
 
 const assignMarkerLabels = (places) => {
@@ -6538,8 +7660,19 @@ const buildAiWebTargetQuery = ({
 
 const buildAiWebSearchPlanPayload = (parsedIntent = null, condition = {}, originalQuery = '') => {
   const source = parsedIntent || {}
-  const menuKeywords = condition?.menu_keywords || source.menu_keywords || []
-  const placeTypeKeywords = condition?.place_type_keywords || source.place_type_keywords || []
+  const placeIntentFrame = getSearchPlanFrame(source)
+  const menuKeywords = getPlannerList(condition?.menu_keywords || source.menu_keywords || [])
+  const placeTypeKeywords = [
+    ...getPlannerList(condition?.place_type_keywords || source.place_type_keywords || []),
+    ...getFrameCandidatePlaceTypes(source),
+  ].filter((keyword, index, list) => keyword && list.indexOf(keyword) === index)
+  const constraints = getFrameConstraints(source)
+  const exclusions = getFrameExclusions(source)
+  const webSearchQueries = filterKeywordsByExclusions(getFrameWebSearchQueries(source), source)
+  const kakaoKeywordCandidates = buildFrameBasedKakaoKeywords(source, { includeWebQueries: false })
+  const sourceRequestedConditions = Array.isArray(source.requestedConditions)
+    ? source.requestedConditions
+    : []
   const rawTarget = source.targetQuery || source.targetKeyword || condition?.keyword || originalQuery
 
   return {
@@ -6553,11 +7686,21 @@ const buildAiWebSearchPlanPayload = (parsedIntent = null, condition = {}, origin
     }),
     targetType: source.targetType || '',
     categoryHint: source.categoryHint || '',
-    requestedConditions: Array.isArray(source.requestedConditions)
-      ? source.requestedConditions
-      : [],
+    requestedConditions: [
+      ...sourceRequestedConditions,
+      ...constraints,
+    ],
     menu_keywords: menuKeywords,
     place_type_keywords: placeTypeKeywords,
+    place_intent_frame: placeIntentFrame,
+    target_objects: getFrameTargetObjects(source),
+    candidate_place_types: getFrameCandidatePlaceTypes(source),
+    constraints,
+    exclusions,
+    ranking_policy: getFrameRankingPolicy(source),
+    display_label: getFrameDisplayLabel(source),
+    web_search_queries: webSearchQueries,
+    kakaoKeywordCandidates,
   }
 }
 
@@ -6611,6 +7754,13 @@ const setAiWebSearchContext = ({
   aiWebSearchCandidates.value = []
   webReferenceResults.value = []
   aiWebSearchLastResult.value = null
+
+  if (import.meta.env.DEV) {
+    console.debug('[AI 웹 검색 context]', getSearchPlanDebugSnapshot(aiWebSearchContext.value.searchPlan, {
+      rawQuery: query,
+      locationHint,
+    }))
+  }
 }
 
 const getSearchLogAuthToken = () => {
@@ -6663,6 +7813,14 @@ const buildSearchPlanSnapshotForLog = (searchPlan = {}) => {
     'categoryHint',
     'confidence',
     'fallbackReason',
+    'execution_mode',
+    'executionMode',
+    'plan_source',
+    'planSource',
+    'location_mode',
+    'locationMode',
+    'display_label',
+    'displayLabel',
   ]
 
   snapshotFields.forEach((fieldName) => {
@@ -6674,6 +7832,21 @@ const buildSearchPlanSnapshotForLog = (searchPlan = {}) => {
     snapshot.recommendationIntent = searchPlan.recommendationIntent
   } else if (searchPlan?.recommendationIntent) {
     snapshot.recommendationIntent = true
+  }
+
+  const frame = getSearchPlanFrame(searchPlan)
+  if (Object.keys(frame).length) {
+    snapshot.place_intent_frame = {
+      situation: getTextValue(frame.situation),
+      display_label: getFrameDisplayLabel(searchPlan),
+      anchor_location: getFrameAnchorLocation(searchPlan),
+      location_mode: getFrameLocationMode(searchPlan),
+      candidate_category_codes: getFrameCandidateCategoryCodes(searchPlan),
+      candidate_place_types: getFrameCandidatePlaceTypes(searchPlan),
+      constraints: getFrameConstraints(searchPlan),
+      exclusions: getFrameExclusions(searchPlan),
+      result_match_terms: getFrameResultMatchTerms(searchPlan),
+    }
   }
 
   return snapshot
@@ -6907,6 +8080,7 @@ const searchAroundCenter = async ({
   baseLabel,
   preferredTags = [],
   recommendationIntent = '',
+  searchPlan = null,
 }) => {
   loadingMessage.value = '주변 장소 검색 중'
   const centerLatLng = new window.kakao.maps.LatLng(center.lat, center.lng)
@@ -6921,15 +8095,21 @@ const searchAroundCenter = async ({
     searchOptions.radius = radius
   }
 
-  const searchKeywords = kakaoKeywordCandidates.length
-    ? kakaoKeywordCandidates
-    : [targetKeyword]
-  const categoryHint = activeSearchPlan.value?.categoryHint || ''
-  const isAncillaryIntent = activeSearchPlan.value?.isAncillaryIntent || false
-  const requestedConditions = activeSearchPlan.value?.requestedConditions || []
+  const resolvedSearchPlan = searchPlan || activeSearchPlan.value || {}
+  const searchKeywords = filterKeywordsByExclusions(
+    [
+      ...buildFrameBasedKakaoKeywords(resolvedSearchPlan, { includeWebQueries: false }),
+      ...getPlannerList(kakaoKeywordCandidates),
+      targetKeyword,
+    ],
+    resolvedSearchPlan,
+  )
+  const categoryHint = resolvedSearchPlan?.categoryHint || ''
+  const isAncillaryIntent = resolvedSearchPlan?.isAncillaryIntent || false
+  const requestedConditions = resolvedSearchPlan?.requestedConditions || []
   let kakaoPlaces = await runKakaoKeywordCandidateSearch(
     placesService,
-    searchKeywords,
+    searchKeywords.length ? searchKeywords : [targetKeyword],
     searchOptions,
     { maxPages: 1 },
   )
@@ -6943,8 +8123,9 @@ const searchAroundCenter = async ({
       recommendationIntent,
       isAncillaryIntent,
     },
-    fallbackKeyword: activeSearchPlan.value?.mainPlaceFallbackKeyword || '',
+    fallbackKeyword: resolvedSearchPlan?.mainPlaceFallbackKeyword || '',
   })
+  kakaoPlaces = filterPlacesByPlanExclusions(kakaoPlaces, resolvedSearchPlan)
 
   const shouldUseDbPlaces = shouldAppendDbPlaces(targetKeyword)
   const [savedTagDataByExternalId, dbPlaces] = await Promise.all([
@@ -6969,6 +8150,7 @@ const searchAroundCenter = async ({
       categoryHint,
       isAncillaryIntent,
       requestedConditions,
+      searchPlan: resolvedSearchPlan,
     },
   )
   const dedupedResults = shouldUseDbPlaces
@@ -7664,18 +8846,14 @@ const resolveBaseLocation = async ({
 }
 
 const getSearchPlanLocationQuery = (searchPlan = {}) => {
-  return getPlannerText(
-    searchPlan.locationQuery ||
-    searchPlan.baseLocationQuery ||
-    searchPlan.baseKeyword,
-  )
+  return getResolvedSearchPlanLocationQuery(searchPlan)
 }
 
 const shouldResolveBaseLocation = (plan = {}, response = null) => {
   const responsePlan = response?.search_plan || plan?.conversationalSearchPlan?.search_plan || {}
   const locationQuery = getPlannerText(
-    getSearchPlanValue(responsePlan, 'locationQuery', 'location_query', 'baseLocationQuery', 'base_location_query') ||
-    getSearchPlanValue(plan, 'locationQuery', 'baseLocationQuery'),
+    getResolvedSearchPlanLocationQuery(responsePlan) ||
+    getResolvedSearchPlanLocationQuery(plan),
   )
 
   if (!locationQuery) return false
@@ -7761,7 +8939,15 @@ const resolveSearchPlanLocationQuery = async ({
   }
 }
 
-const getKakaoKeywordForAiSearch = (data, query) => {
+const getKakaoKeywordForAiSearch = (data, query, parsedIntent = null) => {
+  const planKeyword = buildFrameBasedKakaoKeywords(parsedIntent || {}, {
+    includeWebQueries: false,
+  })[0]
+
+  if (planKeyword) {
+    return planKeyword
+  }
+
   const condition = getRecommendationConditionData(data)
   const categories = condition?.categories || []
   const categoryKeyword = categories
@@ -7797,15 +8983,50 @@ const runAiMapSearchAtCenter = async ({
   const isAncillaryIntent = parsedIntent?.isAncillaryIntent || false
   const data = await aiSearchRecommendations({
     query: targetQuery,
+    originalQuery,
     lat: center.lat,
     lng: center.lng,
     limit: DB_SEARCH_RESULT_COUNT,
+    searchPlan: parsedIntent,
+    search_plan: parsedIntent,
+    place_intent_frame: parsedIntent?.placeIntentFrame || parsedIntent?.place_intent_frame || {},
+    target_objects: getFrameTargetObjects(parsedIntent || {}),
+    candidate_place_types: parsedIntent?.candidatePlaceTypes || parsedIntent?.candidate_place_types || [],
+    constraints: parsedIntent?.constraints || [],
+    exclusions: parsedIntent?.exclusions || [],
+    ranking_policy: getFrameRankingPolicy(parsedIntent || {}),
   })
+  if (import.meta.env.DEV) {
+    console.debug('[AI 추천 API 응답]', {
+      query: originalQuery,
+      targetQuery,
+      executionMode: data?.execution_mode,
+      planSource: data?.plan_source,
+      relevantResultCount: data?.relevant_result_count,
+      parserProvider: data?.ai_parse?.parser_provider,
+      parserFallback: data?.ai_parse?.parser_fallback,
+      aiFallbackReason: data?.ai_parse?.ai_fallback_reason || data?.ai_fallback_reason,
+      locationMode: getFrameLocationMode(data?.place_intent_frame ? { place_intent_frame: data.place_intent_frame } : parsedIntent),
+      anchorLocation: getFrameAnchorLocation(data?.place_intent_frame ? { place_intent_frame: data.place_intent_frame } : parsedIntent),
+      locationQuery: parsedIntent?.locationQuery || parsedIntent?.location_query || '',
+    })
+  }
+  const resultScenarioLabel = getFrameDisplayLabel(parsedIntent) ||
+    getIntentGroupDisplayLabel(parsedIntent?.intentGroup || parsedIntent?.intent_group || '') ||
+    getScenarioDisplayLabel(data?.scenario || recommendationIntent)
 
-  mapAiParse.value = data.ai_parse || null
+  mapAiParse.value = data.ai_parse || {
+    parser_provider: data.parser_provider || '',
+    parser_fallback: data.parser_fallback ?? false,
+    execution_mode: data.execution_mode || '',
+    plan_source: data.plan_source || '',
+    place_intent_frame: data.place_intent_frame || {},
+    ai_fallback_reason: data.ai_fallback_reason || '',
+  }
 
   if (data.blocked || data.ai_parse?.blocked || data.ai_parse?.is_searchable === false) {
     clearSearchResults()
+    searchResultStatus.value = 'error'
     selectedPlace.value = null
     showDetailPanel.value = false
     detailFrameError.value = false
@@ -7814,17 +9035,23 @@ const runAiMapSearchAtCenter = async ({
   }
 
   const dbResults = Array.isArray(data.results) ? data.results : []
-  const recommendationResults = convertRecommendationPlaces(dbResults, {
+  const rawRecommendationResults = convertRecommendationPlaces(dbResults, {
     preferredTags,
-    recommendationIntent,
+    recommendationIntent: getRecommendationIntentForScoring(recommendationIntent, parsedIntent || {}),
     requestedConditions,
+    searchPlan: parsedIntent,
   })
+  const frameDirectMatchCount = getFrameDirectMatchCount(rawRecommendationResults, parsedIntent || {})
+  const recommendationResults = filterFrameDirectMatchedResults(rawRecommendationResults, parsedIntent || {})
+  const relevantDbResultCount = Number(
+    data.relevant_result_count ?? frameDirectMatchCount ?? recommendationResults.length,
+  )
   if (recommendationResults.length) {
     setMainResults(recommendationResults)
     resultFilterMode.value = 'all'
     visibleCount.value = DISPLAY_BATCH_SIZE
     resultSourceLabel.value = 'AI 검색 결과'
-    resultMessageSuffix.value = `DB ${recommendationResults.length}개 · ${getScenarioDisplayLabel(data.scenario)}`
+    resultMessageSuffix.value = `DB ${recommendationResults.length}개 · ${resultScenarioLabel}`
     placeListItemRefs.value = {}
     mapFitBoundsKey.value += 1
     activeResultView.value = 'results'
@@ -7857,6 +9084,7 @@ const runAiMapSearchAtCenter = async ({
     categoryHint,
     data,
     menuProfile: menuSearchProfile,
+    parsedIntent,
   })
   kakaoFallbackQueries = buildKakaoRecommendationFallbackQueries({
     query: targetQuery,
@@ -7879,16 +9107,20 @@ const runAiMapSearchAtCenter = async ({
   }
 
   if (import.meta.env.DEV) {
-    console.debug('[카카오 fallback 시작]', {
+    console.debug('[카카오 fallback 시작]', getSearchPlanDebugSnapshot(parsedIntent || {}, {
       query: targetQuery,
+      rawQuery: originalQuery,
       originalQuery,
       dbResultCount: recommendationResults.length,
+      rawDbResultCount: rawRecommendationResults.length,
+      frameDirectMatchCount,
       directMenuDbMatchCount,
       menuIntent: menuSearchProfile.menuIntent,
       shouldRunFallback,
       center,
       fallbackQueries: kakaoFallbackQueries,
-    })
+      recommendationIntentForScoring: getRecommendationIntentForScoring(recommendationIntent, parsedIntent || {}),
+    }))
   }
 
   if (shouldRunFallback) {
@@ -8037,6 +9269,7 @@ const runAiMapSearchAtCenter = async ({
       aiWebSearchStatusData: data.ai_web_search || null,
       existingResultsSummary: {
         db_count: 0,
+        relevant_result_count: 0,
         kakao_fallback_count: 0,
         total_count: 0,
         raw_total_count: 0,
@@ -8081,7 +9314,7 @@ const runAiMapSearchAtCenter = async ({
   searchResultStatus.value = 'success'
   clearMainSearchErrorState()
   resultSourceLabel.value = 'AI 검색 결과'
-  resultMessageSuffix.value = `DB ${recommendationResults.length}개, 카카오 fallback ${kakaoResults.length}개 · ${getScenarioDisplayLabel(data.scenario)}`
+  resultMessageSuffix.value = `DB ${recommendationResults.length}개, 카카오 fallback ${kakaoResults.length}개 · ${resultScenarioLabel}`
   placeListItemRefs.value = {}
   mapFitBoundsKey.value += 1
   activeResultView.value = 'results'
@@ -8101,12 +9334,21 @@ const runAiMapSearchAtCenter = async ({
     condition: recommendationCondition,
     aiWebSearchStatusData: data.ai_web_search || null,
     existingResultsSummary: {
-      db_count: menuSearchProfile.menuIntent ? directMenuDbMatchCount : recommendationResults.length,
+      db_count: isFrameDrivenSearch(parsedIntent || {})
+        ? relevantDbResultCount
+        : (menuSearchProfile.menuIntent ? directMenuDbMatchCount : recommendationResults.length),
+      relevant_result_count: relevantDbResultCount,
       raw_db_count: recommendationResults.length,
       kakao_fallback_count: kakaoResults.length,
-      total_count: (menuSearchProfile.menuIntent ? directMenuDbMatchCount : recommendationResults.length) + kakaoResults.length,
+      total_count: (
+        isFrameDrivenSearch(parsedIntent || {})
+          ? relevantDbResultCount
+          : (menuSearchProfile.menuIntent ? directMenuDbMatchCount : recommendationResults.length)
+      ) + kakaoResults.length,
       raw_total_count: finalResults.length,
-      direct_match_count: directMenuDbMatchCount,
+      direct_match_count: isFrameDrivenSearch(parsedIntent || {})
+        ? frameDirectMatchCount
+        : directMenuDbMatchCount,
       menu_intent: menuSearchProfile.menuIntent,
       weak_match_count: recommendationResults.filter((place) => {
         return (
@@ -8553,11 +9795,22 @@ const runRegionMapSearch = async ({
   const isAncillaryIntent = parsedIntent?.isAncillaryIntent || false
   sortMode.value = recommendationIntent ? 'recommendation' : 'distance'
   const categoryKeyword = parsedIntent?.categoryKeyword || getRegionSearchCoreKeyword(targetQuery)
-  const searchKeywords = [
-    `${locationQuery} ${targetQuery}`.trim(),
-    ...toDisplayList(parsedIntent?.kakaoKeywordCandidates).map((keyword) => `${locationQuery} ${keyword}`.trim()),
-    `${locationQuery} ${categoryKeyword}`.trim(),
-  ].filter((keyword, index, keywords) => keyword && keywords.indexOf(keyword) === index)
+  const frameSearchKeywords = applyLocationToSearchKeywords(
+    locationQuery,
+    [
+      ...buildFrameBasedKakaoKeywords(parsedIntent || {}, { includeWebQueries: false }),
+      ...getFrameWebSearchQueries(parsedIntent || {}),
+    ],
+  )
+  const searchKeywords = filterKeywordsByExclusions(
+    [
+      ...frameSearchKeywords,
+      `${locationQuery} ${targetQuery}`.trim(),
+      ...applyLocationToSearchKeywords(locationQuery, getPlannerList(parsedIntent?.kakaoKeywordCandidates)),
+      `${locationQuery} ${categoryKeyword}`.trim(),
+    ],
+    parsedIntent || {},
+  ).filter((keyword, index, keywords) => keyword && keywords.indexOf(keyword) === index)
   let kakaoPlaces = await runKakaoKeywordCandidateSearch(placesService, searchKeywords, {
     sort: window.kakao.maps.services.SortBy.ACCURACY,
   }, { maxPages: 1 })
@@ -8575,6 +9828,7 @@ const runRegionMapSearch = async ({
     },
     fallbackKeyword: parsedIntent?.mainPlaceFallbackKeyword || '',
   })
+  kakaoPlaces = filterPlacesByPlanExclusions(kakaoPlaces, parsedIntent || {})
 
   if (!kakaoPlaces.length) {
     clearSearchResults()
@@ -8601,6 +9855,7 @@ const runRegionMapSearch = async ({
     categoryHint,
     isAncillaryIntent,
     requestedConditions,
+    searchPlan: parsedIntent,
   })
   const groups = groupKakaoPlacesByRegion(kakaoPlaces)
 
@@ -8739,6 +9994,7 @@ const searchKakaoPlaces = async ({ useMapBounds = false, searchPlanOverride = nu
         bounds: searchBounds,
         radius: searchRadius,
         baseLabel: '현재 지도 화면 기준',
+        searchPlan: parsedKeyword,
       })
 
       return
@@ -8755,6 +10011,7 @@ const searchKakaoPlaces = async ({ useMapBounds = false, searchPlanOverride = nu
         kakaoKeywordCandidates: parsedKeyword.kakaoKeywordCandidates,
         center: currentContext.center,
         baseLabel: currentContext.baseLabel,
+        searchPlan: parsedKeyword,
       })
 
       return
@@ -8781,6 +10038,7 @@ const searchKakaoPlaces = async ({ useMapBounds = false, searchPlanOverride = nu
       kakaoKeywordCandidates: parsedKeyword.kakaoKeywordCandidates,
       center: resolvedBase.center,
       baseLabel: resolvedBase.label,
+      searchPlan: parsedKeyword,
     })
     pendingBaseLocationSearch.value = null
   } catch (error) {
@@ -8862,6 +10120,7 @@ const searchAiRecommendationsOnMap = async (searchPlanOverride = null) => {
           kakaoKeywordCandidates: resolvedParsedQuery.kakaoKeywordCandidates,
           center: resolvedSearchCenter,
           baseLabel,
+          searchPlan: resolvedParsedQuery,
         })
         return
       }
@@ -8958,19 +10217,35 @@ const performUnifiedMapSearch = async ({
   }
 
   conversationModeStarted.value = true
+  isSearchingMap.value = true
+  loadingMessage.value = '검색 의도 해석 중'
+  searchResultStatus.value = 'loading'
   const previousContext = getConversationalPreviousContext()
+  const pendingClarificationForFollowUp = !useMapBounds && pendingClarification.value
+    ? {
+      ...pendingClarification.value,
+      partial_search_plan: {
+        ...(pendingClarification.value.partial_search_plan || {}),
+      },
+    }
+    : null
   const previousMainResults = [...mainResults.value]
   const previousFallbackResults = [...fallbackResults.value]
   const previousWebReferenceResults = [...webReferenceResults.value]
   const clarificationFollowUpPlan = useMapBounds
     ? null
     : buildClarificationFollowUpPlan(keyword)
-  beginMainSearch({ preserveClarificationThread: Boolean(clarificationFollowUpPlan) })
+  const clarificationFollowUpPayload = !clarificationFollowUpPlan && pendingClarificationForFollowUp
+    ? buildClarificationFollowUpPayload(pendingClarificationForFollowUp, keyword)
+    : {}
+  beginMainSearch({
+    preserveClarificationThread: Boolean(clarificationFollowUpPlan || pendingClarificationForFollowUp),
+  })
 
   let conversationalPlan = clarificationFollowUpPlan || (
     useMapBounds
       ? null
-      : await resolveConversationalSearchPlan(keyword, previousContext)
+      : await resolveConversationalSearchPlan(keyword, previousContext, clarificationFollowUpPayload)
   )
 
   if (clarificationFollowUpPlan) {
@@ -8988,16 +10263,36 @@ const performUnifiedMapSearch = async ({
     conversationalPlan.action !== 'search'
   ) {
     if (
-      conversationalPlan.action === 'ask_clarification' ||
-      (conversationalPlan.action === 'refine_previous_search' && previousContext)
+      conversationalPlan.action === 'refine_previous_search' && previousContext
     ) {
       mainResults.value = previousMainResults
       fallbackResults.value = previousFallbackResults
       webReferenceResults.value = previousWebReferenceResults
       syncLegacySearchResults()
+    } else {
+      mainResults.value = []
+      fallbackResults.value = []
+      webReferenceResults.value = []
+      syncLegacySearchResults()
+      resultFilterMode.value = 'all'
+      visibleCount.value = DISPLAY_BATCH_SIZE
+      selectedPlace.value = null
+      showDetailPanel.value = false
+      detailFrameError.value = false
+      isPlaceDetailCollapsed.value = false
+      resetAiWebSearchState()
     }
 
     activeSearchPlan.value = adaptConversationalSearchPlan(conversationalPlan, keyword)
+    mapAiParse.value = {
+      parser_provider: conversationalPlan.parser_provider || '',
+      parser_fallback: conversationalPlan.parser_fallback ?? null,
+      execution_mode: conversationalPlan.execution_mode || '',
+      plan_source: conversationalPlan.plan_source || '',
+      ai_fallback_reason: conversationalPlan.ai_fallback_reason || '',
+      fallback_reason: conversationalPlan.fallback_reason || '',
+      place_intent_frame: conversationalPlan.search_plan?.place_intent_frame || {},
+    }
     const fallbackMessage = conversationalPlan.action === 'blocked'
       ? '해당 요청은 안전상 안내하기 어렵습니다.'
       : conversationalPlan.action === 'out_of_scope'
@@ -9036,11 +10331,21 @@ const performUnifiedMapSearch = async ({
       : 'distance'
     aiSearchKeyword.value = keyword
     await searchAiRecommendationsOnMap(parsedKeyword)
+    if (!baseLocationCandidates.value.length && loadingMessage.value === '검색 의도 해석 중') {
+      isSearchingMap.value = false
+      loadingMessage.value = ''
+      searchResultStatus.value = displayResults.value.length ? 'success' : 'idle'
+    }
     return
   }
 
   sortMode.value = 'distance'
   await searchKakaoPlaces({ useMapBounds, searchPlanOverride: parsedKeyword })
+  if (!baseLocationCandidates.value.length && loadingMessage.value === '검색 의도 해석 중') {
+    isSearchingMap.value = false
+    loadingMessage.value = ''
+    searchResultStatus.value = displayResults.value.length ? 'success' : 'idle'
+  }
 }
 
 const runAiPresetSearch = async (query) => {
@@ -9095,6 +10400,7 @@ const selectBaseLocationCandidate = async (candidate) => {
         kakaoKeywordCandidates: pendingSearch.parsedIntent?.kakaoKeywordCandidates || [],
         center: resolvedBase.center,
         baseLabel: resolvedBase.label,
+        searchPlan: pendingSearch.parsedIntent,
       })
       return
     }
@@ -9499,6 +10805,21 @@ const handleDetailFrameError = () => {
             </div>
           </div>
 
+          <div
+            v-if="clarificationOptions.length"
+            class="clarification-options"
+          >
+            <button
+              v-for="option in clarificationOptions"
+              :key="option"
+              type="button"
+              :disabled="isSearchingMap"
+              @click="submitClarificationOption(option)"
+            >
+              {{ option }}
+            </button>
+          </div>
+
           <form
             v-if="shouldShowFollowUpInput"
             class="clarification-follow-up"
@@ -9509,7 +10830,7 @@ const handleDetailFrameError = () => {
               ref="followUpInputRef"
               v-model="followUpInput"
               type="text"
-              placeholder="예: 현재 위치, 서면, 하단역"
+              placeholder="예: 쉬는 곳, 먹을 곳, 산책할 곳, 서면"
               :disabled="isSearchingMap"
               @keydown.stop
             />
@@ -9542,7 +10863,7 @@ const handleDetailFrameError = () => {
         </div>
 
         <div
-          v-if="activeTab === 'search' && hasSearchExperienceContent"
+          v-if="activeTab === 'search' && hasSearchExperienceContent && !isClarificationOnlyState"
           class="view-switch"
           :class="{ 'is-map-active': activeResultView === 'map' }"
           aria-label="결과와 지도 보기 전환"
@@ -9619,6 +10940,7 @@ const handleDetailFrameError = () => {
       </section>
 
       <div
+        v-if="!isClarificationOnlyState"
         class="map-content search-reveal-area"
         :class="{
           'has-result-list': displayResults.length || isSearchingMap || shouldShowAiWebSearchPanel,
@@ -10904,6 +12226,35 @@ h1 {
   overflow: visible;
   color: #1f2937;
   -webkit-line-clamp: unset;
+}
+
+.clarification-options {
+  width: min(520px, 100%);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.clarification-options button {
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid #d0d5dd;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #344054;
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.clarification-options button:hover:not(:disabled) {
+  border-color: #2563eb;
+  color: #1d4ed8;
+}
+
+.clarification-options button:disabled {
+  color: #98a2b3;
+  cursor: not-allowed;
 }
 
 .clarification-follow-up {

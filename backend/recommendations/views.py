@@ -31,7 +31,10 @@ from .services.ai_web_search_provider import (
     get_ai_web_search_result,
     get_ai_web_search_status,
 )
-from .services.conversational_search_planner import build_conversational_search_plan
+from .services.conversational_search_planner import (
+    build_conversational_search_plan,
+    sync_frame_location_to_search_plan,
+)
 from .services.db_recommender import search_db_recommendations
 from .services.place_urls import get_kakao_place_url
 from .services.smoking_area_data import (
@@ -754,6 +757,27 @@ def search_safety_check(request):
 @api_view(["POST"])
 def conversational_search_plan(request):
     query = request.data.get("query", "")
+    previous_context = (
+        request.data.get("previous_search_context")
+        or request.data.get("previous_context")
+    )
+    previous_search_plan = request.data.get("previous_search_plan")
+    pending_clarification_frame = request.data.get("pending_clarification_frame")
+    if isinstance(previous_search_plan, dict) or isinstance(pending_clarification_frame, dict):
+        if not isinstance(previous_context, dict):
+            previous_context = {}
+        previous_context = {
+            **previous_context,
+            "search_plan": previous_search_plan or previous_context.get("search_plan") or {},
+            "pending_clarification_frame": (
+                pending_clarification_frame
+                or previous_context.get("pending_clarification_frame")
+                or {}
+            ),
+            "is_clarification_followup": bool(request.data.get("is_clarification_followup")),
+            "clarification_answer": request.data.get("clarification_answer", ""),
+            "original_query": request.data.get("original_query", ""),
+        }
 
     user = request.user if request.user.is_authenticated else None
     data = build_conversational_search_plan(
@@ -762,38 +786,306 @@ def conversational_search_plan(request):
         lat=request.data.get("lat"),
         lng=request.data.get("lng"),
         map_center=request.data.get("map_center"),
-        previous_context=(
-            request.data.get("previous_search_context")
-            or request.data.get("previous_context")
-        ),
+        previous_context=previous_context,
     )
+    _sync_conversational_search_plan_response(data)
     return Response(data)
+
+
+def _sync_conversational_search_plan_response(data):
+    if not isinstance(data, dict):
+        return data
+
+    action = data.get("decision_action") or data.get("action") or ""
+    if action:
+        data["decision_action"] = action
+        data["decisionAction"] = action
+    if action == "ask_clarification":
+        data["type"] = "clarification"
+        data["can_search_now"] = False
+        data["results"] = []
+        data["clarification_options"] = _as_request_list(
+            data.get("clarification_options") or data.get("clarificationOptions") or []
+        )
+    elif action in {"blocked", "out_of_scope"}:
+        data["type"] = action
+        data["can_search_now"] = False
+        data["results"] = []
+    elif action:
+        data["type"] = "search" if action == "search" else action
+        data["can_search_now"] = action == "search"
+
+    search_plan = data.get("search_plan")
+    if not isinstance(search_plan, dict):
+        return data
+    if action in {"blocked", "out_of_scope"} and not search_plan:
+        return data
+
+    search_plan["decision_action"] = action
+    search_plan["decisionAction"] = action
+    search_plan["can_search_now"] = action == "search"
+    if action == "ask_clarification":
+        search_plan["clarification_question"] = data.get("clarification_question", "")
+        search_plan["clarification_options"] = data.get("clarification_options", [])
+
+    ai_debug = data.get("ai_debug")
+    if not isinstance(ai_debug, dict):
+        ai_debug = {}
+
+    frame = search_plan.get("place_intent_frame") or search_plan.get("placeIntentFrame")
+    if not isinstance(frame, dict):
+        frame = {}
+    elif action:
+        frame["decision_action"] = action
+        frame["decisionAction"] = action
+        frame["can_search_now"] = action == "search"
+        frame["canSearchNow"] = action == "search"
+        frame["normalized_user_intent"] = (
+            frame.get("normalized_user_intent")
+            or frame.get("normalizedUserIntent")
+            or data.get("user_intent_summary")
+            or frame.get("user_goal")
+            or ""
+        )
+        frame["normalizedUserIntent"] = frame["normalized_user_intent"]
+        if action == "ask_clarification":
+            frame["clarification_question"] = (
+                frame.get("clarification_question")
+                or frame.get("clarificationQuestion")
+                or data.get("clarification_question")
+                or ""
+            )
+            frame["clarificationQuestion"] = frame["clarification_question"]
+            frame["clarification_options"] = _as_request_list(
+                frame.get("clarification_options")
+                or frame.get("clarificationOptions")
+                or data.get("clarification_options")
+                or []
+            )
+            frame["clarificationOptions"] = frame["clarification_options"]
+        search_plan["place_intent_frame"] = frame
+
+    location_repair = ai_debug.get("location_repair")
+    if isinstance(location_repair, dict):
+        repair_anchor = (
+            location_repair.get("frame_anchor_location")
+            or location_repair.get("explicit_anchor_location")
+            or ""
+        )
+        repair_location_mode = (
+            location_repair.get("frame_location_mode")
+            or location_repair.get("checked_location_mode")
+            or ""
+        )
+        repair_status = location_repair.get("status") or ""
+        frame_anchor = frame.get("anchor_location") or frame.get("anchorLocation") or ""
+        if (
+            repair_anchor
+            and (repair_location_mode == "explicit" or repair_status == "repaired")
+            and not frame_anchor
+        ):
+            frame["anchor_location"] = repair_anchor
+            frame["anchorLocation"] = repair_anchor
+            frame["location_mode"] = "explicit"
+            frame["locationMode"] = "explicit"
+            search_plan["place_intent_frame"] = frame
+
+    synced_anchor = sync_frame_location_to_search_plan(search_plan)
+    if synced_anchor:
+        data["location"] = {
+            "text": synced_anchor,
+            "is_explicit": True,
+            "fallback": "",
+        }
+        execution_policy = data.get("execution_policy")
+        if not isinstance(execution_policy, dict):
+            execution_policy = {}
+        execution_policy["preserve_explicit_location"] = True
+        data["execution_policy"] = execution_policy
+
+    final_frame = search_plan.get("place_intent_frame") or search_plan.get("placeIntentFrame") or {}
+    if not isinstance(final_frame, dict):
+        final_frame = {}
+    ai_debug["final_search_plan"] = {
+        "final_search_plan_anchor_location": (
+            search_plan.get("anchorLocation")
+            or search_plan.get("anchor_location")
+            or ""
+        ),
+        "final_search_plan_locationQuery": (
+            search_plan.get("locationQuery")
+            or search_plan.get("location_query")
+            or ""
+        ),
+        "final_frame_anchor_location": (
+            final_frame.get("anchor_location")
+            or final_frame.get("anchorLocation")
+            or ""
+        ),
+        "final_frame_location_mode": (
+            final_frame.get("location_mode")
+            or final_frame.get("locationMode")
+            or ""
+        ),
+    }
+    data["ai_debug"] = ai_debug
+    data["search_plan"] = search_plan
+    return data
+
+
+def _as_request_list(value):
+    if value in (None, ""):
+        return []
+    if isinstance(value, list):
+        return value
+    return [value]
+
+
+def _get_request_search_plan(data):
+    search_plan = data.get("search_plan") or data.get("searchPlan") or {}
+    return search_plan if isinstance(search_plan, dict) else {}
+
+
+def _get_request_place_intent_frame(data, search_plan):
+    frame = (
+        data.get("place_intent_frame")
+        or data.get("placeIntentFrame")
+        or search_plan.get("place_intent_frame")
+        or search_plan.get("placeIntentFrame")
+        or {}
+    )
+    return frame if isinstance(frame, dict) else {}
+
+
+def _is_valid_request_frame(frame):
+    location_mode = str(frame.get("location_mode") or frame.get("locationMode") or "").strip()
+    if location_mode not in {"explicit", "current_context", "clarification_required"}:
+        return False
+    if location_mode == "explicit" and not str(frame.get("anchor_location") or frame.get("anchorLocation") or "").strip():
+        return False
+    return bool(
+        str(frame.get("user_goal") or frame.get("userGoal") or "").strip()
+        and str(frame.get("display_label") or frame.get("displayLabel") or "").strip()
+        and (
+            _as_request_list(frame.get("candidate_place_types") or frame.get("candidatePlaceTypes"))
+            or _as_request_list(frame.get("search_queries") or frame.get("searchQueries"))
+        )
+    )
+
+
+def _get_request_decision_action(data, search_plan, frame):
+    action = (
+        data.get("decision_action")
+        or data.get("decisionAction")
+        or search_plan.get("decision_action")
+        or search_plan.get("decisionAction")
+        or frame.get("decision_action")
+        or frame.get("decisionAction")
+        or ""
+    )
+    return str(action or "").strip()
+
+
+def _empty_decision_gate_response(action, search_plan, frame):
+    response_type = "clarification" if action == "ask_clarification" else action
+    question = (
+        search_plan.get("clarification_question")
+        or frame.get("clarification_question")
+        or frame.get("clarificationQuestion")
+        or ""
+    )
+    options = _as_request_list(
+        search_plan.get("clarification_options")
+        or frame.get("clarification_options")
+        or frame.get("clarificationOptions")
+        or []
+    )
+    return Response({
+        "scenario": action,
+        "type": response_type,
+        "decision_action": action,
+        "decisionAction": action,
+        "can_search_now": False,
+        "results": [],
+        "markers": [],
+        "count": 0,
+        "result_count": 0,
+        "relevant_result_count": 0,
+        "execution_policy": {
+            "run_search": False,
+            "preserve_explicit_location": False,
+            "allow_kakao_fallback": False,
+            "allow_ai_web_search_auto": False,
+            "merge_ai_web_results": False,
+        },
+        "clarification_question": question,
+        "clarification_options": options,
+        "ai_parse": {
+            "scenario": action,
+            "is_searchable": False,
+            "decision_action": action,
+            "can_search_now": False,
+            "parser_provider": search_plan.get("parser_provider") or "frame",
+            "parser_fallback": search_plan.get("parser_fallback") if "parser_fallback" in search_plan else False,
+            "execution_mode": search_plan.get("execution_mode") or "decision_gate",
+            "plan_source": search_plan.get("plan_source") or "ai",
+            "search_plan": search_plan,
+            "place_intent_frame": frame,
+        },
+        "execution_mode": search_plan.get("execution_mode") or "decision_gate",
+        "plan_source": search_plan.get("plan_source") or "ai",
+        "place_intent_frame": frame,
+        "ai_web_search": get_ai_web_search_status(),
+    })
 
 
 @api_view(["POST"])
 def ai_recommendation_search(request):
     query = request.data.get("query", "")
+    original_query = request.data.get("originalQuery") or request.data.get("original_query") or query
     lat = request.data.get("lat")
     lng = request.data.get("lng")
     limit = request.data.get("limit", 10)
     radius = request.data.get("radius")
+    search_plan = _get_request_search_plan(request.data)
+    place_intent_frame = _get_request_place_intent_frame(request.data, search_plan)
+    has_valid_frame = _is_valid_request_frame(place_intent_frame)
+    decision_action = _get_request_decision_action(request.data, search_plan, place_intent_frame)
 
-    parsed = parse_situation(query)
+    if decision_action in {"ask_clarification", "out_of_scope", "blocked"}:
+        return _empty_decision_gate_response(decision_action, search_plan, place_intent_frame)
 
-    if parsed.get("blocked") or parsed.get("is_searchable") is False:
+    safety_parse = parse_situation(original_query or query)
+
+    if safety_parse.get("blocked") or safety_parse.get("is_searchable") is False:
         return Response({
-            "scenario": parsed.get("scenario", "blocked"),
+            "scenario": safety_parse.get("scenario", "blocked"),
             "results": [],
             "count": 0,
             "blocked": True,
-            "reason": parsed.get("block_reason", "inappropriate_place_use"),
-            "message": parsed.get(
+            "reason": safety_parse.get("block_reason", "inappropriate_place_use"),
+            "message": safety_parse.get(
                 "user_message",
                 "요청하신 목적은 장소 추천으로 도와드리기 어렵습니다.",
             ),
-            "ai_parse": parsed,
+            "ai_parse": safety_parse,
             "ai_web_search": get_ai_web_search_status(),
         })
+
+    if has_valid_frame:
+        parsed = {
+            "scenario": search_plan.get("scenario") or place_intent_frame.get("situation") or "custom",
+            "situation_summary": place_intent_frame.get("display_label") or query,
+            "is_searchable": True,
+            "parser_provider": search_plan.get("parser_provider") or "frame",
+            "parser_fallback": False,
+            "plan_source": search_plan.get("plan_source") or search_plan.get("planSource") or "ai",
+            "execution_mode": "frame",
+            "search_plan": search_plan,
+            "place_intent_frame": place_intent_frame,
+        }
+    else:
+        parsed = parse_situation(query)
 
     user = request.user if request.user.is_authenticated else None
     data = search_db_recommendations(
@@ -806,9 +1098,13 @@ def ai_recommendation_search(request):
         limit=limit,
         radius=radius,
         user=user,
+        search_plan=search_plan,
+        place_intent_frame=place_intent_frame,
     )
     data["ai_parse"] = parsed
     data["ai_web_search"] = get_ai_web_search_status()
+    data["execution_mode"] = data.get("execution_mode") or parsed.get("execution_mode") or "legacy"
+    data["plan_source"] = data.get("plan_source") or parsed.get("plan_source") or "legacy_fallback"
 
     return Response(data)
 

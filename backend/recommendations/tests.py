@@ -157,6 +157,1351 @@ class RecommendationSearchTests(TestCase):
         )
         return tag
 
+    def _frame_search_payload(self, frame, query="하단역인데 화장실 급해"):
+        search_plan = {
+            "scenario": "waiting_place",
+            "execution_mode": "frame",
+            "plan_source": "ai",
+            "place_intent_frame": frame,
+            "location_mode": frame.get("location_mode"),
+            "target_objects": frame.get("target_objects", []),
+            "candidate_category_codes": frame.get("candidate_category_codes", []),
+            "candidate_place_types": frame.get("candidate_place_types", []),
+            "search_queries": frame.get("search_queries", []),
+            "result_match_terms": frame.get("result_match_terms", []),
+            "constraints": frame.get("constraints", []),
+            "exclusions": frame.get("exclusions", []),
+            "ranking_policy": frame.get("ranking_policy", ""),
+        }
+        return {
+            "query": frame.get("display_label") or query,
+            "originalQuery": query,
+            "lat": 35.1556,
+            "lng": 129.0641,
+            "limit": 10,
+            "search_plan": search_plan,
+            "place_intent_frame": frame,
+        }
+
+    def _ai_planner_frame_response(
+        self,
+        *,
+        query,
+        display_label,
+        situation="general_place",
+        anchor_location="",
+        location_mode="current_context",
+        target_objects=None,
+        candidate_category_codes=None,
+        candidate_place_types=None,
+        search_queries=None,
+        result_match_terms=None,
+        constraints=None,
+        exclusions=None,
+        ranking_policy="evidence_first",
+        scenario="waiting_place",
+        can_search_now=True,
+    ):
+        frame = {
+            "decision_action": "search",
+            "user_goal": f"{display_label} 찾기",
+            "normalized_user_intent": f"{display_label} 장소 검색",
+            "anchor_location": anchor_location,
+            "location_mode": location_mode,
+            "situation": situation,
+            "display_label": display_label,
+            "target_objects": target_objects or [display_label],
+            "candidate_category_codes": candidate_category_codes or [],
+            "candidate_place_types": candidate_place_types or [display_label],
+            "search_queries": search_queries or [display_label],
+            "result_match_terms": result_match_terms or [display_label],
+            "constraints": constraints or [],
+            "exclusions": exclusions or [],
+            "preferred_place_natures": [],
+            "excluded_place_natures": [],
+            "ranking_policy": ranking_policy,
+            "missing_info": [],
+            "assumptions": [],
+            "clarification_question": "",
+            "clarification_options": [],
+            "can_search_now": can_search_now,
+            "confidence": 0.9,
+        }
+        return {
+            "action": "search",
+            "decision_action": "search",
+            "intent_type": "place_recommendation",
+            "user_intent_summary": f"{display_label} 검색 요청",
+            "message": "",
+            "location": {
+                "text": anchor_location,
+                "is_explicit": bool(anchor_location),
+                "fallback": "" if anchor_location else "current_location",
+            },
+            "targets": [display_label],
+            "conditions": constraints or [],
+            "preferences": [],
+            "avoid": exclusions or [],
+            "search_plan": {
+                "locationQuery": anchor_location,
+                "baseLocationQuery": anchor_location,
+                "targetQuery": display_label,
+                "scenario": scenario,
+                "categories": candidate_category_codes or [],
+                "place_intent_frame": frame,
+            },
+            "execution_policy": {
+                "run_search": can_search_now,
+                "preserve_explicit_location": bool(anchor_location),
+                "allow_kakao_fallback": True,
+                "allow_ai_web_search_auto": False,
+                "merge_ai_web_results": False,
+            },
+            "needs_clarification": False,
+            "clarification_question": "",
+            "clarification_options": [],
+            "confidence": 0.9,
+        }
+
+    @override_settings(
+        CONVERSATIONAL_SEARCH_AI_ENABLED=True,
+        AI_PROVIDER="gms",
+        GMS_API_KEY="fake-gms",
+        GMS_API_URL="https://example.invalid/parser",
+    )
+    @patch("recommendations.services.conversational_search_planner._call_gms_chat_json")
+    def test_conversational_plan_api_decision_action_search_cases(self, mock_ai):
+        cases = [
+            {
+                "query": "하단역인데 화장실 급해",
+                "ai": self._ai_planner_frame_response(
+                    query="하단역인데 화장실 급해",
+                    display_label="공중화장실",
+                    situation="toilet",
+                    anchor_location="하단역",
+                    location_mode="explicit",
+                    target_objects=["화장실"],
+                    candidate_category_codes=["toilet"],
+                    candidate_place_types=["공중화장실", "개방화장실", "화장실"],
+                    search_queries=["하단역 공중화장실", "하단역 화장실"],
+                    result_match_terms=["화장실", "공중화장실", "개방화장실"],
+                    constraints=["가까운 곳", "긴급"],
+                    ranking_policy="urgent_nearest",
+                    scenario="waiting_place",
+                ),
+                "repair": None,
+            },
+            {
+                "query": "사상역 근처 쌀국수 맛집",
+                "ai": self._ai_planner_frame_response(
+                    query="사상역 근처 쌀국수 맛집",
+                    display_label="쌀국수 맛집",
+                    situation="food",
+                    anchor_location="사상역",
+                    location_mode="explicit",
+                    target_objects=["쌀국수"],
+                    candidate_category_codes=["restaurant"],
+                    candidate_place_types=["음식점", "식당"],
+                    search_queries=["사상역 쌀국수", "사상역 쌀국수 맛집"],
+                    result_match_terms=["쌀국수", "베트남음식", "음식점"],
+                    scenario="restaurant",
+                ),
+                "repair": None,
+            },
+            {
+                "query": "달달한거 먹고 싶어",
+                "ai": self._ai_planner_frame_response(
+                    query="달달한거 먹고 싶어",
+                    display_label="달달한 음식",
+                    situation="food",
+                    location_mode="current_context",
+                    target_objects=["달달한 음식"],
+                    candidate_category_codes=["cafe", "restaurant"],
+                    candidate_place_types=["카페", "음식점"],
+                    search_queries=["디저트", "베이커리", "카페"],
+                    result_match_terms=["디저트", "베이커리", "케이크", "빙수", "아이스크림"],
+                    scenario="restaurant",
+                ),
+                "repair": {"explicit_anchor_location": ""},
+            },
+            {
+                "query": "강남역 작업할 만한 카페",
+                "ai": self._ai_planner_frame_response(
+                    query="강남역 작업할 만한 카페",
+                    display_label="작업할 만한 카페",
+                    situation="work",
+                    anchor_location="강남역",
+                    location_mode="explicit",
+                    target_objects=["작업할 공간"],
+                    candidate_category_codes=["cafe"],
+                    candidate_place_types=["카페", "스터디카페"],
+                    search_queries=["강남역 작업 카페", "강남역 노트북 카페"],
+                    result_match_terms=["노트북", "콘센트", "와이파이", "조용함", "작업 가능"],
+                    constraints=["노트북 작업 가능", "콘센트", "와이파이"],
+                    scenario="work_cafe",
+                ),
+                "repair": None,
+            },
+            {
+                "query": "카페 말고 조용히 쉴 곳",
+                "ai": self._ai_planner_frame_response(
+                    query="카페 말고 조용히 쉴 곳",
+                    display_label="조용히 쉴 곳",
+                    situation="quiet_rest",
+                    location_mode="current_context",
+                    target_objects=["조용히 쉬기"],
+                    candidate_category_codes=["library", "shelter", "city_park"],
+                    candidate_place_types=["도서관", "쉼터", "공원"],
+                    search_queries=["조용한 공공공간", "도서관", "쉼터"],
+                    result_match_terms=["조용함", "휴식", "도서관", "쉼터"],
+                    constraints=["조용함"],
+                    exclusions=["카페 제외"],
+                    scenario="waiting_place",
+                ),
+                "repair": {"explicit_anchor_location": ""},
+            },
+        ]
+
+        for case in cases:
+            with self.subTest(query=case["query"]):
+                mock_ai.reset_mock()
+                mock_ai.side_effect = (
+                    [case["ai"], case["repair"]]
+                    if case["repair"] is not None
+                    else [case["ai"]]
+                )
+
+                response = self.client.post(
+                    "/api/recommendations/conversational-search-plan/",
+                    data=json.dumps({"query": case["query"]}, ensure_ascii=False),
+                    content_type="application/json",
+                    **self._auth_headers(),
+                )
+
+                self.assertEqual(response.status_code, 200)
+                data = response.json()
+                search_plan = data["search_plan"]
+                frame = search_plan["place_intent_frame"]
+                self.assertEqual(data["action"], "search")
+                self.assertEqual(data["decision_action"], "search")
+                self.assertTrue(data["can_search_now"])
+                self.assertTrue(data["execution_policy"]["run_search"])
+                self.assertEqual(data["plan_source"], "ai")
+                self.assertEqual(data["execution_mode"], "frame")
+                self.assertEqual(search_plan["decision_action"], "search")
+                self.assertTrue(search_plan["can_search_now"])
+                self.assertEqual(frame["decision_action"], "search")
+                self.assertTrue(frame["can_search_now"])
+                self.assertTrue(frame["target_objects"])
+                self.assertTrue(frame["result_match_terms"])
+
+    @override_settings(
+        CONVERSATIONAL_SEARCH_AI_ENABLED=True,
+        AI_PROVIDER="gms",
+        GMS_API_KEY="fake-gms",
+        GMS_API_URL="https://example.invalid/parser",
+    )
+    @patch("recommendations.views.search_db_recommendations")
+    @patch("recommendations.services.conversational_search_planner._call_gms_chat_json")
+    def test_conversational_plan_api_decision_action_ask_clarification_does_not_search(self, mock_ai, mock_search):
+        mock_ai.return_value = {
+            "action": "ask_clarification",
+            "decision_action": "ask_clarification",
+            "intent_type": "place_recommendation",
+            "user_intent_summary": "목적이 넓어 추가 확인이 필요함",
+            "message": "어떤 목적의 장소를 찾으시나요?",
+            "search_plan": {
+                "targetQuery": "장소",
+                "place_intent_frame": {
+                    "decision_action": "ask_clarification",
+                    "user_goal": "목적이 불명확한 장소 추천 요청",
+                    "normalized_user_intent": "목적이 넓어 되묻기가 필요한 장소 추천 요청",
+                    "anchor_location": "",
+                    "location_mode": "clarification_required",
+                    "situation": "general_place",
+                    "display_label": "장소 추천",
+                    "target_objects": [],
+                    "candidate_place_types": ["장소"],
+                    "search_queries": [],
+                    "result_match_terms": [],
+                    "constraints": [],
+                    "exclusions": [],
+                    "missing_info": ["목적"],
+                    "clarification_question": "쉬는 곳, 먹을 곳, 산책할 곳 중 어떤 쪽을 원하시나요?",
+                    "clarification_options": ["쉬는 곳", "먹을 곳", "산책할 곳", "작업할 곳"],
+                    "can_search_now": False,
+                    "confidence": 0.55,
+                },
+            },
+            "execution_policy": {"run_search": False},
+            "needs_clarification": True,
+            "clarification_question": "쉬는 곳, 먹을 곳, 산책할 곳 중 어떤 쪽을 원하시나요?",
+            "clarification_options": ["쉬는 곳", "먹을 곳", "산책할 곳", "작업할 곳"],
+            "confidence": 0.55,
+        }
+
+        response = self.client.post(
+            "/api/recommendations/conversational-search-plan/",
+            data=json.dumps({"query": "어디 갈만한 데"}, ensure_ascii=False),
+            content_type="application/json",
+            **self._auth_headers(),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        frame = data["search_plan"]["place_intent_frame"]
+        self.assertEqual(data["type"], "clarification")
+        self.assertEqual(data["decision_action"], "ask_clarification")
+        self.assertFalse(data["can_search_now"])
+        self.assertFalse(data["execution_policy"]["run_search"])
+        self.assertEqual(data["results"], [])
+        self.assertTrue(data["clarification_question"])
+        self.assertTrue(data["clarification_options"])
+        self.assertEqual(frame["decision_action"], "ask_clarification")
+        self.assertFalse(frame["can_search_now"])
+        mock_search.assert_not_called()
+
+    def _broad_ai_search_response(self, query):
+        return {
+            "action": "search",
+            "decision_action": "search",
+            "intent_type": "place_recommendation",
+            "user_intent_summary": "목적이 넓은 장소 추천 요청",
+            "message": "",
+            "location": {
+                "text": "",
+                "is_explicit": False,
+                "fallback": "current_location",
+            },
+            "targets": [query],
+            "conditions": [],
+            "preferences": [],
+            "avoid": [],
+            "search_plan": {
+                "locationQuery": "",
+                "baseLocationQuery": "",
+                "targetQuery": query,
+                "scenario": "waiting_place",
+                "categories": [],
+                "place_intent_frame": {
+                    "decision_action": "search",
+                    "user_goal": "목적이 넓은 장소 추천 요청",
+                    "normalized_user_intent": "심심함 해소 또는 갈만한 곳 찾기",
+                    "anchor_location": "",
+                    "location_mode": "current_context",
+                    "situation": "general_place",
+                    "display_label": query,
+                    "target_objects": [query],
+                    "candidate_category_codes": [],
+                    "candidate_place_types": ["장소", "추천 장소"],
+                    "search_queries": ["장소", "추천 장소"],
+                    "result_match_terms": [],
+                    "constraints": [],
+                    "exclusions": [],
+                    "preferred_place_natures": [],
+                    "excluded_place_natures": [],
+                    "ranking_policy": "evidence_first",
+                    "missing_info": [],
+                    "can_search_now": True,
+                    "confidence": 0.45,
+                },
+            },
+            "execution_policy": {"run_search": True},
+            "needs_clarification": False,
+            "clarification_question": "",
+            "clarification_options": [],
+            "confidence": 0.45,
+        }
+
+    @override_settings(
+        CONVERSATIONAL_SEARCH_AI_ENABLED=True,
+        AI_PROVIDER="gms",
+        GMS_API_KEY="fake-gms",
+        GMS_API_URL="https://example.invalid/parser",
+    )
+    @patch("recommendations.views.search_db_recommendations")
+    @patch("recommendations.services.conversational_search_planner._call_gms_chat_json")
+    def test_conversational_plan_api_post_validation_forces_clarification_for_broad_search_frame(self, mock_ai, mock_search):
+        for query in ["어디 갈만한 데", "나 심심한데 뭐 하지"]:
+            with self.subTest(query=query):
+                mock_ai.reset_mock()
+                mock_search.reset_mock()
+                mock_ai.return_value = self._broad_ai_search_response(query)
+
+                response = self.client.post(
+                    "/api/recommendations/conversational-search-plan/",
+                    data=json.dumps({"query": query}, ensure_ascii=False),
+                    content_type="application/json",
+                    **self._auth_headers(),
+                )
+
+                self.assertEqual(response.status_code, 200)
+                data = response.json()
+                search_plan = data["search_plan"]
+                frame = search_plan["place_intent_frame"]
+                self.assertEqual(data["type"], "clarification")
+                self.assertEqual(data["decision_action"], "ask_clarification")
+                self.assertFalse(data["can_search_now"])
+                self.assertFalse(data["execution_policy"]["run_search"])
+                self.assertEqual(data["results"], [])
+                self.assertTrue(data["clarification_question"])
+                self.assertTrue(data["clarification_options"])
+                self.assertEqual(data["parser_provider"], "gms")
+                self.assertFalse(data["parser_fallback"])
+                self.assertEqual(data["plan_source"], "ai")
+                self.assertEqual(data["execution_mode"], "decision_gate")
+                self.assertEqual(search_plan["decision_action"], "ask_clarification")
+                self.assertFalse(search_plan["can_search_now"])
+                self.assertEqual(frame["decision_action"], "ask_clarification")
+                self.assertFalse(frame["can_search_now"])
+                self.assertEqual(
+                    data["ai_debug"]["post_validation"]["status"],
+                    "forced_clarification",
+                )
+                self.assertIn(
+                    "missing_result_match_terms",
+                    data["ai_debug"]["post_validation"]["reasons"],
+                )
+                mock_search.assert_not_called()
+
+    def test_ai_search_decision_gate_request_returns_empty_results_without_db_search(self):
+        frame = {
+            "decision_action": "ask_clarification",
+            "user_goal": "목적이 넓어 되묻기가 필요한 요청",
+            "anchor_location": "",
+            "location_mode": "clarification_required",
+            "display_label": "장소 추천",
+            "candidate_place_types": ["장소"],
+            "search_queries": [],
+            "result_match_terms": [],
+            "constraints": [],
+            "exclusions": [],
+            "clarification_question": "어떤 목적의 장소를 찾으시나요?",
+            "clarification_options": ["쉬는 곳", "먹을 곳", "산책할 곳", "작업할 곳"],
+        }
+        payload = {
+            "query": "어디 갈만한 데",
+            "lat": 35.1,
+            "lng": 129.0,
+            "decision_action": "ask_clarification",
+            "search_plan": {
+                "decision_action": "ask_clarification",
+                "execution_mode": "decision_gate",
+                "plan_source": "ai",
+                "place_intent_frame": frame,
+                "clarification_question": frame["clarification_question"],
+                "clarification_options": frame["clarification_options"],
+            },
+            "place_intent_frame": frame,
+        }
+
+        with patch("recommendations.views.search_db_recommendations") as mock_search:
+            response = self.client.post(
+                "/api/recommendations/ai-search/",
+                data=json.dumps(payload, ensure_ascii=False),
+                content_type="application/json",
+                **self._auth_headers(),
+            )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["type"], "clarification")
+        self.assertEqual(data["decision_action"], "ask_clarification")
+        self.assertFalse(data["can_search_now"])
+        self.assertEqual(data["results"], [])
+        self.assertEqual(data["markers"], [])
+        self.assertEqual(data["result_count"], 0)
+        self.assertEqual(data["relevant_result_count"], 0)
+        self.assertFalse(data["execution_policy"]["run_search"])
+        mock_search.assert_not_called()
+
+    @override_settings(
+        CONVERSATIONAL_SEARCH_AI_ENABLED=True,
+        AI_PROVIDER="gms",
+        GMS_API_KEY="fake-gms",
+        GMS_API_URL="https://example.invalid/parser",
+    )
+    @patch("recommendations.views.search_db_recommendations")
+    @patch("recommendations.services.conversational_search_planner._call_gms_chat_json")
+    def test_conversational_plan_api_decision_action_out_of_scope_does_not_search(self, mock_ai, mock_search):
+        mock_ai.return_value = {
+            "action": "out_of_scope",
+            "decision_action": "out_of_scope",
+            "intent_type": "out_of_scope",
+            "user_intent_summary": "장소 추천 범위 밖 요청",
+            "message": "생활 장소 추천 범위 밖 요청입니다.",
+            "out_of_scope_reason": "not_place_recommendation",
+            "confidence": 0.92,
+        }
+
+        response = self.client.post(
+            "/api/recommendations/conversational-search-plan/",
+            data=json.dumps({"query": "오늘 주식 뭐 사?"}, ensure_ascii=False),
+            content_type="application/json",
+            **self._auth_headers(),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["type"], "out_of_scope")
+        self.assertEqual(data["decision_action"], "out_of_scope")
+        self.assertEqual(data["plan_source"], "ai")
+        self.assertEqual(data["execution_mode"], "decision_gate")
+        self.assertFalse(data["can_search_now"])
+        self.assertFalse(data["execution_policy"]["run_search"])
+        self.assertEqual(data["results"], [])
+        self.assertEqual(data["search_plan"], {})
+        mock_search.assert_not_called()
+
+    @override_settings(
+        CONVERSATIONAL_SEARCH_AI_ENABLED=True,
+        AI_PROVIDER="gms",
+        GMS_API_KEY="fake-gms",
+        GMS_API_URL="https://example.invalid/parser",
+    )
+    @patch("recommendations.services.conversational_search_planner._call_gms_chat_json")
+    def test_conversational_plan_api_location_missing_can_ask_or_search_with_context(self, mock_ai):
+        mock_ai.return_value = {
+            "action": "ask_clarification",
+            "decision_action": "ask_clarification",
+            "user_intent_summary": "위치 확인이 필요한 운동 장소 요청",
+            "message": "현재 위치 기준으로 찾을까요, 지역명을 입력해 주실까요?",
+            "search_plan": {
+                "targetQuery": "축구 연습할 곳",
+                "place_intent_frame": {
+                    "decision_action": "ask_clarification",
+                    "user_goal": "축구 연습 장소 찾기",
+                    "normalized_user_intent": "축구 연습할 장소를 찾고 싶음",
+                    "anchor_location": "",
+                    "location_mode": "clarification_required",
+                    "situation": "general_place",
+                    "display_label": "축구 연습할 곳",
+                    "target_objects": ["축구 연습"],
+                    "candidate_place_types": ["축구장", "풋살장", "운동장"],
+                    "search_queries": [],
+                    "result_match_terms": ["축구장", "풋살장", "운동장"],
+                    "constraints": [],
+                    "exclusions": [],
+                    "missing_info": ["위치"],
+                    "clarification_question": "현재 위치 기준으로 찾을까요, 지역명을 입력해 주실까요?",
+                    "clarification_options": ["현재 위치", "지역명 입력"],
+                    "can_search_now": False,
+                    "confidence": 0.7,
+                },
+            },
+            "needs_clarification": True,
+            "clarification_question": "현재 위치 기준으로 찾을까요, 지역명을 입력해 주실까요?",
+            "clarification_options": ["현재 위치", "지역명 입력"],
+        }
+
+        missing_location_response = self.client.post(
+            "/api/recommendations/conversational-search-plan/",
+            data=json.dumps({"query": "근처에 축구 연습할 곳"}, ensure_ascii=False),
+            content_type="application/json",
+            **self._auth_headers(),
+        )
+        self.assertEqual(missing_location_response.status_code, 200)
+        self.assertEqual(missing_location_response.json()["decision_action"], "ask_clarification")
+        self.assertFalse(missing_location_response.json()["execution_policy"]["run_search"])
+
+        mock_ai.reset_mock()
+        mock_ai.side_effect = [
+            self._ai_planner_frame_response(
+                query="근처에 축구 연습할 곳",
+                display_label="축구 연습할 곳",
+                situation="general_place",
+                location_mode="current_context",
+                target_objects=["축구 연습"],
+                candidate_category_codes=["sports_facility", "city_park"],
+                candidate_place_types=["축구장", "풋살장", "운동장"],
+                search_queries=["축구장", "풋살장", "운동장"],
+                result_match_terms=["축구장", "풋살장", "운동장"],
+                scenario="waiting_place",
+            ),
+            {"explicit_anchor_location": ""},
+        ]
+
+        current_context_response = self.client.post(
+            "/api/recommendations/conversational-search-plan/",
+            data=json.dumps(
+                {"query": "근처에 축구 연습할 곳", "lat": 35.1556, "lng": 129.0641},
+                ensure_ascii=False,
+            ),
+            content_type="application/json",
+            **self._auth_headers(),
+        )
+        self.assertEqual(current_context_response.status_code, 200)
+        current_context_data = current_context_response.json()
+        frame = current_context_data["search_plan"]["place_intent_frame"]
+        self.assertEqual(current_context_data["decision_action"], "search")
+        self.assertEqual(frame["location_mode"], "current_context")
+        self.assertTrue(current_context_data["execution_policy"]["run_search"])
+
+    @override_settings(
+        CONVERSATIONAL_SEARCH_AI_ENABLED=True,
+        AI_PROVIDER="gms",
+        GMS_API_KEY="fake-gms",
+        GMS_API_URL="https://example.invalid/parser",
+    )
+    @patch("recommendations.services.conversational_search_planner._call_gms_chat_json")
+    def test_conversational_plan_api_colloquial_urgent_queries_are_not_blocked(self, mock_ai):
+        mock_ai.side_effect = [
+            self._ai_planner_frame_response(
+                query="똥 마려운데 우야노",
+                display_label="공중화장실",
+                situation="toilet",
+                location_mode="current_context",
+                target_objects=["화장실"],
+                candidate_category_codes=["toilet"],
+                candidate_place_types=["공중화장실", "개방화장실", "화장실"],
+                search_queries=["공중화장실", "화장실"],
+                result_match_terms=["화장실", "공중화장실", "개방화장실"],
+                constraints=["긴급", "가까운 곳"],
+                ranking_policy="urgent_nearest",
+            ),
+            {"explicit_anchor_location": ""},
+        ]
+
+        response = self.client.post(
+            "/api/recommendations/conversational-search-plan/",
+            data=json.dumps({"query": "똥 마려운데 우야노"}, ensure_ascii=False),
+            content_type="application/json",
+            **self._auth_headers(),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        frame = data["search_plan"]["place_intent_frame"]
+        self.assertEqual(data["decision_action"], "search")
+        self.assertNotIn(data["decision_action"], {"blocked", "out_of_scope"})
+        self.assertIn("화장실", frame["target_objects"])
+        self.assertEqual(frame["ranking_policy"], "urgent_nearest")
+
+    def test_ai_search_uses_frame_category_and_relevance_metadata(self):
+        toilet = self._create_place(
+            name="하단역 테스트 공중화장실",
+            category="toilet",
+            external_id="frame-toilet-1",
+            data_quality_score=85,
+        )
+        self._create_place(
+            name="하단역 테스트 공원",
+            category="city_park",
+            external_id="frame-park-1",
+            data_quality_score=95,
+        )
+        frame = {
+            "user_goal": "가까운 화장실 찾기",
+            "anchor_location": "하단역",
+            "location_mode": "explicit",
+            "situation": "toilet",
+            "display_label": "화장실",
+            "candidate_category_codes": ["toilet"],
+            "candidate_place_types": ["공중화장실", "개방화장실"],
+            "search_queries": ["하단역 공중화장실", "하단역 개방화장실"],
+            "result_match_terms": ["화장실", "공중화장실", "개방화장실"],
+            "constraints": ["가까운 곳"],
+            "exclusions": [],
+            "preferred_place_natures": ["ordinary_public_access"],
+            "excluded_place_natures": [],
+            "missing_info": [],
+            "confidence": 0.92,
+        }
+
+        response = self.client.post(
+            "/api/recommendations/ai-search/",
+            data=json.dumps(self._frame_search_payload(frame), ensure_ascii=False),
+            content_type="application/json",
+            **self._auth_headers(),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["execution_mode"], "frame")
+        self.assertEqual(data["plan_source"], "ai")
+        self.assertEqual(data["relevant_result_count"], 1)
+        self.assertEqual(data["results"][0]["id"], toilet.id)
+        self.assertEqual(data["results"][0]["category"], "toilet")
+        self.assertEqual(data["results"][0]["matched_category_codes"], ["toilet"])
+        self.assertEqual(data["results"][0]["matched_evidence"][0]["type"], "category_code")
+
+    def test_ai_search_frame_with_unsupported_category_does_not_return_unrelated_db_results(self):
+        self._create_place(
+            name="하단역 테스트 쉼터",
+            category="shelter",
+            external_id="frame-shelter-1",
+            data_quality_score=95,
+        )
+        frame = {
+            "user_goal": "가까운 약국이나 병원 찾기",
+            "anchor_location": "하단역",
+            "location_mode": "explicit",
+            "situation": "health_nearby",
+            "display_label": "약국/병원",
+            "candidate_category_codes": ["pharmacy", "hospital"],
+            "candidate_place_types": ["약국", "병원"],
+            "search_queries": ["하단역 약국", "하단역 병원"],
+            "result_match_terms": ["약국", "병원"],
+            "constraints": ["가까운 곳"],
+            "exclusions": [],
+            "preferred_place_natures": ["medical_facility"],
+            "excluded_place_natures": [],
+            "missing_info": [],
+            "confidence": 0.88,
+        }
+
+        response = self.client.post(
+            "/api/recommendations/ai-search/",
+            data=json.dumps(self._frame_search_payload(frame, query="머리 아프다 하단역"), ensure_ascii=False),
+            content_type="application/json",
+            **self._auth_headers(),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["execution_mode"], "frame")
+        self.assertEqual(data["relevant_result_count"], 0)
+        self.assertEqual(data["results"], [])
+
+    def test_ai_search_frame_returns_health_category_results(self):
+        pharmacy = self._create_place(
+            name="하단역 테스트 약국",
+            category="pharmacy",
+            external_id="frame-pharmacy-1",
+            data_quality_score=86,
+        )
+        hospital = self._create_place(
+            name="하단역 테스트 병원",
+            category="hospital",
+            external_id="frame-hospital-1",
+            data_quality_score=82,
+            lat=35.1557,
+            lng=129.0642,
+        )
+        self._create_place(
+            name="하단역 테스트 산책공원",
+            category="city_park",
+            external_id="frame-health-park-1",
+            data_quality_score=99,
+        )
+        frame = {
+            "user_goal": "가까운 약국이나 병원 찾기",
+            "anchor_location": "하단역",
+            "location_mode": "explicit",
+            "situation": "health_nearby",
+            "display_label": "약국/병원",
+            "candidate_category_codes": ["pharmacy", "hospital"],
+            "candidate_place_types": ["약국", "병원"],
+            "search_queries": ["하단역 약국", "하단역 병원"],
+            "result_match_terms": ["약국", "병원"],
+            "constraints": ["가까운 곳"],
+            "exclusions": [],
+            "preferred_place_natures": ["medical_facility"],
+            "excluded_place_natures": [],
+            "missing_info": [],
+            "confidence": 0.88,
+        }
+
+        response = self.client.post(
+            "/api/recommendations/ai-search/",
+            data=json.dumps(self._frame_search_payload(frame, query="머리 아프다 하단역"), ensure_ascii=False),
+            content_type="application/json",
+            **self._auth_headers(),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        result_ids = [result["id"] for result in data["results"]]
+        result_categories = {result["category"] for result in data["results"]}
+        self.assertEqual(data["execution_mode"], "frame")
+        self.assertEqual(data["plan_source"], "ai")
+        self.assertEqual(data["relevant_result_count"], 2)
+        self.assertIn(pharmacy.id, result_ids)
+        self.assertIn(hospital.id, result_ids)
+        self.assertEqual(result_categories, {"pharmacy", "hospital"})
+
+    def test_ai_search_frame_applies_exclusions_to_db_results(self):
+        library = self._create_place(
+            name="테스트 공공도서관",
+            category="library",
+            external_id="frame-library-1",
+            data_quality_score=90,
+        )
+        frame = {
+            "user_goal": "카페가 아닌 조용히 쉴 곳 찾기",
+            "anchor_location": "",
+            "location_mode": "current_context",
+            "situation": "quiet_rest",
+            "display_label": "조용히 쉴 곳",
+            "candidate_category_codes": ["cafe", "library"],
+            "candidate_place_types": ["도서관", "카페"],
+            "search_queries": ["도서관", "조용한 공간"],
+            "result_match_terms": ["도서관", "카페"],
+            "constraints": ["조용함"],
+            "exclusions": ["카페 제외"],
+            "preferred_place_natures": ["library_like", "ordinary_public_access"],
+            "excluded_place_natures": [],
+            "missing_info": [],
+            "confidence": 0.84,
+        }
+
+        response = self.client.post(
+            "/api/recommendations/ai-search/",
+            data=json.dumps(self._frame_search_payload(frame, query="카페 말고 조용히 쉴 곳"), ensure_ascii=False),
+            content_type="application/json",
+            **self._auth_headers(),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        result_ids = [result["id"] for result in data["results"]]
+        result_categories = [result["category"] for result in data["results"]]
+        self.assertIn(library.id, result_ids)
+        self.assertNotIn("cafe", result_categories)
+
+    def test_ai_search_frame_demotes_conditional_shelters_for_general_rest(self):
+        library = self._create_place(
+            name="테스트 공공도서관",
+            category="library",
+            external_id="frame-rest-library-1",
+            data_quality_score=70,
+        )
+        conditional_shelter = self._create_place(
+            name="테스트 무더위쉼터",
+            category="shelter",
+            external_id="frame-rest-conditional-shelter-1",
+            data_quality_score=99,
+            raw={
+                "place_tag_seed_raw": {
+                    "original_tag_name": "무더위쉼터",
+                    "place_source": "heat_shelter_api",
+                },
+            },
+        )
+        conditional_shelter.source = "heat_shelter_api"
+        conditional_shelter.save(update_fields=["source"])
+        frame = {
+            "user_goal": "일반적으로 조용히 쉴 곳 찾기",
+            "anchor_location": "서면역 롯데백화점",
+            "location_mode": "explicit",
+            "situation": "rest",
+            "display_label": "쉴 곳",
+            "candidate_category_codes": ["shelter", "library"],
+            "candidate_place_types": ["쉼터", "도서관"],
+            "search_queries": ["서면역 롯데백화점 쉼터", "서면역 롯데백화점 도서관"],
+            "result_match_terms": ["쉼터", "도서관"],
+            "constraints": ["일반 휴식"],
+            "exclusions": [],
+            "preferred_place_natures": ["ordinary_public_access", "library_like"],
+            "excluded_place_natures": [],
+            "missing_info": [],
+            "confidence": 0.83,
+        }
+
+        response = self.client.post(
+            "/api/recommendations/ai-search/",
+            data=json.dumps(
+                self._frame_search_payload(frame, query="서면역 롯데백화점 근처 쉴 곳"),
+                ensure_ascii=False,
+            ),
+            content_type="application/json",
+            **self._auth_headers(),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        result_ids = [result["id"] for result in data["results"]]
+        conditional_result = next(
+            result for result in data["results"]
+            if result["id"] == conditional_shelter.id
+        )
+        self.assertLess(result_ids.index(library.id), result_ids.index(conditional_shelter.id))
+        self.assertIn("conditional_shelter", conditional_result["place_natures"])
+        self.assertEqual(
+            conditional_result["score_breakdown"]["frame_relevance_penalty_reason"],
+            "conditional_shelter_for_general_rest",
+        )
+
+    def test_ai_search_frame_demotes_limited_access_facilities_for_quiet_rest(self):
+        park = self._create_place(
+            name="테스트 열린 공원",
+            category="city_park",
+            external_id="frame-rest-open-park",
+            data_quality_score=72,
+        )
+        library = self._create_place(
+            name="테스트 열린 도서관",
+            category="library",
+            external_id="frame-rest-open-library",
+            data_quality_score=72,
+        )
+        senior_facility = self._create_place(
+            name="테스트 어르신 프로그램 공간",
+            category="shelter",
+            external_id="frame-rest-senior-facility",
+            data_quality_score=99,
+            raw={
+                "facility_profile": {
+                    "audience": "노인복지 프로그램 이용자",
+                    "operation": "회원제 쉼터",
+                },
+            },
+        )
+        institution_facility = self._create_place(
+            name="테스트 기관 운영 휴게실",
+            category="shelter",
+            external_id="frame-rest-institution-facility",
+            data_quality_score=99,
+            raw={
+                "facility_profile": {
+                    "operator": "행정복지센터",
+                    "operation": "민원센터 부속 공간",
+                },
+            },
+        )
+        frame = {
+            "user_goal": "일반 사용자가 조용히 쉴 수 있는 곳 찾기",
+            "anchor_location": "",
+            "location_mode": "current_context",
+            "situation": "quiet_rest",
+            "display_label": "조용히 쉴 곳",
+            "candidate_category_codes": ["city_park", "library", "shelter"],
+            "candidate_place_types": ["공원", "도서관", "쉼터"],
+            "search_queries": ["조용히 쉴 곳", "도서관", "공원", "쉼터"],
+            "result_match_terms": ["공원", "도서관", "쉼터", "휴식"],
+            "constraints": ["일반 사용 가능", "조용함"],
+            "exclusions": [],
+            "preferred_place_natures": ["ordinary_public_access", "library_like", "park_like"],
+            "excluded_place_natures": [],
+            "missing_info": [],
+            "confidence": 0.85,
+        }
+
+        response = self.client.post(
+            "/api/recommendations/ai-search/",
+            data=json.dumps(
+                self._frame_search_payload(frame, query="조용히 쉴 곳"),
+                ensure_ascii=False,
+            ),
+            content_type="application/json",
+            **self._auth_headers(),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        result_ids = [result["id"] for result in data["results"]]
+        senior_result = next(result for result in data["results"] if result["id"] == senior_facility.id)
+        institution_result = next(result for result in data["results"] if result["id"] == institution_facility.id)
+
+        self.assertLess(result_ids.index(park.id), result_ids.index(senior_facility.id))
+        self.assertLess(result_ids.index(library.id), result_ids.index(institution_facility.id))
+        self.assertIn("senior_facility_like", senior_result["place_natures"])
+        self.assertIn("public_institution_like", institution_result["place_natures"])
+        self.assertEqual(senior_result["recommendation_confidence"], "low")
+        self.assertEqual(institution_result["recommendation_confidence"], "low")
+        self.assertEqual(
+            senior_result["score_breakdown"]["frame_relevance_penalty_reason"],
+            "senior_facility_like_for_general_rest",
+        )
+
+    def test_ai_search_frame_prioritizes_work_cafe_with_evidence_over_category_only(self):
+        work_ready_cafe = self._create_place(
+            name="테스트 노트북 작업 카페",
+            category="cafe",
+            external_id="frame-work-ready-cafe",
+            data_quality_score=68,
+        )
+        self._add_tag(work_ready_cafe, "노트북작업")
+        category_only_cafe = self._create_place(
+            name="테스트 일반 커피 매장",
+            category="cafe",
+            external_id="frame-work-category-only-cafe",
+            data_quality_score=99,
+        )
+        takeout_cafe = self._create_place(
+            name="테스트 포장 중심 커피 매장",
+            category="cafe",
+            external_id="frame-work-takeout-cafe",
+            data_quality_score=99,
+            raw={
+                "facility_profile": {
+                    "service_model": "테이크아웃 중심",
+                    "seating": "좌석 부족",
+                },
+            },
+        )
+        frame = {
+            "user_goal": "작업하기 좋은 카페 찾기",
+            "anchor_location": "강남역",
+            "location_mode": "explicit",
+            "situation": "work_cafe",
+            "display_label": "작업할 만한 카페",
+            "candidate_category_codes": ["cafe"],
+            "candidate_place_types": ["카페"],
+            "search_queries": ["강남역 작업 카페", "강남역 노트북 카페"],
+            "result_match_terms": ["카페", "노트북작업", "콘센트", "와이파이"],
+            "constraints": ["노트북 작업 가능", "콘센트", "와이파이", "조용함"],
+            "exclusions": [],
+            "preferred_place_natures": ["ordinary_public_access"],
+            "excluded_place_natures": [],
+            "missing_info": [],
+            "confidence": 0.88,
+        }
+
+        response = self.client.post(
+            "/api/recommendations/ai-search/",
+            data=json.dumps(
+                self._frame_search_payload(frame, query="강남역 작업할 만한 카페"),
+                ensure_ascii=False,
+            ),
+            content_type="application/json",
+            **self._auth_headers(),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        result_ids = [result["id"] for result in data["results"]]
+        category_only_result = next(result for result in data["results"] if result["id"] == category_only_cafe.id)
+        takeout_result = next(result for result in data["results"] if result["id"] == takeout_cafe.id)
+
+        self.assertLess(result_ids.index(work_ready_cafe.id), result_ids.index(category_only_cafe.id))
+        self.assertLess(result_ids.index(work_ready_cafe.id), result_ids.index(takeout_cafe.id))
+        self.assertLessEqual(category_only_result["score"], 40)
+        self.assertLessEqual(takeout_result["score"], 35)
+        self.assertIn(
+            "work_cafe_category_only_without_core",
+            category_only_result["score_breakdown"]["score_cap_reasons"],
+        )
+        self.assertIn(
+            "work_cafe_takeout_without_core",
+            takeout_result["score_breakdown"]["score_cap_reasons"],
+        )
+        self.assertIn("takeout_focused", takeout_result["place_natures"])
+
+    def test_ai_search_frame_prioritizes_target_object_menu_evidence(self):
+        tagged_restaurant = self._create_place(
+            name="테스트 아시아 식당",
+            category="restaurant",
+            external_id="frame-menu-target-restaurant",
+            data_quality_score=66,
+        )
+        self._add_tag(tagged_restaurant, "쌀국수")
+        generic_restaurant = self._create_place(
+            name="테스트 일반 식당",
+            category="restaurant",
+            external_id="frame-menu-generic-restaurant",
+            data_quality_score=99,
+        )
+        frame = {
+            "user_goal": "쌀국수 맛집 찾기",
+            "anchor_location": "사상역",
+            "location_mode": "explicit",
+            "situation": "food",
+            "display_label": "쌀국수 맛집",
+            "target_objects": ["쌀국수"],
+            "candidate_category_codes": ["restaurant"],
+            "candidate_place_types": ["음식점"],
+            "search_queries": ["사상역 쌀국수", "사상역 쌀국수 맛집"],
+            "result_match_terms": ["쌀국수", "베트남음식", "음식점"],
+            "constraints": ["방문 전 메뉴 확인 필요"],
+            "exclusions": [],
+            "preferred_place_natures": ["ordinary_public_access"],
+            "excluded_place_natures": [],
+            "ranking_policy": "evidence_first",
+            "missing_info": [],
+            "confidence": 0.9,
+        }
+
+        response = self.client.post(
+            "/api/recommendations/ai-search/",
+            data=json.dumps(
+                self._frame_search_payload(frame, query="사상역 근처 쌀국수 맛집"),
+                ensure_ascii=False,
+            ),
+            content_type="application/json",
+            **self._auth_headers(),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        result_ids = [result["id"] for result in data["results"]]
+        generic_result = next(result for result in data["results"] if result["id"] == generic_restaurant.id)
+
+        self.assertLess(result_ids.index(tagged_restaurant.id), result_ids.index(generic_restaurant.id))
+        self.assertEqual(data["results"][0]["frame_match_strength"], "strong")
+        self.assertEqual(generic_result["frame_match_strength"], "weak")
+        self.assertIn(
+            "frame_weak_category_fallback",
+            generic_result["score_breakdown"]["score_cap_reasons"],
+        )
+
+    def test_conversational_search_plan_preserves_target_object_kakao_queries(self):
+        with patch("recommendations.services.conversational_search_planner._call_gms_chat_json") as mock_ai:
+            mock_ai.return_value = {
+                "action": "search",
+                "search_plan": {
+                    "locationQuery": "사상역",
+                    "baseLocationQuery": "사상역",
+                    "targetQuery": "쌀국수 맛집",
+                    "scenario": "restaurant",
+                    "place_intent_frame": {
+                        "user_goal": "사상역 근처 쌀국수 맛집 찾기",
+                        "anchor_location": "사상역",
+                        "location_mode": "explicit",
+                        "situation": "food",
+                        "display_label": "쌀국수 맛집",
+                        "target_objects": ["쌀국수"],
+                        "candidate_category_codes": ["restaurant"],
+                        "candidate_place_types": ["음식점"],
+                        "search_queries": ["쌀국수", "쌀국수 맛집"],
+                        "result_match_terms": ["쌀국수", "베트남음식"],
+                        "constraints": ["방문 전 메뉴 확인 필요"],
+                        "exclusions": [],
+                        "preferred_place_natures": ["ordinary_public_access"],
+                        "excluded_place_natures": [],
+                        "ranking_policy": "evidence_first",
+                        "missing_info": [],
+                        "confidence": 0.9,
+                    },
+                },
+                "confidence": 0.9,
+            }
+
+            with override_settings(
+                CONVERSATIONAL_SEARCH_AI_ENABLED=True,
+                AI_PROVIDER="gms",
+                GMS_API_KEY="fake-gms",
+                GMS_API_URL="https://example.invalid/parser",
+            ):
+                plan = build_conversational_search_plan("사상역 근처 쌀국수 맛집")
+
+        search_plan = plan["search_plan"]
+        frame = search_plan["place_intent_frame"]
+        self.assertEqual(frame["target_objects"], ["쌀국수"])
+        self.assertEqual(frame["ranking_policy"], "evidence_first")
+        self.assertIn("사상역 쌀국수", search_plan["kakaoKeywordCandidates"])
+        self.assertIn("사상역 쌀국수 맛집", search_plan["kakaoKeywordCandidates"])
+
+    def test_ai_search_frame_prioritizes_dessert_target_over_generic_food(self):
+        dessert_cafe = self._create_place(
+            name="테스트 디저트 카페",
+            category="cafe",
+            external_id="frame-dessert-cafe",
+            data_quality_score=65,
+        )
+        self._add_tag(dessert_cafe, "디저트")
+        generic_restaurant = self._create_place(
+            name="테스트 일반 음식점",
+            category="restaurant",
+            external_id="frame-dessert-generic-restaurant",
+            data_quality_score=99,
+        )
+        frame = {
+            "user_goal": "달달한 음식 먹기",
+            "anchor_location": "",
+            "location_mode": "current_context",
+            "situation": "food",
+            "display_label": "달달한 음식",
+            "target_objects": ["달달한 음식"],
+            "candidate_category_codes": ["cafe", "restaurant"],
+            "candidate_place_types": ["카페", "음식점"],
+            "search_queries": ["디저트", "베이커리", "카페"],
+            "result_match_terms": ["디저트", "베이커리", "케이크", "빙수", "아이스크림", "카페"],
+            "constraints": ["방문 전 메뉴 확인 필요"],
+            "exclusions": [],
+            "preferred_place_natures": ["ordinary_public_access", "commercial_rest_place"],
+            "excluded_place_natures": [],
+            "ranking_policy": "evidence_first",
+            "missing_info": [],
+            "confidence": 0.86,
+        }
+
+        response = self.client.post(
+            "/api/recommendations/ai-search/",
+            data=json.dumps(
+                self._frame_search_payload(frame, query="달달한거 먹고 싶어"),
+                ensure_ascii=False,
+            ),
+            content_type="application/json",
+            **self._auth_headers(),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        result_ids = [result["id"] for result in data["results"]]
+        generic_result = next(result for result in data["results"] if result["id"] == generic_restaurant.id)
+
+        self.assertLess(result_ids.index(dessert_cafe.id), result_ids.index(generic_restaurant.id))
+        self.assertEqual(data["results"][0]["frame_match_strength"], "strong")
+        self.assertEqual(generic_result["frame_match_strength"], "weak")
+
+    def test_ai_search_frame_prioritizes_sport_target_over_unrelated_fallback(self):
+        sport_place = self._create_place(
+            name="테스트 체육공원",
+            category="sports_facility",
+            external_id="frame-sport-facility",
+            data_quality_score=66,
+        )
+        self._add_tag(sport_place, "축구장")
+        generic_cafe = self._create_place(
+            name="테스트 일반 카페",
+            category="cafe",
+            external_id="frame-sport-generic-cafe",
+            data_quality_score=99,
+        )
+        frame = {
+            "user_goal": "축구 연습 장소 찾기",
+            "anchor_location": "",
+            "location_mode": "current_context",
+            "situation": "general_place",
+            "display_label": "축구 연습 장소",
+            "target_objects": ["축구 연습"],
+            "candidate_category_codes": ["sports_facility", "city_park", "cafe"],
+            "candidate_place_types": ["축구장", "풋살장", "운동장", "체육공원"],
+            "search_queries": ["축구장", "풋살장", "운동장"],
+            "result_match_terms": ["축구", "축구장", "풋살장", "운동장", "체육공원"],
+            "constraints": ["이용 가능 여부 확인 필요"],
+            "exclusions": [],
+            "preferred_place_natures": ["ordinary_public_access", "park_like"],
+            "excluded_place_natures": [],
+            "ranking_policy": "evidence_first",
+            "missing_info": ["실제 이용 가능 여부"],
+            "confidence": 0.82,
+        }
+
+        response = self.client.post(
+            "/api/recommendations/ai-search/",
+            data=json.dumps(
+                self._frame_search_payload(frame, query="근처에 축구 연습하기 좋은 장소 추천해줘"),
+                ensure_ascii=False,
+            ),
+            content_type="application/json",
+            **self._auth_headers(),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        result_ids = [result["id"] for result in data["results"]]
+        cafe_result = next(result for result in data["results"] if result["id"] == generic_cafe.id)
+
+        self.assertLess(result_ids.index(sport_place.id), result_ids.index(generic_cafe.id))
+        self.assertEqual(data["results"][0]["frame_match_strength"], "strong")
+        self.assertEqual(cafe_result["frame_match_strength"], "weak")
+
+    def test_ai_search_frame_demotes_commercial_places_for_low_cost_time_spending(self):
+        park = self._create_place(
+            name="테스트 열린 광장 공원",
+            category="city_park",
+            external_id="frame-low-cost-park",
+            data_quality_score=70,
+        )
+        library = self._create_place(
+            name="테스트 공공도서관",
+            category="library",
+            external_id="frame-low-cost-library",
+            data_quality_score=70,
+        )
+        commercial_cafe = self._create_place(
+            name="테스트 유료 소비 카페",
+            category="cafe",
+            external_id="frame-low-cost-cafe",
+            data_quality_score=99,
+        )
+        frame = {
+            "user_goal": "돈을 쓰지 않고 시간 보내기 좋은 곳 찾기",
+            "anchor_location": "",
+            "location_mode": "current_context",
+            "situation": "quiet_rest",
+            "display_label": "무료로 시간 보내기 좋은 곳",
+            "target_objects": ["무료로 시간 보내기"],
+            "candidate_category_codes": ["city_park", "library", "cafe"],
+            "candidate_place_types": ["공원", "도서관", "광장", "공공공간"],
+            "search_queries": ["무료 공공공간", "공원", "도서관"],
+            "result_match_terms": ["무료", "공공공간", "공원", "도서관", "광장"],
+            "constraints": ["무료 또는 저비용", "방문 전 이용 가능 여부 확인 필요"],
+            "exclusions": [],
+            "preferred_place_natures": ["ordinary_public_access", "park_like", "library_like"],
+            "excluded_place_natures": [],
+            "ranking_policy": "cost_sensitive",
+            "missing_info": ["무료 이용 가능 여부"],
+            "confidence": 0.84,
+        }
+
+        response = self.client.post(
+            "/api/recommendations/ai-search/",
+            data=json.dumps(
+                self._frame_search_payload(frame, query="돈 안쓰고 시간 때우기 좋은 곳"),
+                ensure_ascii=False,
+            ),
+            content_type="application/json",
+            **self._auth_headers(),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        result_ids = [result["id"] for result in data["results"]]
+        cafe_result = next(result for result in data["results"] if result["id"] == commercial_cafe.id)
+
+        self.assertLess(result_ids.index(park.id), result_ids.index(commercial_cafe.id))
+        self.assertLess(result_ids.index(library.id), result_ids.index(commercial_cafe.id))
+        self.assertEqual(
+            cafe_result["score_breakdown"]["frame_relevance_penalty_reason"],
+            "commercial_rest_place_for_low_cost_public_space",
+        )
+
+    def test_ai_search_frame_urgent_nearest_sorts_by_distance(self):
+        near_toilet = self._create_place(
+            name="테스트 가까운 공중화장실",
+            category="toilet",
+            external_id="frame-urgent-near-toilet",
+            lat=35.1557,
+            lng=129.0642,
+            data_quality_score=40,
+        )
+        far_toilet = self._create_place(
+            name="테스트 먼 고품질 공중화장실",
+            category="toilet",
+            external_id="frame-urgent-far-toilet",
+            lat=35.1587,
+            lng=129.0672,
+            data_quality_score=99,
+        )
+        frame = {
+            "user_goal": "가장 가까운 화장실 찾기",
+            "anchor_location": "",
+            "location_mode": "current_context",
+            "situation": "toilet",
+            "display_label": "가까운 화장실",
+            "target_objects": ["화장실"],
+            "candidate_category_codes": ["toilet"],
+            "candidate_place_types": ["공중화장실", "개방화장실", "화장실"],
+            "search_queries": ["공중화장실", "개방화장실"],
+            "result_match_terms": ["화장실", "공중화장실", "개방화장실"],
+            "constraints": ["가까운 곳", "긴급", "개방 여부 확인 필요"],
+            "exclusions": [],
+            "preferred_place_natures": ["ordinary_public_access"],
+            "excluded_place_natures": [],
+            "ranking_policy": "urgent_nearest",
+            "missing_info": ["운영/개방 여부"],
+            "confidence": 0.9,
+        }
+
+        response = self.client.post(
+            "/api/recommendations/ai-search/",
+            data=json.dumps(
+                self._frame_search_payload(frame, query="진짜 지금 싸기 직전인데 근처에 제일 가까운 곳"),
+                ensure_ascii=False,
+            ),
+            content_type="application/json",
+            **self._auth_headers(),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["results"][0]["id"], near_toilet.id)
+        self.assertLess(data["results"][0]["distance_m"], data["results"][1]["distance_m"])
+        self.assertEqual(data["results"][1]["id"], far_toilet.id)
+
     def test_authenticated_user_can_save_search_log(self):
         response = self.client.post(
             "/api/recommendations/search-logs/",
@@ -3730,6 +5075,199 @@ class RecommendationSearchTests(TestCase):
         self.assertIn("카페", plan["search_plan"].get("excluded_categories", []))
 
     @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=False)
+    def test_intent_group_quiet_rest_place_keeps_broad_candidates(self):
+        plan = build_conversational_search_plan("서면에서 조용히 쉴 곳")
+        search_plan = plan["search_plan"]
+        candidate_names = {
+            candidate["name"]
+            for candidate in search_plan.get("category_candidates", [])
+        }
+
+        self.assertEqual(plan["action"], "search")
+        self.assertEqual(search_plan["scenario"], "waiting_place")
+        self.assertEqual(search_plan["intent_group"], "quiet_rest_place")
+        self.assertEqual(search_plan["locationQuery"], "서면")
+        self.assertNotEqual(search_plan["targetQuery"], "카페")
+        self.assertIn("도서관", candidate_names)
+        self.assertIn("쉼터", candidate_names)
+        self.assertIn("공원", candidate_names)
+        self.assertIn("카페", candidate_names)
+
+    @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=False)
+    def test_intent_group_quiet_rest_place_preserves_cafe_exclusion(self):
+        plan = build_conversational_search_plan("카페 말고 조용히 쉴 곳")
+        search_plan = plan["search_plan"]
+        candidate_names = [
+            candidate["name"]
+            for candidate in search_plan.get("category_candidates", [])
+        ]
+
+        self.assertEqual(search_plan["intent_group"], "quiet_rest_place")
+        self.assertIn("카페", search_plan.get("excluded_categories", []))
+        self.assertNotIn("카페", candidate_names)
+        self.assertTrue(
+            all("카페" not in query for query in search_plan.get("web_search_queries", []))
+        )
+
+    @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=False)
+    def test_intent_group_work_place_adds_work_candidates(self):
+        plan = build_conversational_search_plan("하단에서 노트북 펴도 눈치 안 보이는 곳")
+        search_plan = plan["search_plan"]
+        candidate_names = {
+            candidate["name"]
+            for candidate in search_plan.get("category_candidates", [])
+        }
+
+        self.assertEqual(plan["action"], "search")
+        self.assertEqual(search_plan["scenario"], "work_cafe")
+        self.assertEqual(search_plan["intent_group"], "work_place")
+        self.assertEqual(search_plan["locationQuery"], "하단")
+        self.assertIn("카페", candidate_names)
+        self.assertIn("도서관", candidate_names)
+        self.assertIn("스터디카페", candidate_names)
+        self.assertTrue(
+            "노트북 작업 가능" in plan["conditions"]
+            or "혼자 이용하기 좋음" in plan["conditions"]
+        )
+
+    @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=False)
+    def test_intent_group_urgent_toilet_is_place_search(self):
+        for query in ["화장실 급해", "똥 마려워"]:
+            with self.subTest(query=query):
+                plan = build_conversational_search_plan(query)
+                search_plan = plan["search_plan"]
+
+                self.assertNotIn(plan["action"], {"blocked", "out_of_scope"})
+                self.assertEqual(search_plan["intent_group"], "urgent_toilet")
+                self.assertTrue(
+                    "화장실" in search_plan["targetQuery"]
+                    or "공중화장실" in search_plan["targetQuery"]
+                )
+
+    @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=False)
+    def test_intent_group_health_nearby_is_place_guidance_only(self):
+        plan = build_conversational_search_plan("머리 아프다")
+        search_plan = plan["search_plan"]
+        candidate_names = {
+            candidate["name"]
+            for candidate in search_plan.get("category_candidates", [])
+        }
+
+        self.assertNotIn(plan["action"], {"blocked", "out_of_scope"})
+        self.assertEqual(search_plan["intent_group"], "health_nearby")
+        self.assertTrue({"약국", "병원"} & candidate_names)
+        self.assertIn("가까운 약국이나 병원", plan["message"])
+        self.assertNotIn("복용", plan["message"])
+        self.assertNotIn("진단", plan["message"])
+
+    @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=False)
+    def test_intent_group_weather_shelter_adds_indoor_conditions(self):
+        plan = build_conversational_search_plan("비 피할 곳")
+        search_plan = plan["search_plan"]
+
+        self.assertEqual(search_plan["intent_group"], "weather_shelter")
+        self.assertTrue(
+            "비 피하기 좋음" in plan["conditions"]
+            or "실내" in plan["conditions"]
+        )
+
+    @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=False)
+    def test_intent_group_web_search_queries_are_contextual(self):
+        quiet_plan = build_conversational_search_plan("서면에서 조용히 쉴 곳")
+        quiet_search_plan = quiet_plan["search_plan"]
+        walk_plan = build_conversational_search_plan("광안리 쪽에서 바람 쐬면서 걷기 좋은 곳")
+        walk_search_plan = walk_plan["search_plan"]
+
+        self.assertTrue(quiet_search_plan["web_search_recommended"])
+        self.assertIn("서면 조용한 공간", quiet_search_plan["web_search_queries"])
+        self.assertIn("서면 도서관", quiet_search_plan["web_search_queries"])
+        self.assertIn("광안리 산책로", walk_search_plan["web_search_queries"])
+        self.assertIn("광안리 해변 산책", walk_search_plan["web_search_queries"])
+
+    @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=False)
+    def test_place_intent_frame_quiet_rest_keeps_semantic_candidates(self):
+        plan = build_conversational_search_plan("서면에서 조용히 쉴 곳")
+        search_plan = plan["search_plan"]
+        frame = search_plan["place_intent_frame"]
+
+        self.assertEqual(plan["action"], "search")
+        self.assertEqual(frame["situation"], "quiet_rest")
+        self.assertEqual(frame["anchor_location"], "서면")
+        self.assertNotEqual(search_plan["targetQuery"], "카페")
+        self.assertIn("도서관", frame["candidate_place_types"])
+        self.assertIn("쉼터", frame["candidate_place_types"])
+        self.assertIn("공원", frame["candidate_place_types"])
+
+    @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=False)
+    def test_place_intent_frame_preserves_complex_anchor_location(self):
+        plan = build_conversational_search_plan("서면역 롯데백화점 근처 쉴 곳")
+        search_plan = plan["search_plan"]
+        frame = search_plan["place_intent_frame"]
+
+        self.assertEqual(plan["action"], "search")
+        self.assertEqual(search_plan["locationQuery"], "서면역 롯데백화점")
+        self.assertEqual(frame["anchor_location"], "서면역 롯데백화점")
+        self.assertEqual(frame["situation"], "rest")
+        self.assertIn("쉼터", frame["candidate_place_types"])
+
+    @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=False)
+    def test_place_intent_frame_handles_colloquial_toilet_query(self):
+        plan = build_conversational_search_plan("똥 마려운데 우야노")
+        search_plan = plan["search_plan"]
+        frame = search_plan["place_intent_frame"]
+
+        self.assertNotIn(plan["action"], {"blocked", "out_of_scope"})
+        self.assertEqual(search_plan["intent_group"], "urgent_toilet")
+        self.assertEqual(frame["situation"], "toilet")
+        self.assertNotEqual(frame["situation"], "waiting_place")
+
+    @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=False)
+    def test_place_intent_frame_handles_colloquial_work_query(self):
+        plan = build_conversational_search_plan("놋북 펼 데 없나")
+        frame = plan["search_plan"]["place_intent_frame"]
+
+        self.assertEqual(frame["situation"], "work")
+        self.assertIn("카페", frame["candidate_place_types"])
+        self.assertIn("도서관", frame["candidate_place_types"])
+        self.assertIn("스터디카페", frame["candidate_place_types"])
+
+    @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=False)
+    def test_place_intent_frame_handles_colloquial_quiet_rest_query(self):
+        plan = build_conversational_search_plan("사람 없는 데서 좀 멍때리고 싶다")
+        frame = plan["search_plan"]["place_intent_frame"]
+
+        self.assertEqual(frame["situation"], "quiet_rest")
+        self.assertTrue(
+            "조용함" in frame["constraints"]
+            or "혼자 이용하기 좋음" in frame["constraints"]
+        )
+
+    @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=False)
+    def test_place_intent_frame_health_query_keeps_trailing_location(self):
+        plan = build_conversational_search_plan("머리 아프다 하단역")
+        search_plan = plan["search_plan"]
+        frame = search_plan["place_intent_frame"]
+
+        self.assertEqual(search_plan["intent_group"], "health_nearby")
+        self.assertEqual(search_plan["locationQuery"], "하단역")
+        self.assertEqual(frame["anchor_location"], "하단역")
+        self.assertEqual(frame["situation"], "health_nearby")
+        self.assertIn("약국", frame["candidate_place_types"])
+        self.assertIn("병원", frame["candidate_place_types"])
+        self.assertNotEqual(frame["situation"], "waiting_place")
+
+    @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=False)
+    def test_place_intent_frame_cafe_exclusion_removes_cafe_queries(self):
+        plan = build_conversational_search_plan("서면에서 카페 말고 조용히 쉴 곳")
+        search_plan = plan["search_plan"]
+        frame = search_plan["place_intent_frame"]
+
+        self.assertIn("카페 제외", frame["exclusions"])
+        self.assertNotIn("카페", frame["candidate_place_types"])
+        self.assertTrue(all("카페" not in query for query in search_plan["web_search_queries"]))
+        self.assertTrue(all("카페" not in keyword for keyword in search_plan["kakaoKeywordCandidates"]))
+
+    @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=False)
     def test_intent_router_search_regression_cases(self):
         cases = [
             {
@@ -3978,7 +5516,12 @@ class RecommendationSearchTests(TestCase):
                 self.assertTrue(required_keys.issubset(plan.keys()))
                 self.assertIn(plan["action"], allowed_actions)
 
-    @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=True, AI_PROVIDER="gms")
+    @override_settings(
+        CONVERSATIONAL_SEARCH_AI_ENABLED=True,
+        AI_PROVIDER="gms",
+        GMS_API_KEY="fake-gms",
+        GMS_API_URL="https://example.invalid/parser",
+    )
     @patch("recommendations.services.conversational_search_planner._call_gms_chat_json")
     def test_ai_intent_classifier_fallback_interprets_work_cafe_query(self, mock_ai):
         mock_ai.return_value = {
@@ -3999,7 +5542,12 @@ class RecommendationSearchTests(TestCase):
         self.assertIn("노트북 작업 가능", plan["conditions"])
         mock_ai.assert_called_once()
 
-    @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=True, AI_PROVIDER="gms")
+    @override_settings(
+        CONVERSATIONAL_SEARCH_AI_ENABLED=True,
+        AI_PROVIDER="gms",
+        GMS_API_KEY="fake-gms",
+        GMS_API_URL="https://example.invalid/parser",
+    )
     @patch("recommendations.services.conversational_search_planner._call_gms_chat_json")
     def test_ai_intent_classifier_fallback_interprets_walk_healing_query(self, mock_ai):
         mock_ai.return_value = {
@@ -4018,11 +5566,16 @@ class RecommendationSearchTests(TestCase):
         self.assertEqual(plan["action"], "search")
         self.assertEqual(plan["search_plan"]["scenario"], "walk_healing")
         self.assertEqual(plan["search_plan"]["locationQuery"], "광안리")
-        self.assertEqual(plan["search_plan"]["targetQuery"], "산책할 곳")
+        self.assertEqual(plan["search_plan"]["targetQuery"], "걷기 좋은 곳")
         self.assertIn("산책하기 좋음", plan["conditions"])
         mock_ai.assert_called_once()
 
-    @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=True, AI_PROVIDER="gms")
+    @override_settings(
+        CONVERSATIONAL_SEARCH_AI_ENABLED=True,
+        AI_PROVIDER="gms",
+        GMS_API_KEY="fake-gms",
+        GMS_API_URL="https://example.invalid/parser",
+    )
     @patch("recommendations.services.conversational_search_planner._call_gms_chat_json")
     def test_ai_intent_classifier_validator_normalizes_location_suffix_and_walk_target(self, mock_ai):
         mock_ai.return_value = {
@@ -4041,20 +5594,39 @@ class RecommendationSearchTests(TestCase):
         self.assertEqual(plan["action"], "search")
         self.assertEqual(plan["search_plan"]["scenario"], "walk_healing")
         self.assertEqual(plan["search_plan"]["locationQuery"], "광안리")
-        self.assertEqual(plan["search_plan"]["targetQuery"], "산책할 곳")
-        self.assertIn("바람 쐬기 좋음", plan["conditions"])
+        self.assertEqual(plan["search_plan"]["targetQuery"], "공원")
+        self.assertEqual(plan["search_plan"]["execution_mode"], "frame")
+        self.assertEqual(plan["search_plan"]["plan_source"], "ai")
+        self.assertIn("걷기 좋음", plan["conditions"])
 
-    @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=True, AI_PROVIDER="gms")
+    @override_settings(
+        CONVERSATIONAL_SEARCH_AI_ENABLED=True,
+        AI_PROVIDER="gms",
+        GMS_API_KEY="fake-gms",
+        GMS_API_URL="https://example.invalid/parser",
+    )
     @patch("recommendations.services.conversational_search_planner._call_gms_chat_json")
     def test_ai_intent_classifier_validator_does_not_turn_cafe_negative_into_cafe_search(self, mock_ai):
         mock_ai.return_value = {
             "action": "search",
             "search_plan": {
-                "scenario": "work_cafe",
-                "locationQuery": "서면에서",
-                "targetQuery": "카페",
-                "categories": ["cafe"],
-                "conditions": ["카페", "조용함"],
+                "scenario": "waiting_place",
+                "locationQuery": "서면",
+                "targetQuery": "조용히 쉴 곳",
+                "place_intent_frame": {
+                    "user_goal": "카페가 아닌 조용히 쉴 곳 찾기",
+                    "anchor_location": "서면",
+                    "location_mode": "explicit",
+                    "situation": "quiet_rest",
+                    "display_label": "조용히 쉴 곳",
+                    "candidate_category_codes": ["library", "shelter"],
+                    "candidate_place_types": ["도서관", "쉼터"],
+                    "search_queries": ["서면 도서관", "서면 쉼터"],
+                    "result_match_terms": ["도서관", "쉼터"],
+                    "constraints": ["조용함"],
+                    "exclusions": ["카페 제외"],
+                    "confidence": 0.82,
+                },
             },
             "confidence": 0.82,
         }
@@ -4064,13 +5636,18 @@ class RecommendationSearchTests(TestCase):
         self.assertEqual(plan["action"], "search")
         self.assertEqual(plan["search_plan"]["scenario"], "waiting_place")
         self.assertEqual(plan["search_plan"]["locationQuery"], "서면")
-        self.assertEqual(plan["search_plan"]["targetQuery"], "쉴 곳")
+        self.assertEqual(plan["search_plan"]["targetQuery"], "조용히 쉴 곳")
         self.assertNotEqual(plan["search_plan"]["targetQuery"], "카페")
         self.assertNotIn("카페", plan["conditions"])
         self.assertIn("카페 제외", plan["conditions"])
-        self.assertIn("카페", plan["search_plan"].get("excluded_categories", []))
+        self.assertIn("카페 제외", plan["search_plan"]["place_intent_frame"].get("exclusions", []))
 
-    @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=True, AI_PROVIDER="gms")
+    @override_settings(
+        CONVERSATIONAL_SEARCH_AI_ENABLED=True,
+        AI_PROVIDER="gms",
+        GMS_API_KEY="fake-gms",
+        GMS_API_URL="https://example.invalid/parser",
+    )
     @patch("recommendations.services.conversational_search_planner._call_gms_chat_json")
     def test_ai_intent_classifier_validator_corrects_disallowed_scenario(self, mock_ai):
         mock_ai.return_value = {
@@ -4089,9 +5666,15 @@ class RecommendationSearchTests(TestCase):
         self.assertEqual(plan["action"], "search")
         self.assertNotEqual(plan["search_plan"]["scenario"], "study_room")
         self.assertEqual(plan["search_plan"]["scenario"], "work_cafe")
-        self.assertEqual(plan["search_plan"]["targetQuery"], "카페")
+        self.assertEqual(plan["search_plan"]["targetQuery"], "스터디룸")
+        self.assertEqual(plan["search_plan"]["execution_mode"], "frame")
 
-    @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=True, AI_PROVIDER="gms")
+    @override_settings(
+        CONVERSATIONAL_SEARCH_AI_ENABLED=True,
+        AI_PROVIDER="gms",
+        GMS_API_KEY="fake-gms",
+        GMS_API_URL="https://example.invalid/parser",
+    )
     @patch("recommendations.services.conversational_search_planner._call_gms_chat_json")
     def test_ai_intent_classifier_validator_unknown_action_asks_clarification(self, mock_ai):
         mock_ai.return_value = {
@@ -4104,33 +5687,626 @@ class RecommendationSearchTests(TestCase):
         self.assertEqual(plan["action"], "ask_clarification")
         self.assertTrue(plan["needs_clarification"])
 
-    @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=True, AI_PROVIDER="gms")
+    @override_settings(
+        CONVERSATIONAL_SEARCH_AI_ENABLED=True,
+        AI_PROVIDER="gms",
+        GMS_API_KEY="fake-gms",
+        GMS_API_URL="https://example.invalid/parser",
+    )
     @patch("recommendations.services.conversational_search_planner._call_gms_chat_json")
-    def test_ai_intent_classifier_keeps_rule_priority_for_clear_cases(self, mock_ai):
+    def test_ai_intent_classifier_uses_ai_first_for_clear_search_cases(self, mock_ai):
         mock_ai.return_value = {
             "action": "search",
             "search_plan": {
-                "scenario": "work_cafe",
-                "targetQuery": "카페",
+                "scenario": "smoking_area",
+                "targetQuery": "흡연구역",
+                "place_intent_frame": {
+                    "user_goal": "가까운 흡연구역 찾기",
+                    "anchor_location": "",
+                    "location_mode": "current_context",
+                    "situation": "smoking",
+                    "display_label": "흡연구역",
+                    "candidate_category_codes": ["smoking_area"],
+                    "candidate_place_types": ["흡연구역", "흡연실"],
+                    "search_queries": ["흡연구역", "흡연실"],
+                    "result_match_terms": ["흡연구역", "흡연실"],
+                    "constraints": [],
+                    "exclusions": [],
+                    "confidence": 0.8,
+                },
             },
         }
 
-        cases = [
-            ("흡연구역 찾아줘", "search", "smoking_area"),
-            ("비트코인 지금 살까?", "out_of_scope", ""),
-            ("불법적인 장소 알려줘", "blocked", ""),
-            ("좋은 곳 추천해줘", "ask_clarification", ""),
+        plan = build_conversational_search_plan("흡연구역 찾아줘")
+
+        self.assertEqual(plan["action"], "search")
+        self.assertEqual(plan["parser_provider"], "gms")
+        self.assertFalse(plan["parser_fallback"])
+        self.assertEqual(plan["plan_source"], "ai")
+        self.assertEqual(plan["execution_mode"], "frame")
+        self.assertEqual(plan["search_plan"]["scenario"], "smoking_area")
+        self.assertEqual(mock_ai.call_count, 2)
+
+        mock_ai.reset_mock()
+        blocked_plan = build_conversational_search_plan("불법적인 장소 알려줘")
+        self.assertEqual(blocked_plan["action"], "blocked")
+        mock_ai.assert_not_called()
+
+    @override_settings(
+        CONVERSATIONAL_SEARCH_AI_ENABLED=True,
+        AI_PROVIDER="gms",
+        GMS_API_KEY="fake-gms",
+        GMS_API_URL="https://example.invalid/parser",
+    )
+    @patch("recommendations.services.conversational_search_planner._call_gms_chat_json")
+    def test_ai_intent_classifier_uses_ai_frame_for_hadan_toilet_query(self, mock_ai):
+        mock_ai.return_value = {
+            "action": "search",
+            "search_plan": {
+                "scenario": "waiting_place",
+                "locationQuery": "하단역",
+                "targetQuery": "공중화장실",
+                "place_intent_frame": {
+                    "user_goal": "하단역 근처 화장실 찾기",
+                    "anchor_location": "하단역",
+                    "location_mode": "explicit",
+                    "situation": "toilet",
+                    "display_label": "화장실",
+                    "candidate_category_codes": ["toilet"],
+                    "candidate_place_types": ["공중화장실", "개방화장실"],
+                    "search_queries": ["하단역 공중화장실", "하단역 개방화장실"],
+                    "result_match_terms": ["화장실", "공중화장실", "개방화장실"],
+                    "constraints": ["가까운 곳"],
+                    "exclusions": [],
+                    "preferred_place_natures": ["ordinary_public_access"],
+                    "excluded_place_natures": [],
+                    "confidence": 0.91,
+                },
+            },
+            "confidence": 0.91,
+        }
+
+        plan = build_conversational_search_plan("하단역인데 화장실 급해")
+        search_plan = plan["search_plan"]
+        frame = search_plan["place_intent_frame"]
+
+        self.assertEqual(plan["parser_provider"], "gms")
+        self.assertFalse(plan["parser_fallback"])
+        self.assertEqual(plan["plan_source"], "ai")
+        self.assertEqual(plan["execution_mode"], "frame")
+        self.assertEqual(search_plan["plan_source"], "ai")
+        self.assertEqual(search_plan["execution_mode"], "frame")
+        self.assertEqual(search_plan["locationQuery"], "하단역")
+        self.assertEqual(frame["location_mode"], "explicit")
+        self.assertEqual(frame["anchor_location"], "하단역")
+        self.assertIn(search_plan["targetQuery"], ["공중화장실", "화장실"])
+        self.assertEqual(frame["candidate_category_codes"], ["toilet"])
+        mock_ai.assert_called_once()
+
+    @override_settings(
+        CONVERSATIONAL_SEARCH_AI_ENABLED=True,
+        AI_PROVIDER="gms",
+        GMS_API_KEY="fake-gms",
+        GMS_API_URL="https://example.invalid/parser",
+    )
+    @patch("recommendations.services.conversational_search_planner._call_gms_chat_json")
+    def test_ai_intent_classifier_repairs_missing_location_with_ai(self, mock_ai):
+        mock_ai.side_effect = [
+            {
+                "action": "search",
+                "search_plan": {
+                    "scenario": "waiting_place",
+                    "locationQuery": "",
+                    "targetQuery": "공중화장실",
+                    "place_intent_frame": {
+                        "user_goal": "현재 위치 기반으로 가까운 공중화장실을 찾는 요청",
+                        "anchor_location": "",
+                        "location_mode": "current_context",
+                        "situation": "toilet",
+                        "display_label": "화장실",
+                        "candidate_category_codes": ["toilet"],
+                        "candidate_place_types": ["공중화장실"],
+                        "search_queries": ["공중화장실"],
+                        "result_match_terms": ["화장실", "공중화장실"],
+                        "constraints": ["가까운 곳"],
+                        "exclusions": [],
+                        "preferred_place_natures": ["ordinary_public_access"],
+                        "excluded_place_natures": [],
+                        "confidence": 0.86,
+                    },
+                },
+                "confidence": 0.86,
+            },
+            {
+                "explicit_anchor_location": "하단역",
+            },
         ]
 
-        for query, expected_action, expected_scenario in cases:
-            with self.subTest(query=query):
-                plan = build_conversational_search_plan(query)
+        plan = build_conversational_search_plan("하단역인데 화장실 급해")
+        search_plan = plan["search_plan"]
+        frame = search_plan["place_intent_frame"]
 
-                self.assertEqual(plan["action"], expected_action)
-                if expected_scenario:
-                    self.assertEqual(plan["search_plan"]["scenario"], expected_scenario)
+        self.assertEqual(plan["parser_provider"], "gms")
+        self.assertFalse(plan["parser_fallback"])
+        self.assertEqual(plan["plan_source"], "ai")
+        self.assertEqual(plan["execution_mode"], "frame")
+        self.assertEqual(search_plan["plan_source"], "ai")
+        self.assertEqual(search_plan["execution_mode"], "frame")
+        self.assertEqual(search_plan["locationQuery"], "하단역")
+        self.assertEqual(frame["location_mode"], "explicit")
+        self.assertEqual(frame["anchor_location"], "하단역")
+        self.assertEqual(frame["candidate_category_codes"], ["toilet"])
+        self.assertIn("하단역 공중화장실", search_plan["kakaoKeywordCandidates"])
+        self.assertTrue(any(
+            keyword in search_plan["kakaoKeywordCandidates"]
+            for keyword in ["하단역 공중화장실", "하단역 화장실"]
+        ))
+        self.assertNotEqual(search_plan["kakaoKeywordCandidates"], ["공중화장실"])
+        self.assertEqual(plan["ai_debug"]["location_repair"]["checked_location_mode"], "current_context")
+        self.assertEqual(plan["ai_debug"]["location_repair"]["checked_anchor_location"], "")
+        self.assertEqual(plan["ai_debug"]["location_repair"]["frame_location_mode"], "current_context")
+        self.assertEqual(plan["ai_debug"]["location_repair"]["frame_anchor_location"], "")
+        self.assertEqual(plan["ai_debug"]["location_repair"]["status"], "repaired")
+        self.assertEqual(plan["ai_debug"]["location_repair"]["explicit_anchor_location"], "하단역")
+        self.assertEqual(mock_ai.call_count, 2)
 
-        mock_ai.assert_not_called()
+    @override_settings(
+        CONVERSATIONAL_SEARCH_AI_ENABLED=True,
+        AI_PROVIDER="gms",
+        GMS_API_KEY="fake-gms",
+        GMS_API_URL="https://example.invalid/parser",
+    )
+    @patch("recommendations.services.conversational_search_planner._call_gms_chat_json")
+    def test_conversational_search_plan_api_uses_ai_frame_for_hadan_toilet_query(self, mock_ai):
+        mock_ai.return_value = {
+            "action": "search",
+            "search_plan": {
+                "scenario": "waiting_place",
+                "locationQuery": "하단역",
+                "targetQuery": "공중화장실",
+                "place_intent_frame": {
+                    "user_goal": "하단역 근처 화장실 찾기",
+                    "anchor_location": "하단역",
+                    "location_mode": "explicit",
+                    "situation": "toilet",
+                    "display_label": "화장실",
+                    "candidate_category_codes": ["toilet"],
+                    "candidate_place_types": ["공중화장실", "개방화장실"],
+                    "search_queries": ["하단역 공중화장실", "하단역 개방화장실"],
+                    "result_match_terms": ["화장실", "공중화장실", "개방화장실"],
+                    "constraints": ["가까운 곳"],
+                    "exclusions": [],
+                    "preferred_place_natures": ["ordinary_public_access"],
+                    "excluded_place_natures": [],
+                    "confidence": 0.91,
+                },
+            },
+            "confidence": 0.91,
+        }
+
+        response = self.client.post(
+            "/api/recommendations/conversational-search-plan/",
+            data=json.dumps({"query": "하단역인데 화장실 급해"}, ensure_ascii=False),
+            content_type="application/json",
+            **self._auth_headers(),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        search_plan = data["search_plan"]
+        frame = search_plan["place_intent_frame"]
+        self.assertEqual(data["parser_provider"], "gms")
+        self.assertFalse(data["parser_fallback"])
+        self.assertEqual(data["plan_source"], "ai")
+        self.assertEqual(data["execution_mode"], "frame")
+        self.assertEqual(search_plan["locationQuery"], "하단역")
+        self.assertIn(search_plan["targetQuery"], ["공중화장실", "화장실"])
+        self.assertEqual(frame["location_mode"], "explicit")
+        self.assertEqual(frame["anchor_location"], "하단역")
+        self.assertEqual(frame["candidate_category_codes"], ["toilet"])
+        mock_ai.assert_called_once()
+
+    @override_settings(
+        CONVERSATIONAL_SEARCH_AI_ENABLED=True,
+        AI_PROVIDER="gms",
+        GMS_API_KEY="fake-gms",
+        GMS_API_URL="https://example.invalid/parser",
+    )
+    @patch("recommendations.services.conversational_search_planner._call_gms_chat_json")
+    def test_ai_frame_anchor_promotes_to_search_plan_location_fields(self, mock_ai):
+        mock_ai.return_value = {
+            "action": "search",
+            "search_plan": {
+                "scenario": "waiting_place",
+                "locationQuery": "",
+                "baseLocationQuery": "",
+                "targetQuery": "공중화장실",
+                "place_intent_frame": {
+                    "user_goal": "하단역에서 화장실 급함으로 가까운 공중화장실 찾기",
+                    "anchor_location": "하단역",
+                    "location_mode": "explicit",
+                    "situation": "toilet",
+                    "display_label": "화장실",
+                    "candidate_category_codes": ["toilet"],
+                    "candidate_place_types": ["공중화장실"],
+                    "search_queries": ["공중화장실"],
+                    "result_match_terms": ["화장실", "공중화장실"],
+                    "constraints": ["가까운 곳"],
+                    "exclusions": [],
+                    "preferred_place_natures": ["ordinary_public_access"],
+                    "excluded_place_natures": [],
+                    "confidence": 0.9,
+                },
+            },
+            "confidence": 0.9,
+        }
+
+        plan = build_conversational_search_plan("하단역인데 화장실 급해")
+        search_plan = plan["search_plan"]
+        frame = search_plan["place_intent_frame"]
+
+        self.assertEqual(plan["plan_source"], "ai")
+        self.assertEqual(plan["execution_mode"], "frame")
+        self.assertEqual(search_plan["locationQuery"], "하단역")
+        self.assertEqual(search_plan["baseLocationQuery"], "하단역")
+        self.assertEqual(search_plan["anchorLocation"], "하단역")
+        self.assertEqual(search_plan["anchor_location"], "하단역")
+        self.assertTrue(search_plan["has_explicit_location"])
+        self.assertTrue(search_plan["location_resolution_required"])
+        self.assertEqual(frame["anchor_location"], "하단역")
+        self.assertEqual(frame["location_mode"], "explicit")
+        self.assertIn("하단역 공중화장실", search_plan["kakaoKeywordCandidates"])
+        self.assertEqual(plan["ai_debug"]["location_repair"]["status"], "skipped")
+        self.assertEqual(plan["ai_debug"]["location_repair"]["checked_location_mode"], "explicit")
+        self.assertEqual(plan["ai_debug"]["location_repair"]["checked_anchor_location"], "하단역")
+        mock_ai.assert_called_once()
+
+    @override_settings(
+        CONVERSATIONAL_SEARCH_AI_ENABLED=True,
+        AI_PROVIDER="gms",
+        GMS_API_KEY="fake-gms",
+        GMS_API_URL="https://example.invalid/parser",
+    )
+    @patch("recommendations.services.conversational_search_planner._call_gms_chat_json")
+    def test_conversational_search_plan_api_promotes_frame_anchor_to_location_fields(self, mock_ai):
+        mock_ai.return_value = {
+            "action": "search",
+            "search_plan": {
+                "scenario": "waiting_place",
+                "locationQuery": "",
+                "baseLocationQuery": "",
+                "targetQuery": "공중화장실",
+                "place_intent_frame": {
+                    "user_goal": "하단역에서 화장실 급함으로 가까운 공중화장실 찾기",
+                    "anchor_location": "하단역",
+                    "location_mode": "explicit",
+                    "situation": "toilet",
+                    "display_label": "화장실",
+                    "candidate_category_codes": ["toilet"],
+                    "candidate_place_types": ["공중화장실"],
+                    "search_queries": ["공중화장실"],
+                    "result_match_terms": ["화장실", "공중화장실"],
+                    "constraints": ["가까운 곳"],
+                    "exclusions": [],
+                    "preferred_place_natures": ["ordinary_public_access"],
+                    "excluded_place_natures": [],
+                    "confidence": 0.9,
+                },
+            },
+            "confidence": 0.9,
+        }
+
+        response = self.client.post(
+            "/api/recommendations/conversational-search-plan/",
+            data=json.dumps({"query": "하단역인데 화장실 급해"}, ensure_ascii=False),
+            content_type="application/json",
+            **self._auth_headers(),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        search_plan = data["search_plan"]
+        frame = search_plan["place_intent_frame"]
+        self.assertEqual(search_plan["locationQuery"], "하단역")
+        self.assertEqual(search_plan["location_query"], "하단역")
+        self.assertEqual(search_plan["baseLocationQuery"], "하단역")
+        self.assertEqual(search_plan["base_location_query"], "하단역")
+        self.assertEqual(search_plan["anchorLocation"], "하단역")
+        self.assertEqual(search_plan["anchor_location"], "하단역")
+        self.assertEqual(search_plan["locationMode"], "explicit")
+        self.assertEqual(search_plan["location_mode"], "explicit")
+        self.assertTrue(search_plan["has_explicit_location"])
+        self.assertTrue(search_plan["location_resolution_required"])
+        self.assertEqual(frame["anchor_location"], "하단역")
+        self.assertEqual(frame["location_mode"], "explicit")
+        self.assertIn("하단역 공중화장실", search_plan["kakaoKeywordCandidates"])
+        mock_ai.assert_called_once()
+
+    @patch("recommendations.views.build_conversational_search_plan")
+    def test_conversational_search_plan_api_syncs_final_response_from_ai_debug_frame_anchor(self, mock_builder):
+        mock_builder.return_value = {
+            "action": "search",
+            "intent_type": "place_recommendation",
+            "search_plan": {
+                "scenario": "waiting_place",
+                "locationQuery": "",
+                "baseLocationQuery": "",
+                "anchorLocation": "",
+                "locationMode": "current_context",
+                "targetQuery": "공중화장실",
+                "kakaoKeywordCandidates": ["공중화장실"],
+                "place_intent_frame": {
+                    "user_goal": "현재 위치 기반으로 가까운 공중화장실을 찾는 요청",
+                    "anchor_location": "",
+                    "location_mode": "current_context",
+                    "situation": "toilet",
+                    "display_label": "화장실",
+                    "candidate_category_codes": ["toilet"],
+                    "candidate_place_types": ["공중화장실", "화장실"],
+                    "search_queries": ["공중화장실"],
+                    "result_match_terms": ["화장실", "공중화장실"],
+                    "constraints": ["가까운 곳"],
+                    "exclusions": [],
+                    "preferred_place_natures": ["ordinary_public_access"],
+                    "excluded_place_natures": [],
+                    "confidence": 0.9,
+                },
+            },
+            "location": {
+                "text": "",
+                "is_explicit": False,
+                "fallback": "current_location",
+            },
+            "execution_policy": {
+                "run_search": True,
+                "preserve_explicit_location": False,
+            },
+            "parser_provider": "gms",
+            "parser_fallback": False,
+            "plan_source": "ai",
+            "execution_mode": "frame",
+            "ai_debug": {
+                "location_repair": {
+                    "status": "skipped",
+                    "reason": "not_current_context_without_anchor",
+                    "checked_location_mode": "explicit",
+                    "checked_anchor_location": "하단역",
+                    "frame_location_mode": "explicit",
+                    "frame_anchor_location": "하단역",
+                    "plan_location_mode": "",
+                    "plan_anchor_location": "",
+                    "plan_location_query": "",
+                },
+            },
+        }
+
+        response = self.client.post(
+            "/api/recommendations/conversational-search-plan/",
+            data=json.dumps({"query": "하단역인데 화장실 급해"}, ensure_ascii=False),
+            content_type="application/json",
+            **self._auth_headers(),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        search_plan = data["search_plan"]
+        frame = search_plan["place_intent_frame"]
+        self.assertEqual(frame["anchor_location"], "하단역")
+        self.assertEqual(frame["location_mode"], "explicit")
+        self.assertEqual(search_plan["locationQuery"], "하단역")
+        self.assertEqual(search_plan["baseLocationQuery"], "하단역")
+        self.assertEqual(search_plan["anchorLocation"], "하단역")
+        self.assertEqual(search_plan["locationMode"], "explicit")
+        self.assertTrue(search_plan["has_explicit_location"])
+        self.assertTrue(search_plan["location_resolution_required"])
+        self.assertEqual(data["location"]["text"], "하단역")
+        self.assertTrue(data["location"]["is_explicit"])
+        self.assertTrue(data["execution_policy"]["preserve_explicit_location"])
+        self.assertIn("하단역 공중화장실", search_plan["kakaoKeywordCandidates"])
+        self.assertIn("하단역 화장실", search_plan["kakaoKeywordCandidates"])
+        self.assertEqual(
+            data["ai_debug"]["final_search_plan"]["final_search_plan_anchor_location"],
+            "하단역",
+        )
+        self.assertEqual(
+            data["ai_debug"]["final_search_plan"]["final_search_plan_locationQuery"],
+            "하단역",
+        )
+        self.assertEqual(
+            data["ai_debug"]["final_search_plan"]["final_frame_anchor_location"],
+            "하단역",
+        )
+        self.assertEqual(
+            data["ai_debug"]["final_search_plan"]["final_frame_location_mode"],
+            "explicit",
+        )
+
+    @override_settings(
+        CONVERSATIONAL_SEARCH_AI_ENABLED=True,
+        AI_PROVIDER="gms",
+        GMS_API_KEY="fake-gms",
+        GMS_API_URL="https://example.invalid/parser",
+    )
+    @patch("recommendations.services.conversational_search_planner._call_gms_chat_json")
+    def test_conversational_search_plan_api_repairs_missing_location_with_ai(self, mock_ai):
+        mock_ai.side_effect = [
+            {
+                "action": "search",
+                "search_plan": {
+                    "scenario": "waiting_place",
+                    "locationQuery": "",
+                    "targetQuery": "공중화장실",
+                    "place_intent_frame": {
+                        "user_goal": "현재 위치 기반으로 가까운 공중화장실을 찾는 요청",
+                        "anchor_location": "",
+                        "location_mode": "current_context",
+                        "situation": "toilet",
+                        "display_label": "화장실",
+                        "candidate_category_codes": ["toilet"],
+                        "candidate_place_types": ["공중화장실"],
+                        "search_queries": ["공중화장실"],
+                        "result_match_terms": ["화장실", "공중화장실"],
+                        "constraints": ["가까운 곳"],
+                        "exclusions": [],
+                        "preferred_place_natures": ["ordinary_public_access"],
+                        "excluded_place_natures": [],
+                        "confidence": 0.86,
+                    },
+                },
+                "confidence": 0.86,
+            },
+            {
+                "explicit_anchor_location": "하단역",
+            },
+        ]
+
+        response = self.client.post(
+            "/api/recommendations/conversational-search-plan/",
+            data=json.dumps({"query": "하단역인데 화장실 급해"}, ensure_ascii=False),
+            content_type="application/json",
+            **self._auth_headers(),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        search_plan = data["search_plan"]
+        frame = search_plan["place_intent_frame"]
+        self.assertEqual(data["parser_provider"], "gms")
+        self.assertFalse(data["parser_fallback"])
+        self.assertEqual(data["plan_source"], "ai")
+        self.assertEqual(data["execution_mode"], "frame")
+        self.assertEqual(search_plan["locationQuery"], "하단역")
+        self.assertEqual(frame["location_mode"], "explicit")
+        self.assertEqual(frame["anchor_location"], "하단역")
+        self.assertIn("하단역 공중화장실", search_plan["kakaoKeywordCandidates"])
+        self.assertNotEqual(search_plan["kakaoKeywordCandidates"], ["공중화장실"])
+        self.assertEqual(data["ai_debug"]["location_repair"]["checked_location_mode"], "current_context")
+        self.assertEqual(data["ai_debug"]["location_repair"]["checked_anchor_location"], "")
+        self.assertEqual(data["ai_debug"]["location_repair"]["frame_location_mode"], "current_context")
+        self.assertEqual(data["ai_debug"]["location_repair"]["frame_anchor_location"], "")
+        self.assertEqual(data["ai_debug"]["location_repair"]["status"], "repaired")
+        self.assertEqual(data["ai_debug"]["location_repair"]["explicit_anchor_location"], "하단역")
+        self.assertEqual(mock_ai.call_count, 2)
+
+    @override_settings(
+        CONVERSATIONAL_SEARCH_AI_ENABLED=True,
+        AI_PROVIDER="gms",
+        GMS_API_KEY="fake-gms",
+        GMS_API_URL="https://example.invalid/parser",
+    )
+    @patch("recommendations.services.conversational_search_planner._call_gms_chat_json")
+    def test_ai_intent_classifier_uses_ai_frame_for_colloquial_toilet_query(self, mock_ai):
+        mock_ai.side_effect = [
+            {
+                "action": "search",
+                "search_plan": {
+                    "scenario": "waiting_place",
+                    "locationQuery": "",
+                    "targetQuery": "화장실",
+                    "place_intent_frame": {
+                        "user_goal": "가까운 화장실 찾기",
+                        "anchor_location": "",
+                        "location_mode": "current_context",
+                        "situation": "toilet",
+                        "display_label": "화장실",
+                        "candidate_category_codes": ["toilet"],
+                        "candidate_place_types": ["공중화장실", "개방화장실"],
+                        "search_queries": ["공중화장실", "개방화장실"],
+                        "result_match_terms": ["화장실", "공중화장실", "개방화장실"],
+                        "constraints": ["가까운 곳"],
+                        "exclusions": [],
+                        "preferred_place_natures": ["ordinary_public_access"],
+                        "excluded_place_natures": [],
+                        "confidence": 0.9,
+                    },
+                },
+                "confidence": 0.9,
+            },
+            {
+                "explicit_anchor_location": "",
+            },
+        ]
+
+        plan = build_conversational_search_plan("똥 마려운데 우야노")
+        search_plan = plan["search_plan"]
+        frame = search_plan["place_intent_frame"]
+
+        self.assertEqual(plan["parser_provider"], "gms")
+        self.assertFalse(plan["parser_fallback"])
+        self.assertEqual(plan["plan_source"], "ai")
+        self.assertEqual(plan["execution_mode"], "frame")
+        self.assertEqual(frame["location_mode"], "current_context")
+        self.assertEqual(frame["anchor_location"], "")
+        self.assertEqual(frame["candidate_category_codes"], ["toilet"])
+        self.assertIn("공중화장실", frame["candidate_place_types"])
+        self.assertEqual(plan["ai_debug"]["location_repair"]["status"], "executed")
+        self.assertEqual(plan["ai_debug"]["location_repair"]["reason"], "no_explicit_location_found")
+        self.assertEqual(plan["ai_debug"]["location_repair"]["checked_location_mode"], "current_context")
+        self.assertEqual(plan["ai_debug"]["location_repair"]["checked_anchor_location"], "")
+        self.assertEqual(mock_ai.call_count, 2)
+
+    @override_settings(
+        CONVERSATIONAL_SEARCH_AI_ENABLED=True,
+        AI_PROVIDER="gms",
+        GMS_API_KEY="fake-gms",
+        GMS_API_URL="https://example.invalid/parser",
+    )
+    @patch("recommendations.services.conversational_search_planner._call_gms_chat_json")
+    def test_conversational_search_plan_api_uses_ai_frame_for_colloquial_toilet_query(self, mock_ai):
+        mock_ai.side_effect = [
+            {
+                "action": "search",
+                "search_plan": {
+                    "scenario": "waiting_place",
+                    "locationQuery": "",
+                    "targetQuery": "화장실",
+                    "place_intent_frame": {
+                        "user_goal": "가까운 화장실 찾기",
+                        "anchor_location": "",
+                        "location_mode": "current_context",
+                        "situation": "toilet",
+                        "display_label": "화장실",
+                        "candidate_category_codes": ["toilet"],
+                        "candidate_place_types": ["공중화장실", "개방화장실"],
+                        "search_queries": ["공중화장실", "개방화장실"],
+                        "result_match_terms": ["화장실", "공중화장실", "개방화장실"],
+                        "constraints": ["가까운 곳"],
+                        "exclusions": [],
+                        "preferred_place_natures": ["ordinary_public_access"],
+                        "excluded_place_natures": [],
+                        "confidence": 0.9,
+                    },
+                },
+                "confidence": 0.9,
+            },
+            {
+                "explicit_anchor_location": "",
+            },
+        ]
+
+        response = self.client.post(
+            "/api/recommendations/conversational-search-plan/",
+            data=json.dumps({"query": "똥 마려운데 우야노"}, ensure_ascii=False),
+            content_type="application/json",
+            **self._auth_headers(),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        frame = data["search_plan"]["place_intent_frame"]
+        self.assertEqual(data["parser_provider"], "gms")
+        self.assertFalse(data["parser_fallback"])
+        self.assertEqual(data["plan_source"], "ai")
+        self.assertEqual(data["execution_mode"], "frame")
+        self.assertEqual(frame["location_mode"], "current_context")
+        self.assertEqual(frame["anchor_location"], "")
+        self.assertEqual(frame["candidate_category_codes"], ["toilet"])
+        self.assertIn("공중화장실", frame["candidate_place_types"])
+        self.assertEqual(data["ai_debug"]["location_repair"]["status"], "executed")
+        self.assertEqual(data["ai_debug"]["location_repair"]["reason"], "no_explicit_location_found")
+        self.assertEqual(data["ai_debug"]["location_repair"]["checked_location_mode"], "current_context")
+        self.assertEqual(data["ai_debug"]["location_repair"]["checked_anchor_location"], "")
+        self.assertEqual(mock_ai.call_count, 2)
 
     @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=False)
     def test_conversational_search_planner_uses_current_location_when_location_missing(self):

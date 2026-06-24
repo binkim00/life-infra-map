@@ -654,17 +654,24 @@ def get_naver_search_result(
             reason="missing_naver_search_credentials",
         )
 
-    search_query = build_naver_search_query(
+    search_plan = search_plan or {}
+    planned_search_queries = _get_plan_list(
+        search_plan,
+        "web_search_queries",
+        "webSearchQueries",
+    )
+    search_query = planned_search_queries[0] if planned_search_queries else build_naver_search_query(
         query,
         location_hint=location_hint,
-        search_plan=search_plan or {},
+        search_plan=search_plan,
     )
+    search_queries = planned_search_queries or [search_query]
     location_terms = get_naver_location_terms(
         query=query,
         location_hint=location_hint,
-        search_plan=search_plan or {},
+        search_plan=search_plan,
     )
-    relevance_terms = _get_relevance_terms(query=query, search_plan=search_plan or {})
+    relevance_terms = _get_relevance_terms(query=query, search_plan=search_plan)
     requested_conditions = _get_plan_list(
         search_plan or {},
         "requestedConditions",
@@ -678,6 +685,7 @@ def get_naver_search_result(
         "location_matched_count": 0,
         "filtered_out_count": 0,
         "location_terms": location_terms,
+        "planned_queries": planned_search_queries,
     }
     saw_raw_results = False
     saw_location_filtered_results = False
@@ -691,7 +699,7 @@ def get_naver_search_result(
                     candidates=[],
                     reason="missing_location_hint_for_broad_search",
                 )
-                result["search_queries"] = [search_query]
+                result["search_queries"] = search_queries
                 if getattr(settings, "DEBUG", False):
                     debug_summary["source_channel"] = channel
                     result["debug_summary"] = debug_summary
@@ -723,6 +731,7 @@ def get_naver_search_result(
                 "location_matched_count": location_matched_count,
                 "filtered_out_count": filtered_out_count,
                 "location_terms": location_terms,
+                "planned_queries": planned_search_queries,
             }
             if channel in {"blog", "webkr"} and raw_count and not location_matched_count:
                 saw_location_filtered_results = True
@@ -736,7 +745,7 @@ def get_naver_search_result(
                     reason="search_api_reference",
                 )
                 result["summary"] = summary
-                result["search_queries"] = [search_query]
+                result["search_queries"] = search_queries
                 result["source_channel"] = channel
                 if getattr(settings, "DEBUG", False):
                     result["debug_summary"] = debug_summary
@@ -756,7 +765,7 @@ def get_naver_search_result(
             candidates=[],
             reason="no_location_matched_search_result",
         )
-        result["search_queries"] = [search_query]
+        result["search_queries"] = search_queries
         if getattr(settings, "DEBUG", False):
             result["debug_summary"] = location_filtered_debug_summary or debug_summary
         return result
@@ -766,7 +775,7 @@ def get_naver_search_result(
         candidates=[],
         reason="no_search_result",
     )
-    result["search_queries"] = [search_query]
+    result["search_queries"] = search_queries
     if getattr(settings, "DEBUG", False):
         result["debug_summary"] = debug_summary
     return result

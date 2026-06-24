@@ -152,6 +152,16 @@ WORK_CAFE_LOW_CONFIDENCE_CATEGORIES = {
     "study_cafe",
 }
 
+TAKEOUT_FOCUSED_TERMS = [
+    "테이크아웃",
+    "takeout",
+    "포장전문",
+    "포장 중심",
+    "좌석 부족",
+    "좌석없음",
+    "매장 이용 제한",
+]
+
 WALK_HEALING_EXCLUDE_KEYWORDS = [
     *WAITING_PLACE_EXCLUDE_KEYWORDS,
     "음식점",
@@ -390,6 +400,555 @@ def _raw_search_text(value):
     return ""
 
 
+def _as_text_list(value):
+    if value in (None, ""):
+        return []
+    if isinstance(value, (list, tuple, set)):
+        values = value
+    else:
+        values = [value]
+
+    result = []
+    for item in values:
+        if isinstance(item, dict):
+            item = (
+                item.get("label")
+                or item.get("name")
+                or item.get("display_name")
+                or item.get("displayName")
+                or item.get("value")
+                or item.get("text")
+            )
+        text = str(item or "").strip()
+        if text and text != "[object Object]" and text not in result:
+            result.append(text)
+    return result
+
+
+def _compact_text(value):
+    return str(value or "").lower().replace(" ", "")
+
+
+def _frame_from_inputs(search_plan=None, place_intent_frame=None):
+    search_plan = search_plan if isinstance(search_plan, dict) else {}
+    frame = place_intent_frame if isinstance(place_intent_frame, dict) else {}
+    if not frame:
+        candidate = (
+            search_plan.get("place_intent_frame")
+            or search_plan.get("placeIntentFrame")
+            or {}
+        )
+        frame = candidate if isinstance(candidate, dict) else {}
+    return frame
+
+
+def _normalize_frame_for_recommendation(search_plan=None, place_intent_frame=None):
+    search_plan = search_plan if isinstance(search_plan, dict) else {}
+    frame = _frame_from_inputs(search_plan, place_intent_frame)
+    location_mode = str(
+        frame.get("location_mode")
+        or frame.get("locationMode")
+        or search_plan.get("location_mode")
+        or search_plan.get("locationMode")
+        or ""
+    ).strip()
+    candidate_categories = _as_text_list(
+        frame.get("candidate_category_codes")
+        or frame.get("candidateCategoryCodes")
+        or search_plan.get("candidate_category_codes")
+        or search_plan.get("candidateCategoryCodes")
+    )
+    candidate_place_types = _as_text_list(
+        frame.get("candidate_place_types")
+        or frame.get("candidatePlaceTypes")
+        or search_plan.get("candidate_place_types")
+        or search_plan.get("candidatePlaceTypes")
+    )
+    search_queries = _as_text_list(
+        frame.get("search_queries")
+        or frame.get("searchQueries")
+        or search_plan.get("search_queries")
+        or search_plan.get("searchQueries")
+    )
+    result_match_terms = _as_text_list(
+        frame.get("result_match_terms")
+        or frame.get("resultMatchTerms")
+        or search_plan.get("result_match_terms")
+        or search_plan.get("resultMatchTerms")
+    )
+    target_objects = _as_text_list(
+        frame.get("target_objects")
+        or frame.get("targetObjects")
+        or search_plan.get("target_objects")
+        or search_plan.get("targetObjects")
+    )
+    ranking_policy = str(
+        frame.get("ranking_policy")
+        or frame.get("rankingPolicy")
+        or search_plan.get("ranking_policy")
+        or search_plan.get("rankingPolicy")
+        or ""
+    ).strip()
+
+    normalized = {
+        **frame,
+        "user_goal": str(frame.get("user_goal") or frame.get("userGoal") or "").strip(),
+        "anchor_location": str(frame.get("anchor_location") or frame.get("anchorLocation") or "").strip(),
+        "location_mode": location_mode,
+        "display_label": str(frame.get("display_label") or frame.get("displayLabel") or "").strip(),
+        "target_objects": target_objects,
+        "candidate_category_codes": candidate_categories,
+        "candidate_place_types": candidate_place_types,
+        "search_queries": search_queries,
+        "result_match_terms": result_match_terms,
+        "constraints": _as_text_list(frame.get("constraints") or search_plan.get("constraints")),
+        "exclusions": _as_text_list(frame.get("exclusions") or search_plan.get("exclusions")),
+        "preferred_place_natures": _as_text_list(
+            frame.get("preferred_place_natures")
+            or frame.get("preferredPlaceNatures")
+            or search_plan.get("preferred_place_natures")
+            or search_plan.get("preferredPlaceNatures")
+        ),
+        "excluded_place_natures": _as_text_list(
+            frame.get("excluded_place_natures")
+            or frame.get("excludedPlaceNatures")
+            or search_plan.get("excluded_place_natures")
+            or search_plan.get("excludedPlaceNatures")
+        ),
+        "ranking_policy": ranking_policy,
+    }
+    if normalized["target_objects"]:
+        normalized["result_match_terms"] = list(dict.fromkeys([
+            *normalized["target_objects"],
+            *normalized["result_match_terms"],
+        ]))
+    return normalized
+
+
+def _is_valid_recommendation_frame(frame):
+    if not isinstance(frame, dict):
+        return False
+    if frame.get("location_mode") not in {"explicit", "current_context", "clarification_required"}:
+        return False
+    if frame.get("location_mode") == "explicit" and not frame.get("anchor_location"):
+        return False
+    return bool(
+        frame.get("user_goal")
+        and frame.get("display_label")
+        and (frame.get("candidate_place_types") or frame.get("search_queries"))
+    )
+
+
+PLACE_NATURES_BY_CATEGORY = {
+    "library": ["ordinary_public_access", "library_like"],
+    "public_library": ["ordinary_public_access", "library_like"],
+    "city_park": ["ordinary_public_access", "park_like"],
+    "citypark": ["ordinary_public_access", "park_like"],
+    "beach": ["ordinary_public_access", "park_like"],
+    "tourism": ["ordinary_public_access"],
+    "cafe": ["ordinary_public_access", "commercial_rest_place"],
+    "restaurant": ["ordinary_public_access", "commercial_rest_place"],
+    "shelter": ["ordinary_public_access"],
+    "parking": ["ordinary_public_access", "transit_facility"],
+    "toilet": ["ordinary_public_access"],
+    "smoking_area": ["ordinary_public_access"],
+    "pharmacy": ["ordinary_public_access", "medical_facility"],
+    "hospital": ["medical_facility"],
+}
+
+
+GENERAL_REST_FRAME_TERMS = [
+    "쉴",
+    "쉼",
+    "휴식",
+    "휴게",
+    "조용",
+    "도서관",
+    "쉼터",
+]
+
+SENIOR_FACILITY_TERMS = [
+    "경로당",
+    "노인정",
+    "노인회관",
+    "노인복지",
+    "노인복지관",
+    "요양원",
+]
+
+PUBLIC_INSTITUTION_TERMS = [
+    "행정복지센터",
+    "주민센터",
+    "동사무소",
+    "마을행복센터",
+    "구청",
+    "시청",
+    "군청",
+    "읍사무소",
+    "면사무소",
+    "민원센터",
+    "지원센터",
+    "새마을금고",
+    "은행",
+]
+
+RESTRICTED_PROGRAM_FACILITY_TERMS = [
+    "복지센터",
+    "복지시설쉼터",
+    "복지시설",
+    "복지관",
+    "장애인복지관",
+    "건강가정지원센터",
+    "가족센터",
+    "청소년센터",
+    "자원봉사센터",
+    "문화센터",
+    "평생학습관",
+    "어린이집",
+    "유치원",
+    "학교",
+]
+
+LIMITED_ACCESS_PLACE_NATURES = {
+    "conditional_shelter",
+    "senior_facility_like",
+    "public_institution_like",
+    "restricted_program_facility",
+    "limited_access_facility",
+}
+
+GENERAL_REST_LIMITED_ACCESS_PENALTIES = {
+    "senior_facility_like": 55,
+    "restricted_program_facility": 45,
+    "public_institution_like": 42,
+    "limited_access_facility": 38,
+    "conditional_shelter": 35,
+}
+
+
+def _infer_place_natures(place, tag_data=None):
+    natures = list(PLACE_NATURES_BY_CATEGORY.get(place.category, []))
+    search_text = _place_search_text(place, tag_data)
+    tag_text = _compact_text(" ".join(_all_tag_names(tag_data or {
+        "verified_tags": [],
+        "suggested_tags": [],
+        "warning_tags": [],
+    })))
+    raw_text = _compact_text(
+        " ".join([
+            place.source,
+            place.source_name,
+            _raw_search_text(place.raw),
+        ])
+    )
+    if "도서관" in tag_text or "library" in tag_text:
+        natures.append("library_like")
+    if "공원" in tag_text or "산책" in tag_text:
+        natures.append("park_like")
+    if place.category == "shelter" and (
+        place.source == "heat_shelter_api"
+        or "무더위쉼터" in raw_text
+    ):
+        natures.append("conditional_shelter")
+    if _has_keyword(search_text, SENIOR_FACILITY_TERMS):
+        natures.extend(["senior_facility_like", "limited_access_facility"])
+    if _has_keyword(search_text, PUBLIC_INSTITUTION_TERMS):
+        natures.extend(["public_institution_like", "limited_access_facility"])
+    if _has_keyword(search_text, RESTRICTED_PROGRAM_FACILITY_TERMS):
+        natures.extend(["restricted_program_facility", "limited_access_facility"])
+    if _has_keyword(search_text, TAKEOUT_FOCUSED_TERMS):
+        natures.append("takeout_focused")
+    return list(dict.fromkeys(natures or ["unknown"]))
+
+
+def _term_matches_text(text, terms):
+    compact = _compact_text(text)
+    if not compact:
+        return False
+    return any(
+        term and (_compact_text(term) in compact or compact in _compact_text(term))
+        for term in terms
+    )
+
+
+def _frame_relevance_terms(frame):
+    return list(dict.fromkeys(
+        _as_text_list(frame.get("target_objects"))
+        + _as_text_list(frame.get("targetObjects"))
+        + _as_text_list(frame.get("result_match_terms"))
+        + _as_text_list(frame.get("candidate_place_types"))
+    ))
+
+
+def _frame_target_terms(frame):
+    return list(dict.fromkeys(
+        _as_text_list(frame.get("target_objects"))
+        + _as_text_list(frame.get("targetObjects"))
+        + _as_text_list(frame.get("result_match_terms"))
+    ))
+
+
+def _frame_candidate_terms(frame):
+    return _as_text_list(frame.get("candidate_place_types"))
+
+
+def _frame_ranking_policy(frame):
+    return str(frame.get("ranking_policy") or frame.get("rankingPolicy") or "").strip()
+
+
+def _place_evidence_text(place, tag_data, include_raw=True):
+    values = [
+        place.name,
+        place.category,
+        get_category_display_name(place.category),
+        place.address,
+        place.detail_location,
+        place.source_name,
+        " ".join(tag_data["verified_tags"]),
+        " ".join(tag_data["suggested_tags"]),
+        " ".join(tag_data["warning_tags"]),
+    ]
+    if include_raw:
+        values.append(_raw_search_text(place.raw))
+    return " ".join(str(value or "") for value in values)
+
+
+def _frame_requests_general_rest(frame):
+    frame_text = _compact_text(" ".join(
+        _as_text_list(frame.get("candidate_place_types"))
+        + _as_text_list(frame.get("result_match_terms"))
+        + _as_text_list(frame.get("constraints"))
+        + _as_text_list(frame.get("preferred_place_natures"))
+        + [
+            frame.get("user_goal", ""),
+            frame.get("display_label", ""),
+            frame.get("situation", ""),
+        ]
+    ))
+    if not frame_text:
+        return False
+    if any(keyword in frame_text for keyword in ["화장실", "약국", "병원", "흡연", "주차"]):
+        return False
+    return any(_compact_text(term) in frame_text for term in GENERAL_REST_FRAME_TERMS)
+
+
+def _frame_requests_low_cost_public_space(frame):
+    frame_text = _compact_text(" ".join(
+        _as_text_list(frame.get("target_objects"))
+        + _as_text_list(frame.get("constraints"))
+        + _as_text_list(frame.get("preferred_place_natures"))
+        + [
+            frame.get("user_goal", ""),
+            frame.get("display_label", ""),
+            frame.get("ranking_policy", ""),
+        ]
+    ))
+    if not frame_text:
+        return False
+    return any(term in frame_text for term in ["무료", "돈안", "돈안쓰", "저비용", "공공", "cost_sensitive"])
+
+
+def _frame_policy_scenario(frame):
+    frame_text = _compact_text(" ".join(
+        _as_text_list(frame.get("candidate_category_codes"))
+        + _as_text_list(frame.get("candidate_place_types"))
+        + _as_text_list(frame.get("result_match_terms"))
+        + _as_text_list(frame.get("constraints"))
+        + _as_text_list(frame.get("preferred_place_natures"))
+        + [
+            frame.get("situation", ""),
+            frame.get("display_label", ""),
+            frame.get("user_goal", ""),
+        ]
+    ))
+    if not frame_text:
+        return ""
+
+    work_signals = ["work_cafe", "workplace", "작업", "노트북", "콘센트", "와이파이", "wifi", "공부", "스터디"]
+    if (
+        ("cafe" in frame_text or "카페" in frame_text)
+        and any(_compact_text(signal) in frame_text for signal in work_signals)
+    ):
+        return "work_cafe"
+
+    walk_signals = ["walk_healing", "산책", "힐링", "걷기"]
+    if any(_compact_text(signal) in frame_text for signal in walk_signals):
+        return "walk_healing"
+
+    return ""
+
+
+def _evaluate_frame_relevance(place, tag_data, frame):
+    evidence = []
+    matched_categories = []
+    category_codes = set(_as_text_list(frame.get("candidate_category_codes")))
+    relevance_terms = _frame_relevance_terms(frame)
+    target_terms = _frame_target_terms(frame)
+    target_object_terms = list(dict.fromkeys(
+        _as_text_list(frame.get("target_objects"))
+        + _as_text_list(frame.get("targetObjects"))
+    ))
+    candidate_terms = _frame_candidate_terms(frame)
+    category_label = get_category_display_name(place.category)
+    non_category_text = " ".join([
+        place.name,
+        place.address,
+        place.detail_location,
+        place.source_name,
+        _raw_search_text(place.raw),
+        " ".join(tag_data["verified_tags"]),
+        " ".join(tag_data["suggested_tags"]),
+        " ".join(tag_data["warning_tags"]),
+    ])
+    category_text = " ".join([place.category, category_label])
+    has_target_evidence = bool(
+        (target_object_terms and _term_matches_text(category_text, target_object_terms))
+        or (target_terms and _term_matches_text(non_category_text, target_terms))
+    )
+    has_candidate_evidence = bool(
+        candidate_terms and (
+            _term_matches_text(non_category_text, candidate_terms)
+            or (not target_object_terms and _term_matches_text(category_text, candidate_terms))
+        )
+    )
+
+    if category_codes and place.category in category_codes:
+        matched_categories.append(place.category)
+        evidence.append({
+            "type": "category_code",
+            "value": place.category,
+            "label": category_label,
+        })
+
+    if target_object_terms and _term_matches_text(category_text, target_object_terms):
+        evidence.append({
+            "type": "target_category_label",
+            "value": category_label,
+        })
+
+    if candidate_terms and _term_matches_text(category_text, candidate_terms):
+        evidence.append({
+            "type": "category_label",
+            "value": category_label,
+        })
+
+    for tag_name in tag_data["verified_tags"]:
+        if _term_matches_text(tag_name, target_terms):
+            evidence.append({"type": "target_verified_tag", "value": tag_name})
+        elif _term_matches_text(tag_name, candidate_terms):
+            evidence.append({"type": "verified_tag", "value": tag_name})
+
+    for tag_name in tag_data["suggested_tags"]:
+        if _term_matches_text(tag_name, target_terms):
+            evidence.append({"type": "target_saved_tag", "value": tag_name})
+        elif _term_matches_text(tag_name, candidate_terms):
+            evidence.append({"type": "saved_tag", "value": tag_name})
+
+    place_natures = _infer_place_natures(place, tag_data)
+    preferred_natures = set(_as_text_list(frame.get("preferred_place_natures")))
+    if preferred_natures and preferred_natures.intersection(place_natures):
+        evidence.append({
+            "type": "place_nature",
+            "value": sorted(preferred_natures.intersection(place_natures))[0],
+        })
+
+    score_penalty = 0
+    score_penalty_reason = ""
+    match_strength = "none"
+    has_place_nature_evidence = any(item["type"] == "place_nature" for item in evidence)
+    place_nature_can_be_medium = (
+        not target_object_terms
+        or _frame_requests_general_rest(frame)
+        or _frame_requests_low_cost_public_space(frame)
+    )
+    if has_target_evidence or any(item["type"].startswith("target_") for item in evidence):
+        match_strength = "strong"
+    elif (
+        (has_candidate_evidence and not target_object_terms)
+        or (has_place_nature_evidence and place_nature_can_be_medium)
+    ):
+        match_strength = "medium"
+    elif matched_categories:
+        match_strength = "weak"
+
+    if _frame_requests_general_rest(frame):
+        limited_natures = [
+            nature for nature in place_natures
+            if nature in LIMITED_ACCESS_PLACE_NATURES and nature not in preferred_natures
+        ]
+        if limited_natures:
+            score_penalty = max(
+                GENERAL_REST_LIMITED_ACCESS_PENALTIES.get(nature, 35)
+                for nature in limited_natures
+            )
+            score_penalty_reason = f"{limited_natures[0]}_for_general_rest"
+
+    if (
+        _frame_requests_low_cost_public_space(frame)
+        and "commercial_rest_place" in place_natures
+        and "commercial_rest_place" not in preferred_natures
+        and not score_penalty
+    ):
+        score_penalty = 34
+        score_penalty_reason = "commercial_rest_place_for_low_cost_public_space"
+
+    if match_strength == "weak" and target_terms and not score_penalty:
+        score_penalty = 28
+        score_penalty_reason = "frame_category_fallback_without_target_evidence"
+
+    if category_codes:
+        is_relevant = bool(matched_categories)
+    else:
+        is_relevant = bool(evidence)
+
+    score = 0
+    if matched_categories:
+        score += 70 if match_strength != "weak" else 45
+    score += min(30, len(evidence) * 10)
+
+    return {
+        "is_relevant": is_relevant,
+        "matched_evidence": evidence,
+        "matched_category_codes": matched_categories,
+        "relevance_score": min(score, 100),
+        "relevance_source": "frame_category_or_tag" if evidence else "",
+        "place_natures": place_natures,
+        "match_strength": match_strength,
+        "has_target_evidence": has_target_evidence,
+        "score_penalty": score_penalty,
+        "score_penalty_reason": score_penalty_reason,
+    }
+
+
+def _frame_exclusion_terms(frame):
+    return _as_text_list(frame.get("exclusions")) + _as_text_list(frame.get("excluded_place_natures"))
+
+
+def _get_frame_excluded_reason(place, tag_data, frame):
+    terms = _frame_exclusion_terms(frame)
+    if not terms:
+        return ""
+
+    category_text = " ".join([
+        place.category,
+        get_category_display_name(place.category),
+        " ".join(tag_data["verified_tags"]),
+        " ".join(tag_data["suggested_tags"]),
+        " ".join(_infer_place_natures(place, tag_data)),
+    ])
+    for term in terms:
+        cleaned = (
+            str(term)
+            .replace("제외", " ")
+            .replace("말고", " ")
+            .replace("빼고", " ")
+            .strip()
+        )
+        if cleaned and _term_matches_text(category_text, [cleaned]):
+            return term
+    return ""
+
+
 def _has_keyword(text, keywords):
     return any(keyword in text for keyword in keywords)
 
@@ -434,7 +993,9 @@ def get_work_cafe_adjustment(place, tag_data):
         text,
         WORK_CAFE_EVIDENCE_KEYWORDS,
     )
+    place_natures = _infer_place_natures(place, tag_data)
     is_shelter_without_work_evidence = place.category == "shelter" and not has_core_evidence
+    is_takeout_without_work_evidence = "takeout_focused" in place_natures and not has_core_evidence
 
     if (
         place.category in WORK_CAFE_EXCLUDE_CATEGORIES
@@ -448,19 +1009,30 @@ def get_work_cafe_adjustment(place, tag_data):
             "reason": "work_cafe_unsuitable_place",
             "has_core_evidence": has_core_evidence,
             "category_only_without_core": False,
+            "takeout_without_core": is_takeout_without_work_evidence,
         }
 
     category_only_without_core = (
         place.category in WORK_CAFE_LOW_CONFIDENCE_CATEGORIES
         and not has_core_evidence
     )
+    penalty = 0
+    reason = None
+    if is_takeout_without_work_evidence:
+        penalty = 55
+        reason = "work_cafe_takeout_without_core"
+    elif category_only_without_core:
+        penalty = 35
+        reason = "work_cafe_category_only_without_core"
+
     return {
         "exclude": False,
-        "penalty": 35 if category_only_without_core else 0,
+        "penalty": penalty,
         "bonus": 12 if has_core_evidence else 0,
-        "reason": "work_cafe_category_only_without_core" if category_only_without_core else None,
+        "reason": reason,
         "has_core_evidence": has_core_evidence,
         "category_only_without_core": category_only_without_core,
+        "takeout_without_core": is_takeout_without_work_evidence,
     }
 
 
@@ -631,6 +1203,10 @@ def score_place(
         "work_cafe_has_core_evidence": work_cafe_adjustment.get("has_core_evidence", False),
         "work_cafe_category_only_without_core": work_cafe_adjustment.get(
             "category_only_without_core",
+            False,
+        ),
+        "work_cafe_takeout_without_core": work_cafe_adjustment.get(
+            "takeout_without_core",
             False,
         ),
         "walk_healing_bonus": walk_healing_adjustment["bonus"],
@@ -821,6 +1397,7 @@ def apply_score_cap(score, metadata, matched_tags, missing_tags, score_breakdown
     category_only = (
         score_breakdown.get("category", 0) > 0
         and not matched_tags
+        and not score_breakdown.get("work_cafe_has_core_evidence")
     )
     if category_only:
         cap = min(cap, 50)
@@ -845,6 +1422,17 @@ def apply_score_cap(score, metadata, matched_tags, missing_tags, score_breakdown
     if score_breakdown.get("work_cafe_category_only_without_core"):
         cap = min(cap, 40)
         cap_reasons.append("work_cafe_category_only_without_core")
+
+    if score_breakdown.get("work_cafe_takeout_without_core"):
+        cap = min(cap, 35)
+        cap_reasons.append("work_cafe_takeout_without_core")
+
+    if score_breakdown.get("frame_match_strength") == "weak":
+        cap = min(cap, 42)
+        cap_reasons.append("frame_weak_category_fallback")
+    elif score_breakdown.get("frame_match_strength") == "medium":
+        cap = min(cap, 72)
+        cap_reasons.append("frame_medium_without_target_evidence")
 
     if missing_tags and len(missing_tags) > len(matched_tags):
         cap = min(cap, 65)
@@ -954,6 +1542,11 @@ def build_db_recommend_reason(
     if (score_breakdown or {}).get("walk_healing_penalty_reason"):
         parts.append("또한 산책/힐링 목적과 직접 맞지 않을 수 있어 후순위로 반영했습니다.")
 
+    if (score_breakdown or {}).get("frame_match_strength") == "weak":
+        parts.append("사용자가 찾은 대상과 직접 일치하는 근거가 부족해 낮은 신뢰도 후보로 반영했습니다.")
+    elif (score_breakdown or {}).get("frame_match_strength") == "medium":
+        parts.append("장소 유형은 맞지만 사용자가 찾은 대상의 직접 근거는 방문 전 확인이 필요합니다.")
+
     parts.append(f"추천 신뢰도는 {confidence_text}으로 표시됩니다.")
     return " ".join(parts)
 
@@ -966,6 +1559,7 @@ def serialize_recommendation(
     score=None,
     score_breakdown=None,
     condition=None,
+    frame_relevance=None,
 ):
     tag_data = get_place_tag_data(place)
     matched_tags = matched_tags or []
@@ -1022,6 +1616,7 @@ def serialize_recommendation(
     personalization_reasons = score_breakdown.get("personalization_reasons", [])
     visible_matched_tags = get_visible_tag_names(matched_tags)
     visible_missing_tags = get_visible_tag_names(missing_tags)
+    frame_relevance = frame_relevance or {}
 
     reason = build_db_recommend_reason(
         place,
@@ -1093,6 +1688,15 @@ def serialize_recommendation(
         "data_quality_status": place.data_quality_status,
         "raw_scores": tag_data["raw_scores"],
         "score_breakdown": score_breakdown,
+        "matched_evidence": frame_relevance.get("matched_evidence", []),
+        "matched_category_codes": frame_relevance.get("matched_category_codes", []),
+        "relevance_score": frame_relevance.get("relevance_score", 0),
+        "relevance_source": frame_relevance.get("relevance_source", ""),
+        "frame_match_strength": frame_relevance.get("match_strength", ""),
+        "excluded_reason": frame_relevance.get("excluded_reason", ""),
+        "place_natures": frame_relevance.get("place_natures", []),
+        "plan_source": condition.get("plan_source", ""),
+        "execution_mode": condition.get("execution_mode", ""),
     }
 
 
@@ -1108,6 +1712,8 @@ def search_db_recommendations(
     limit=10,
     radius=None,
     user=None,
+    search_plan=None,
+    place_intent_frame=None,
 ):
     lat = _parse_float(lat)
     lng = _parse_float(lng)
@@ -1122,6 +1728,26 @@ def search_db_recommendations(
         exclude_categories=exclude_categories,
         radius=radius,
     )
+    frame = _normalize_frame_for_recommendation(search_plan, place_intent_frame)
+    frame_mode = _is_valid_recommendation_frame(frame)
+    if frame_mode:
+        context["execution_mode"] = "frame"
+        context["plan_source"] = (
+            (search_plan or {}).get("plan_source")
+            or (search_plan or {}).get("planSource")
+            or "ai"
+        )
+        context["place_intent_frame"] = frame
+        context["categories"] = frame["candidate_category_codes"]
+        context["required_tags"] = []
+        context["preferred_tags"] = []
+        context["avoid_tags"] = []
+        context["tags"] = []
+        context["keywords"] = frame["search_queries"] or frame["candidate_place_types"]
+        context["fallback_enabled"] = False
+    else:
+        context["execution_mode"] = "legacy"
+        context["plan_source"] = "legacy_fallback"
     min_radius = get_min_radius(context["scenario"])
     radius = min(
         max(
@@ -1132,6 +1758,41 @@ def search_db_recommendations(
     )
     context["radius"] = radius
     preference_lookup = get_user_preference_lookup(user)
+
+    if frame_mode and not context["categories"]:
+        response_condition = build_response_condition(context)
+        return {
+            "scenario": context["scenario"],
+            "keyword": context["keyword"],
+            "condition": response_condition,
+            "recommendation_condition": response_condition,
+            "conditions": {
+                "categories": context["categories"],
+                "exclude_categories": context["exclude_categories"],
+                "required_tags": response_condition["required_tags"],
+                "preferred_tags": response_condition["preferred_tags"],
+                "avoid_tags": response_condition["avoid_tags"],
+                "tags": response_condition["tags"],
+                "required_tag_labels": [],
+                "preferred_tag_labels": [],
+                "avoid_tag_labels": [],
+                "keywords": context["keywords"],
+                "fallback_enabled": context["fallback_enabled"],
+                "lat": lat,
+                "lng": lng,
+                "radius": radius,
+                "limit": limit,
+                "execution_mode": context["execution_mode"],
+                "plan_source": context["plan_source"],
+                "place_intent_frame": frame,
+            },
+            "results": [],
+            "count": 0,
+            "relevant_result_count": 0,
+            "execution_mode": context["execution_mode"],
+            "plan_source": context["plan_source"],
+            "place_intent_frame": frame,
+        }
 
     base_places = Place.objects.filter(category__in=context["categories"])
 
@@ -1176,6 +1837,8 @@ def search_db_recommendations(
     places_by_id = {place.id: place for place in places}
 
     candidates = []
+    frame_policy_scenario = _frame_policy_scenario(frame) if frame_mode else ""
+    ranking_policy = _frame_ranking_policy(frame) if frame_mode else ""
 
     for place_id in candidate_ids:
         place = places_by_id.get(place_id)
@@ -1184,6 +1847,15 @@ def search_db_recommendations(
 
         distance = distance_by_place_id.get(place.id)
         tag_data = get_place_tag_data(place)
+        frame_relevance = {}
+        if frame_mode:
+            excluded_reason = _get_frame_excluded_reason(place, tag_data, frame)
+            if excluded_reason:
+                continue
+            frame_relevance = _evaluate_frame_relevance(place, tag_data, frame)
+            if not frame_relevance["is_relevant"]:
+                continue
+
         score, matched_tags, score_breakdown = score_place(
             place=place,
             tag_data=tag_data,
@@ -1192,7 +1864,7 @@ def search_db_recommendations(
             required_tags=context["required_tags"],
             avoid_tags=context["avoid_tags"],
             distance=distance,
-            scenario=context["scenario"],
+            scenario=frame_policy_scenario if frame_mode else context["scenario"],
         )
 
         if score_breakdown.get("excluded_by_waiting_place"):
@@ -1201,6 +1873,10 @@ def search_db_recommendations(
             continue
         if score_breakdown.get("excluded_by_walk_healing"):
             continue
+
+        if frame_mode:
+            score_breakdown["frame_match_strength"] = frame_relevance.get("match_strength", "")
+            score_breakdown["frame_has_target_evidence"] = frame_relevance.get("has_target_evidence", False)
 
         missing_tags = _missing_tags(
             tag_data,
@@ -1232,11 +1908,19 @@ def search_db_recommendations(
             missing_tags,
             score_breakdown,
         )
+        frame_score_penalty = frame_relevance.get("score_penalty", 0) if frame_mode else 0
+        if frame_score_penalty:
+            score = max(0, score - frame_score_penalty)
+            score_breakdown["frame_relevance_penalty"] = frame_score_penalty
+            score_breakdown["frame_relevance_penalty_reason"] = frame_relevance.get(
+                "score_penalty_reason",
+                "",
+            )
         base_score = score
         personalization_boost, personalization_reasons = calculate_personalization_boost(
             place=place,
             tag_data=tag_data,
-            scenario=context["scenario"],
+            scenario=frame_policy_scenario if frame_mode else context["scenario"],
             preference_lookup=preference_lookup,
         )
         score = min(round(base_score + personalization_boost, 2), 100)
@@ -1255,12 +1939,16 @@ def search_db_recommendations(
             place,
             matched_tags,
             score_breakdown,
+            frame_relevance,
         ))
 
-    candidates.sort(key=lambda item: (-item[0], item[1], item[2].id))
+    if ranking_policy == "urgent_nearest":
+        candidates.sort(key=lambda item: (item[1], -item[0], item[2].id))
+    else:
+        candidates.sort(key=lambda item: (-item[0], item[1], item[2].id))
 
     results = []
-    for score, distance, place, matched_tags, score_breakdown in candidates[:limit]:
+    for score, distance, place, matched_tags, score_breakdown, frame_relevance in candidates[:limit]:
         normalized_distance = None if distance == 999999999 else distance
         results.append(
             serialize_recommendation(
@@ -1271,6 +1959,7 @@ def search_db_recommendations(
                 score=score,
                 score_breakdown=score_breakdown,
                 condition=context,
+                frame_relevance=frame_relevance,
             )
         )
 
@@ -1306,6 +1995,14 @@ def search_db_recommendations(
             "lng": lng,
             "radius": radius,
             "limit": limit,
+            "execution_mode": context["execution_mode"],
+            "plan_source": context["plan_source"],
+            "place_intent_frame": frame if frame_mode else {},
         },
         "results": results,
+        "count": len(results),
+        "relevant_result_count": len(results),
+        "execution_mode": context["execution_mode"],
+        "plan_source": context["plan_source"],
+        "place_intent_frame": frame if frame_mode else {},
     }

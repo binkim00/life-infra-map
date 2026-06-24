@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 import os
+import sys
 from dotenv import load_dotenv
 from pathlib import Path
 
@@ -59,6 +60,16 @@ GMS_OPENAI_RESPONSES_PATH = os.getenv(
     "api.openai.com/v1/responses",
 )
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+IS_TESTING = "test" in sys.argv
+CONVERSATIONAL_SEARCH_AI_ENABLED = _env_bool(
+    "CONVERSATIONAL_SEARCH_AI_ENABLED",
+    (
+        not IS_TESTING
+        and AI_PROVIDER == "gms"
+        and bool(GMS_API_KEY)
+        and bool(GMS_API_URL or GMS_API_BASE_URL)
+    ),
+)
 AI_REQUEST_TIMEOUT = int(os.getenv("AI_REQUEST_TIMEOUT", "20"))
 NAVER_SEARCH_CLIENT_ID = os.getenv("NAVER_SEARCH_CLIENT_ID", "")
 NAVER_SEARCH_CLIENT_SECRET = os.getenv("NAVER_SEARCH_CLIENT_SECRET", "")

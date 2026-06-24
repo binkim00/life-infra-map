@@ -132,7 +132,7 @@ def _get_gms_responses_url():
 def _log_safe_request(query="", condition=None, manual=False, existing_results_summary=None):
     condition = condition or {}
     summary = existing_results_summary or {}
-    existing_result_count = int(summary.get("total_count") or 0)
+    existing_result_count = int(summary.get("relevant_result_count") or summary.get("total_count") or 0)
     if not existing_result_count:
         existing_result_count = int(summary.get("db_count") or 0) + int(
             summary.get("kakao_fallback_count") or 0
@@ -401,7 +401,7 @@ def _has_detail_conditions(query, condition):
 
 def should_execute_ai_web_search(query, condition=None, existing_results_summary=None):
     summary = existing_results_summary or {}
-    db_count = int(summary.get("db_count") or 0)
+    db_count = int(summary.get("relevant_result_count") or summary.get("db_count") or 0)
     kakao_fallback_count = int(summary.get("kakao_fallback_count") or 0)
     total_count = int(summary.get("total_count") or db_count + kakao_fallback_count)
     weak_match_count = int(summary.get("weak_match_count") or 0)
@@ -434,8 +434,14 @@ def summarize_existing_results(results, kakao_fallback_count=0):
             weak_match_count += 1
 
     db_count = len(results)
+    relevant_count = sum(
+        1
+        for result in results
+        if int(result.get("relevance_score") or 0) > 0 or result.get("matched_evidence")
+    )
     return {
         "db_count": db_count,
+        "relevant_result_count": relevant_count or db_count,
         "kakao_fallback_count": int(kakao_fallback_count or 0),
         "total_count": db_count + int(kakao_fallback_count or 0),
         "weak_match_count": weak_match_count,

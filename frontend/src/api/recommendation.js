@@ -9,6 +9,7 @@ export const aiSearchRecommendations = async ({
   lng = 126.9780,
   limit = 10,
   radius = null,
+  ...extraPayload
 }) => {
   const response = await axios.post(`${API_BASE_URL}/recommendations/ai-search/`, {
     query,
@@ -16,6 +17,7 @@ export const aiSearchRecommendations = async ({
     lng,
     limit,
     radius,
+    ...extraPayload,
   })
 
   return response.data
@@ -35,6 +37,7 @@ export const buildConversationalSearchPlan = async ({
   lng = null,
   mapCenter = null,
   previousContext = null,
+  ...extraPayload
 }) => {
   const response = await axios.post(`${API_BASE_URL}/recommendations/conversational-search-plan/`, {
     query,
@@ -43,6 +46,7 @@ export const buildConversationalSearchPlan = async ({
     map_center: mapCenter,
     previous_context: previousContext,
     previous_search_context: previousContext,
+    ...extraPayload,
   })
 
   return response.data

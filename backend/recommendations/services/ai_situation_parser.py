@@ -16,6 +16,11 @@ ALLOWED_SCENARIOS = set(SCENARIO_CONFIGS.keys())
 ALLOWED_CATEGORIES = {
     "cafe",
     "shelter",
+    "toilet",
+    "parking",
+    "freewifi",
+    "pharmacy",
+    "hospital",
     "city_park",
     "beach",
     "tourism",
@@ -58,6 +63,12 @@ SAFETY_CHECK_UNAVAILABLE_MESSAGE = (
 CATEGORY_ALIASES = {
     "park": "city_park",
     "tourist_spot": "tourism",
+    "bathroom": "toilet",
+    "restroom": "toilet",
+    "public_toilet": "toilet",
+    "wifi": "freewifi",
+    "public_wifi": "freewifi",
+    "medical": "hospital",
 }
 TAG_ALIASES = {
     "조용함": "조용한",
