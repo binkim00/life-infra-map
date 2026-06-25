@@ -263,7 +263,7 @@ onMounted(() => {
                   <span v-if="post.is_pinned" class="pin-mark" aria-label="고정됨">◆</span>
                 </RouterLink>
               </td>
-              <td class="author-cell">
+              <td class="author-cell" data-label="작성자">
                 <span class="author-chip">
                   <span class="author-avatar">
                     <img
@@ -289,14 +289,14 @@ onMounted(() => {
                   />
                 </span>
               </td>
-              <td>{{ formatBoardDate(post.created_at) }}</td>
-              <td>
+              <td data-label="작성일">{{ formatBoardDate(post.created_at) }}</td>
+              <td data-label="댓글">
                 <span class="metric-cell">
                   <span aria-hidden="true">♡</span>
                   {{ post.comments_count }}
                 </span>
               </td>
-              <td>
+              <td data-label="좋아요">
                 <span class="metric-cell like">
                   <span aria-hidden="true">♥</span>
                   {{ post.likes_count }}
@@ -354,6 +354,7 @@ onMounted(() => {
 }
 
 .board-container {
+  width: 100%;
   max-width: 1040px;
   margin: 0 auto;
 }
@@ -388,7 +389,9 @@ onMounted(() => {
 }
 
 .board-actions {
+  min-width: 0;
   display: flex;
+  flex: 1 1 auto;
   gap: 12px;
   justify-content: flex-end;
   align-items: center;
@@ -397,6 +400,7 @@ onMounted(() => {
 .search-field {
   box-sizing: border-box;
   width: min(300px, 34vw);
+  min-width: 220px;
   height: 52px;
   padding: 0 16px;
   display: flex;
@@ -431,6 +435,7 @@ onMounted(() => {
 }
 
 .sort-select {
+  max-width: 100%;
   height: 52px;
   padding: 0 38px 0 16px;
   border: 1px solid #edf0f4;
@@ -444,6 +449,7 @@ onMounted(() => {
 }
 
 .write-button {
+  flex: 0 0 auto;
   min-height: 52px;
   padding: 0 18px;
   display: inline-flex;
@@ -458,6 +464,7 @@ onMounted(() => {
 }
 
 .board-table-wrap {
+  width: 100%;
   overflow: visible;
   border: 0;
   border-radius: 0;
@@ -527,6 +534,7 @@ onMounted(() => {
   max-width: 100%;
   gap: 8px;
   align-items: center;
+  overflow: hidden;
   color: #1d2939;
   font-weight: 800;
   text-decoration: none;
@@ -713,7 +721,9 @@ onMounted(() => {
   }
 
   .search-field {
-    width: 100%;
+    min-width: min(100%, 240px);
+    flex: 1 1 100%;
+    width: auto;
   }
 
   .sort-select,
@@ -722,12 +732,138 @@ onMounted(() => {
     min-width: 120px;
   }
 
-  .board-table-wrap {
-    overflow-x: auto;
+  .board-table {
+    border-collapse: separate;
+    border-spacing: 0 12px;
   }
 
-  .board-table {
-    min-width: 720px;
+  .board-table colgroup,
+  .board-table thead {
+    display: none;
+  }
+
+  .board-table tbody,
+  .board-table tr,
+  .board-table td {
+    display: block;
+  }
+
+  .board-table tbody tr {
+    padding: 14px;
+    border: 1px solid #eef0f4;
+    border-radius: 14px;
+    background: #ffffff;
+    box-shadow: 0 7px 0 #f2d7b0;
+  }
+
+  .board-table tbody tr:hover {
+    background: #ffffff;
+  }
+
+  .board-table th,
+  .board-table td {
+    height: auto;
+    padding: 0;
+    border-bottom: 0;
+  }
+
+  .board-table td:not(.title-cell) {
+    margin-top: 10px;
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: center;
+    color: #475467;
+    text-align: right;
+  }
+
+  .board-table td:not(.title-cell)::before {
+    flex: 0 0 auto;
+    color: #98a2b3;
+    font-size: 12px;
+    font-weight: 900;
+    content: attr(data-label);
+  }
+
+  .title-cell {
+    width: 100%;
+  }
+
+  .title-link {
+    width: 100%;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    overflow: visible;
+  }
+
+  .title-text {
+    flex: 1 1 180px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .pin-mark {
+    margin-top: 2px;
+  }
+
+  .author-chip {
+    max-width: min(70%, 260px);
+    justify-content: flex-end;
+  }
+
+  .author-name {
+    max-width: 160px;
+  }
+
+  .pagination {
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 480px) {
+  .board-page {
+    padding: 18px 12px 34px;
+  }
+
+  .board-header {
+    gap: 14px;
+    margin-bottom: 20px;
+  }
+
+  .board-title-group {
+    width: 100%;
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .board-title-group h1 {
+    font-size: 24px;
+  }
+
+  .sort-select,
+  .write-button {
+    width: 100%;
+    flex-basis: 100%;
+  }
+
+  .board-table tbody tr {
+    padding: 12px;
+    border-radius: 12px;
+  }
+
+  .notice-badge {
+    font-size: 12px;
+  }
+
+  .author-chip {
+    max-width: 66%;
+  }
+
+  .pagination button {
+    width: 30px;
+    height: 30px;
   }
 }
 </style>

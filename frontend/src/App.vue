@@ -858,7 +858,7 @@ input {
 }
 
 .brand {
-  min-width: 0;
+  min-width: max-content;
   display: flex;
   gap: 11px;
   align-items: center;
@@ -2288,7 +2288,49 @@ input {
   color: #222222;
 }
 
-@media (max-width: 820px) {
+@media (min-width: 1025px) and (max-width: 1200px) {
+  .app-header {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr) auto;
+    gap: 8px 14px;
+    align-items: center;
+  }
+
+  .brand {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .top-nav {
+    grid-column: 2;
+    grid-row: 1;
+    width: 100%;
+  }
+
+  .top-nav .nav-link {
+    flex: 0 0 auto;
+  }
+
+  .top-utility-nav {
+    grid-column: 2 / -1;
+    grid-row: 2;
+    justify-content: flex-start;
+    padding-left: 0;
+    border-left: 0;
+  }
+
+  .global-account-bar {
+    grid-column: 3;
+    grid-row: 1;
+    justify-self: end;
+  }
+
+  .app-main {
+    padding-top: 136px;
+  }
+}
+
+@media (max-width: 1024px) {
   .app-shell {
     min-height: 100vh;
   }
@@ -2302,7 +2344,7 @@ input {
   }
 
   .app-main {
-    padding-top: 126px;
+    padding-top: 178px;
   }
 
   .global-account-bar {
@@ -2322,7 +2364,7 @@ input {
     width: 100%;
     padding-left: 0;
     border-left: 0;
-    overflow-x: auto;
+    overflow-x: visible;
   }
 
   .global-user-link {
@@ -2334,9 +2376,15 @@ input {
   }
 
   .side-nav {
-    grid-auto-flow: column;
-    grid-auto-columns: max-content;
-    overflow-x: auto;
+    flex-wrap: wrap;
+    gap: 6px;
+    overflow-x: visible;
+  }
+
+  .nav-link {
+    flex: 0 0 auto;
+    padding: 9px 10px;
+    font-size: 13px;
   }
 
   .route-mascot {
@@ -2410,6 +2458,16 @@ input {
     100% {
       transform: translate(0, 0) scale(0.82);
     }
+  }
+}
+
+@media (max-width: 640px) {
+  .app-main {
+    padding-top: 220px;
+  }
+
+  .nav-link {
+    padding: 8px 9px;
   }
 }
 </style>
