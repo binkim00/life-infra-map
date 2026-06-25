@@ -1406,10 +1406,54 @@ def _semantic_category_review(candidate, frame):
     if boardgame_request and not any(term in candidate_text for term in ["보드게임", "보드카페", "보드게임카페"]):
         unmet.append("보드게임카페 요청과 맞지 않는 후보")
 
-    restaurant_request = any(term in frame_target_text for term in ["식당", "음식점", "밥", "맛집"])
+    restaurant_request = any(term in frame_target_text for term in ["식당", "음식점", "밥", "맛집", "회식", "단체식사"])
     if restaurant_request and ("카페" in candidate_category_text or candidate_category_text == "cafe"):
         if not any(term in frame_text for term in ["카페", "커피", "디저트", "브런치"]):
             unmet.append("식당 요청과 맞지 않는 카페 카테고리 후보")
+
+    group_dining_request = any(term in frame_text for term in ["회식", "단체식사", "단체석", "모임식사", "모임장소"])
+    if group_dining_request:
+        group_dining_positive = [
+            "회식",
+            "단체",
+            "단체석",
+            "고기",
+            "고깃",
+            "육류",
+            "삼겹",
+            "갈비",
+            "한우",
+            "소고기",
+            "돼지",
+            "구이",
+            "횟집",
+            "회",
+            "해물",
+            "전골",
+            "부대찌개",
+            "이자카야",
+            "포차",
+            "주점",
+        ]
+        group_dining_light_meal_negative = [
+            "국수",
+            "분식",
+            "김밥",
+            "순두부",
+            "비빔밥",
+            "샌드위치",
+            "버거",
+            "카페",
+            "디저트",
+            "도시락",
+            "죽",
+            "라면",
+        ]
+        has_group_dining_signal = any(term in candidate_text for term in group_dining_positive)
+        if any(term in candidate_text for term in group_dining_light_meal_negative) and not has_group_dining_signal:
+            unmet.append("회식/단체 식사 요청과 맞지 않는 간단한 식사 후보")
+        elif not has_group_dining_signal:
+            unmet.append("회식/단체 식사에 적합하다는 근거가 부족한 후보")
 
     shopping_request = any(term in frame_target_text for term in ["쇼핑몰", "백화점", "아울렛", "복합쇼핑몰", "대형마트", "쇼핑할곳"])
     if shopping_request:

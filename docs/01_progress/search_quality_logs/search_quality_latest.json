@@ -1,0 +1,300 @@
+{
+  "created_at": "2026-06-26T02:20:53.719126+09:00",
+  "repeat": 1,
+  "count": 1,
+  "needs_review_count": 0,
+  "case_success_rates": [
+    {
+      "case_id": "inline_1",
+      "label": "동성로에서 옷이랑 구경할 쇼핑할 곳",
+      "demo_note": "",
+      "success_count": 1,
+      "attempt_count": 1,
+      "success_rate": 1.0
+    }
+  ],
+  "results": [
+    {
+      "id": "inline_1",
+      "case_id": "inline_1",
+      "case_label": "",
+      "demo_note": "",
+      "variant_index": null,
+      "variant_count": null,
+      "step_index": null,
+      "step_count": null,
+      "area": "manual",
+      "raw_query": "동성로에서 옷이랑 구경할 쇼핑할 곳",
+      "request": {
+        "lat": 35.1579,
+        "lng": 129.0592,
+        "limit": 15
+      },
+      "action": "search",
+      "status": "ok",
+      "issues": [],
+      "quality": {
+        "label": "unchecked",
+        "top3_expected_match_count": null,
+        "top5_blocked_count": 0
+      },
+      "clarification_question": "",
+      "clarification_options": [],
+      "frame": {
+        "location_mode": "explicit",
+        "anchor_location": "동성로",
+        "target_objects": [
+          "쇼핑몰"
+        ],
+        "candidate_place_types": [
+          "쇼핑몰",
+          "백화점",
+          "아울렛",
+          "복합쇼핑몰",
+          "쇼핑센터",
+          "대형마트"
+        ],
+        "result_match_terms": [
+          "쇼핑몰",
+          "백화점",
+          "아울렛",
+          "복합쇼핑몰",
+          "쇼핑센터",
+          "대형마트"
+        ],
+        "constraints": [],
+        "exclusions": [],
+        "ranking_policy": "evidence_first",
+        "candidate_category_codes": [
+          "shopping"
+        ]
+      },
+      "search": {
+        "primary_queries": [
+          "쇼핑몰",
+          "백화점",
+          "아울렛",
+          "복합쇼핑몰"
+        ],
+        "fallback_queries": [],
+        "db_search_terms": [
+          "쇼핑몰",
+          "백화점",
+          "아울렛",
+          "쇼핑센터",
+          "대형마트"
+        ],
+        "kakao_query_result_counts": [
+          {
+            "query": "쇼핑몰",
+            "count": 15
+          },
+          {
+            "query": "백화점",
+            "count": 15
+          },
+          {
+            "query": "아울렛",
+            "count": 15
+          }
+        ]
+      },
+      "counts": {
+        "db": 0,
+        "kakao": 45,
+        "web": 0,
+        "top_results": 10
+      },
+      "top_results": [
+        {
+          "rank": 1,
+          "name": "봉투백화점",
+          "category": "서비스,산업 > 제조업 > 화학 > 비닐",
+          "category_display": "서비스,산업 > 제조업 > 화학 > 비닐",
+          "address": "부산 부산진구 중앙대로756번길 22",
+          "source": "kakao",
+          "distance_m": 199,
+          "reason": "요청 조건과 맞아 보이는 후보예요. 세부 정보는 방문 전에 확인해 주세요.",
+          "matched_tags": [
+            "백화점"
+          ],
+          "verified_tags": [],
+          "suggested_tags": [],
+          "candidate_tags": [],
+          "policy_matched_constraints": [],
+          "unmet_constraints": []
+        },
+        {
+          "rank": 2,
+          "name": "부동산백화점공인중개사사무소",
+          "category": "부동산 > 부동산서비스 > 부동산중개업",
+          "category_display": "부동산 > 부동산서비스 > 부동산중개업",
+          "address": "부산 부산진구 서전로9번길 38",
+          "source": "kakao",
+          "distance_m": 231,
+          "reason": "요청 조건과 맞아 보이는 후보예요. 세부 정보는 방문 전에 확인해 주세요.",
+          "matched_tags": [
+            "백화점"
+          ],
+          "verified_tags": [],
+          "suggested_tags": [],
+          "candidate_tags": [],
+          "policy_matched_constraints": [],
+          "unmet_constraints": []
+        },
+        {
+          "rank": 3,
+          "name": "해인불교백화점",
+          "category": "문화,예술 > 종교 > 종교용품판매점",
+          "category_display": "문화,예술 > 종교 > 종교용품판매점",
+          "address": "부산 부산진구 부전로 189",
+          "source": "kakao",
+          "distance_m": 403,
+          "reason": "요청 조건과 맞아 보이는 후보예요. 세부 정보는 방문 전에 확인해 주세요.",
+          "matched_tags": [
+            "백화점"
+          ],
+          "verified_tags": [],
+          "suggested_tags": [],
+          "candidate_tags": [],
+          "policy_matched_constraints": [],
+          "unmet_constraints": []
+        },
+        {
+          "rank": 4,
+          "name": "쥬디스태화 신관",
+          "category": "가정,생활 > 백화점",
+          "category_display": "가정,생활 > 백화점",
+          "address": "부산 부산진구 서전로10번길 61",
+          "source": "kakao",
+          "distance_m": 671,
+          "reason": "요청 조건과 맞아 보이는 후보예요. 세부 정보는 방문 전에 확인해 주세요.",
+          "matched_tags": [
+            "백화점"
+          ],
+          "verified_tags": [],
+          "suggested_tags": [],
+          "candidate_tags": [],
+          "policy_matched_constraints": [],
+          "unmet_constraints": []
+        },
+        {
+          "rank": 5,
+          "name": "코코네일아울렛",
+          "category": "가정,생활 > 미용 > 미용용품",
+          "category_display": "가정,생활 > 미용 > 미용용품",
+          "address": "부산 부산진구 서면로 24",
+          "source": "kakao",
+          "distance_m": 980,
+          "reason": "요청 조건과 맞아 보이는 후보예요. 세부 정보는 방문 전에 확인해 주세요.",
+          "matched_tags": [
+            "아울렛"
+          ],
+          "verified_tags": [],
+          "suggested_tags": [],
+          "candidate_tags": [],
+          "policy_matched_constraints": [],
+          "unmet_constraints": []
+        },
+        {
+          "rank": 6,
+          "name": "씨엔디네일아울렛",
+          "category": "가정,생활 > 미용",
+          "category_display": "가정,생활 > 미용",
+          "address": "부산 부산진구 중앙대로 665",
+          "source": "kakao",
+          "distance_m": 1035,
+          "reason": "요청 조건과 맞아 보이는 후보예요. 세부 정보는 방문 전에 확인해 주세요.",
+          "matched_tags": [
+            "아울렛"
+          ],
+          "verified_tags": [],
+          "suggested_tags": [],
+          "candidate_tags": [],
+          "policy_matched_constraints": [],
+          "unmet_constraints": []
+        },
+        {
+          "rank": 7,
+          "name": "펫아울렛 서면점",
+          "category": "가정,생활 > 반려동물 > 반려동물용품",
+          "category_display": "가정,생활 > 반려동물 > 반려동물용품",
+          "address": "부산 부산진구 전포대로171번길 44",
+          "source": "kakao",
+          "distance_m": 1064,
+          "reason": "요청 조건과 맞아 보이는 후보예요. 세부 정보는 방문 전에 확인해 주세요.",
+          "matched_tags": [
+            "아울렛"
+          ],
+          "verified_tags": [],
+          "suggested_tags": [],
+          "candidate_tags": [],
+          "policy_matched_constraints": [],
+          "unmet_constraints": []
+        },
+        {
+          "rank": 8,
+          "name": "휴대폰아울렛",
+          "category": "가정,생활 > 전자제품 > 전자제품판매 > 휴대폰판매",
+          "category_display": "가정,생활 > 전자제품 > 전자제품판매 > 휴대폰판매",
+          "address": "부산 부산진구 거제대로48번길 20",
+          "source": "kakao",
+          "distance_m": 1411,
+          "reason": "요청 조건과 맞아 보이는 후보예요. 세부 정보는 방문 전에 확인해 주세요.",
+          "matched_tags": [
+            "아울렛"
+          ],
+          "verified_tags": [],
+          "suggested_tags": [],
+          "candidate_tags": [],
+          "policy_matched_constraints": [],
+          "unmet_constraints": []
+        },
+        {
+          "rank": 9,
+          "name": "휴대폰아울렛",
+          "category": "가정,생활 > 전자제품 > 전자제품판매 > 휴대폰판매",
+          "category_display": "가정,생활 > 전자제품 > 전자제품판매 > 휴대폰판매",
+          "address": "부산 부산진구 중앙번영로 3",
+          "source": "kakao",
+          "distance_m": 1764,
+          "reason": "요청 조건과 맞아 보이는 후보예요. 세부 정보는 방문 전에 확인해 주세요.",
+          "matched_tags": [
+            "아울렛"
+          ],
+          "verified_tags": [],
+          "suggested_tags": [],
+          "candidate_tags": [],
+          "policy_matched_constraints": [],
+          "unmet_constraints": []
+        },
+        {
+          "rank": 10,
+          "name": "휴대폰아울렛",
+          "category": "가정,생활 > 전자제품 > 전자제품판매 > 휴대폰판매",
+          "category_display": "가정,생활 > 전자제품 > 전자제품판매 > 휴대폰판매",
+          "address": "부산 부산진구 당감로 27-1",
+          "source": "kakao",
+          "distance_m": 2216,
+          "reason": "요청 조건과 맞아 보이는 후보예요. 세부 정보는 방문 전에 확인해 주세요.",
+          "matched_tags": [
+            "아울렛"
+          ],
+          "verified_tags": [],
+          "suggested_tags": [],
+          "candidate_tags": [],
+          "policy_matched_constraints": [],
+          "unmet_constraints": []
+        }
+      ],
+      "timing_ms": {
+        "total_observed": 11507.05,
+        "pipeline_total": 11504.06,
+        "planner": 1.73,
+        "retrieval": 922.43,
+        "reranker": 9822.04
+      },
+      "round": 1
+    }
+  ]
+}

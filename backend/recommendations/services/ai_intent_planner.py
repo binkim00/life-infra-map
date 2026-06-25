@@ -737,6 +737,18 @@ def _local_rule_plan_for_known_intent(raw_query):
             primary_search_queries=["술집", "주점", "펍", "와인바"],
         )
 
+    if _has_any(text, ["회식", "단체 식사", "단체식사", "단체로 밥", "단체 밥", "모임 식사", "모임장소", "모임 장소"]):
+        return _local_rule_search_plan(
+            text,
+            normalized_query="회식/단체 식사 장소",
+            target_objects=["회식 장소"],
+            candidate_place_types=["고기집", "삼겹살", "갈비", "횟집", "단체석 식당", "식당"],
+            result_match_terms=["회식", "단체", "단체석", "식당", "음식점", "고기", "삼겹살", "갈비", "한우", "횟집"],
+            primary_search_queries=["삼겹살", "고기집", "갈비", "횟집"],
+            constraints=["단체 식사", "회식에 적합"],
+            candidate_category_codes=["restaurant"],
+        )
+
     if _has_any(text, ["쇼핑몰", "쇼핑할", "쇼핑 할", "쇼핑", "백화점", "아울렛", "복합쇼핑", "쇼핑센터", "상업시설"]):
         return _local_rule_search_plan(
             text,
