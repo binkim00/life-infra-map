@@ -1,0 +1,998 @@
+[
+  {
+    "model": "boards.post",
+    "pk": 9101,
+    "fields": {
+      "author": ["parkj"],
+      "board_type": "free",
+      "title": "부산역 근처에서 잠깐 쉬기 좋은 곳 공유해요",
+      "content": "부산역 근처에서 약속 시간 전에 잠깐 기다릴 곳을 찾다가 괜찮았던 장소들을 정리해봤어요. 실내 공간 위주로 찾으면 날씨 영향을 덜 받아서 좋았습니다.",
+      "view_count": 18,
+      "is_pinned": false,
+      "created_at": "2026-06-22T09:00:00+09:00",
+      "updated_at": "2026-06-22T09:00:00+09:00"
+    }
+  },
+  {
+    "model": "boards.post",
+    "pk": 9102,
+    "fields": {
+      "author": ["parkj"],
+      "board_type": "free",
+      "title": "무료 와이파이 장소 찾을 때 여기일지도 좋네요",
+      "content": "외부에서 급하게 노트북을 써야 했는데 무료 와이파이 장소를 빠르게 볼 수 있어서 편했습니다. 다음에는 콘센트 정보도 같이 확인해보려고요.",
+      "view_count": 27,
+      "is_pinned": false,
+      "created_at": "2026-06-22T10:10:00+09:00",
+      "updated_at": "2026-06-22T10:10:00+09:00"
+    }
+  },
+  {
+    "model": "boards.post",
+    "pk": 9103,
+    "fields": {
+      "author": ["parkj"],
+      "board_type": "free",
+      "title": "주차장 검색할 때 거리순 정렬이 제일 편했어요",
+      "content": "차로 이동할 때는 가까운 주차장부터 보는 게 가장 중요하더라고요. 추천 결과에 거리 정보가 같이 나오니 비교하기 쉬웠습니다.",
+      "view_count": 21,
+      "is_pinned": false,
+      "created_at": "2026-06-22T11:20:00+09:00",
+      "updated_at": "2026-06-22T11:20:00+09:00"
+    }
+  },
+  {
+    "model": "boards.post",
+    "pk": 9104,
+    "fields": {
+      "author": ["jongk"],
+      "board_type": "free",
+      "title": "조용히 작업할 카페 추천 결과 써봤습니다",
+      "content": "자연어로 검색하니까 카페 후보가 바로 나와서 좋았습니다. 태그에 조용함, 와이파이, 콘센트 같은 정보가 더 많이 쌓이면 더 유용할 것 같아요.",
+      "view_count": 34,
+      "is_pinned": false,
+      "created_at": "2026-06-22T12:00:00+09:00",
+      "updated_at": "2026-06-22T12:00:00+09:00"
+    }
+  },
+  {
+    "model": "boards.post",
+    "pk": 9105,
+    "fields": {
+      "author": ["jongk"],
+      "board_type": "free",
+      "title": "산책하기 좋은 곳 검색해본 후기",
+      "content": "공원과 해변 후보가 같이 나와서 선택지가 넓었습니다. 날씨 좋은 날에는 지도에서 위치를 보면서 고르는 게 확실히 편하네요.",
+      "view_count": 25,
+      "is_pinned": false,
+      "created_at": "2026-06-22T13:30:00+09:00",
+      "updated_at": "2026-06-22T13:30:00+09:00"
+    }
+  },
+  {
+    "model": "boards.post",
+    "pk": 9106,
+    "fields": {
+      "author": ["jongk"],
+      "board_type": "free",
+      "title": "흡연구역 데이터가 더 많아지면 좋겠어요",
+      "content": "흡연구역은 일반 지도에서 찾기 어려운 경우가 있어서 여기일지도에서 잘 보이면 꽤 도움이 될 것 같습니다. 제보 기능도 같이 써보면 좋겠네요.",
+      "view_count": 16,
+      "is_pinned": false,
+      "created_at": "2026-06-22T14:40:00+09:00",
+      "updated_at": "2026-06-22T14:40:00+09:00"
+    }
+  },
+  {
+    "model": "boards.post",
+    "pk": 9107,
+    "fields": {
+      "author": ["jaej"],
+      "board_type": "free",
+      "title": "화장실 급할 때 검색해보니 꽤 유용했습니다",
+      "content": "급한 상황에서는 화면이 복잡하지 않고 바로 가까운 곳이 보이는 게 중요하더라고요. 지도와 목록이 같이 보여서 찾기 쉬웠습니다.",
+      "view_count": 41,
+      "is_pinned": false,
+      "created_at": "2026-06-22T15:15:00+09:00",
+      "updated_at": "2026-06-22T15:15:00+09:00"
+    }
+  },
+  {
+    "model": "boards.post",
+    "pk": 9108,
+    "fields": {
+      "author": ["jaej"],
+      "board_type": "free",
+      "title": "장소 제보 기능으로 추가하면 좋을 정보",
+      "content": "장소 제보할 때 사진, 실제 운영 여부, 입구 위치 같은 정보가 같이 있으면 좋을 것 같습니다. 특히 공중화장실은 상세 위치가 중요해요.",
+      "view_count": 19,
+      "is_pinned": false,
+      "created_at": "2026-06-22T16:00:00+09:00",
+      "updated_at": "2026-06-22T16:00:00+09:00"
+    }
+  },
+  {
+    "model": "boards.post",
+    "pk": 9109,
+    "fields": {
+      "author": ["jaej"],
+      "board_type": "free",
+      "title": "야경 볼 만한 곳 검색 결과 괜찮네요",
+      "content": "야경이나 드라이브 목적지처럼 애매한 검색도 후보가 나와서 좋았습니다. 추천 이유가 붙어 있으면 선택하기 더 쉬울 것 같아요.",
+      "view_count": 32,
+      "is_pinned": false,
+      "created_at": "2026-06-22T17:25:00+09:00",
+      "updated_at": "2026-06-22T17:25:00+09:00"
+    }
+  },
+  {
+    "model": "boards.post",
+    "pk": 9110,
+    "fields": {
+      "author": ["sook"],
+      "board_type": "free",
+      "title": "혼밥하기 좋은 곳도 검색되면 좋겠어요",
+      "content": "혼자 식사하기 좋은 곳은 분위기나 좌석 정보가 중요해서 태그가 있으면 좋겠습니다. 혼밥, 조용함, 대기 적음 같은 태그가 있으면 편할 것 같아요.",
+      "view_count": 29,
+      "is_pinned": false,
+      "created_at": "2026-06-22T18:00:00+09:00",
+      "updated_at": "2026-06-22T18:00:00+09:00"
+    }
+  },
+  {
+    "model": "boards.post",
+    "pk": 9111,
+    "fields": {
+      "author": ["sook"],
+      "board_type": "free",
+      "title": "검색 기록에서 다시 찾아볼 수 있는 점이 좋아요",
+      "content": "전에 검색했던 조건을 다시 확인할 수 있으면 반복해서 찾을 때 편합니다. 자주 찾는 장소 유형이 개인화되면 더 좋아질 것 같아요.",
+      "view_count": 23,
+      "is_pinned": false,
+      "created_at": "2026-06-22T19:10:00+09:00",
+      "updated_at": "2026-06-22T19:10:00+09:00"
+    }
+  },
+  {
+    "model": "boards.post",
+    "pk": 9112,
+    "fields": {
+      "author": ["sook"],
+      "board_type": "free",
+      "title": "추천 결과에 최신 확인일이 보이면 안심돼요",
+      "content": "공공데이터는 오래된 정보일 수도 있어서 최신 확인일이나 사용자 검증 표시가 있으면 더 믿고 사용할 수 있을 것 같습니다.",
+      "view_count": 31,
+      "is_pinned": false,
+      "created_at": "2026-06-22T20:20:00+09:00",
+      "updated_at": "2026-06-22T20:20:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9201,
+    "fields": {
+      "post": 9101,
+      "author": ["parkj"],
+      "parent": null,
+      "content": "저도 이 근처에서 기다릴 일이 많아서 이런 정보가 유용하더라고요.",
+      "created_at": "2026-06-22T21:01:00+09:00",
+      "updated_at": "2026-06-22T21:01:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9202,
+    "fields": {
+      "post": 9101,
+      "author": ["jongk"],
+      "parent": null,
+      "content": "실내 중심으로 보는 건 좋은 기준인 것 같습니다.",
+      "created_at": "2026-06-22T21:02:00+09:00",
+      "updated_at": "2026-06-22T21:02:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9203,
+    "fields": {
+      "post": 9101,
+      "author": ["jaej"],
+      "parent": null,
+      "content": "지도에서 바로 비교할 수 있으면 훨씬 편하겠네요.",
+      "created_at": "2026-06-22T21:03:00+09:00",
+      "updated_at": "2026-06-22T21:03:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9204,
+    "fields": {
+      "post": 9101,
+      "author": ["sook"],
+      "parent": null,
+      "content": "기다릴 곳 찾을 때 날씨 조건도 같이 보면 좋겠어요.",
+      "created_at": "2026-06-22T21:04:00+09:00",
+      "updated_at": "2026-06-22T21:04:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9205,
+    "fields": {
+      "post": 9102,
+      "author": ["parkj"],
+      "parent": null,
+      "content": "와이파이 정보는 외부 작업할 때 정말 중요하죠.",
+      "created_at": "2026-06-22T21:05:00+09:00",
+      "updated_at": "2026-06-22T21:05:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9206,
+    "fields": {
+      "post": 9102,
+      "author": ["jongk"],
+      "parent": null,
+      "content": "콘센트 태그까지 있으면 작업 장소 찾기 좋아질 것 같아요.",
+      "created_at": "2026-06-22T21:06:00+09:00",
+      "updated_at": "2026-06-22T21:06:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9207,
+    "fields": {
+      "post": 9102,
+      "author": ["jaej"],
+      "parent": null,
+      "content": "저도 무료 와이파이 필터는 자주 쓸 것 같습니다.",
+      "created_at": "2026-06-22T21:07:00+09:00",
+      "updated_at": "2026-06-22T21:07:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9208,
+    "fields": {
+      "post": 9102,
+      "author": ["sook"],
+      "parent": null,
+      "content": "장소별로 검증된 태그가 쌓이면 더 믿을 수 있겠어요.",
+      "created_at": "2026-06-22T21:08:00+09:00",
+      "updated_at": "2026-06-22T21:08:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9209,
+    "fields": {
+      "post": 9103,
+      "author": ["parkj"],
+      "parent": null,
+      "content": "주차장은 진짜 거리순이 가장 먼저 보이면 좋더라고요.",
+      "created_at": "2026-06-22T21:09:00+09:00",
+      "updated_at": "2026-06-22T21:09:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9210,
+    "fields": {
+      "post": 9103,
+      "author": ["jongk"],
+      "parent": null,
+      "content": "요금 정보까지 있으면 더 완성도 높아질 것 같습니다.",
+      "created_at": "2026-06-22T21:10:00+09:00",
+      "updated_at": "2026-06-22T21:10:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9211,
+    "fields": {
+      "post": 9103,
+      "author": ["jaej"],
+      "parent": null,
+      "content": "지도 중심 기준으로 다시 검색하는 기능도 잘 맞을 것 같아요.",
+      "created_at": "2026-06-22T21:11:00+09:00",
+      "updated_at": "2026-06-22T21:11:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9212,
+    "fields": {
+      "post": 9103,
+      "author": ["sook"],
+      "parent": null,
+      "content": "운전 중에는 목록이 단순한 게 더 보기 편한 것 같아요.",
+      "created_at": "2026-06-22T21:12:00+09:00",
+      "updated_at": "2026-06-22T21:12:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9213,
+    "fields": {
+      "post": 9104,
+      "author": ["parkj"],
+      "parent": null,
+      "content": "작업 카페는 태그 품질이 중요해서 공감합니다.",
+      "created_at": "2026-06-22T21:13:00+09:00",
+      "updated_at": "2026-06-22T21:13:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9214,
+    "fields": {
+      "post": 9104,
+      "author": ["jongk"],
+      "parent": null,
+      "content": "조용함 태그는 사용자 검증이 붙으면 좋겠네요.",
+      "created_at": "2026-06-22T21:14:00+09:00",
+      "updated_at": "2026-06-22T21:14:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9215,
+    "fields": {
+      "post": 9104,
+      "author": ["jaej"],
+      "parent": null,
+      "content": "카페는 외부 API 후보랑 DB 태그가 잘 합쳐지면 좋을 듯합니다.",
+      "created_at": "2026-06-22T21:15:00+09:00",
+      "updated_at": "2026-06-22T21:15:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9216,
+    "fields": {
+      "post": 9104,
+      "author": ["sook"],
+      "parent": null,
+      "content": "와이파이랑 콘센트가 같이 보이면 바로 선택할 것 같아요.",
+      "created_at": "2026-06-22T21:16:00+09:00",
+      "updated_at": "2026-06-22T21:16:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9217,
+    "fields": {
+      "post": 9105,
+      "author": ["parkj"],
+      "parent": null,
+      "content": "산책 코스는 지도에서 동선까지 보면 더 좋겠습니다.",
+      "created_at": "2026-06-22T21:17:00+09:00",
+      "updated_at": "2026-06-22T21:17:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9218,
+    "fields": {
+      "post": 9105,
+      "author": ["jongk"],
+      "parent": null,
+      "content": "해변 후보가 같이 나오는 건 꽤 괜찮았습니다.",
+      "created_at": "2026-06-22T21:18:00+09:00",
+      "updated_at": "2026-06-22T21:18:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9219,
+    "fields": {
+      "post": 9105,
+      "author": ["jaej"],
+      "parent": null,
+      "content": "산책은 거리보다 분위기 태그가 더 중요할 때도 있죠.",
+      "created_at": "2026-06-22T21:19:00+09:00",
+      "updated_at": "2026-06-22T21:19:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9220,
+    "fields": {
+      "post": 9105,
+      "author": ["sook"],
+      "parent": null,
+      "content": "야간 이용 가능 여부도 같이 있으면 좋겠어요.",
+      "created_at": "2026-06-22T21:20:00+09:00",
+      "updated_at": "2026-06-22T21:20:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9221,
+    "fields": {
+      "post": 9106,
+      "author": ["parkj"],
+      "parent": null,
+      "content": "흡연구역은 실제 위치 검증이 정말 중요하겠네요.",
+      "created_at": "2026-06-22T21:21:00+09:00",
+      "updated_at": "2026-06-22T21:21:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9222,
+    "fields": {
+      "post": 9106,
+      "author": ["jongk"],
+      "parent": null,
+      "content": "제보로 보완하기 좋은 카테고리라고 생각합니다.",
+      "created_at": "2026-06-22T21:22:00+09:00",
+      "updated_at": "2026-06-22T21:22:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9223,
+    "fields": {
+      "post": 9106,
+      "author": ["jaej"],
+      "parent": null,
+      "content": "지자체 데이터랑 사용자 제보가 같이 있으면 좋겠어요.",
+      "created_at": "2026-06-22T21:23:00+09:00",
+      "updated_at": "2026-06-22T21:23:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9224,
+    "fields": {
+      "post": 9106,
+      "author": ["sook"],
+      "parent": null,
+      "content": "위치가 바뀔 수 있어서 최신 확인일도 필요하겠네요.",
+      "created_at": "2026-06-22T21:24:00+09:00",
+      "updated_at": "2026-06-22T21:24:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9225,
+    "fields": {
+      "post": 9107,
+      "author": ["parkj"],
+      "parent": null,
+      "content": "급한 상황에서는 결과가 빠르게 나오는 게 제일 중요하죠.",
+      "created_at": "2026-06-22T21:25:00+09:00",
+      "updated_at": "2026-06-22T21:25:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9226,
+    "fields": {
+      "post": 9107,
+      "author": ["jongk"],
+      "parent": null,
+      "content": "공중화장실은 상세 위치 설명도 같이 있으면 좋겠습니다.",
+      "created_at": "2026-06-22T21:26:00+09:00",
+      "updated_at": "2026-06-22T21:26:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9227,
+    "fields": {
+      "post": 9107,
+      "author": ["jaej"],
+      "parent": null,
+      "content": "지도랑 목록이 같이 있는 구성이 잘 맞는 것 같아요.",
+      "created_at": "2026-06-22T21:27:00+09:00",
+      "updated_at": "2026-06-22T21:27:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9228,
+    "fields": {
+      "post": 9107,
+      "author": ["sook"],
+      "parent": null,
+      "content": "이런 기능은 모바일에서도 보기 편해야 할 것 같습니다.",
+      "created_at": "2026-06-22T21:28:00+09:00",
+      "updated_at": "2026-06-22T21:28:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9229,
+    "fields": {
+      "post": 9108,
+      "author": ["parkj"],
+      "parent": null,
+      "content": "사진 제보가 있으면 관리자 검수도 쉬워질 것 같아요.",
+      "created_at": "2026-06-22T21:29:00+09:00",
+      "updated_at": "2026-06-22T21:29:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9230,
+    "fields": {
+      "post": 9108,
+      "author": ["jongk"],
+      "parent": null,
+      "content": "입구 위치는 실제 이용할 때 꽤 큰 차이가 있습니다.",
+      "created_at": "2026-06-22T21:30:00+09:00",
+      "updated_at": "2026-06-22T21:30:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9231,
+    "fields": {
+      "post": 9108,
+      "author": ["jaej"],
+      "parent": null,
+      "content": "제보 항목이 너무 많지 않게 정리되면 좋겠네요.",
+      "created_at": "2026-06-22T21:31:00+09:00",
+      "updated_at": "2026-06-22T21:31:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9232,
+    "fields": {
+      "post": 9108,
+      "author": ["sook"],
+      "parent": null,
+      "content": "사용자가 쉽게 제보할 수 있으면 데이터가 빨리 좋아질 것 같아요.",
+      "created_at": "2026-06-22T21:32:00+09:00",
+      "updated_at": "2026-06-22T21:32:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9233,
+    "fields": {
+      "post": 9109,
+      "author": ["parkj"],
+      "parent": null,
+      "content": "야경은 주차 가능 여부도 같이 보면 좋겠습니다.",
+      "created_at": "2026-06-22T21:33:00+09:00",
+      "updated_at": "2026-06-22T21:33:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9234,
+    "fields": {
+      "post": 9109,
+      "author": ["jongk"],
+      "parent": null,
+      "content": "추천 이유가 있으면 선택 기준이 더 명확해질 듯해요.",
+      "created_at": "2026-06-22T21:34:00+09:00",
+      "updated_at": "2026-06-22T21:34:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9235,
+    "fields": {
+      "post": 9109,
+      "author": ["jaej"],
+      "parent": null,
+      "content": "드라이브 목적지는 거리보다 분위기가 더 중요할 수도 있겠네요.",
+      "created_at": "2026-06-22T21:35:00+09:00",
+      "updated_at": "2026-06-22T21:35:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9236,
+    "fields": {
+      "post": 9109,
+      "author": ["sook"],
+      "parent": null,
+      "content": "야간 이용 가능 태그가 있으면 좋겠습니다.",
+      "created_at": "2026-06-22T21:36:00+09:00",
+      "updated_at": "2026-06-22T21:36:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9237,
+    "fields": {
+      "post": 9110,
+      "author": ["parkj"],
+      "parent": null,
+      "content": "혼밥 태그는 실제 사용자 후기가 도움이 될 것 같아요.",
+      "created_at": "2026-06-22T21:37:00+09:00",
+      "updated_at": "2026-06-22T21:37:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9238,
+    "fields": {
+      "post": 9110,
+      "author": ["jongk"],
+      "parent": null,
+      "content": "좌석 구조 같은 정보도 있으면 좋겠네요.",
+      "created_at": "2026-06-22T21:38:00+09:00",
+      "updated_at": "2026-06-22T21:38:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9239,
+    "fields": {
+      "post": 9110,
+      "author": ["jaej"],
+      "parent": null,
+      "content": "식당 추천은 메뉴 키워드도 같이 잡히면 편할 것 같습니다.",
+      "created_at": "2026-06-22T21:39:00+09:00",
+      "updated_at": "2026-06-22T21:39:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9240,
+    "fields": {
+      "post": 9110,
+      "author": ["sook"],
+      "parent": null,
+      "content": "혼자 이용하기 좋은 분위기 태그가 있으면 유용하겠어요.",
+      "created_at": "2026-06-22T21:40:00+09:00",
+      "updated_at": "2026-06-22T21:40:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9241,
+    "fields": {
+      "post": 9111,
+      "author": ["parkj"],
+      "parent": null,
+      "content": "검색 기록에서 바로 다시 검색할 수 있으면 편하겠습니다.",
+      "created_at": "2026-06-22T21:41:00+09:00",
+      "updated_at": "2026-06-22T21:41:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9242,
+    "fields": {
+      "post": 9111,
+      "author": ["jongk"],
+      "parent": null,
+      "content": "개인화 추천으로 이어지는 흐름이 좋네요.",
+      "created_at": "2026-06-22T21:42:00+09:00",
+      "updated_at": "2026-06-22T21:42:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9243,
+    "fields": {
+      "post": 9111,
+      "author": ["jaej"],
+      "parent": null,
+      "content": "자주 쓰는 검색 조건 저장도 있으면 좋겠습니다.",
+      "created_at": "2026-06-22T21:43:00+09:00",
+      "updated_at": "2026-06-22T21:43:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9244,
+    "fields": {
+      "post": 9111,
+      "author": ["sook"],
+      "parent": null,
+      "content": "검색 히스토리가 쌓이면 서비스가 더 똑똑해질 것 같아요.",
+      "created_at": "2026-06-22T21:44:00+09:00",
+      "updated_at": "2026-06-22T21:44:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9245,
+    "fields": {
+      "post": 9112,
+      "author": ["parkj"],
+      "parent": null,
+      "content": "최신 확인일은 신뢰도 판단에 꼭 필요하다고 봅니다.",
+      "created_at": "2026-06-22T21:45:00+09:00",
+      "updated_at": "2026-06-22T21:45:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9246,
+    "fields": {
+      "post": 9112,
+      "author": ["jongk"],
+      "parent": null,
+      "content": "사용자 검증 표시가 있으면 더 안심하고 볼 수 있겠네요.",
+      "created_at": "2026-06-22T21:46:00+09:00",
+      "updated_at": "2026-06-22T21:46:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9247,
+    "fields": {
+      "post": 9112,
+      "author": ["jaej"],
+      "parent": null,
+      "content": "오래된 공공데이터는 확인 필요 태그도 같이 있으면 좋겠습니다.",
+      "created_at": "2026-06-22T21:47:00+09:00",
+      "updated_at": "2026-06-22T21:47:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9248,
+    "fields": {
+      "post": 9112,
+      "author": ["sook"],
+      "parent": null,
+      "content": "신뢰도 점수까지 보이면 추천 결과를 비교하기 좋겠어요.",
+      "created_at": "2026-06-22T21:48:00+09:00",
+      "updated_at": "2026-06-22T21:48:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9301,
+    "fields": {
+      "post": 9101,
+      "user": ["jongk"],
+      "created_at": "2026-06-22T22:01:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9302,
+    "fields": {
+      "post": 9101,
+      "user": ["jaej"],
+      "created_at": "2026-06-22T22:02:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9303,
+    "fields": {
+      "post": 9102,
+      "user": ["parkj"],
+      "created_at": "2026-06-22T22:03:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9304,
+    "fields": {
+      "post": 9102,
+      "user": ["sook"],
+      "created_at": "2026-06-22T22:04:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9305,
+    "fields": {
+      "post": 9103,
+      "user": ["jongk"],
+      "created_at": "2026-06-22T22:05:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9306,
+    "fields": {
+      "post": 9103,
+      "user": ["sook"],
+      "created_at": "2026-06-22T22:06:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9307,
+    "fields": {
+      "post": 9104,
+      "user": ["parkj"],
+      "created_at": "2026-06-22T22:07:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9308,
+    "fields": {
+      "post": 9104,
+      "user": ["jaej"],
+      "created_at": "2026-06-22T22:08:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9309,
+    "fields": {
+      "post": 9104,
+      "user": ["sook"],
+      "created_at": "2026-06-22T22:09:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9310,
+    "fields": {
+      "post": 9105,
+      "user": ["parkj"],
+      "created_at": "2026-06-22T22:10:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9311,
+    "fields": {
+      "post": 9105,
+      "user": ["jaej"],
+      "created_at": "2026-06-22T22:11:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9312,
+    "fields": {
+      "post": 9106,
+      "user": ["parkj"],
+      "created_at": "2026-06-22T22:12:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9313,
+    "fields": {
+      "post": 9106,
+      "user": ["sook"],
+      "created_at": "2026-06-22T22:13:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9314,
+    "fields": {
+      "post": 9107,
+      "user": ["parkj"],
+      "created_at": "2026-06-22T22:14:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9315,
+    "fields": {
+      "post": 9107,
+      "user": ["jongk"],
+      "created_at": "2026-06-22T22:15:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9316,
+    "fields": {
+      "post": 9107,
+      "user": ["sook"],
+      "created_at": "2026-06-22T22:16:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9317,
+    "fields": {
+      "post": 9108,
+      "user": ["jongk"],
+      "created_at": "2026-06-22T22:17:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9318,
+    "fields": {
+      "post": 9108,
+      "user": ["sook"],
+      "created_at": "2026-06-22T22:18:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9319,
+    "fields": {
+      "post": 9109,
+      "user": ["parkj"],
+      "created_at": "2026-06-22T22:19:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9320,
+    "fields": {
+      "post": 9109,
+      "user": ["jongk"],
+      "created_at": "2026-06-22T22:20:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9321,
+    "fields": {
+      "post": 9110,
+      "user": ["parkj"],
+      "created_at": "2026-06-22T22:21:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9322,
+    "fields": {
+      "post": 9110,
+      "user": ["jongk"],
+      "created_at": "2026-06-22T22:22:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9323,
+    "fields": {
+      "post": 9110,
+      "user": ["jaej"],
+      "created_at": "2026-06-22T22:23:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9324,
+    "fields": {
+      "post": 9111,
+      "user": ["parkj"],
+      "created_at": "2026-06-22T22:24:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9325,
+    "fields": {
+      "post": 9111,
+      "user": ["jaej"],
+      "created_at": "2026-06-22T22:25:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9326,
+    "fields": {
+      "post": 9112,
+      "user": ["jongk"],
+      "created_at": "2026-06-22T22:26:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9327,
+    "fields": {
+      "post": 9112,
+      "user": ["jaej"],
+      "created_at": "2026-06-22T22:27:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9328,
+    "fields": {
+      "post": 9112,
+      "user": ["sook"],
+      "created_at": "2026-06-22T22:28:00+09:00"
+    }
+  }
+]

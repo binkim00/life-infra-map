@@ -1,0 +1,175 @@
+[
+  {
+    "model": "auth.user",
+    "pk": 1,
+    "fields": {
+      "password": "pbkdf2_sha256$1200000$rbtHcqyZMX8JgdH9Bm7ky5$8WKpxlKg+sR75oDbCz0nzs/2ZeAtDizyarVIFDPQyNg=",
+      "last_login": null,
+      "is_superuser": true,
+      "username": "admin",
+      "first_name": "",
+      "last_name": "",
+      "email": "",
+      "is_staff": true,
+      "is_active": true,
+      "date_joined": "2026-06-24 18:09:23.943965",
+      "groups": [],
+      "user_permissions": []
+    }
+  },
+  {
+    "model": "auth.user",
+    "pk": 2,
+    "fields": {
+      "password": "pbkdf2_sha256$1200000$xIfLCSaZ722ToHTQ10stb4$B3pf0EnIXbXrLKif1E1ulO+XMIp9tIvWqugMt+BISUk=",
+      "last_login": null,
+      "is_superuser": false,
+      "username": "parkj",
+      "first_name": "",
+      "last_name": "",
+      "email": "parkj@naver.com",
+      "is_staff": false,
+      "is_active": true,
+      "date_joined": "2026-06-24 18:12:00.551319",
+      "groups": [],
+      "user_permissions": []
+    }
+  },
+  {
+    "model": "auth.user",
+    "pk": 3,
+    "fields": {
+      "password": "pbkdf2_sha256$1200000$Xv4tIExcsnLtmob6S4wHzz$DvrHw+4+Tne+NHf76W4W2nx4zCeRaxJLm6E5EblYA0I=",
+      "last_login": null,
+      "is_superuser": false,
+      "username": "jongk",
+      "first_name": "",
+      "last_name": "",
+      "email": "jongk@gmail.com",
+      "is_staff": false,
+      "is_active": true,
+      "date_joined": "2026-06-24 18:12:35.685880",
+      "groups": [],
+      "user_permissions": []
+    }
+  },
+  {
+    "model": "auth.user",
+    "pk": 4,
+    "fields": {
+      "password": "pbkdf2_sha256$1200000$frqKdnk0jX9EORbwgzPAzy$D82b/p3yuOJPsw53GLROaEuNF+JaRSCTyiBPdrLpXlg=",
+      "last_login": null,
+      "is_superuser": false,
+      "username": "jaej",
+      "first_name": "",
+      "last_name": "",
+      "email": "jaej@daum.net",
+      "is_staff": false,
+      "is_active": true,
+      "date_joined": "2026-06-24 18:13:04.701184",
+      "groups": [],
+      "user_permissions": []
+    }
+  },
+  {
+    "model": "auth.user",
+    "pk": 5,
+    "fields": {
+      "password": "pbkdf2_sha256$1200000$FoBBS3OwRpenn7HLA2gfFc$Kkpnc828i/rFasSZQ9ufbp7FgPvNe368fcCR0/ZDmJg=",
+      "last_login": null,
+      "is_superuser": false,
+      "username": "sook",
+      "first_name": "",
+      "last_name": "",
+      "email": "sook@naver.com",
+      "is_staff": false,
+      "is_active": true,
+      "date_joined": "2026-06-24 18:13:25.924347",
+      "groups": [],
+      "user_permissions": []
+    }
+  },
+  {
+    "model": "accounts.userprofile",
+    "pk": 1,
+    "fields": {
+      "user": [
+        "parkj"
+      ],
+      "nickname": "박준형",
+      "profile_image": "profile_images/스크린샷_2026-06-25_114013_IB0YMrO.png",
+      "created_at": "2026-06-24 18:12:00.891090",
+      "updated_at": "2026-06-24 18:12:00.891090"
+    }
+  },
+  {
+    "model": "accounts.userprofile",
+    "pk": 2,
+    "fields": {
+      "user": [
+        "jongk"
+      ],
+      "nickname": "김종무",
+      "profile_image": "profile_images/스크린샷_2026-06-25_114131_6J5LJLF.png",
+      "created_at": "2026-06-24 18:12:36.216436",
+      "updated_at": "2026-06-24 18:12:36.216436"
+    }
+  },
+  {
+    "model": "accounts.userprofile",
+    "pk": 3,
+    "fields": {
+      "user": [
+        "jaej"
+      ],
+      "nickname": "이재준",
+      "profile_image": "profile_images/스크린샷_2026-06-25_114159_Uskqa8r.png",
+      "created_at": "2026-06-24 18:13:05.237950",
+      "updated_at": "2026-06-24 18:13:05.237950"
+    }
+  },
+  {
+    "model": "accounts.userprofile",
+    "pk": 4,
+    "fields": {
+      "user": [
+        "sook"
+      ],
+      "nickname": "김수원",
+      "profile_image": "profile_images/스크린샷_2026-06-25_114415_3hWjMSV.png",
+      "created_at": "2026-06-24 18:13:26.446962",
+      "updated_at": "2026-06-24 18:13:26.446962"
+    }
+  },
+  {
+    "model": "accounts.userprofile",
+    "pk": 5,
+    "fields": {
+      "user": [
+        "admin"
+      ],
+      "nickname": "관리자",
+      "profile_image": "profile_images/idle_WBdOwJW.png",
+      "created_at": "2026-06-25 03:16:20.219489",
+      "updated_at": "2026-06-25 03:18:03.656558"
+    }
+  },
+  {
+    "model": "boards.userpenalty",
+    "pk": 9401,
+    "fields": {
+      "user": [
+        "parkj"
+      ],
+      "penalty_type": "suspend_3_days",
+      "reason": "시연용 3일 활동정지 상태입니다.",
+      "start_at": "2026-06-25T12:00:00+09:00",
+      "end_at": "2026-06-28T12:00:00+09:00",
+      "is_active": true,
+      "created_by": [
+        "admin"
+      ],
+      "created_at": "2026-06-25T12:00:00+09:00"
+    }
+  }
+]

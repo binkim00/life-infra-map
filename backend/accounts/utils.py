@@ -3,13 +3,13 @@ from django.db.models.functions import TruncDate
 
 
 TIER_RULES = [
-    (1000, "challenger", "챌린저"),
-    (700, "master", "마스터"),
-    (500, "diamond", "다이아"),
-    (300, "platinum", "플래티넘"),
-    (200, "gold", "골드"),
-    (100, "silver", "실버"),
-    (50, "bronze", "브론즈"),
+    (22, "challenger", "챌린저"),
+    (21, "master", "마스터"),
+    (20, "diamond", "다이아"),
+    (19, "platinum", "플래티넘"),
+    (18, "gold", "골드"),
+    (17, "silver", "실버"),
+    (16, "bronze", "브론즈"),
     (0, "iron", "아이언"),
 ]
 
@@ -24,9 +24,10 @@ TIER_COLORS = {
     "challenger": "#ef4444",
 }
 
-POSTS_PER_CONTRIBUTION_POINT = 5
-COMMENTS_PER_CONTRIBUTION_POINT = 10
-DAILY_ACTIVITY_CONTRIBUTION_LIMIT = 5
+POSTS_PER_CONTRIBUTION_POINT = 1
+COMMENTS_PER_CONTRIBUTION_POINT = 1
+DAILY_ACTIVITY_CONTRIBUTION_LIMIT = 100
+STAFF_DEMO_BASE_CONTRIBUTION = 15
 REPORT_CONTRIBUTION_REWARDS = {
     "tag_suggestion": 10,
     "wrong_info": 5,
@@ -135,7 +136,9 @@ def get_user_contribution(user):
         approved_report_counts=approved_report_counts,
     )
 
-    return activity_contribution + report_contribution
+    staff_demo_contribution = STAFF_DEMO_BASE_CONTRIBUTION if user.is_staff else 0
+
+    return activity_contribution + report_contribution + staff_demo_contribution
 
 
 def get_user_score(user):
