@@ -291,8 +291,10 @@ onMounted(() => {
               </td>
               <td data-label="작성일">{{ formatBoardDate(post.created_at) }}</td>
               <td data-label="댓글">
-                <span class="metric-cell">
-                  <span aria-hidden="true">♡</span>
+                <span class="metric-cell comment">
+                  <svg class="comment-icon" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M21 15a4 4 0 0 1-4 4H7l-4 4V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z" />
+                  </svg>
                   {{ post.comments_count }}
                 </span>
               </td>
@@ -637,6 +639,17 @@ onMounted(() => {
   color: #667085;
   font-size: 18px;
   line-height: 1;
+}
+
+.comment-icon {
+  width: 19px;
+  height: 19px;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: #667085;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
 }
 
 .metric-cell.like span {
