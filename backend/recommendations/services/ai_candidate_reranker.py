@@ -43,6 +43,8 @@ Rules:
 - Compare target_objects, result_match_terms, candidate_place_types, constraints, and exclusions against candidate name/category/tags/snippet.
 - If the candidate category/type clearly conflicts with the frame target, exclude it even when it has unrelated DB tags.
 - DB tags only help when they directly support the current frame target or constraints.
+- pre_ai_unmet_constraints are deterministic compatibility warnings; do not mark those candidates strong.
+- policy_verification_needed means the requested facility policy is not proven by the candidate facts.
 - retrieval_query shows how a candidate was collected; it is not direct proof that a specific menu/facility exists.
 - For specific menu/item/facility targets, prefer direct evidence in name/category/tags/snippet. Use needs_verification for compatible but unproven candidates, and exclude clearly incompatible types.
 - Use needs_verification when the candidate type is semantically compatible but details are not proven.
@@ -131,6 +133,9 @@ def _candidate_payload(candidate):
         "pre_ai_matched_evidence": candidate.get("matched_evidence")[:8]
         if isinstance(candidate.get("matched_evidence"), list)
         else [],
+        "pre_ai_unmet_constraints": _as_list(candidate.get("pre_ai_unmet_constraints"), max_items=8),
+        "policy_matched_constraints": _as_list(candidate.get("policy_matched_constraints"), max_items=8),
+        "policy_verification_needed": _as_list(candidate.get("policy_verification_needed"), max_items=8),
     }
 
 

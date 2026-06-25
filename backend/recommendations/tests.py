@@ -2486,6 +2486,49 @@ class RecommendationSearchTests(TestCase):
         self.assertEqual(level, "medium")
         self.assertEqual(matched[0]["type"], "retrieval_query_target")
 
+    def test_external_web_evidence_requires_location_text_for_direct_match(self):
+        from recommendations.services.ai_search_orchestrator import _external_pre_ai_evidence
+
+        frame = {
+            "location_mode": "explicit",
+            "anchor_location": "서면역",
+            "target_objects": ["공중화장실"],
+            "result_match_terms": ["화장실", "공중화장실"],
+            "candidate_place_types": ["공중화장실"],
+        }
+        wrong_region_candidate = {
+            "candidate_source": "web",
+            "name": "광화문 공중화장실 위치 안내",
+            "evidence_text": "서울 도심 공중화장실 안내",
+            "retrieval_query": "서면역 공중화장실",
+        }
+        local_candidate = {
+            "candidate_source": "web",
+            "name": "서면역 공중화장실 위치 안내",
+            "evidence_text": "부산 서면역 주변 공중화장실 안내",
+            "retrieval_query": "서면역 공중화장실",
+        }
+
+        wrong_level, wrong_matched = _external_pre_ai_evidence(wrong_region_candidate, frame)
+        local_level, local_matched = _external_pre_ai_evidence(local_candidate, frame)
+
+        self.assertEqual(wrong_level, "medium")
+        self.assertTrue(wrong_matched)
+        self.assertTrue(all(item["type"] == "retrieval_query_target" for item in wrong_matched))
+        self.assertEqual(local_level, "strong")
+        self.assertEqual(local_matched[0]["type"], "target_direct")
+
+    def test_external_verification_ignores_ai_generated_confirmation_constraint(self):
+        from recommendations.services.ai_search_orchestrator import _explicit_external_verification_requested
+
+        frame = {
+            "constraints": ["방문 전 확인 필요"],
+            "result_match_terms": ["화장실"],
+        }
+
+        self.assertFalse(_explicit_external_verification_requested("근처 화장실 찾아줘", frame))
+        self.assertTrue(_explicit_external_verification_requested("공식 웹에서 최신 정보 확인해줘", frame))
+
     def test_top_up_ranked_candidates_keeps_excluded_removed(self):
         from recommendations.services.ai_search_orchestrator import _top_up_ranked_candidates
 
@@ -2780,6 +2823,161 @@ class RecommendationSearchTests(TestCase):
 
         self.assertIn(smoking_place.name, candidate_names)
         self.assertNotIn(outdoor_cafe.name, candidate_names)
+
+    def test_collect_db_candidates_prioritizes_structured_smoking_category_before_global_slice(self):
+        from recommendations.services.ai_search_orchestrator import collect_db_candidates
+
+        for index in range(130):
+            Place.objects.create(
+                name=f"원거리 흡연구역 {index}",
+                category="smoking_area",
+                address="서울특별시 테스트구 원거리로 1",
+                lat=37.55 + (index * 0.0001),
+                lng=126.98,
+                source="test",
+                external_id=f"far-smoking-area-{index}",
+                source_name="서울특별시 흡연구역 현황",
+                data_quality_score=99,
+            )
+        nearby_place = Place.objects.create(
+            name="연산 공식 흡연실",
+            category="smoking_area",
+            address="연제구 연제로 2(연산동)",
+            detail_location="연제구 연제로 2(연산동)",
+            lat=35.1762,
+            lng=129.0797,
+            source="test",
+            external_id="nearby-yeonsan-smoking-room",
+            source_name="부산광역시 연제구_흡연실 현황_20250905",
+            data_quality_score=10,
+        )
+
+        frame = {
+            "anchor_location": "부산 연산동",
+            "target_objects": ["흡연구역"],
+            "result_match_terms": ["흡연구역"],
+            "candidate_category_codes": ["smoking_area"],
+            "candidate_place_types": ["흡연구역"],
+            "constraints": [],
+            "primary_search_queries": ["연산동 흡연구역"],
+        }
+
+        candidates = collect_db_candidates(
+            frame,
+            lat=35.176,
+            lng=129.08,
+            limit=10,
+            radius=2000,
+        )
+        nearby_candidate = next(
+            candidate
+            for candidate in candidates
+            if candidate["place_id"] == nearby_place.id
+        )
+
+        self.assertEqual(nearby_candidate["pre_ai_evidence_level"], "strong")
+        self.assertIn(
+            {
+                "type": "structured_category_direct",
+                "field": "category",
+                "value": "smoking_area",
+                "source_strength": "verified",
+            },
+            nearby_candidate["matched_evidence"],
+        )
+
+    def test_collect_db_candidates_marks_smoking_indoor_outdoor_policy(self):
+        from recommendations.services.ai_search_orchestrator import collect_db_candidates
+
+        outdoor_place = self._create_place(
+            name="연산 실외 흡연구역",
+            category="smoking_area",
+            external_id="outdoor-smoking-policy-db",
+            lat=35.176,
+            lng=129.08,
+            data_quality_score=50,
+        )
+        self._add_tag(outdoor_place, "실외흡연구역", is_verified=True)
+        indoor_place = self._create_place(
+            name="연산 실내 흡연실",
+            category="smoking_area",
+            external_id="indoor-smoking-policy-db",
+            lat=35.1761,
+            lng=129.0801,
+            data_quality_score=99,
+        )
+        self._add_tag(indoor_place, "실내흡연실", is_verified=True)
+
+        frame = {
+            "anchor_location": "부산 연산동",
+            "target_objects": ["흡연구역"],
+            "result_match_terms": ["흡연구역", "실외 흡연"],
+            "candidate_category_codes": ["smoking_area"],
+            "candidate_place_types": ["흡연구역", "흡연부스"],
+            "constraints": ["밖에서 이용 가능"],
+            "exclusions": ["음식점 내부"],
+            "primary_search_queries": ["연산동 흡연구역"],
+        }
+
+        candidates = collect_db_candidates(
+            frame,
+            lat=35.176,
+            lng=129.08,
+            limit=10,
+            radius=2000,
+        )
+        by_id = {candidate["place_id"]: candidate for candidate in candidates}
+        outdoor_candidate = by_id[outdoor_place.id]
+        indoor_candidate = by_id[indoor_place.id]
+
+        self.assertIn("실외/외부 이용", outdoor_candidate["policy_matched_constraints"])
+        self.assertEqual(outdoor_candidate["pre_ai_unmet_constraints"], [])
+        self.assertTrue(any(
+            item["type"] == "policy_constraint"
+            for item in outdoor_candidate["matched_evidence"]
+        ))
+        self.assertIn("실외/외부 이용 요청", indoor_candidate["pre_ai_unmet_constraints"][0])
+        self.assertEqual(indoor_candidate["confidence"], "low")
+        self.assertLess(indoor_candidate["score"], outdoor_candidate["score"])
+
+    def test_top_up_ranked_candidates_skips_smoking_policy_conflict(self):
+        from recommendations.services.ai_search_orchestrator import _top_up_ranked_candidates
+
+        conflict_candidate = {
+            "id": "db:indoor-smoking-room",
+            "candidate_source": "db",
+            "source": "db",
+            "name": "실내 흡연실",
+            "pre_ai_evidence_level": "strong",
+            "evidence_level": "strong",
+            "score": 80,
+            "matched_evidence": [
+                {
+                    "type": "structured_category_direct",
+                    "field": "category",
+                    "value": "smoking_area",
+                    "source_strength": "verified",
+                }
+            ],
+            "pre_ai_unmet_constraints": ["실외/외부 이용 요청과 다른 실내 이용 정보"],
+        }
+        matched_candidate = {
+            **conflict_candidate,
+            "id": "db:outdoor-smoking-area",
+            "name": "실외 흡연구역",
+            "pre_ai_unmet_constraints": [],
+            "policy_matched_constraints": ["실외/외부 이용"],
+        }
+
+        ranked, additions = _top_up_ranked_candidates(
+            [],
+            [conflict_candidate, matched_candidate],
+            [],
+            limit=2,
+        )
+
+        self.assertEqual([candidate["id"] for candidate in ranked], ["db:outdoor-smoking-area"])
+        self.assertEqual([candidate["id"] for candidate in additions], ["db:outdoor-smoking-area"])
 
     def test_broad_place_target_is_not_actionable_search_target(self):
         from recommendations.services.ai_search_orchestrator import _has_actionable_place_target

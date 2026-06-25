@@ -1,5 +1,6 @@
 import json
 import logging
+import math
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -28,6 +29,41 @@ logger = logging.getLogger(__name__)
 
 VERIFIED_TAG_SOURCES = {"checked", "user_verified"}
 SUGGESTED_TAG_SOURCES = {"ai_suggested", "blog_search"}
+DB_FIRST_CATEGORY_CODES = {"smoking_area"}
+POLICY_AWARE_CATEGORY_CODES = {"smoking_area"}
+PLACE_POLICY_TERMS = {
+    "outdoor": {
+        "label": "실외/외부 이용",
+        "terms": {
+            "실외",
+            "실외흡연구역",
+            "외부",
+            "밖",
+            "바깥",
+            "야외",
+            "옥외",
+            "개방형",
+            "개방형흡연구역",
+            "부스형",
+            "부스형흡연구역",
+            "흡연부스",
+            "도로변",
+        },
+    },
+    "indoor": {
+        "label": "실내 이용",
+        "terms": {
+            "실내",
+            "실내흡연실",
+            "내부",
+            "실내형",
+            "건물내",
+            "건물 내",
+            "음식점 내부",
+            "매장 내부",
+        },
+    },
+}
 COORDINATE_PAIR_RE = re.compile(
     r"[-+]?\d{1,3}(?:\.\d+)?\s*[,，]\s*[-+]?\d{1,3}(?:\.\d+)?"
 )
@@ -441,6 +477,18 @@ def _frame_terms(frame, *names):
     return values
 
 
+def _frame_category_codes(frame):
+    return _frame_terms(frame, "candidate_category_codes")
+
+
+def _db_first_category_codes(frame):
+    return [
+        code
+        for code in _frame_category_codes(frame)
+        if code in DB_FIRST_CATEGORY_CODES
+    ]
+
+
 def _evidence_terms(frame):
     return {
         "target": _frame_terms(frame, "target_objects"),
@@ -449,6 +497,122 @@ def _evidence_terms(frame):
         "constraints": _frame_terms(frame, "constraints"),
         "exclusions": _frame_terms(frame, "exclusions"),
     }
+
+
+def _policy_enabled(frame):
+    return any(
+        code in POLICY_AWARE_CATEGORY_CODES
+        for code in _frame_category_codes(frame)
+    )
+
+
+def _contains_policy_term(text, policy_name):
+    compact_text = _compact(text)
+    if not compact_text:
+        return False
+    terms = PLACE_POLICY_TERMS.get(policy_name, {}).get("terms") or set()
+    return any(
+        _compact(term) and _compact(term) in compact_text
+        for term in terms
+    )
+
+
+def _frame_policy_requirements(frame):
+    if not _policy_enabled(frame):
+        return {
+            "desired": [],
+            "excluded": [],
+        }
+
+    terms = _evidence_terms(frame)
+    positive_text = " ".join([
+        *terms["target"],
+        *terms["result"],
+        *terms["candidate"],
+        *terms["constraints"],
+    ])
+    exclusion_text = " ".join(terms["exclusions"])
+    desired = []
+    excluded = []
+
+    for policy_name in PLACE_POLICY_TERMS:
+        if _contains_policy_term(positive_text, policy_name):
+            desired.append(policy_name)
+        if _contains_policy_term(exclusion_text, policy_name):
+            excluded.append(policy_name)
+
+    if "indoor" in excluded and "outdoor" not in desired:
+        desired.append("outdoor")
+    if "outdoor" in excluded and "indoor" not in desired:
+        desired.append("indoor")
+
+    desired = [
+        policy_name
+        for policy_name in dict.fromkeys(desired)
+        if policy_name not in excluded
+    ]
+    excluded = list(dict.fromkeys(excluded))
+
+    return {
+        "desired": desired,
+        "excluded": excluded,
+    }
+
+
+def _policy_label(policy_name):
+    return PLACE_POLICY_TERMS.get(policy_name, {}).get("label") or policy_name
+
+
+def _policy_review(text, frame, *, field="policy", source_strength="candidate"):
+    requirements = _frame_policy_requirements(frame)
+    desired = requirements.get("desired") or []
+    excluded = requirements.get("excluded") or []
+    if not desired and not excluded:
+        return [], [], []
+
+    present = {
+        policy_name: _contains_policy_term(text, policy_name)
+        for policy_name in PLACE_POLICY_TERMS
+    }
+    matched = []
+    unmet = []
+    verification_needed = []
+
+    for policy_name in desired:
+        if present.get(policy_name):
+            matched.append({
+                "type": "policy_constraint",
+                "field": field,
+                "value": _policy_label(policy_name),
+                "source_strength": source_strength,
+            })
+        else:
+            conflicting = [
+                excluded_policy
+                for excluded_policy in excluded
+                if present.get(excluded_policy)
+            ]
+            if conflicting:
+                unmet.append(f"{_policy_label(policy_name)} 요청과 다른 {_policy_label(conflicting[0])} 정보")
+            else:
+                verification_needed.append(f"{_policy_label(policy_name)} 여부 확인 필요")
+
+    for policy_name in excluded:
+        if present.get(policy_name) and not any(
+            present.get(desired_policy)
+            for desired_policy in desired
+        ):
+            unmet.append(f"제외 조건과 맞지 않는 {_policy_label(policy_name)} 정보")
+
+    return matched, list(dict.fromkeys(unmet)), list(dict.fromkeys(verification_needed))
+
+
+def _adjust_evidence_level_for_policy(level, matched_policy, unmet_policy):
+    if unmet_policy and not matched_policy:
+        return "weak"
+    if matched_policy and level == "weak":
+        return "medium"
+    return level
 
 
 def _generic_evidence_modifiers():
@@ -816,6 +980,23 @@ def _distance(lat, lng, place_lat, place_lng):
     return calculate_distance_m(lat, lng, place_lat, place_lng)
 
 
+def _nearby_bounds(lat, lng, radius):
+    lat = _as_float(lat)
+    lng = _as_float(lng)
+    radius = _radius(radius)
+    if lat is None or lng is None:
+        return None
+    lat_delta = radius / 111_000
+    lng_scale = max(math.cos(math.radians(lat)), 0.2)
+    lng_delta = radius / (111_000 * lng_scale)
+    return {
+        "lat_min": lat - lat_delta,
+        "lat_max": lat + lat_delta,
+        "lng_min": lng - lng_delta,
+        "lng_max": lng + lng_delta,
+    }
+
+
 def _source_label(source):
     if source == "db":
         return "DB 후보"
@@ -877,6 +1058,7 @@ def _db_evidence(place, tag_lists, frame):
     terms = _db_evidence_terms(frame)
     target_terms = terms["target"]
     candidate_terms = terms["candidate"]
+    db_first_category_codes = _db_first_category_codes(frame)
     text_fields = {
         "name": _clean_text(place.name),
         "category": _clean_text(place.category),
@@ -887,6 +1069,27 @@ def _db_evidence(place, tag_lists, frame):
     }
     matched = []
     level = "weak"
+    policy_text = " ".join([
+        *text_fields.values(),
+        *tag_lists["verified"],
+        *tag_lists["suggested"],
+        *tag_lists["candidate"],
+    ])
+    policy_matched, policy_unmet, policy_verification_needed = _policy_review(
+        policy_text,
+        frame,
+        field="db_tags_or_place_text",
+        source_strength="verified",
+    )
+
+    if place.category in db_first_category_codes:
+        matched.append({
+            "type": "structured_category_direct",
+            "field": "category",
+            "value": place.category,
+            "source_strength": "verified",
+        })
+        level = "strong"
 
     for field_name, text in text_fields.items():
         for term in _matched_terms(text, target_terms):
@@ -939,7 +1142,11 @@ def _db_evidence(place, tag_lists, frame):
         if matched:
             level = "weak"
 
-    return level, matched
+    if policy_matched:
+        matched.extend(policy_matched)
+    level = _adjust_evidence_level_for_policy(level, policy_matched, policy_unmet)
+
+    return level, matched, policy_unmet, policy_verification_needed
 
 
 def _candidate_base(candidate_id, source, name, category, address, lat=None, lng=None, distance=None):
@@ -971,7 +1178,8 @@ def _candidate_base(candidate_id, source, name, category, address, lat=None, lng
 def collect_db_candidates(frame, *, lat=None, lng=None, limit=50, radius=None):
     terms = _db_evidence_terms(frame)
     search_terms = terms["search"]
-    if not search_terms:
+    db_first_category_codes = _db_first_category_codes(frame)
+    if not search_terms and not db_first_category_codes:
         return []
 
     query = Q()
@@ -985,22 +1193,48 @@ def collect_db_candidates(frame, *, lat=None, lng=None, limit=50, radius=None):
             | Q(place_tags__tag__name__icontains=term)
             | Q(place_tags__evidence__icontains=term)
         )
+    if db_first_category_codes:
+        query |= Q(category__in=db_first_category_codes)
 
+    radius = _radius(radius)
+    bounds = _nearby_bounds(lat, lng, radius)
     queryset = (
         Place.objects
         .filter(query)
         .distinct()
         .prefetch_related("place_tags__tag")
-        .order_by("-data_quality_score", "-updated_at")
     )
-    radius = _radius(radius)
+    if bounds:
+        queryset = queryset.filter(
+            lat__gte=bounds["lat_min"],
+            lat__lte=bounds["lat_max"],
+            lng__gte=bounds["lng_min"],
+            lng__lte=bounds["lng_max"],
+        )
+
+    queryset = queryset.order_by("-data_quality_score", "-updated_at")
     candidates = []
     for place in queryset[: max(limit * 5, 100)]:
         distance = _distance(lat, lng, place.lat, place.lng)
         if distance is not None and distance > radius:
             continue
         tag_lists = _db_tag_lists(place)
-        level, matched = _db_evidence(place, tag_lists, frame)
+        level, matched, policy_unmet, policy_verification_needed = _db_evidence(place, tag_lists, frame)
+        policy_matched = [
+            item["value"]
+            for item in matched
+            if item.get("type") == "policy_constraint"
+        ]
+        score = {"strong": 80, "medium": 55, "weak": 25}.get(level, 25)
+        if policy_unmet:
+            score = min(score, 35)
+        elif policy_matched:
+            score = min(score + 8, 92)
+        elif policy_verification_needed:
+            score = max(score - 8, 20)
+        confidence_level = "high" if level == "strong" else "medium" if level == "medium" else "low"
+        if policy_unmet:
+            confidence_level = "low"
         candidate = {
             **_candidate_base(
                 f"db:{place.id}",
@@ -1027,18 +1261,24 @@ def collect_db_candidates(frame, *, lat=None, lng=None, limit=50, radius=None):
             "matched_evidence": matched,
             "matched_tags": [item["value"] for item in matched],
             "matched_tag_labels": [item["value"] for item in matched],
+            "policy_matched_constraints": policy_matched,
+            "pre_ai_unmet_constraints": policy_unmet,
+            "policy_verification_needed": policy_verification_needed,
             "pre_ai_evidence_level": level,
             "evidence_level": level,
             "frame_match_strength": level,
-            "recommendation_confidence": "high" if level == "strong" else "medium" if level == "medium" else "low",
-            "confidence": "high" if level == "strong" else "medium" if level == "medium" else "low",
+            "recommendation_confidence": confidence_level,
+            "confidence": confidence_level,
             "confidence_label": _confidence_label(level, "db"),
             "recommendation_reason": _confidence_label(level, "db"),
             "recommend_reason": _confidence_label(level, "db"),
-            "score": {"strong": 80, "medium": 55, "weak": 25}.get(level, 25),
+            "score": score,
             "score_breakdown": {
                 "collector": "db",
                 "pre_ai_evidence_level": level,
+                "policy_matched_constraints": policy_matched,
+                "pre_ai_unmet_constraints": policy_unmet,
+                "policy_verification_needed": policy_verification_needed,
                 "personalization_boost": 0,
             },
         }
@@ -1056,26 +1296,92 @@ def _candidate_text(candidate):
     )
 
 
+def _candidate_has_location_text_evidence(candidate, frame):
+    location_mode = _clean_text(frame.get("location_mode"))
+    anchor_locations = _as_list(frame.get("anchor_location"), max_items=3)
+    if not anchor_locations:
+        return location_mode != "explicit"
+    text = _compact(_candidate_text(candidate))
+    if not text:
+        return False
+
+    for anchor in anchor_locations:
+        anchor_key = _compact(anchor)
+        if anchor_key and anchor_key in text:
+            return True
+        tokens = [
+            _compact(token)
+            for token in re.split(r"[\s,;/|]+", anchor)
+            if len(_compact(token)) >= 2
+        ]
+        if len(tokens) >= 2 and all(token in text for token in tokens):
+            return True
+        for alias in _anchor_location_aliases(anchor):
+            alias_key = alias.get("key")
+            area_tokens = alias.get("area_tokens") or []
+            if not alias_key or alias_key == anchor_key:
+                continue
+            if alias_key in text and all(token in text for token in area_tokens):
+                return True
+    return False
+
+
 def _external_pre_ai_evidence(candidate, frame):
     db_terms = _db_evidence_terms(frame)
     target_terms = db_terms["target"]
     candidate_terms = db_terms["candidate"]
     text = _candidate_text(candidate)
     retrieval_query = _clean_text(candidate.get("retrieval_query"))
+    source = _clean_text(candidate.get("candidate_source") or candidate.get("source"))
+    has_location_text_evidence = source != "web" or _candidate_has_location_text_evidence(candidate, frame)
     matched = []
-    for term in _matched_terms(text, target_terms):
-        matched.append({"type": "target_direct", "value": term, "source_strength": "external"})
-    if matched:
-        return "strong", matched
-    for term in _matched_terms(text, candidate_terms):
-        matched.append({"type": "candidate_type", "value": term, "source_strength": "external"})
-    if matched:
-        return "medium", matched
+    if has_location_text_evidence:
+        for term in _matched_terms(text, target_terms):
+            matched.append({"type": "target_direct", "value": term, "source_strength": "external"})
+        if matched:
+            return "strong", matched
+        for term in _matched_terms(text, candidate_terms):
+            matched.append({"type": "candidate_type", "value": term, "source_strength": "external"})
+        if matched:
+            return "medium", matched
     for term in _matched_terms(retrieval_query, target_terms):
         matched.append({"type": "retrieval_query_target", "value": term, "source_strength": "external_query"})
     if matched:
         return "medium", matched
     return "weak", []
+
+
+def _merge_candidate_policy_review(candidate, frame, level, matched, *, field, source_strength):
+    policy_matched_evidence, policy_unmet, policy_verification_needed = _policy_review(
+        _candidate_text(candidate),
+        frame,
+        field=field,
+        source_strength=source_strength,
+    )
+    merged_matched = [*matched, *policy_matched_evidence]
+    adjusted_level = _adjust_evidence_level_for_policy(
+        level,
+        policy_matched_evidence,
+        policy_unmet,
+    )
+    return (
+        adjusted_level,
+        merged_matched,
+        [item["value"] for item in policy_matched_evidence],
+        policy_unmet,
+        policy_verification_needed,
+    )
+
+
+def _policy_adjusted_score(base_score, *, policy_matched=None, policy_unmet=None, policy_verification_needed=None):
+    score = float(base_score or 0)
+    if policy_unmet:
+        return min(score, 35)
+    if policy_matched:
+        return min(score + 8, 92)
+    if policy_verification_needed:
+        return max(score - 8, 20)
+    return score
 
 
 def collect_kakao_candidates(frame, queries, *, lat=None, lng=None, radius=None):
@@ -1144,22 +1450,46 @@ def collect_kakao_candidates(frame, queries, *, lat=None, lng=None, radius=None)
                 "kakao_category": _clean_text(place.get("category_name")),
             }
             level, matched = _external_pre_ai_evidence(candidate, frame)
+            level, matched, policy_matched, policy_unmet, policy_verification_needed = _merge_candidate_policy_review(
+                candidate,
+                frame,
+                level,
+                matched,
+                field="kakao_text",
+                source_strength="external",
+            )
+            base_score = {"strong": 72, "medium": 50, "weak": 20}.get(level, 20)
+            score = _policy_adjusted_score(
+                base_score,
+                policy_matched=policy_matched,
+                policy_unmet=policy_unmet,
+                policy_verification_needed=policy_verification_needed,
+            )
+            confidence_level = "medium" if level in {"strong", "medium"} else "low"
+            if policy_unmet:
+                confidence_level = "low"
             candidate.update({
                 "pre_ai_evidence_level": level,
                 "evidence_level": level,
                 "matched_evidence": matched,
                 "matched_tags": [item["value"] for item in matched],
                 "matched_tag_labels": [item["value"] for item in matched],
-                "confidence": "medium" if level in {"strong", "medium"} else "low",
-                "recommendation_confidence": "medium" if level in {"strong", "medium"} else "low",
+                "policy_matched_constraints": policy_matched,
+                "pre_ai_unmet_constraints": policy_unmet,
+                "policy_verification_needed": policy_verification_needed,
+                "confidence": confidence_level,
+                "recommendation_confidence": confidence_level,
                 "confidence_label": _confidence_label(level, "kakao"),
                 "recommendation_reason": _confidence_label(level, "kakao"),
                 "recommend_reason": _confidence_label(level, "kakao"),
-                "score": {"strong": 72, "medium": 50, "weak": 20}.get(level, 20),
+                "score": score,
                 "score_breakdown": {
                     "collector": "kakao",
                     "retrieval_query": query,
                     "pre_ai_evidence_level": level,
+                    "policy_matched_constraints": policy_matched,
+                    "pre_ai_unmet_constraints": policy_unmet,
+                    "policy_verification_needed": policy_verification_needed,
                 },
             })
             candidates.append(candidate)
@@ -1218,20 +1548,44 @@ def collect_web_candidates(frame, queries, *, lat=None, lng=None, existing_count
                 "web_snippet": _clean_text(item.get("summary") or item.get("evidence_text"), 500),
             }
             level, matched = _external_pre_ai_evidence(candidate, frame)
+            level, matched, policy_matched, policy_unmet, policy_verification_needed = _merge_candidate_policy_review(
+                candidate,
+                frame,
+                level,
+                matched,
+                field="web_text",
+                source_strength="external",
+            )
+            base_score = {"strong": 68, "medium": 45, "weak": 20}.get(level, 20)
+            score = _policy_adjusted_score(
+                base_score,
+                policy_matched=policy_matched,
+                policy_unmet=policy_unmet,
+                policy_verification_needed=policy_verification_needed,
+            )
+            confidence_level = "medium" if level in {"strong", "medium"} else "low"
+            if policy_unmet:
+                confidence_level = "low"
             candidate.update({
                 "pre_ai_evidence_level": level,
                 "evidence_level": level,
                 "matched_evidence": matched,
-                "confidence": "medium" if level in {"strong", "medium"} else "low",
-                "recommendation_confidence": "medium" if level in {"strong", "medium"} else "low",
+                "policy_matched_constraints": policy_matched,
+                "pre_ai_unmet_constraints": policy_unmet,
+                "policy_verification_needed": policy_verification_needed,
+                "confidence": confidence_level,
+                "recommendation_confidence": confidence_level,
                 "confidence_label": _confidence_label(level, "web"),
                 "recommendation_reason": _confidence_label(level, "web"),
                 "recommend_reason": _confidence_label(level, "web"),
-                "score": {"strong": 68, "medium": 45, "weak": 20}.get(level, 20),
+                "score": score,
                 "score_breakdown": {
                     "collector": "web",
                     "retrieval_query": query,
                     "pre_ai_evidence_level": level,
+                    "policy_matched_constraints": policy_matched,
+                    "pre_ai_unmet_constraints": policy_unmet,
+                    "policy_verification_needed": policy_verification_needed,
                 },
             })
             candidates.append(candidate)
@@ -1288,11 +1642,7 @@ def _query_needs_repair(queries):
 
 
 def _explicit_external_verification_requested(query, frame):
-    text = _compact(" ".join([
-        query,
-        *frame.get("constraints", []),
-        *frame.get("result_match_terms", []),
-    ]))
+    text = _compact(query)
     markers = {
         "web",
         "external",
@@ -1302,14 +1652,22 @@ def _explicit_external_verification_requested(query, frame):
         "웹",
         "외부",
         "공식",
-        "확인",
         "최신",
     }
     return any(_compact(marker) in text for marker in markers)
 
 
 def _candidate_sort_key(candidate):
+    if candidate.get("pre_ai_unmet_constraints"):
+        policy_rank = 3
+    elif candidate.get("policy_matched_constraints"):
+        policy_rank = 0
+    elif candidate.get("policy_verification_needed"):
+        policy_rank = 2
+    else:
+        policy_rank = 1
     return (
+        policy_rank,
         {"strong": 0, "medium": 1, "weak": 2}.get(candidate.get("pre_ai_evidence_level"), 9),
         candidate.get("distance") if candidate.get("distance") is not None else 999999999,
         str(candidate.get("id")),
@@ -1419,6 +1777,8 @@ def _top_up_ranked_candidates(ranked_candidates, candidate_pool, excluded_candid
         candidate_id = _clean_text(candidate.get("id"))
         if not candidate_id or candidate_id in ranked_ids:
             continue
+        if candidate.get("pre_ai_unmet_constraints"):
+            continue
         if candidate_id in excluded_ids and not _can_top_up_excluded_candidate(candidate):
             continue
         level = _clean_text(candidate.get("pre_ai_evidence_level") or candidate.get("evidence_level"))
@@ -1509,6 +1869,9 @@ def _candidate_debug_sample(candidates, *, source=None, limit=5):
             "category": candidate.get("category"),
             "retrieval_query": candidate.get("retrieval_query"),
             "pre_ai_evidence_level": candidate.get("pre_ai_evidence_level"),
+            "policy_matched_constraints": candidate.get("policy_matched_constraints") or [],
+            "pre_ai_unmet_constraints": candidate.get("pre_ai_unmet_constraints") or [],
+            "policy_verification_needed": candidate.get("policy_verification_needed") or [],
             "matched_evidence": matched_evidence[:5],
         })
         if len(sample) >= limit:
@@ -2015,7 +2378,7 @@ def run_ai_search(request_data, *, user=None):
 
     web_candidates = []
     external_verification_requested = _explicit_external_verification_requested(original_query or query, frame)
-    can_use_web_for_location = bool(frame.get("anchor_location")) or frame.get("location_mode") == "explicit"
+    can_use_web_for_location = bool(frame.get("anchor_location")) and frame.get("location_mode") == "explicit"
     should_collect_web = (
         external_verification_requested
         or (can_use_web_for_location and _needs_candidate_recall_boost(initial_candidates, limit=limit))
@@ -2046,6 +2409,10 @@ def run_ai_search(request_data, *, user=None):
         candidate
         for candidate in candidate_pool
         if not _has_only_retrieval_query_evidence(candidate)
+        and (
+            candidate.get("pre_ai_evidence_level") != "weak"
+            or candidate.get("matched_evidence")
+        )
     ]
     pre_rerank_limit = _as_int(getattr(settings, "AI_SEARCH_RERANK_MAX_CANDIDATES", 20), 20)
     pre_rerank_limit = min(max(pre_rerank_limit, 5), 30)
