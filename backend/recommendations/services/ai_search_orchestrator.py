@@ -30,6 +30,40 @@ logger = logging.getLogger(__name__)
 VERIFIED_TAG_SOURCES = {"checked", "user_verified"}
 SUGGESTED_TAG_SOURCES = {"ai_suggested", "blog_search"}
 DB_FIRST_CATEGORY_CODES = {"smoking_area"}
+POLICY_AWARE_CATEGORY_CODES = {"smoking_area"}
+PLACE_POLICY_TERMS = {
+    "outdoor": {
+        "label": "실외/외부 이용",
+        "terms": {
+            "실외",
+            "실외흡연구역",
+            "외부",
+            "밖",
+            "바깥",
+            "야외",
+            "옥외",
+            "개방형",
+            "개방형흡연구역",
+            "부스형",
+            "부스형흡연구역",
+            "흡연부스",
+            "도로변",
+        },
+    },
+    "indoor": {
+        "label": "실내 이용",
+        "terms": {
+            "실내",
+            "실내흡연실",
+            "내부",
+            "실내형",
+            "건물내",
+            "건물 내",
+            "음식점 내부",
+            "매장 내부",
+        },
+    },
+}
 COORDINATE_PAIR_RE = re.compile(
     r"[-+]?\d{1,3}(?:\.\d+)?\s*[,，]\s*[-+]?\d{1,3}(?:\.\d+)?"
 )
@@ -463,6 +497,122 @@ def _evidence_terms(frame):
         "constraints": _frame_terms(frame, "constraints"),
         "exclusions": _frame_terms(frame, "exclusions"),
     }
+
+
+def _policy_enabled(frame):
+    return any(
+        code in POLICY_AWARE_CATEGORY_CODES
+        for code in _frame_category_codes(frame)
+    )
+
+
+def _contains_policy_term(text, policy_name):
+    compact_text = _compact(text)
+    if not compact_text:
+        return False
+    terms = PLACE_POLICY_TERMS.get(policy_name, {}).get("terms") or set()
+    return any(
+        _compact(term) and _compact(term) in compact_text
+        for term in terms
+    )
+
+
+def _frame_policy_requirements(frame):
+    if not _policy_enabled(frame):
+        return {
+            "desired": [],
+            "excluded": [],
+        }
+
+    terms = _evidence_terms(frame)
+    positive_text = " ".join([
+        *terms["target"],
+        *terms["result"],
+        *terms["candidate"],
+        *terms["constraints"],
+    ])
+    exclusion_text = " ".join(terms["exclusions"])
+    desired = []
+    excluded = []
+
+    for policy_name in PLACE_POLICY_TERMS:
+        if _contains_policy_term(positive_text, policy_name):
+            desired.append(policy_name)
+        if _contains_policy_term(exclusion_text, policy_name):
+            excluded.append(policy_name)
+
+    if "indoor" in excluded and "outdoor" not in desired:
+        desired.append("outdoor")
+    if "outdoor" in excluded and "indoor" not in desired:
+        desired.append("indoor")
+
+    desired = [
+        policy_name
+        for policy_name in dict.fromkeys(desired)
+        if policy_name not in excluded
+    ]
+    excluded = list(dict.fromkeys(excluded))
+
+    return {
+        "desired": desired,
+        "excluded": excluded,
+    }
+
+
+def _policy_label(policy_name):
+    return PLACE_POLICY_TERMS.get(policy_name, {}).get("label") or policy_name
+
+
+def _policy_review(text, frame, *, field="policy", source_strength="candidate"):
+    requirements = _frame_policy_requirements(frame)
+    desired = requirements.get("desired") or []
+    excluded = requirements.get("excluded") or []
+    if not desired and not excluded:
+        return [], [], []
+
+    present = {
+        policy_name: _contains_policy_term(text, policy_name)
+        for policy_name in PLACE_POLICY_TERMS
+    }
+    matched = []
+    unmet = []
+    verification_needed = []
+
+    for policy_name in desired:
+        if present.get(policy_name):
+            matched.append({
+                "type": "policy_constraint",
+                "field": field,
+                "value": _policy_label(policy_name),
+                "source_strength": source_strength,
+            })
+        else:
+            conflicting = [
+                excluded_policy
+                for excluded_policy in excluded
+                if present.get(excluded_policy)
+            ]
+            if conflicting:
+                unmet.append(f"{_policy_label(policy_name)} 요청과 다른 {_policy_label(conflicting[0])} 정보")
+            else:
+                verification_needed.append(f"{_policy_label(policy_name)} 여부 확인 필요")
+
+    for policy_name in excluded:
+        if present.get(policy_name) and not any(
+            present.get(desired_policy)
+            for desired_policy in desired
+        ):
+            unmet.append(f"제외 조건과 맞지 않는 {_policy_label(policy_name)} 정보")
+
+    return matched, list(dict.fromkeys(unmet)), list(dict.fromkeys(verification_needed))
+
+
+def _adjust_evidence_level_for_policy(level, matched_policy, unmet_policy):
+    if unmet_policy and not matched_policy:
+        return "weak"
+    if matched_policy and level == "weak":
+        return "medium"
+    return level
 
 
 def _generic_evidence_modifiers():
@@ -919,6 +1069,18 @@ def _db_evidence(place, tag_lists, frame):
     }
     matched = []
     level = "weak"
+    policy_text = " ".join([
+        *text_fields.values(),
+        *tag_lists["verified"],
+        *tag_lists["suggested"],
+        *tag_lists["candidate"],
+    ])
+    policy_matched, policy_unmet, policy_verification_needed = _policy_review(
+        policy_text,
+        frame,
+        field="db_tags_or_place_text",
+        source_strength="verified",
+    )
 
     if place.category in db_first_category_codes:
         matched.append({
@@ -980,7 +1142,11 @@ def _db_evidence(place, tag_lists, frame):
         if matched:
             level = "weak"
 
-    return level, matched
+    if policy_matched:
+        matched.extend(policy_matched)
+    level = _adjust_evidence_level_for_policy(level, policy_matched, policy_unmet)
+
+    return level, matched, policy_unmet, policy_verification_needed
 
 
 def _candidate_base(candidate_id, source, name, category, address, lat=None, lng=None, distance=None):
@@ -1053,7 +1219,22 @@ def collect_db_candidates(frame, *, lat=None, lng=None, limit=50, radius=None):
         if distance is not None and distance > radius:
             continue
         tag_lists = _db_tag_lists(place)
-        level, matched = _db_evidence(place, tag_lists, frame)
+        level, matched, policy_unmet, policy_verification_needed = _db_evidence(place, tag_lists, frame)
+        policy_matched = [
+            item["value"]
+            for item in matched
+            if item.get("type") == "policy_constraint"
+        ]
+        score = {"strong": 80, "medium": 55, "weak": 25}.get(level, 25)
+        if policy_unmet:
+            score = min(score, 35)
+        elif policy_matched:
+            score = min(score + 8, 92)
+        elif policy_verification_needed:
+            score = max(score - 8, 20)
+        confidence_level = "high" if level == "strong" else "medium" if level == "medium" else "low"
+        if policy_unmet:
+            confidence_level = "low"
         candidate = {
             **_candidate_base(
                 f"db:{place.id}",
@@ -1080,18 +1261,24 @@ def collect_db_candidates(frame, *, lat=None, lng=None, limit=50, radius=None):
             "matched_evidence": matched,
             "matched_tags": [item["value"] for item in matched],
             "matched_tag_labels": [item["value"] for item in matched],
+            "policy_matched_constraints": policy_matched,
+            "pre_ai_unmet_constraints": policy_unmet,
+            "policy_verification_needed": policy_verification_needed,
             "pre_ai_evidence_level": level,
             "evidence_level": level,
             "frame_match_strength": level,
-            "recommendation_confidence": "high" if level == "strong" else "medium" if level == "medium" else "low",
-            "confidence": "high" if level == "strong" else "medium" if level == "medium" else "low",
+            "recommendation_confidence": confidence_level,
+            "confidence": confidence_level,
             "confidence_label": _confidence_label(level, "db"),
             "recommendation_reason": _confidence_label(level, "db"),
             "recommend_reason": _confidence_label(level, "db"),
-            "score": {"strong": 80, "medium": 55, "weak": 25}.get(level, 25),
+            "score": score,
             "score_breakdown": {
                 "collector": "db",
                 "pre_ai_evidence_level": level,
+                "policy_matched_constraints": policy_matched,
+                "pre_ai_unmet_constraints": policy_unmet,
+                "policy_verification_needed": policy_verification_needed,
                 "personalization_boost": 0,
             },
         }
@@ -1164,6 +1351,39 @@ def _external_pre_ai_evidence(candidate, frame):
     return "weak", []
 
 
+def _merge_candidate_policy_review(candidate, frame, level, matched, *, field, source_strength):
+    policy_matched_evidence, policy_unmet, policy_verification_needed = _policy_review(
+        _candidate_text(candidate),
+        frame,
+        field=field,
+        source_strength=source_strength,
+    )
+    merged_matched = [*matched, *policy_matched_evidence]
+    adjusted_level = _adjust_evidence_level_for_policy(
+        level,
+        policy_matched_evidence,
+        policy_unmet,
+    )
+    return (
+        adjusted_level,
+        merged_matched,
+        [item["value"] for item in policy_matched_evidence],
+        policy_unmet,
+        policy_verification_needed,
+    )
+
+
+def _policy_adjusted_score(base_score, *, policy_matched=None, policy_unmet=None, policy_verification_needed=None):
+    score = float(base_score or 0)
+    if policy_unmet:
+        return min(score, 35)
+    if policy_matched:
+        return min(score + 8, 92)
+    if policy_verification_needed:
+        return max(score - 8, 20)
+    return score
+
+
 def collect_kakao_candidates(frame, queries, *, lat=None, lng=None, radius=None):
     max_queries = _as_int(getattr(settings, "AI_SEARCH_KAKAO_MAX_QUERIES", 2), 2)
     max_queries = min(max(max_queries, 1), 5)
@@ -1230,22 +1450,46 @@ def collect_kakao_candidates(frame, queries, *, lat=None, lng=None, radius=None)
                 "kakao_category": _clean_text(place.get("category_name")),
             }
             level, matched = _external_pre_ai_evidence(candidate, frame)
+            level, matched, policy_matched, policy_unmet, policy_verification_needed = _merge_candidate_policy_review(
+                candidate,
+                frame,
+                level,
+                matched,
+                field="kakao_text",
+                source_strength="external",
+            )
+            base_score = {"strong": 72, "medium": 50, "weak": 20}.get(level, 20)
+            score = _policy_adjusted_score(
+                base_score,
+                policy_matched=policy_matched,
+                policy_unmet=policy_unmet,
+                policy_verification_needed=policy_verification_needed,
+            )
+            confidence_level = "medium" if level in {"strong", "medium"} else "low"
+            if policy_unmet:
+                confidence_level = "low"
             candidate.update({
                 "pre_ai_evidence_level": level,
                 "evidence_level": level,
                 "matched_evidence": matched,
                 "matched_tags": [item["value"] for item in matched],
                 "matched_tag_labels": [item["value"] for item in matched],
-                "confidence": "medium" if level in {"strong", "medium"} else "low",
-                "recommendation_confidence": "medium" if level in {"strong", "medium"} else "low",
+                "policy_matched_constraints": policy_matched,
+                "pre_ai_unmet_constraints": policy_unmet,
+                "policy_verification_needed": policy_verification_needed,
+                "confidence": confidence_level,
+                "recommendation_confidence": confidence_level,
                 "confidence_label": _confidence_label(level, "kakao"),
                 "recommendation_reason": _confidence_label(level, "kakao"),
                 "recommend_reason": _confidence_label(level, "kakao"),
-                "score": {"strong": 72, "medium": 50, "weak": 20}.get(level, 20),
+                "score": score,
                 "score_breakdown": {
                     "collector": "kakao",
                     "retrieval_query": query,
                     "pre_ai_evidence_level": level,
+                    "policy_matched_constraints": policy_matched,
+                    "pre_ai_unmet_constraints": policy_unmet,
+                    "policy_verification_needed": policy_verification_needed,
                 },
             })
             candidates.append(candidate)
@@ -1304,20 +1548,44 @@ def collect_web_candidates(frame, queries, *, lat=None, lng=None, existing_count
                 "web_snippet": _clean_text(item.get("summary") or item.get("evidence_text"), 500),
             }
             level, matched = _external_pre_ai_evidence(candidate, frame)
+            level, matched, policy_matched, policy_unmet, policy_verification_needed = _merge_candidate_policy_review(
+                candidate,
+                frame,
+                level,
+                matched,
+                field="web_text",
+                source_strength="external",
+            )
+            base_score = {"strong": 68, "medium": 45, "weak": 20}.get(level, 20)
+            score = _policy_adjusted_score(
+                base_score,
+                policy_matched=policy_matched,
+                policy_unmet=policy_unmet,
+                policy_verification_needed=policy_verification_needed,
+            )
+            confidence_level = "medium" if level in {"strong", "medium"} else "low"
+            if policy_unmet:
+                confidence_level = "low"
             candidate.update({
                 "pre_ai_evidence_level": level,
                 "evidence_level": level,
                 "matched_evidence": matched,
-                "confidence": "medium" if level in {"strong", "medium"} else "low",
-                "recommendation_confidence": "medium" if level in {"strong", "medium"} else "low",
+                "policy_matched_constraints": policy_matched,
+                "pre_ai_unmet_constraints": policy_unmet,
+                "policy_verification_needed": policy_verification_needed,
+                "confidence": confidence_level,
+                "recommendation_confidence": confidence_level,
                 "confidence_label": _confidence_label(level, "web"),
                 "recommendation_reason": _confidence_label(level, "web"),
                 "recommend_reason": _confidence_label(level, "web"),
-                "score": {"strong": 68, "medium": 45, "weak": 20}.get(level, 20),
+                "score": score,
                 "score_breakdown": {
                     "collector": "web",
                     "retrieval_query": query,
                     "pre_ai_evidence_level": level,
+                    "policy_matched_constraints": policy_matched,
+                    "pre_ai_unmet_constraints": policy_unmet,
+                    "policy_verification_needed": policy_verification_needed,
                 },
             })
             candidates.append(candidate)
@@ -1390,7 +1658,16 @@ def _explicit_external_verification_requested(query, frame):
 
 
 def _candidate_sort_key(candidate):
+    if candidate.get("pre_ai_unmet_constraints"):
+        policy_rank = 3
+    elif candidate.get("policy_matched_constraints"):
+        policy_rank = 0
+    elif candidate.get("policy_verification_needed"):
+        policy_rank = 2
+    else:
+        policy_rank = 1
     return (
+        policy_rank,
         {"strong": 0, "medium": 1, "weak": 2}.get(candidate.get("pre_ai_evidence_level"), 9),
         candidate.get("distance") if candidate.get("distance") is not None else 999999999,
         str(candidate.get("id")),
@@ -1500,6 +1777,8 @@ def _top_up_ranked_candidates(ranked_candidates, candidate_pool, excluded_candid
         candidate_id = _clean_text(candidate.get("id"))
         if not candidate_id or candidate_id in ranked_ids:
             continue
+        if candidate.get("pre_ai_unmet_constraints"):
+            continue
         if candidate_id in excluded_ids and not _can_top_up_excluded_candidate(candidate):
             continue
         level = _clean_text(candidate.get("pre_ai_evidence_level") or candidate.get("evidence_level"))
@@ -1590,6 +1869,9 @@ def _candidate_debug_sample(candidates, *, source=None, limit=5):
             "category": candidate.get("category"),
             "retrieval_query": candidate.get("retrieval_query"),
             "pre_ai_evidence_level": candidate.get("pre_ai_evidence_level"),
+            "policy_matched_constraints": candidate.get("policy_matched_constraints") or [],
+            "pre_ai_unmet_constraints": candidate.get("pre_ai_unmet_constraints") or [],
+            "policy_verification_needed": candidate.get("policy_verification_needed") or [],
             "matched_evidence": matched_evidence[:5],
         })
         if len(sample) >= limit:
