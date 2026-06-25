@@ -1,10 +1,10 @@
-# SearchPlan 정책
+# AI frame / SearchPlan 정책
 
 ## 1. 문서 목적
 
-이 문서는 통합 지도 검색에서 사용자 자연어를 실행 가능한 검색 계획으로 바꾸는 기준을 정의한다.
+이 문서는 홈 AI 추천 검색에서 사용자 자연어를 실행 가능한 검색 frame으로 바꾸는 기준을 정의한다.
 
-현재 구현은 프론트엔드 `Homeview.vue`의 helper를 중심으로 SearchPlan을 만든다. 향후에는 같은 구조를 백엔드 SearchPlan API로 이전하는 것을 검토한다.
+현재 구현은 백엔드 `/api/recommendations/ai-search/`의 AI-first 오케스트레이터를 중심으로 동작한다. 일반 지도 검색(`/map`, `/api/recommendations/map-search/`)은 AI 해석 없이 DB `Place`와 Kakao 키워드 결과를 그대로 조회하므로 이 문서의 자연어 추천 정책과 분리한다.
 
 중요한 원칙은 특정 예시별 `if`를 계속 추가하는 것이 아니라, 모든 자연어 검색을 공통적으로 아래 구조로 분해하는 것이다.
 
@@ -14,45 +14,36 @@ location + target + conditions + fallbackTargets + resultPolicy
 
 ---
 
-## 2. 현재 구현된 SearchPlan 필드
+## 2. 현재 구현된 AI frame 필드
 
-현재 프론트 SearchPlan은 다음 필드를 중심으로 동작한다.
+현재 AI-first 추천 검색은 다음 frame 필드를 중심으로 동작한다.
 
 | 필드 | 상태 | 설명 |
 |---|---|---|
-| `originalQuery` | 구현됨 | 사용자가 입력한 원문 |
-| `normalizedQuery` | 구현됨 | 공백 정리와 오타 보정을 거친 검색어 |
-| `correctionApplied` | 구현됨 | 검색어 보정 여부 |
-| `correctionReason` | 구현됨 | 적용된 보정 사유 |
-| `searchMode` | 구현됨 | `current_context`, `around_location`, `region_search` 등 |
-| `locationQuery` | 구현됨 | 지역 검색에서 기준 지역 |
-| `baseLocationQuery` | 구현됨 | 기준 장소 검색어 |
-| `targetQuery` | 구현됨 | 실제 검색 대상/조건 문장 |
-| `targetType` | 구현됨 | `category`, `abstract`, `unknown` 중심 |
-| `categoryHint` | 구현됨 | 카페, 주차장, 화장실 등 카테고리 힌트 |
-| `categoryKeyword` | 구현됨 | 카카오 검색에 사용할 대표 키워드 |
-| `recommendationIntent` | 구현됨 | `work_cafe`, `waiting_place`, `walk_healing`, `smoking_area` |
-| `preferredTags` | 구현됨 | 추천 점수에 우선 반영할 태그 |
-| `negativeTags` | 구현됨 | 추천에서 피해야 할 태그 |
-| `kakaoKeywordCandidates` | 구현됨 | 카카오 검색 후보 키워드 |
-| `confidence` | 구현됨 | 파싱 확신도 |
-| `fallbackReason` | 구현됨 | 추상 표현 fallback 설명 |
+| `target_objects` | 구현됨 | 사용자가 찾는 대상 |
+| `result_match_terms` | 구현됨 | 결과가 직접 맞아야 하는 핵심 표현 |
+| `candidate_place_types` | 구현됨 | 후보로 허용할 장소 유형 |
+| `constraints` | 구현됨 | 가까움, 도보, 실내/실외 등 조건 |
+| `exclusions` | 구현됨 | 카페 제외, 주차장 제외, 웹 근거 제외 등 부정 조건 |
+| `evidence` | 구현됨 | AI가 판단한 요청 근거 |
+| `location_mode` | 구현됨 | `explicit`, `current_context`, `clarification_required` |
+| `anchor_location` | 구현됨 | 명시 위치 기준 |
+| `primary_search_queries` | 구현됨 | DB/Kakao 후보 수집용 검색어 |
+| `ranking_policy` | 구현됨 | evidence first, urgent nearest 등 정렬 정책 |
 
-현재 SearchPlan은 규칙 기반이며, AI가 아래 전체 구조를 JSON으로 반환하는 방식은 아직 구현되지 않았다.
+현재 구현은 AI frame을 우선 사용하고, DB/Kakao/Web 후보는 backend collector와 unified evidence ranker/reranker를 거쳐 표시한다.
 
 ---
 
-## 3. 검색 모드
+## 3. 위치 모드
 
-| searchMode | 상태 | 설명 |
+| location mode | 상태 | 설명 |
 |---|---|---|
-| `current_context` | 구현됨 | 현재 위치를 먼저 시도하고 실패하면 지도 중심 기준으로 검색 |
-| `around_location` | 구현됨 | `서면역 근처 카페`처럼 기준 장소를 먼저 확정한 뒤 주변 검색 |
-| `region_search` | 구현됨 | `광주 카페`, `제주에서 산책하기 좋은 곳`처럼 지역 포함 검색 |
-| `simple_keyword` | 구현됨 | 위치/추천 조건이 없는 일반 키워드 검색 |
-| `recommendation_query` | 구현됨 | 추천 의도가 감지된 자연어 검색 |
+| `current_context` | 구현됨 | 현재 좌표 또는 지도 중심 좌표 기준 |
+| `explicit` | 구현됨 | `서면역 근처 카페`처럼 기준 장소를 먼저 좌표로 확정 |
+| `clarification_required` | 구현됨 | 위치나 대상이 넓어 바로 검색하기 어려운 경우 |
 
-현재 지도에서 재검색 버튼을 누르면 `current_context` 흐름으로 처리하되, 현재 지도 화면/중심을 기준으로 검색한다.
+`current_coordinates` 같은 내부 좌표 표식은 실제 장소명으로 지오코딩하지 않고 `current_context`로 정리한다.
 
 ---
 
@@ -100,7 +91,7 @@ location + target + conditions + fallbackTargets + resultPolicy
 }
 ```
 
-이 구조는 아직 전체 구현 완료 상태가 아니다. 현재는 `targetQuery`, `recommendationIntent`, `preferredTags`, `kakaoKeywordCandidates` 중심의 1차 구현이며, `conditions`, `fallbackTargets`, `resultPolicy`는 향후 개선 예정이다.
+이 구조는 장기 목표다. 현재는 AI frame의 `target_objects`, `result_match_terms`, `candidate_place_types`, `constraints`, `exclusions`, `evidence`를 중심으로 구현되어 있으며, `conditions`, `fallbackTargets`, `resultPolicy`의 명시적 분리는 향후 개선 예정이다.
 
 ---
 
@@ -116,7 +107,7 @@ location + target + conditions + fallbackTargets + resultPolicy
 | `region` | 지역명 포함 키워드로 전체 검색 |
 | `none` | 위치 기준이 필요 없는 검색 |
 
-현재 구현은 장소/지역이 명시되지 않은 검색에서 현재 위치를 먼저 요청하고, 권한 거부나 실패 시 지도 중심으로 fallback한다.
+현재 구현은 장소/지역이 명시되지 않은 추천 검색에서 현재 좌표 또는 지도 중심 좌표를 사용한다. 좌표가 없고 기준 위치도 없으면 clarification을 요청한다.
 
 ---
 
@@ -164,7 +155,7 @@ location + target + conditions + fallbackTargets + resultPolicy
 - 흡연 가능 조건이 있다고 target을 `흡연구역`으로 바꾸면 안 된다.
 - 조건 만족 여부를 확인할 수 없으면 만족한다고 단정하지 않는다.
 
-현재 구현은 conditions를 독립 배열로 완전히 분리하지 않고, `recommendationIntent`와 `preferredTags`로 일부 표현한다. 독립 conditions 구조는 개선 예정이다.
+현재 구현은 conditions를 독립 배열로 완전히 분리하지 않고, AI frame의 `constraints`, `exclusions`, `result_match_terms`로 일부 표현한다. 독립 conditions 구조는 개선 예정이다.
 
 ---
 
@@ -181,7 +172,7 @@ location + target + conditions + fallbackTargets + resultPolicy
 
 fallbackTargets는 target 결과를 대체하지 않는다. 별도 그룹으로 표시해야 한다.
 
-현재 구현은 fallbackTargets 그룹 표시가 아직 없다. 일부 검색에서는 추천 의도에 맞는 카카오 후보 키워드를 함께 검색하지만, target 보존/조건 fallback 그룹화는 개선 예정이다.
+현재 구현은 fallbackTargets 그룹 표시가 아직 없다. 일부 검색에서는 백엔드 collector가 Kakao/Web 후보를 보강하지만, target 보존/조건 fallback 그룹화는 개선 예정이다.
 
 ---
 
@@ -202,15 +193,15 @@ fallbackTargets는 target 결과를 대체하지 않는다. 별도 그룹으로 
 대신 대상 장소와 조건 관련 장소를 함께 표시합니다.
 ```
 
-현재 화면은 `DB추천`, `카카오+DB`, `카카오` sourceLabel과 추천 정보 표시를 지원한다. 조건 충돌 안내와 fallback 그룹 UI는 개선 예정이다.
+현재 화면은 `DB추천`, `카카오 후보`, `웹 참고` 등 backend sourceLabel과 추천 정보를 표시한다. 추천 점수는 정렬용 내부 값으로만 사용하고, 사용자 화면에는 직접 노출하지 않는다. 조건 충돌 안내와 fallback 그룹 UI는 개선 예정이다.
 
 ---
 
-## 10. AI SearchPlan JSON 개선 예정
+## 10. AI frame JSON 개선 예정
 
 AI 파서는 실제 장소명, 주소, 좌표, 운영 여부, 시설 보유 여부를 생성하지 않는다.
 
-향후 AI가 SearchPlan을 만들 때 반환해야 할 JSON은 다음 방향으로 제한한다.
+향후 AI frame을 더 명확히 확장할 때 반환해야 할 JSON은 다음 방향으로 제한한다.
 
 ```json
 {
@@ -257,9 +248,11 @@ AI 파서는 실제 장소명, 주소, 좌표, 운영 여부, 시설 보유 여�
 
 ### 당장 검토 필요
 
-- “흡연 가능한 맥도날드”처럼 조건과 target이 충돌할 수 있는 검색에서 target을 보존하는 처리
-- “콘센트 있는 맥도날드”처럼 조건 확인이 어려운 결과에 “확인되지 않음”을 표시하는 처리
-- “주차 가능한 해수욕장”처럼 target과 fallbackTarget을 별도 그룹으로 나누는 처리
+- 쌀국수/맛집류에서 Kakao 후보가 충분히 남는지 확인
+- 화장실류에서 “근처” 반경과 제외 조건이 과하게 넓거나 약하지 않은지 확인
+- 흡연구역류에서 실내/실외 정책과 지역별 결과 편차 확인
+- broad clarification 후 영화관/공연, 쇼핑/백화점, 바/술집 같은 선택지 품질 확인
+- “주차장 빼줘”, “카페/디저트 제외”, “웹 근거 제외” 같은 부정 조건 품질 확인
 
 ### 향후 고도화
 
@@ -268,7 +261,6 @@ AI 파서는 실제 장소명, 주소, 좌표, 운영 여부, 시설 보유 여�
   - 혼밥하기 좋은 식당
   - 소금빵 맛집
   - 음식/상품 키워드를 위치로 오인하지 않는 처리
-- SearchPlan 백엔드 API화
-- AI SearchPlan JSON 생성
+- AI frame을 `conditions`, `fallbackTargets`, `resultPolicy`까지 명시적으로 확장
 - 사용자 입력과 Tag/Category 설명 간 임베딩 기반 의미 매칭
 - 하드코딩 키워드 매핑 축소

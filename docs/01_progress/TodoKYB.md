@@ -23,61 +23,67 @@
 
 ---
 
-### 2.2 통합 지도 검색 화면
+### 2.2 홈 AI 추천 검색 화면
 
-- 추천 테스트 탭은 제거하고 지도 탭 중심으로 통합했습니다.
-- 지도 탭에서 일반 장소 검색, AI/추천 검색, 지역 검색, 현재 지도 화면 재검색을 처리합니다.
-- 빠른 상황 버튼을 지도 검색 영역에 배치했습니다.
+- 홈 화면은 AI-first 자연어 추천 검색 중심으로 정리했습니다.
+- 자연어 입력은 백엔드 AI frame으로 해석하고, DB/Kakao/Web 후보는 unified evidence ranker 순서로 표시합니다.
+- 빠른 상황 버튼을 홈 검색 영역에 배치했습니다.
   - 조용히 작업할 곳
   - 잠깐 쉴 곳
   - 산책/힐링
   - 흡연 가능한 곳
 - 검색 중 지도 오버레이, 목록 스켈레톤, 단계별 로딩 문구를 표시합니다.
-- 테스트용 현재 위치/기본 위치 선택 버튼은 유지되어 있으나 운영 전 제거 또는 정리할 수 있습니다.
+- 검색 결과 상세에는 태그, 상세 정보, 카카오 상세/길찾기 링크를 표시합니다.
+- 추천 점수는 사용자에게 직접 표시하지 않고 결과 정렬용 내부 값으로만 사용합니다.
 
 ---
 
-### 2.3 SearchPlan 기반 자연어 검색
+### 2.3 일반 지도 검색 화면
 
-현재 SearchPlan은 프론트엔드 helper 중심으로 구현되어 있습니다.
-
-현재 사용 중인 주요 필드:
-
-- `originalQuery`
-- `normalizedQuery`
-- `correctionApplied`
-- `correctionReason`
-- `searchMode`
-- `locationQuery`
-- `baseLocationQuery`
-- `targetQuery`
-- `targetType`
-- `categoryHint`
-- `recommendationIntent`
-- `preferredTags`
-- `negativeTags`
-- `kakaoKeywordCandidates`
-- `confidence`
-- `fallbackReason`
-
-지원 검색 모드:
-
-- `current_context`
-- `around_location`
-- `region_search`
-- `simple_keyword`
-- `recommendation_query`
-
-현재 위치/지도 중심/특정 장소/특정 지역 기준 검색을 분리해 처리합니다.
+- `/map` 경로에 일반 지도 검색 페이지를 추가했습니다.
+- 이 화면은 목적/상황 해석 없이 입력한 검색어 그대로 DB `Place`와 Kakao 장소를 조회합니다.
+- 마커 색으로 정보 출처를 구분합니다.
+  - DB 저장 장소: 파란색
+  - Kakao 장소: 빨간색
+- 장소 목록에는 장소명, 분류, 거리, 주소 같은 간결한 정보만 표시합니다.
+- 상세 패널은 기존 상세 화면 방향을 따르되, 추천 점수와 추천 이유는 표시하지 않습니다.
 
 ---
 
-### 2.4 카카오 검색 + DB 보강 + 병합
+### 2.4 AI-first 자연어 검색
+
+현재 자연어 추천 검색은 백엔드 AI-first 오케스트레이터 중심으로 구현되어 있습니다.
+
+AI frame에서 사용하는 주요 기준:
+
+- `target_objects`
+- `result_match_terms`
+- `candidate_place_types`
+- `constraints`
+- `exclusions`
+- `evidence`
+- `ranking_policy`
+- `location_mode`
+- `anchor_location`
+- `primary_search_queries`
+
+현재 유지하는 원칙:
+
+- 특정 단어별 production 매핑을 늘리지 않고 AI frame 기준으로 판단합니다.
+- legacy planner/frontend fallback으로 되돌리지 않습니다.
+- retrieval query만 근거인 후보는 상위 결과에 올리지 않습니다.
+- broad request는 clarification을 유지합니다.
+- 결과가 부족하면 백엔드 collector에서 Kakao/Web 후보를 보강합니다.
+
+---
+
+### 2.5 카카오 검색 + DB 보강 + 병합
 
 - 카카오 검색 결과를 기본 장소 후보로 사용합니다.
 - 카카오 place id와 DB `Place.external_id`가 같으면 DB 태그/추천 정보를 붙입니다.
 - 카카오 결과는 저장하지 않고 화면 표시용으로만 사용합니다.
-- 결과 유형은 `카카오+DB`, `DB추천`, `카카오`로 구분합니다.
+- AI 추천 검색 결과 유형은 `DB추천`, `카카오 후보`, `웹 참고` 등으로 구분합니다.
+- 일반 지도 검색 결과 유형은 `저장 장소`, `카카오 장소`로 구분합니다.
 - 같은 장소는 아래 기준으로 중복 표시하지 않습니다.
   - `external_id === kakaoPlaceId`
   - 장소명 유사 + 좌표 30m 이내
@@ -85,16 +91,18 @@
 
 ---
 
-### 2.5 추천 결과 표시와 정렬
+### 2.6 추천 결과 표시와 정렬
 
-- `DB추천`과 `카카오+DB`는 추천 점수, 추천 이유, 추천 신뢰도, 매칭 태그를 표시합니다.
-- `카카오`만 있는 결과는 추천 점수를 만들지 않고 외부 검색 후보로 표시합니다.
+- `DB추천`, `카카오 후보`, `웹 참고`는 백엔드 evidence ranker 결과 순서로 표시합니다.
+- 추천 점수는 결과 정렬에만 사용하고 사용자 화면에는 직접 표시하지 않습니다.
+- 추천 이유는 실제 후보 정보와 일치 조건을 넘어서지 않는 한국어 문장으로 표시합니다.
+- `카카오`만 있는 일반 지도 결과는 추천 점수와 추천 이유를 만들지 않고 장소 정보만 표시합니다.
 - 일반 검색에서는 태그/DB 정보가 있는 결과를 우선 표시하고, 같은 그룹 안에서는 거리순으로 정렬합니다.
 - 추천 검색에서는 추천 점수, 태그 매칭, 거리, 부적합 후보 감점 등을 반영해 정렬합니다.
 
 ---
 
-### 2.6 오타 보정과 추상 표현 처리
+### 2.7 오타 보정과 추상 표현 처리
 
 - 검색 전 공백 정리와 일부 오타/축약어 보정을 적용합니다.
   - `카패 -> 카페`
@@ -111,7 +119,7 @@
 
 ---
 
-### 2.7 대표 장소/부속 시설 정렬
+### 2.8 대표 장소/부속 시설 정렬
 
 - 대표 장소 검색에서 `주차장`, `화장실`, `관리사무소`, `입구`, `정문`, `정류장` 같은 부속 시설이 과하게 상위에 오지 않도록 감점합니다.
 - 사용자가 주차장/화장실/와이파이 같은 편의시설을 직접 찾는 경우에는 감점하지 않습니다.
@@ -119,7 +127,7 @@
 
 ---
 
-### 2.8 waiting_place 부적합 쉼터 필터링
+### 2.9 waiting_place 부적합 쉼터 필터링
 
 - `waiting_place` 추천에서 일반 사용자가 잠깐 쉬기 어려운 제한 접근 쉼터를 강하게 제외하거나 후순위 처리합니다.
 - 강한 제외/후순위 대상:
@@ -140,7 +148,7 @@
 
 ---
 
-### 2.9 카카오 상세/길찾기 연결
+### 2.10 카카오 상세/길찾기 연결
 
 - DB추천 장소라도 `source=kakao_local`이고 `external_id`가 있으면 카카오 상세 URL을 생성합니다.
 - 카카오 상세 URL이 있으면 DB 요약 카드보다 카카오 상세 iframe 또는 링크를 우선 표시합니다.
@@ -149,7 +157,7 @@
 
 ---
 
-### 2.10 데이터 seed 작업 상태
+### 2.11 데이터 seed 작업 상태
 
 | 데이터 | 상태 |
 |---|---|
@@ -165,10 +173,14 @@
 
 ---
 
-### 2.11 모델 상태
+### 2.12 모델 상태
 
 - `Place`, `Tag`, `PlaceTag` 모델은 현재 사용 중
 - `PlaceTag.source` choices에 `field_rule`, `keyword_rule`, `blog_search`, `external_api`, `external_data`, `ai_suggested`, `checked`, `user_verified`, `warning_tags` 반영됨
+- `PlaceReport` 승인 흐름은 장소 제보와 태그 제보를 DB에 반영합니다.
+  - `new_place` 승인 시 `Place(source=user_report)` 생성
+  - `tag_suggestion` 승인 시 `PlaceTag(source=user_verified)` 생성
+  - `edit_place` 승인 시 연결된 `Place` 정보 갱신
 - `ExternalPlaceTag` 모델은 아직 없음
 - 현재 구현은 `Place.external_id`와 카카오 place id를 기준으로 DB 태그/추천 정보를 보강함
 - `ExternalPlaceTag`는 별도 모델로 추가할지 검토 필요
@@ -176,7 +188,7 @@
 
 ---
 
-### 2.12 문서 최신화
+### 2.13 문서 최신화
 
 다음 문서를 현재 기준으로 최신화했습니다.
 
@@ -196,15 +208,15 @@ docs/04_recommendation/search-plan-policy.md
 다음에 “이어서 하자”라고 하면 아래 순서로 진행합니다.
 
 ```text
-1. 통합 지도 검색 수동 테스트
-2. 카카오+DB 병합 샘플 검증
-3. DB추천 장소의 카카오 상세 URL 표시 검증
-4. waiting_place 부적합 쉼터 상위 노출 여부 테스트
-5. 대표 장소/부속 시설 정렬 테스트
-6. 조건 충돌 검색 정책 구현 검토
-7. 식당/음식/브랜드 검색 SearchPlan 개선
-8. SearchPlan 백엔드 API화 검토
-9. AI SearchPlan JSON 생성 방식 검토
+1. `/map` 일반 지도 검색 수동 테스트
+2. 장소/태그 제보 승인 후 DB 검색 반영 확인
+3. 제보 승인 데이터가 AI 추천 검색 후보에 반영되는 범위 확인
+4. 쌀국수/맛집류 Kakao 후보 보강 및 top 결과 수 점검
+5. 화장실류 근거리 반경과 제외 조건 점검
+6. 흡연구역류 실내/실외 구분과 지역별 편차 점검
+7. broad clarification 선택지 품질 점검
+8. 부정 조건 처리 점검
+9. 추천 문구/신뢰도 표현 추가 검수
 10. 정제 데이터 import 작업 재개
 ```
 
@@ -240,13 +252,15 @@ backend/recommendations/fixtures/import_data/
 ### 완료 처리 가능
 
 - [x] 추천 테스트 탭 제거
-- [x] 지도 탭으로 검색/추천 기능 통합
+- [x] 홈 AI 추천 검색 화면 정리
+- [x] 일반 지도 검색 페이지 `/map` 추가
 - [x] 빠른 상황 버튼 추가
-- [x] 지도 검색 / AI 검색 흐름 통합
+- [x] AI-first 백엔드 추천 검색 흐름 적용
+- [x] 일반 지도 검색에서 DB/Kakao 장소 검색
 - [x] 검색 중 오버레이, 스켈레톤 목록, 로딩 문구 추가
 - [x] 태그 사이드 스크롤바 장소 변경 시 초기화
 - [x] 카카오 검색 결과 + DB 태그 보강 구조 추가
-- [x] 카카오+DB / DB추천 / 카카오 결과 구분
+- [x] AI 추천 결과 source label(`DB추천`, `카카오 후보`, `웹 참고`) 구분
 - [x] 카카오 place id와 DB `external_id` 기준 병합
 - [x] DB추천 장소도 카카오 상세 URL 있으면 카카오 상세 표시
 - [x] 상세 카드 하단 카카오맵 길찾기 버튼 추가
@@ -261,12 +275,17 @@ backend/recommendations/fixtures/import_data/
 - [x] `import_cafe_place_tags --dry-run` 검증
 - [x] `PlaceTag.source` choices에 `field_rule`, `keyword_rule`, `blog_search` 등 반영
 - [x] `Place(category, lat, lng)` 인덱스 모델/마이그레이션 반영
-- [x] 카카오+DB 병합 구조 문서화
+- [x] Kakao/DB 후보 병합 구조 문서화
 - [x] 카카오 결과는 저장하지 않고 화면 표시용임을 문서화
 - [x] AI가 장소/좌표/시설 여부를 임의 생성하지 않는다는 기준 문서화
 - [x] 현재 구현 내용 문서 최신화
-- [x] SearchPlan 정책 문서 추가
+- [x] AI frame/SearchPlan 정책 문서 추가
 - [x] README에 핵심 기준 반영
+- [x] 장소 제보 승인 시 DB `Place` 생성
+- [x] 태그 제보 승인 시 DB `PlaceTag` 반영
+- [x] 제보 승인 후 일반 지도 검색 가능 확인
+- [x] 추천 이유 영어/내부 문구 노출 방지
+- [x] 추천 점수 사용자 화면 노출 제거
 - [x] 로그인
 - [x] 회원가입
 - [x] 마이페이지
@@ -280,20 +299,21 @@ backend/recommendations/fixtures/import_data/
 
 - [ ] 카카오 상세 iframe이 브라우저에서 안정적으로 표시되는지 확인
 - [ ] iframe이 막히는 경우 카카오 상세 링크 / 길찾기 버튼 fallback 브라우저 확인
-- [ ] 카카오+DB 결과에서 추천 점수 / 추천 이유 / 추천 신뢰도 누락 케이스 추가 확인
+- [ ] AI 추천 결과에서 추천 이유/신뢰도 문구 누락 또는 내부 문구 노출 케이스 추가 확인
 - [ ] DB추천 장소가 카카오 장소와 중복 표시되는 케이스 추가 확인
 - [ ] 태그 있는 장소가 일반 카카오 결과보다 우선 출력되는지 추가 확인
-- [ ] 카카오만 있는 결과에 추천 점수가 억지로 붙지 않는지 추가 확인
+- [ ] 카카오 후보에 추천 점수가 사용자 화면에 직접 노출되지 않는지 추가 확인
 - [ ] 현재 지도에서 재검색 시 마지막 검색어가 유지되는지 브라우저 확인
 - [ ] 위치 권한 거부 시 현재 지도 중심 기준 fallback 브라우저 확인
+- [ ] `/map` 일반 지도 검색의 DB/Kakao 중복 제거 케이스 추가 확인
+- [ ] 제보 승인 후 AI 추천 검색까지 반영되는 범위 확인
 
 ### 아직 미완료 또는 정책 확정 필요
 
-- [ ] 모든 자연어 검색을 `location / target / conditions / fallbackTargets / resultPolicy` 구조로 백엔드까지 일관 적용
+- [ ] AI frame을 `location / target / conditions / fallbackTargets / resultPolicy` 구조까지 더 명확히 확장
 - [ ] 조건 충돌 검색 처리 정책 구현
 - [ ] 식당 / 음식 / 상품 검색 처리 정책 구현
-- [ ] SearchPlan 생성 로직 백엔드 API화
-- [ ] AI SearchPlan JSON 구조를 `location / target / conditions / fallbackTargets / resultPolicy`로 확장
+- [ ] AI frame repair/query repair 품질 고도화
 - [ ] 임베딩 기반 추천 고도화
 - [ ] 야경/날씨/실내성 검색 품질 고도화
 - [ ] 검색 결과 배지명, 점수, 신뢰도, 추천 이유 표시 방식 개선
@@ -306,5 +326,5 @@ backend/recommendations/fixtures/import_data/
 - [ ] 개인화 추천
 - [ ] 장소 저장
 - [ ] 후기/메모
-- [ ] 사용자 태그 제보 기능
+- [x] 사용자 태그 제보 기능
 - [ ] 점수제 / 티어 / 닉네임 컬러 / 악용 방지 로직

@@ -14,7 +14,7 @@
 - 장소의 거리, 카테고리, 태그, 데이터 신뢰도를 조합해 추천 점수를 계산한다.
 - 공중화장실, 공공와이파이, 공원 같은 기본 생활 인프라는 단순 조회가 아니라 추천 근거 또는 보조 정보로 활용한다.
 - 확정하기 어려운 정보는 `후보 태그`로 관리하고, 추천 이유에서도 단정하지 않는다.
-- 카카오 검색 결과는 기본 장소 후보로 활용하되, DB에 저장된 태그/추천 정보가 있는 경우에만 추천 점수와 추천 이유를 표시한다.
+- 카카오 검색 결과는 후보 보강에 활용하되, 추천 근거가 부족한 정보는 확인 필요 후보로 표시한다.
 - 카카오 검색 결과는 별도 저장 없이 화면 표시용으로 사용한다.
 - AI는 실제 장소명, 주소, 좌표, 운영 여부, 시설 보유 여부를 생성하지 않는다.
 
@@ -22,49 +22,38 @@
 
 ## 2.1 현재 구현된 통합 검색 흐름
 
-현재 지도 탭은 일반 지도 검색과 AI 추천 검색을 통합해서 처리한다.
+현재 화면은 홈 AI 추천 검색과 일반 지도 검색을 분리해서 처리한다.
 
 ### 화면 구조
 
-- 추천 테스트 탭은 제거되었고, 지도 탭에서 통합 검색을 수행한다.
-- 일반 검색, 추천 검색, 지역 검색, 현재 지도 화면 재검색을 같은 지도/목록/상세 패널에서 표시한다.
+- 홈 화면은 AI-first 자연어 추천 검색을 수행한다.
+- `/map` 일반 지도 페이지는 목적/상황 해석 없이 DB 저장 장소와 Kakao 장소를 그대로 검색한다.
 - 빠른 상황 버튼을 통해 `조용히 작업할 곳`, `잠깐 쉴 곳`, `산책/힐링`, `흡연 가능한 곳` 검색을 실행할 수 있다.
 - 검색 중에는 지도 오버레이, 목록 스켈레톤, 단계별 로딩 문구를 표시한다.
 
-### SearchPlan
+### AI frame
 
-프론트엔드 SearchPlan helper는 현재 다음 값을 만든다.
+백엔드 AI-first 오케스트레이터는 현재 다음 값을 중심으로 후보를 수집하고 검증한다.
 
-- `originalQuery`
-- `normalizedQuery`
-- `correctionApplied`
-- `searchMode`
-- `targetQuery`
-- `targetType`
-- `categoryHint`
-- `recommendationIntent`
-- `preferredTags`
-- `negativeTags`
-- `kakaoKeywordCandidates`
-- `confidence`
-- `fallbackReason`
+- `target_objects`
+- `result_match_terms`
+- `candidate_place_types`
+- `constraints`
+- `exclusions`
+- `evidence`
+- `location_mode`
+- `anchor_location`
+- `primary_search_queries`
 
-지원하는 검색 모드는 다음과 같다.
-
-- `current_context`
-- `around_location`
-- `region_search`
-- `simple_keyword`
-- `recommendation_query`
-
-SearchPlan의 장기 정책은 `docs/04_recommendation/search-plan-policy.md`에서 관리한다.
+AI frame의 장기 정책은 `docs/04_recommendation/search-plan-policy.md`에서 관리한다.
 
 ### 카카오 검색 + DB 보강
 
 - 카카오 검색 결과를 기본 장소 후보로 사용한다.
 - 카카오 place id와 DB `Place.external_id`가 같으면 DB 태그/추천 정보를 붙인다.
 - 카카오 결과는 저장하지 않고 화면 표시용으로만 사용한다.
-- 결과는 `카카오+DB`, `DB추천`, `카카오`로 구분한다.
+- AI 추천 검색 결과는 `DB추천`, `카카오 후보`, `웹 참고` 등 backend sourceLabel로 구분한다.
+- 일반 지도 검색 결과는 `저장 장소`, `카카오 장소`로 구분한다.
 
 ### 병합 기준
 
@@ -76,8 +65,10 @@ SearchPlan의 장기 정책은 `docs/04_recommendation/search-plan-policy.md`에
 
 ### 추천 정보 표시
 
-- `DB추천`, `카카오+DB`는 추천 점수, 추천 이유, 추천 신뢰도, 매칭 태그를 표시한다.
-- `카카오`만 있는 결과에는 추천 점수와 추천 이유를 억지로 만들지 않는다.
+- AI 추천 검색은 백엔드 evidence ranker/reranker 결과 순서로 표시한다.
+- 추천 점수는 정렬에만 사용하고 사용자 화면에는 직접 표시하지 않는다.
+- 추천 이유는 실제 후보 정보와 일치 조건을 넘어서지 않는 한국어 문장으로 표시한다.
+- 일반 지도 검색은 장소 목록과 상세 정보만 표시하고 추천 점수/추천 이유는 표시하지 않는다.
 - 조건 만족 여부를 확인할 수 없는 경우에는 만족한다고 단정하지 않는다.
 
 ---
@@ -475,12 +466,11 @@ SearchPlan의 장기 정책은 `docs/04_recommendation/search-plan-policy.md`에
 - 식당/음식/브랜드를 target으로 분리한다.
 - 혼밥, 조용함, 주차 가능 등은 condition으로 분리한다.
 
-### 10.3 SearchPlan 백엔드화
+### 10.3 AI frame 고도화
 
-현재 SearchPlan은 프론트 helper 중심이다.
+현재 자연어 추천 검색은 백엔드 AI-first orchestrator가 AI frame을 만들고, 후보 수집과 evidence ranker/reranker가 결과 순서를 정한다.
 
 향후 개선:
 
-- 백엔드 SearchPlan API 추가
-- AI가 `location`, `target`, `conditions`, `fallbackTargets`, `resultPolicy` 구조를 JSON으로 반환
+- AI frame을 `location`, `target`, `conditions`, `fallbackTargets`, `resultPolicy` 구조로 더 명확히 확장
 - 사용자 입력과 Tag/Category 설명 간 임베딩 기반 의미 매칭 검토

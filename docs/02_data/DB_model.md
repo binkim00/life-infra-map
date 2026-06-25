@@ -6,6 +6,22 @@
 
 ---
 
+## 0. 현재 구현 기준 메모
+
+현재 코드 기준 핵심 모델은 `Place`, `Tag`, `PlaceTag`, `PlaceReport`, `UserSearchLog`, `UserPreference`이다.
+
+- `Place.category`는 문자열 코드로 관리한다.
+  - 예: `toilet`, `freewifi`, `city_park`, `parking`, `tourism`, `beach`, `smoking_area`, `shelter`, `cafe`, `restaurant`
+- `PlaceTag`는 추천/필터에 의미 있는 세부 속성 태그만 저장한다.
+- `PlaceReport` 승인 흐름은 DB에 직접 반영된다.
+  - `new_place` 승인: `Place(source="user_report", external_id="place-report-{id}")` 생성
+  - `tag_suggestion` 승인: `PlaceTag(source="user_verified", status="confirmed")` 생성
+  - `edit_place` 승인: 연결된 `Place`의 이름/카테고리/주소/좌표 갱신
+- `/api/recommendations/map-search/`는 AI 해석 없이 DB `Place`와 Kakao 키워드 결과를 조회하는 일반 지도 검색 API이다.
+- `/api/recommendations/ai-search/`는 AI-first 추천 검색 API이며, AI frame과 evidence ranker/reranker를 기준으로 후보를 표시한다.
+
+---
+
 ## 1. AI 활용방안
 
 AI는 실제 장소 정보를 새로 만들어내는 용도가 아니라, **이미 확보한 장소 데이터와 사용자의 입력을 추천에 활용하기 쉽게 정리하는 보조 기능**으로 사용한다.
