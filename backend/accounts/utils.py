@@ -1,11 +1,15 @@
+from django.db.models import Count
+from django.db.models.functions import TruncDate
+
+
 TIER_RULES = [
-    (16, "challenger", "챌린저"),
-    (14, "master", "마스터"),
-    (12, "diamond", "다이아"),
-    (10, "platinum", "플래티넘"),
-    (8, "gold", "골드"),
-    (6, "silver", "실버"),
-    (4, "bronze", "브론즈"),
+    (1000, "challenger", "챌린저"),
+    (700, "master", "마스터"),
+    (500, "diamond", "다이아"),
+    (300, "platinum", "플래티넘"),
+    (200, "gold", "골드"),
+    (100, "silver", "실버"),
+    (50, "bronze", "브론즈"),
     (0, "iron", "아이언"),
 ]
 
@@ -20,14 +24,23 @@ TIER_COLORS = {
     "challenger": "#ef4444",
 }
 
-POST_CONTRIBUTION_REWARD = 2
-COMMENT_CONTRIBUTION_REWARD = 1
+POSTS_PER_CONTRIBUTION_POINT = 5
+COMMENTS_PER_CONTRIBUTION_POINT = 10
+DAILY_ACTIVITY_CONTRIBUTION_LIMIT = 5
 REPORT_CONTRIBUTION_REWARDS = {
     "tag_suggestion": 10,
-    "wrong_info": 8,
-    "edit_place": 12,
+    "wrong_info": 5,
+    "edit_place": 5,
     "new_place": 20,
 }
+
+
+def calculate_daily_activity_contribution(post_count=0, comment_count=0):
+    return min(
+        DAILY_ACTIVITY_CONTRIBUTION_LIMIT,
+        (post_count // POSTS_PER_CONTRIBUTION_POINT)
+        + (comment_count // COMMENTS_PER_CONTRIBUTION_POINT),
+    )
 
 
 def calculate_user_contribution(post_count=0, comment_count=0, approved_report_counts=None):
@@ -37,11 +50,7 @@ def calculate_user_contribution(post_count=0, comment_count=0, approved_report_c
         for report_type, count in approved_report_counts.items()
     )
 
-    return (
-        (post_count * POST_CONTRIBUTION_REWARD)
-        + (comment_count * COMMENT_CONTRIBUTION_REWARD)
-        + report_contribution
-    )
+    return calculate_daily_activity_contribution(post_count, comment_count) + report_contribution
 
 
 def calculate_user_score(post_count, comment_count):
@@ -85,18 +94,48 @@ def get_approved_report_counts(user):
     }
 
 
+def get_daily_activity_contribution(user):
+    post_counts_by_date = {
+        row["activity_date"]: row["count"]
+        for row in (
+            user.posts
+            .annotate(activity_date=TruncDate("created_at"))
+            .values("activity_date")
+            .annotate(count=Count("id"))
+        )
+    }
+    comment_counts_by_date = {
+        row["activity_date"]: row["count"]
+        for row in (
+            user.comments
+            .annotate(activity_date=TruncDate("created_at"))
+            .values("activity_date")
+            .annotate(count=Count("id"))
+        )
+    }
+
+    activity_dates = set(post_counts_by_date) | set(comment_counts_by_date)
+
+    return sum(
+        calculate_daily_activity_contribution(
+            post_count=post_counts_by_date.get(activity_date, 0),
+            comment_count=comment_counts_by_date.get(activity_date, 0),
+        )
+        for activity_date in activity_dates
+    )
+
+
 def get_user_contribution(user):
     if not user or not getattr(user, "is_authenticated", False):
         return 0
 
-    post_count = user.posts.count()
-    comment_count = user.comments.count()
+    activity_contribution = get_daily_activity_contribution(user)
     approved_report_counts = get_approved_report_counts(user)
-    return calculate_user_contribution(
-        post_count=post_count,
-        comment_count=comment_count,
+    report_contribution = calculate_user_contribution(
         approved_report_counts=approved_report_counts,
     )
+
+    return activity_contribution + report_contribution
 
 
 def get_user_score(user):

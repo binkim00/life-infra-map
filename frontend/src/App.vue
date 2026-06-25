@@ -20,7 +20,10 @@ const notificationMenuRef = ref(null)
 const accountMenuRef = ref(null)
 const sidebarProfileRef = ref(null)
 const mascotFetchPhase = ref('')
+const mascotFetchedPlaceId = ref(null)
 const mascotFetchedPlaceName = ref('')
+const mascotFetchedMarkerLabel = ref('')
+const isMarkerChoiceMenuOpen = ref(false)
 const mascotRunX = ref('-36vw')
 const mascotRunY = ref('-17vh')
 const mascotRunMidX = ref('-18vw')
@@ -29,6 +32,8 @@ const mascotRunNearX = ref('-30vw')
 const mascotRunNearY = ref('-14vh')
 let notificationTimer = null
 let mascotFetchTimer = null
+const TIER_UP_NOTIFICATION_TITLE = '등급 승급 안내'
+const handledTierUpNotificationIds = new Set()
 
 const handleLogout = async () => {
   closeAllDropdowns()
@@ -58,6 +63,49 @@ const currentUserTierLabel = computed(() => {
 
 const currentUserContribution = computed(() => {
   return authStore.user?.contribution ?? authStore.user?.score ?? 0
+})
+
+const mascotTierValues = new Set([
+  'iron',
+  'bronze',
+  'silver',
+  'gold',
+  'platinum',
+  'diamond',
+  'master',
+  'challenger',
+])
+
+const currentMascotTier = computed(() => {
+  const tier = String(authStore.user?.tier || '').toLowerCase()
+
+  return mascotTierValues.has(tier) ? tier : 'iron'
+})
+
+const currentMascotImageStyle = computed(() => {
+  if (!authStore.isLoggedIn) {
+    return {
+      '--mascot-idle-image': 'none',
+      '--mascot-run-1': 'url("/mascot-run/dog-run-1.png")',
+      '--mascot-run-2': 'url("/mascot-run/dog-run-2.png")',
+      '--mascot-run-3': 'url("/mascot-run/dog-run-3.png")',
+      '--mascot-run-4': 'url("/mascot-run/dog-run-4.png")',
+      '--mascot-run-5': 'url("/mascot-run/dog-run-5.png")',
+      '--mascot-run-6': 'url("/mascot-run/dog-run-6.png")',
+    }
+  }
+
+  const basePath = `/mascot-tiers/${currentMascotTier.value}`
+
+  return {
+    '--mascot-idle-image': `url("${basePath}/idle.png")`,
+    '--mascot-run-1': `url("${basePath}/run-1.png")`,
+    '--mascot-run-2': `url("${basePath}/run-2.png")`,
+    '--mascot-run-3': `url("${basePath}/run-3.png")`,
+    '--mascot-run-4': `url("${basePath}/run-4.png")`,
+    '--mascot-run-5': `url("${basePath}/run-5.png")`,
+    '--mascot-run-6': `url("${basePath}/run-6.png")`,
+  }
 })
 
 const currentUserNicknameStyle = computed(() => {
@@ -173,7 +221,25 @@ const fetchNotifications = async () => {
 
   try {
     const response = await getNotifications()
-    notifications.value = response.data
+    const fetchedNotifications = response.data
+    notifications.value = fetchedNotifications
+
+    const newTierUpNotifications = fetchedNotifications.filter((notification) => {
+      const notificationKey = notification.id ?? `${notification.created_at}-${notification.message}`
+      return (
+        !notification.is_read
+        && notification.title === TIER_UP_NOTIFICATION_TITLE
+        && !handledTierUpNotificationIds.has(notificationKey)
+      )
+    })
+
+    if (newTierUpNotifications.length > 0) {
+      newTierUpNotifications.forEach((notification) => {
+        const notificationKey = notification.id ?? `${notification.created_at}-${notification.message}`
+        handledTierUpNotificationIds.add(notificationKey)
+      })
+      await authStore.fetchMe()
+    }
   } catch (error) {
     console.error(error)
   }
@@ -256,7 +322,7 @@ const startNotificationPolling = () => {
     window.clearInterval(notificationTimer)
   }
 
-  notificationTimer = window.setInterval(fetchNotifications, 30000)
+  notificationTimer = window.setInterval(fetchNotifications, 10000)
 }
 
 const clearMascotFetch = () => {
@@ -266,7 +332,10 @@ const clearMascotFetch = () => {
   }
 
   mascotFetchPhase.value = ''
+  mascotFetchedPlaceId.value = null
   mascotFetchedPlaceName.value = ''
+  mascotFetchedMarkerLabel.value = ''
+  isMarkerChoiceMenuOpen.value = false
 }
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value))
@@ -306,10 +375,32 @@ const setMascotRunTarget = (target) => {
   mascotRunNearY.value = `${Math.round(targetY * 0.82 + 8)}px`
 }
 
+const handleMascotClick = () => {
+  if (mascotFetchPhase.value !== 'carrying' || !mascotFetchedPlaceId.value) return
+
+  window.dispatchEvent(new CustomEvent('place-marker-fetch-click', {
+    detail: {
+      placeId: mascotFetchedPlaceId.value,
+      placeName: mascotFetchedPlaceName.value,
+      markerLabel: mascotFetchedMarkerLabel.value,
+    },
+  }))
+}
+
+const handleMarkerChoiceMenuOpen = () => {
+  isMarkerChoiceMenuOpen.value = true
+}
+
+const handleMarkerChoiceMenuClose = () => {
+  isMarkerChoiceMenuOpen.value = false
+}
+
 const updateMascotFetchTarget = (event) => {
   if (!mascotFetchPhase.value) return
 
+  mascotFetchedPlaceId.value = event.detail?.placeId || mascotFetchedPlaceId.value
   mascotFetchedPlaceName.value = event.detail?.placeName || mascotFetchedPlaceName.value
+  mascotFetchedMarkerLabel.value = event.detail?.markerLabel || mascotFetchedMarkerLabel.value
   setMascotRunTarget(event.detail?.target)
 }
 
@@ -318,12 +409,17 @@ const triggerMascotFetch = (event) => {
     window.clearTimeout(mascotFetchTimer)
   }
 
+  mascotFetchedPlaceId.value = event.detail?.placeId || null
   mascotFetchedPlaceName.value = event.detail?.placeName || ''
+  mascotFetchedMarkerLabel.value = event.detail?.markerLabel || ''
   setMascotRunTarget(event.detail?.target)
   mascotFetchPhase.value = 'fetching'
   mascotFetchTimer = window.setTimeout(() => {
     mascotFetchPhase.value = 'carrying'
     mascotFetchTimer = null
+    window.dispatchEvent(new CustomEvent('place-marker-fetch-arrived', {
+      detail: event.detail || {},
+    }))
   }, 1100)
 }
 
@@ -332,6 +428,8 @@ onMounted(() => {
   window.addEventListener('place-marker-fetch', triggerMascotFetch)
   window.addEventListener('place-marker-fetch-update', updateMascotFetchTarget)
   window.addEventListener('place-marker-fetch-clear', clearMascotFetch)
+  window.addEventListener('place-marker-choice-open', handleMarkerChoiceMenuOpen)
+  window.addEventListener('place-marker-choice-close', handleMarkerChoiceMenuClose)
 
   authStore.fetchMe()
     .then(() => {
@@ -376,6 +474,8 @@ onBeforeUnmount(() => {
   window.removeEventListener('place-marker-fetch', triggerMascotFetch)
   window.removeEventListener('place-marker-fetch-update', updateMascotFetchTarget)
   window.removeEventListener('place-marker-fetch-clear', clearMascotFetch)
+  window.removeEventListener('place-marker-choice-open', handleMarkerChoiceMenuOpen)
+  window.removeEventListener('place-marker-choice-close', handleMarkerChoiceMenuClose)
   clearMascotFetch()
 
   if (notificationTimer) {
@@ -385,8 +485,13 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="app-shell" :class="{ 'is-sidebar-collapsed': isSidebarCollapsed, 'is-compact-mode': settingsStore.compactMode }">
-    <aside class="app-sidebar">
+  <div
+    class="app-shell"
+    :class="{
+      'is-compact-mode': settingsStore.compactMode,
+    }"
+  >
+    <header class="app-header">
       <RouterLink to="/" class="brand">
         <span class="brand-mark" aria-hidden="true">
           <span class="brand-pin">
@@ -407,21 +512,7 @@ onBeforeUnmount(() => {
         </span>
       </RouterLink>
 
-      <button
-        type="button"
-        class="sidebar-toggle"
-        :aria-expanded="!isSidebarCollapsed"
-        :aria-label="isSidebarCollapsed ? '사이드바 열기' : '사이드바 접기'"
-        @click="isSidebarCollapsed = !isSidebarCollapsed"
-      >
-        <span
-          class="sidebar-toggle-arrow"
-          :class="{ 'is-collapsed': isSidebarCollapsed }"
-          aria-hidden="true"
-        ></span>
-      </button>
-
-      <nav class="side-nav" aria-label="페이지 이동">
+      <nav class="side-nav top-nav" aria-label="페이지 이동">
         <RouterLink to="/" class="nav-link">
           <span class="nav-icon" aria-hidden="true">
             <svg viewBox="0 0 24 24">
@@ -498,7 +589,7 @@ onBeforeUnmount(() => {
         </RouterLink>
       </nav>
 
-      <nav class="sidebar-bottom-nav" aria-label="설정 및 이용가이드">
+      <nav class="sidebar-bottom-nav top-utility-nav" aria-label="설정 및 이용가이드">
         <RouterLink to="/settings" class="nav-link utility-link">
           <span class="nav-icon" aria-hidden="true">
             <svg viewBox="0 0 24 24">
@@ -532,65 +623,6 @@ onBeforeUnmount(() => {
         </RouterLink>
       </nav>
 
-      <div v-if="authStore.isLoggedIn" ref="sidebarProfileRef" class="sidebar-profile">
-        <button
-          type="button"
-          class="sidebar-profile-link"
-          :aria-expanded="isSidebarAccountMenuOpen"
-          @click="toggleSidebarAccountMenu"
-        >
-          <span class="sidebar-avatar">
-            <img
-              v-if="authStore.user?.profile_image_url"
-              :src="authStore.user.profile_image_url"
-              :alt="authStore.user?.nickname || authStore.user?.username"
-            />
-            <span v-else class="default-avatar" aria-hidden="true"></span>
-          </span>
-          <span class="sidebar-profile-copy">
-            <strong class="sidebar-nickname-line">
-              <span :style="currentUserNicknameStyle">
-                {{ authStore.user?.nickname || authStore.user?.username }}
-              </span>
-              <img
-                v-if="authStore.user?.tier"
-                :src="currentUserTierIcon"
-                :alt="currentUserTierLabel"
-                class="sidebar-tier-icon"
-              />
-            </strong>
-            <span>{{ currentUserTierLabel }} · 기여도 {{ currentUserContribution }}</span>
-          </span>
-        </button>
-
-        <div v-if="isSidebarAccountMenuOpen" class="sidebar-account-dropdown">
-          <RouterLink
-            :to="{ path: '/mypage', query: { section: 'profile' } }"
-            class="account-menu-button"
-            :class="{ active: isMypageActive }"
-            @click="isSidebarAccountMenuOpen = false"
-          >
-            <span>마이페이지</span>
-          </RouterLink>
-
-          <RouterLink
-            to="/inquiries/my"
-            class="account-menu-button"
-            :class="{ active: isCustomerCenterActive }"
-            @click="isSidebarAccountMenuOpen = false"
-          >
-            <span>고객센터</span>
-          </RouterLink>
-
-          <button type="button" class="account-logout-button" @click="handleLogout">
-            로그아웃
-          </button>
-        </div>
-
-      </div>
-    </aside>
-
-    <div class="app-main">
       <div class="global-account-bar">
         <template v-if="authStore.isLoggedIn">
           <div ref="notificationMenuRef" class="global-notification-menu">
@@ -703,10 +735,13 @@ onBeforeUnmount(() => {
           </RouterLink>
         </template>
       </div>
+    </header>
 
+    <div class="app-main">
       <aside
         class="route-mascot"
         :style="{
+          ...currentMascotImageStyle,
           '--mascot-run-x': mascotRunX,
           '--mascot-run-y': mascotRunY,
           '--mascot-run-mid-x': mascotRunMidX,
@@ -717,14 +752,16 @@ onBeforeUnmount(() => {
         :class="[
           `mascot-${activeMascotState.key}`,
           {
+            'is-tier-mascot': authStore.isLoggedIn,
             'is-fetching': mascotFetchPhase === 'fetching',
             'is-carrying': mascotFetchPhase === 'carrying',
+            'is-choice-menu-open': isMarkerChoiceMenuOpen,
           },
         ]"
         aria-live="polite"
       >
         <div class="mascot-speech">{{ activeMascotState.message }}</div>
-        <div class="mascot-dog" aria-hidden="true">
+        <div class="mascot-dog" aria-hidden="true" @click.stop="handleMascotClick">
           <span class="mascot-ear left"></span>
           <span class="mascot-ear right"></span>
           <span class="mascot-head">
@@ -736,8 +773,11 @@ onBeforeUnmount(() => {
             <span class="mascot-paw left"></span>
             <span class="mascot-paw right"></span>
           </span>
+          <span class="mascot-collar">
+            <span class="mascot-pendant"></span>
+          </span>
           <span class="mascot-tail"></span>
-          <span class="mascot-fetch-bone"></span>
+          <span class="mascot-fetch-bone">{{ mascotFetchedMarkerLabel }}</span>
           <span v-if="activeMascotState.prop" class="mascot-prop">{{ activeMascotState.prop }}</span>
         </div>
       </aside>
@@ -772,32 +812,31 @@ input {
 }
 
 .app-shell {
+  position: relative;
   min-height: 100vh;
-  display: grid;
-  grid-template-columns: 220px minmax(0, 1fr);
-  background: transparent;
-  transition: grid-template-columns 0.2s ease;
-}
-
-.app-shell.is-sidebar-collapsed {
-  grid-template-columns: 72px minmax(0, 1fr);
-}
-
-.app-sidebar {
-  position: sticky;
-  top: 0;
-  z-index: 60;
-  height: 100vh;
-  padding: 22px 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
-  border-right: 1px solid #eadfcd;
+  display: block;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(255, 250, 241, 0.94)),
-    #ffffff;
-  box-shadow: 10px 0 30px rgba(49, 41, 31, 0.08);
+    linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 250, 241, 0.34)),
+    url("/homepage-background.png") center / cover no-repeat fixed;
+}
+
+.app-header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 80;
+  min-height: 76px;
+  padding: 10px 24px;
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.34);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.34), rgba(255, 255, 255, 0.08));
+  box-shadow: none;
   overflow: visible;
+  backdrop-filter: blur(14px);
 }
 
 .brand {
@@ -1008,17 +1047,32 @@ input {
 }
 
 .side-nav {
-  display: grid;
+  min-width: 0;
+  display: flex;
   gap: 8px;
+  align-items: center;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.side-nav::-webkit-scrollbar {
+  display: none;
 }
 
 .sidebar-bottom-nav {
-  margin-top: auto;
-  margin-bottom: -12px;
-  padding-top: 10px;
-  display: grid;
-  gap: 4px;
-  border-top: 1px solid #eadfcd;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.top-nav {
+  flex: 1 1 auto;
+}
+
+.top-utility-nav {
+  flex: 0 0 auto;
+  padding-left: 12px;
+  border-left: 1px solid #eadfcd;
 }
 
 .utility-link {
@@ -1162,7 +1216,7 @@ input {
 }
 
 .nav-link {
-  width: 100%;
+  width: auto;
   padding: 11px 12px;
   display: flex;
   justify-content: flex-start;
@@ -1226,76 +1280,10 @@ input {
   line-height: 1;
 }
 
-.app-shell.is-sidebar-collapsed .app-sidebar {
-  padding: 22px 10px;
-  align-items: center;
-}
-
-.app-shell.is-sidebar-collapsed .brand {
-  padding: 0;
-}
-
-.app-shell.is-sidebar-collapsed .brand-text,
-.app-shell.is-sidebar-collapsed .nav-text {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  white-space: nowrap;
-}
-
-.app-shell.is-sidebar-collapsed .sidebar-toggle {
-  right: -25px;
-}
-
-.app-shell.is-sidebar-collapsed .side-nav {
-  width: 100%;
-}
-
-.app-shell.is-sidebar-collapsed .sidebar-profile {
-  width: 100%;
-  padding: 8px;
-  place-items: center;
-}
-
-.app-shell.is-sidebar-collapsed .sidebar-profile-link {
-  justify-content: center;
-}
-
-.app-shell.is-sidebar-collapsed .sidebar-profile-copy {
-  display: none;
-}
-
-.app-shell.is-sidebar-collapsed .sidebar-bottom-nav {
-  width: 100%;
-}
-
-.app-shell.is-sidebar-collapsed .nav-link {
-  justify-content: center;
-  padding: 8px;
-}
-
-.app-shell.is-sidebar-collapsed .nav-icon {
-  width: 32px;
-  height: 32px;
-}
-
-.app-shell.is-sidebar-collapsed .nav-icon svg {
-  width: 23px;
-  height: 23px;
-}
-
-.app-shell.is-sidebar-collapsed .notification-badge {
-  position: absolute;
-  top: 4px;
-  right: 4px;
-}
-
 .app-main {
   min-width: 0;
   position: relative;
-  padding-top: 68px;
+  padding-top: 96px;
 }
 
 .route-mascot {
@@ -1347,6 +1335,36 @@ input {
   animation: mascot-idle 2.8s ease-in-out infinite;
 }
 
+.route-mascot.is-tier-mascot .mascot-dog {
+  width: 132px;
+  height: 152px;
+}
+
+.mascot-dog::before {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  display: none;
+  background-image: var(--mascot-run-1);
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: contain;
+  content: "";
+}
+
+.mascot-dog::after {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: none;
+  background-image: var(--mascot-idle-image);
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: contain;
+  content: "";
+  pointer-events: none;
+}
+
 .mascot-head,
 .mascot-body,
 .mascot-ear,
@@ -1355,6 +1373,27 @@ input {
   position: absolute;
   border: 4px solid #222222;
   background: #ffffff;
+}
+
+.mascot-head,
+.mascot-body,
+.mascot-ear,
+.mascot-tail,
+.mascot-paw,
+.mascot-collar {
+  opacity: 0;
+}
+
+.route-mascot.is-tier-mascot .mascot-dog::after {
+  display: block;
+}
+
+.route-mascot:not(.is-tier-mascot) .mascot-head,
+.route-mascot:not(.is-tier-mascot) .mascot-body,
+.route-mascot:not(.is-tier-mascot) .mascot-ear,
+.route-mascot:not(.is-tier-mascot) .mascot-tail,
+.route-mascot:not(.is-tier-mascot) .mascot-paw {
+  opacity: 1;
 }
 
 .mascot-head {
@@ -1462,6 +1501,24 @@ input {
   animation: mascot-tail 0.8s ease-in-out infinite;
 }
 
+.mascot-collar {
+  position: absolute;
+  top: 75px;
+  left: 20px;
+  z-index: 5;
+  width: 96px;
+  height: 74px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 140'%3E%3Cpath d='M28 25 C61 49 119 49 152 25 L158 48 C121 79 59 79 22 48 Z' fill='%230d47a1' stroke='%23222222' stroke-width='8' stroke-linejoin='round'/%3E%3Cpath d='M30 27 C62 48 118 48 150 27' fill='none' stroke='%23f6bf49' stroke-width='5' stroke-linecap='round'/%3E%3Cpath d='M25 48 C61 78 119 78 155 48' fill='none' stroke='%23f6bf49' stroke-width='5' stroke-linecap='round'/%3E%3Cpath d='M82 67 L98 67 L98 94 L82 94 Z' fill='%23f6bf49' stroke='%23222222' stroke-width='7' stroke-linejoin='round'/%3E%3Ccircle cx='90' cy='104' r='31' fill='%23062e6f' stroke='%23222222' stroke-width='8'/%3E%3Ccircle cx='90' cy='104' r='25' fill='%2308337b' stroke='%23f6bf49' stroke-width='5'/%3E%3Cpath d='M90 72 C95 91 104 99 123 104 C104 109 95 117 90 136 C85 117 76 109 57 104 C76 99 85 91 90 72 Z' fill='%23f6bf49' stroke='%2301183d' stroke-width='3' stroke-linejoin='round'/%3E%3Cpath d='M90 84 L101 104 L90 125 L79 104 Z' fill='%232fd7ff' stroke='%23ffffff' stroke-width='3' stroke-linejoin='round'/%3E%3Cpath d='M72 104 L90 95 L108 104 L90 113 Z' fill='%23005bd8' opacity='0.95'/%3E%3Cpath d='M90 84 L90 125 M79 104 L101 104' stroke='%2301183d' stroke-width='2' stroke-linecap='round' opacity='0.8'/%3E%3C/svg%3E");
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: contain;
+  pointer-events: none;
+}
+
+.mascot-pendant {
+  display: none;
+}
+
 .mascot-prop {
   position: absolute;
   right: 4px;
@@ -1488,10 +1545,21 @@ input {
   display: none;
   width: 54px;
   height: 54px;
+  place-items: center;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cg transform='rotate(-45 32 32)'%3E%3Cpath d='M21 18c-5.4-5.4-14.6-1.6-14.6 6.2 0 3.1 1.6 5.9 4.1 7.5-2.5 1.6-4.1 4.4-4.1 7.5 0 7.8 9.2 11.6 14.6 6.2l3.6-3.6h14.8l3.6 3.6c5.4 5.4 14.6 1.6 14.6-6.2 0-3.1-1.6-5.9-4.1-7.5 2.5-1.6 4.1-4.4 4.1-7.5 0-7.8-9.2-11.6-14.6-6.2l-3.6 3.6H24.6L21 18Z' fill='white' stroke='%23222222' stroke-width='4' stroke-linejoin='round'/%3E%3C/g%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-size: contain;
+  color: #222222;
   filter: drop-shadow(0 3px 0 rgba(242, 215, 176, 0.9));
+  font-family: Arial, sans-serif;
+  font-size: 16px;
+  font-weight: 900;
+  line-height: 1;
+  text-shadow:
+    -1px -1px 0 #ffffff,
+    1px -1px 0 #ffffff,
+    -1px 1px 0 #ffffff,
+    1px 1px 0 #ffffff;
   transform: rotate(-8deg);
   transform-origin: 18px 28px;
 }
@@ -1501,31 +1569,56 @@ input {
 }
 
 .route-mascot.is-carrying {
-  transform: translate(var(--mascot-run-x, -36vw), var(--mascot-run-y, -17vh));
+  z-index: 2;
+  transform: translate(var(--mascot-run-x, -36vw), calc(var(--mascot-run-y, -17vh) - 10px));
   transition: transform 0.16s ease-out;
+}
+
+.route-mascot.is-carrying .mascot-dog {
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.route-mascot.is-choice-menu-open {
+  z-index: 0;
+}
+
+.route-mascot.is-choice-menu-open .mascot-dog {
+  pointer-events: none;
 }
 
 .route-mascot.is-fetching .mascot-speech,
 .route-mascot.is-carrying .mascot-speech {
-  background: #fff8e9;
-  box-shadow: 0 5px 0 #dcb77e;
+  display: none;
 }
 
 .route-mascot.is-fetching .mascot-dog {
-  animation: mascot-fast-run 0.32s ease-in-out infinite;
+  width: 176px;
+  height: 176px;
+  margin-right: -18px;
+  animation: none;
 }
 
 .route-mascot.is-carrying .mascot-dog {
+  transform-origin: 100% 100%;
   animation: mascot-chew 0.72s ease-in-out infinite;
 }
 
-.route-mascot.is-fetching .mascot-fetch-bone,
-.route-mascot.is-carrying .mascot-fetch-bone {
+.route-mascot.is-fetching .mascot-dog::before {
   display: block;
+  animation: mascot-run-frame 0.54s steps(1, end) infinite;
 }
 
-.route-mascot.is-fetching .mascot-fetch-bone {
-  animation: mascot-bone-swing 0.22s ease-in-out infinite;
+.route-mascot.is-fetching .mascot-dog::after {
+  display: none;
+}
+
+.route-mascot.is-fetching .mascot-dog > span {
+  opacity: 0;
+}
+
+.route-mascot.is-carrying .mascot-fetch-bone {
+  display: grid;
 }
 
 .route-mascot.is-carrying .mascot-fetch-bone {
@@ -1635,33 +1728,45 @@ input {
   }
 }
 
-@keyframes mascot-fast-run {
-  25% {
-    transform: translateY(-8px) rotate(-5deg);
+@keyframes mascot-run-frame {
+  0%,
+  100% {
+    background-image: var(--mascot-run-1);
+  }
+
+  16.67% {
+    background-image: var(--mascot-run-2);
+  }
+
+  33.33% {
+    background-image: var(--mascot-run-3);
   }
 
   50% {
-    transform: translateY(1px) rotate(4deg);
+    background-image: var(--mascot-run-4);
   }
 
-  75% {
-    transform: translateY(-7px) rotate(5deg);
+  66.67% {
+    background-image: var(--mascot-run-5);
+  }
+
+  83.33% {
+    background-image: var(--mascot-run-6);
   }
 }
 
 @keyframes mascot-chew {
+  0%,
+  100% {
+    transform: scale(0.5);
+  }
+
   45% {
-    transform: translateY(-5px) rotate(-2deg);
+    transform: translateY(-5px) rotate(-2deg) scale(0.5);
   }
 
   70% {
-    transform: translateY(-2px) rotate(2deg);
-  }
-}
-
-@keyframes mascot-bone-swing {
-  50% {
-    transform: rotate(7deg) translateY(-2px);
+    transform: translateY(-2px) rotate(2deg) scale(0.5);
   }
 }
 
@@ -1701,12 +1806,19 @@ input {
 .upgrade-page,
 .page,
 .settings-page,
+.preference-page,
 .login-page,
-.signup-page {
-  background:
-    radial-gradient(circle at 12% 10%, rgba(255, 238, 209, 0.82), transparent 30%),
-    radial-gradient(circle at 88% 14%, rgba(233, 246, 255, 0.72), transparent 28%),
-    linear-gradient(180deg, #fffaf1 0%, #f8f6ef 100%) !important;
+.signup-page,
+.auth-page,
+.notification-page,
+.admin-board-page,
+.admin-report-page,
+.profile-page,
+.reports-page,
+.history-page,
+.report-page,
+.place-report-page {
+  background: transparent !important;
 }
 
 .board-container,
@@ -1760,14 +1872,13 @@ input {
 }
 
 .global-account-bar {
-  position: fixed;
-  top: 16px;
-  right: 24px;
-  z-index: 80;
+  position: relative;
+  z-index: 1;
+  flex: 0 0 auto;
   display: flex;
   gap: 8px;
   align-items: center;
-  max-width: calc(100vw - 48px);
+  max-width: none;
 }
 
 .global-notification-menu {
@@ -2040,6 +2151,8 @@ input {
 .global-auth-button {
   height: 42px;
   padding: 0 14px;
+  display: inline-flex;
+  align-items: center;
   border: 2px solid #222222;
   border-radius: 999px;
   background: #ffffff;
@@ -2058,35 +2171,46 @@ input {
   color: #ffffff;
 }
 
+.global-auth-button.logout {
+  background: #ffffff;
+  color: #222222;
+}
+
 @media (max-width: 820px) {
   .app-shell {
-    grid-template-columns: 1fr;
+    min-height: 100vh;
   }
 
-  .app-shell.is-sidebar-collapsed {
-    grid-template-columns: 1fr;
-  }
-
-  .app-sidebar {
-    position: sticky;
-    z-index: 20;
-    height: auto;
-    padding: 12px 16px;
-    flex-direction: row;
-    align-items: center;
-    justify-content: space-between;
-    border-right: 0;
-    border-bottom: 1px solid #e5e8f0;
+  .app-header {
+    min-height: 0;
+    padding: 10px 12px;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 8px 10px;
   }
 
   .app-main {
-    padding-top: 72px;
+    padding-top: 126px;
   }
 
   .global-account-bar {
-    top: 72px;
-    right: 12px;
-    max-width: calc(100vw - 24px);
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: end;
+  }
+
+  .top-nav {
+    grid-column: 1 / -1;
+    width: 100%;
+    padding-bottom: 2px;
+  }
+
+  .top-utility-nav {
+    grid-column: 1 / -1;
+    width: 100%;
+    padding-left: 0;
+    border-left: 0;
+    overflow-x: auto;
   }
 
   .global-user-link {
@@ -2094,34 +2218,6 @@ input {
   }
 
   .sidebar-toggle {
-    display: none;
-  }
-
-  .app-shell.is-sidebar-collapsed .app-sidebar {
-    padding: 12px 16px;
-    align-items: center;
-  }
-
-  .app-shell.is-sidebar-collapsed .brand-text {
-    position: static;
-    width: auto;
-    height: auto;
-    overflow: visible;
-    clip: auto;
-    white-space: normal;
-  }
-
-  .app-shell.is-sidebar-collapsed .side-nav {
-    display: none;
-  }
-
-  .sidebar-bottom-nav,
-  .sidebar-profile,
-  .app-shell.is-sidebar-collapsed .sidebar-profile {
-    display: none;
-  }
-
-  .app-shell.is-sidebar-collapsed .sidebar-toggle {
     display: none;
   }
 
@@ -2144,7 +2240,8 @@ input {
   }
 
   .route-mascot.is-carrying {
-    transform: translate(var(--mascot-run-x, -18vw), var(--mascot-run-y, -13vh)) scale(0.82);
+    z-index: 2;
+    transform: translate(var(--mascot-run-x, -18vw), calc(var(--mascot-run-y, -13vh) - 8px)) scale(0.82);
   }
 
   @keyframes mascot-run-to-marker-mobile {

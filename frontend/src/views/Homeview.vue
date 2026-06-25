@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   aiSearchRecommendations,
@@ -548,6 +548,8 @@ const searchErrorMessage = ref('')
 const resultSourceLabel = ref('검색 결과')
 const resultMessageSuffix = ref('')
 const selectedPlace = ref(null)
+const hiddenMapMarkerPlaceId = ref(null)
+const markerChoiceRequestKey = ref(0)
 const detailTagList = ref(null)
 const resolvedKakaoDetailUrls = ref({})
 const kakaoDetailLookupStatus = ref({})
@@ -555,6 +557,7 @@ const baseLocationCandidates = ref([])
 const pendingBaseLocationSearch = ref(null)
 const isResultListCollapsed = ref(false)
 const isPlaceDetailCollapsed = ref(false)
+const isPlaceDetailDismissed = ref(false)
 const activeResultView = ref('results')
 
 const isLocating = ref(false)
@@ -862,10 +865,16 @@ const mapPlaces = computed(() => {
   ]
 })
 
+const shouldShowPlaceDetailPanel = computed(() => {
+  return Boolean(selectedPlace.value && !isPlaceDetailDismissed.value)
+})
+
 const mapLayoutKey = computed(() => {
   return [
     searchedPlaces.value.length > 0 ? 'has-results' : 'no-results',
-    selectedPlace.value ? 'has-detail' : 'no-detail',
+    shouldShowPlaceDetailPanel.value ? 'has-detail' : 'no-detail',
+    isResultListCollapsed.value ? 'list-collapsed' : 'list-expanded',
+    isPlaceDetailCollapsed.value ? 'detail-collapsed' : 'detail-expanded',
   ].join(':')
 })
 
@@ -1736,6 +1745,12 @@ const scrollSelectedPlaceIntoView = async () => {
 watch(
   () => selectedPlace.value?.id,
   async () => {
+    if (!selectedPlace.value?.id) {
+      hiddenMapMarkerPlaceId.value = null
+      isPlaceDetailDismissed.value = false
+      isPlaceDetailCollapsed.value = false
+    }
+
     scrollSelectedPlaceIntoView()
     await nextTick()
 
@@ -10973,11 +10988,15 @@ const resetMapSearch = () => {
   isSearchingMap.value = false
   currentLocationPlace.value = []
   selectedPlace.value = null
+  hiddenMapMarkerPlaceId.value = null
   showDetailPanel.value = false
   detailFrameError.value = false
+  isPlaceDetailDismissed.value = false
+  isPlaceDetailCollapsed.value = false
   activeResultView.value = 'results'
   isResultListCollapsed.value = false
   clearSearchResults()
+  window.dispatchEvent(new CustomEvent('place-marker-fetch-clear'))
   locationMessage.value = '검색이 초기화되었습니다. 검색어를 입력하거나 지도를 이동한 뒤 다시 검색해보세요.'
 }
 
@@ -10995,12 +11014,16 @@ const startNewConversationSearch = async () => {
   loadingMessage.value = ''
   isSearchingMap.value = false
   selectedPlace.value = null
+  hiddenMapMarkerPlaceId.value = null
   showDetailPanel.value = false
   detailFrameError.value = false
+  isPlaceDetailDismissed.value = false
+  isPlaceDetailCollapsed.value = false
   activeTab.value = 'search'
   activeResultView.value = 'results'
   isResultListCollapsed.value = false
   clearSearchResults()
+  window.dispatchEvent(new CustomEvent('place-marker-fetch-clear'))
   locationMessage.value = '새 검색어를 입력해 주세요.'
 
   await focusPrimarySearchInput()
@@ -11019,13 +11042,34 @@ const getListMarkerTarget = (event) => {
 }
 
 const dispatchMascotFetch = (place, target = null) => {
+  hiddenMapMarkerPlaceId.value = null
+
   window.dispatchEvent(new CustomEvent('place-marker-fetch', {
     detail: {
       placeId: place?.id,
       placeName: place?.name,
+      markerLabel: place?.markerLabel,
       target,
     },
   }))
+}
+
+const handleMascotFetchArrived = (event) => {
+  const arrivedPlaceId = event.detail?.placeId
+
+  if (!arrivedPlaceId || !selectedPlace.value) return
+  if (String(selectedPlace.value.id) !== String(arrivedPlaceId)) return
+
+  hiddenMapMarkerPlaceId.value = arrivedPlaceId
+}
+
+const handleMascotFetchClick = (event) => {
+  const clickedPlaceId = event.detail?.placeId
+
+  if (!clickedPlaceId || !selectedPlace.value) return
+  if (String(selectedPlace.value.id) !== String(clickedPlaceId)) return
+
+  markerChoiceRequestKey.value += 1
 }
 
 const updateMascotFetchTarget = (place, target = null) => {
@@ -11035,6 +11079,7 @@ const updateMascotFetchTarget = (place, target = null) => {
     detail: {
       placeId: place?.id,
       placeName: place?.name,
+      markerLabel: place?.markerLabel,
       target,
     },
   }))
@@ -11043,13 +11088,28 @@ const updateMascotFetchTarget = (place, target = null) => {
 const selectPlace = (place, target = null) => {
   selectedPlace.value = place
   detailFrameError.value = false
+  isPlaceDetailDismissed.value = false
   isPlaceDetailCollapsed.value = false
   dispatchMascotFetch(place, target)
 }
 
 const selectPlaceFromList = (place, event) => {
+  if (selectedPlace.value && String(selectedPlace.value.id) === String(place?.id)) {
+    if (isPlaceDetailDismissed.value) {
+      detailFrameError.value = false
+      isPlaceDetailDismissed.value = false
+      isPlaceDetailCollapsed.value = false
+      dispatchMascotFetch(place, getListMarkerTarget(event))
+      return
+    }
+
+    closePlaceCard()
+    return
+  }
+
   selectedPlace.value = place
   detailFrameError.value = false
+  isPlaceDetailDismissed.value = false
   isPlaceDetailCollapsed.value = false
   dispatchMascotFetch(place, getListMarkerTarget(event))
 }
@@ -11087,9 +11147,17 @@ const goToPlaceReport = (place) => {
 
 const closePlaceCard = () => {
   selectedPlace.value = null
+  hiddenMapMarkerPlaceId.value = null
   detailFrameError.value = false
+  isPlaceDetailDismissed.value = false
   isPlaceDetailCollapsed.value = false
   window.dispatchEvent(new CustomEvent('place-marker-fetch-clear'))
+}
+
+const dismissPlaceDetailPanel = () => {
+  detailFrameError.value = false
+  isPlaceDetailDismissed.value = true
+  isPlaceDetailCollapsed.value = false
 }
 
 const openDetailPanel = () => {
@@ -11110,6 +11178,16 @@ const closeDetailPanel = () => {
 const handleDetailFrameError = () => {
   detailFrameError.value = true
 }
+
+onMounted(() => {
+  window.addEventListener('place-marker-fetch-arrived', handleMascotFetchArrived)
+  window.addEventListener('place-marker-fetch-click', handleMascotFetchClick)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('place-marker-fetch-arrived', handleMascotFetchArrived)
+  window.removeEventListener('place-marker-fetch-click', handleMascotFetchClick)
+})
 </script>
 
 <template>
@@ -11448,7 +11526,7 @@ const handleDetailFrameError = () => {
         class="map-content search-reveal-area"
         :class="{
           'has-result-list': displayResults.length || isSearchingMap || shouldShowAiWebSearchPanel,
-          'has-selected-place': selectedPlace,
+          'has-selected-place': shouldShowPlaceDetailPanel,
           'is-list-collapsed': isResultListCollapsed,
           'is-result-focused': activeResultView === 'results',
           'is-map-focused': activeResultView === 'map',
@@ -11847,6 +11925,8 @@ const handleDetailFrameError = () => {
             :layout-key="mapLayoutKey"
             :selected-place-id="selectedPlace?.id || null"
             :selected-place="selectedPlace"
+            :hidden-place-id="hiddenMapMarkerPlaceId"
+            :choice-request-key="markerChoiceRequestKey"
             @center-change="handleMapViewportChange"
             @select-place="selectPlace"
             @marker-target-change="updateMascotFetchTarget"
@@ -11854,7 +11934,7 @@ const handleDetailFrameError = () => {
         </div>
 
         <aside
-          v-if="selectedPlace"
+          v-if="shouldShowPlaceDetailPanel"
           class="place-detail-panel"
           :class="{
             'is-compact-detail': !hasKakaoDetail(selectedPlace),
@@ -11874,7 +11954,8 @@ const handleDetailFrameError = () => {
               <button
                 type="button"
                 class="close-card-button"
-                @click="closePlaceCard"
+                aria-label="상세정보 닫기"
+                @click="dismissPlaceDetailPanel"
               >
                 ×
               </button>
@@ -11907,7 +11988,8 @@ const handleDetailFrameError = () => {
                 <button
                   type="button"
                   class="close-card-button"
-                  @click="closePlaceCard"
+                  aria-label="상세정보 닫기"
+                  @click="dismissPlaceDetailPanel"
                 >
                   ×
                 </button>
@@ -12120,22 +12202,15 @@ const handleDetailFrameError = () => {
   position: relative;
   min-height: 100vh;
   padding: 24px;
-  background:
-    radial-gradient(circle at 14% 18%, rgba(255, 237, 206, 0.82), transparent 28%),
-    radial-gradient(circle at 86% 12%, rgba(231, 242, 255, 0.84), transparent 28%),
-    linear-gradient(180deg, #fffaf1 0%, #f8f6ef 100%);
+  background: transparent;
 }
 
 .home-page::before {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  background:
-    linear-gradient(90deg, rgba(34, 34, 34, 0.035) 1px, transparent 1px),
-    linear-gradient(180deg, rgba(34, 34, 34, 0.035) 1px, transparent 1px);
-  background-size: 38px 38px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.24), rgba(255, 250, 241, 0.48));
   content: "";
-  mask-image: linear-gradient(180deg, black, transparent 78%);
 }
 
 .home-page > * {

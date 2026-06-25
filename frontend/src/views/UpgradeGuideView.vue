@@ -9,11 +9,12 @@ import masterIcon from '@/assets/tiers/master.png'
 import challengerIcon from '@/assets/tiers/challenger.png'
 
 const contributionRules = [
-  { label: '게시글 작성', contribution: '기여도 +2', description: '자유게시판 또는 공지사항 게시글 1개 작성 기준입니다.' },
-  { label: '댓글 작성', contribution: '기여도 +1', description: '게시글 댓글 1개 작성 기준입니다.' },
+  { label: '일일 게시글 작성', contribution: '5개당 기여도 +1', description: '같은 날짜에 작성한 게시글 5개마다 반영됩니다.' },
+  { label: '일일 댓글 작성', contribution: '10개당 기여도 +1', description: '같은 날짜에 작성한 댓글 10개마다 반영됩니다.' },
+  { label: '게시글/댓글 일일 제한', contribution: '하루 최대 +5', description: '게시글과 댓글로 얻는 기여도는 하루 합산 최대 5점까지 반영됩니다.' },
   { label: '태그 제보 승인', contribution: '기여도 +10', description: '관리자가 장소 태그 제보를 승인하면 반영됩니다.' },
-  { label: '오류 제보 승인', contribution: '기여도 +8', description: '잘못된 장소 정보 제보가 승인되면 반영됩니다.' },
-  { label: '장소 수정 제보 승인', contribution: '기여도 +12', description: '장소 정보 수정 제보가 승인되면 반영됩니다.' },
+  { label: '오류 제보 승인', contribution: '기여도 +5', description: '잘못된 장소 정보 제보가 승인되면 반영됩니다.' },
+  { label: '장소 수정 제보 승인', contribution: '기여도 +5', description: '장소 정보 수정 제보가 승인되면 반영됩니다.' },
   { label: '새 장소 제보 승인', contribution: '기여도 +20', description: '새로운 장소 제보가 승인되면 반영됩니다.' },
 ]
 
@@ -30,64 +31,64 @@ const tiers = [
   {
     key: 'bronze',
     name: '브론즈',
-    minScore: 4,
+    minScore: 50,
     icon: bronzeIcon,
     tone: 'bronze',
-    condition: '기여도 4 이상',
+    condition: '기여도 50 이상',
     description: '게시글과 댓글 활동을 시작한 사용자에게 부여됩니다.',
   },
   {
     key: 'silver',
     name: '실버',
-    minScore: 6,
+    minScore: 100,
     icon: silverIcon,
     tone: 'silver',
-    condition: '기여도 6 이상',
+    condition: '기여도 100 이상',
     description: '꾸준히 게시판 활동을 이어가는 사용자 등급입니다.',
   },
   {
     key: 'gold',
     name: '골드',
-    minScore: 8,
+    minScore: 200,
     icon: goldIcon,
     tone: 'gold',
-    condition: '기여도 8 이상',
+    condition: '기여도 200 이상',
     description: '장소 정보와 의견 공유에 적극적으로 참여한 사용자 등급입니다.',
   },
   {
     key: 'platinum',
     name: '플래티넘',
-    minScore: 10,
+    minScore: 300,
     icon: platinumIcon,
     tone: 'platinum',
-    condition: '기여도 10 이상',
+    condition: '기여도 300 이상',
     description: '서비스 커뮤니티에 안정적으로 기여한 사용자 등급입니다.',
   },
   {
     key: 'diamond',
     name: '다이아',
-    minScore: 12,
+    minScore: 500,
     icon: diamondIcon,
     tone: 'diamond',
-    condition: '기여도 12 이상',
+    condition: '기여도 500 이상',
     description: '활발한 활동으로 신뢰도 높은 사용자에게 부여되는 등급입니다.',
   },
   {
     key: 'master',
     name: '마스터',
-    minScore: 14,
+    minScore: 700,
     icon: masterIcon,
     tone: 'master',
-    condition: '기여도 14 이상',
+    condition: '기여도 700 이상',
     description: '게시판 활동과 소통이 매우 활발한 상위 등급입니다.',
   },
   {
     key: 'challenger',
     name: '챌린저',
-    minScore: 16,
+    minScore: 1000,
     icon: challengerIcon,
     tone: 'challenger',
-    condition: '기여도 16 이상',
+    condition: '기여도 1000 이상',
     description: '현재 기준 최고 등급입니다.',
   },
 ]
@@ -161,6 +162,10 @@ const tiers = [
           </article>
         </div>
       </section>
+
+      <p class="upgrade-update-notice">
+        적극이용자와 티어별 승급 혜택은 추후 업데이트 예정입니다.
+      </p>
     </section>
   </main>
 </template>
@@ -400,6 +405,19 @@ h1 {
 .tier-diamond::before { background: linear-gradient(135deg, #06b6d4, transparent); }
 .tier-master::before { background: linear-gradient(135deg, #7c3aed, transparent); }
 .tier-challenger::before { background: linear-gradient(135deg, #1d4ed8, transparent); }
+
+.upgrade-update-notice {
+  margin: 18px 0 0;
+  padding: 16px 18px;
+  border: 2px solid #222222;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.94);
+  color: #344054;
+  font-size: 14px;
+  font-weight: 900;
+  text-align: center;
+  box-shadow: 0 7px 0 #f2d7b0;
+}
 
 @media (max-width: 1040px) {
   .tier-grid {

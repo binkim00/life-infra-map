@@ -12,6 +12,10 @@ from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.permissions import IsAdminUser, IsAuthenticated
 from rest_framework.response import Response
 
+from accounts.tier_notifications import (
+    get_current_user_tier,
+    notify_tier_upgrade_if_needed,
+)
 from .models import Place, PlaceReport, PlaceTag, Tag, UserPreference, UserSearchLog
 from .serializers import (
     PlaceReportAdminReviewSerializer,
@@ -446,6 +450,7 @@ def review_place_report(request, report_id, review_status):
 
     with transaction.atomic():
         approval_result = {}
+        previous_tier = get_current_user_tier(report.user)
         if review_status == "approved":
             approval_result = apply_place_report_approval(report)
 
@@ -462,6 +467,8 @@ def review_place_report(request, report_id, review_status):
                 "updated_at",
             ],
         )
+        if review_status == "approved":
+            notify_tier_upgrade_if_needed(report.user, previous_tier)
 
     detail_serializer = PlaceReportDetailSerializer(report, context={"request": request})
     return Response({
