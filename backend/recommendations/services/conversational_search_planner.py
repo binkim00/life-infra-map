@@ -102,6 +102,15 @@ BROAD_FRAME_CONFIDENCE_THRESHOLD = 0.58
 BROAD_FRAME_LOW_CONFIDENCE_THRESHOLD = 0.5
 BROAD_FRAME_CLARIFICATION_MESSAGE = "어떤 목적의 장소를 찾으시나요?"
 BROAD_FRAME_CLARIFICATION_OPTIONS = ["쉬기", "먹기", "산책", "작업", "조용한 곳"]
+DEFAULT_CLARIFICATION_OPTIONS = [
+    "쉬는 곳",
+    "식당/맛집",
+    "산책/공원",
+    "작업/공부 카페",
+    "영화관/공연장",
+    "쇼핑몰/백화점",
+    "술집/바",
+]
 
 AI_SCENARIO_ALIASES = {
     "study_room": "work_cafe",
@@ -338,6 +347,48 @@ INTENT_GROUP_CONFIGS = {
         "kakao_keywords": ["흡연구역", "흡연실"],
         "web_search_recommended": False,
     },
+    "entertainment_place": {
+        "scenario": "waiting_place",
+        "target_query": "영화관",
+        "categories": [],
+        "category_candidates": [
+            {"name": "영화관", "weight": 1.0},
+            {"name": "공연장", "weight": 0.85},
+            {"name": "문화공간", "weight": 0.55},
+        ],
+        "conditions": [],
+        "preferred_tags": [],
+        "kakao_keywords": ["영화관", "공연장", "문화공간"],
+        "web_search_recommended": False,
+    },
+    "shopping_place": {
+        "scenario": "waiting_place",
+        "target_query": "쇼핑몰",
+        "categories": [],
+        "category_candidates": [
+            {"name": "쇼핑몰", "weight": 1.0},
+            {"name": "백화점", "weight": 0.9},
+            {"name": "아울렛", "weight": 0.65},
+        ],
+        "conditions": [],
+        "preferred_tags": [],
+        "kakao_keywords": ["쇼핑몰", "백화점", "아울렛"],
+        "web_search_recommended": False,
+    },
+    "bar_place": {
+        "scenario": "restaurant",
+        "target_query": "술집",
+        "categories": [],
+        "category_candidates": [
+            {"name": "술집", "weight": 1.0},
+            {"name": "바", "weight": 0.85},
+            {"name": "펍", "weight": 0.75},
+        ],
+        "conditions": [],
+        "preferred_tags": [],
+        "kakao_keywords": ["술집", "바", "펍", "와인바", "칵테일바"],
+        "web_search_recommended": False,
+    },
     "food_place": {
         "scenario": "restaurant",
         "target_query": "식당",
@@ -377,6 +428,9 @@ INTENT_GROUP_TO_SITUATION = {
     "walk_healing": "walk",
     "smoking_area": "smoking",
     "food_place": "food",
+    "entertainment_place": "general_place",
+    "shopping_place": "general_place",
+    "bar_place": "general_place",
     "general_place_search": "general_place",
 }
 
@@ -612,6 +666,18 @@ PLACE_RECOMMENDATION_HINTS = [
     "흡연",
     "쉼터",
     "식당",
+    "영화관",
+    "공연장",
+    "공연",
+    "쇼핑몰",
+    "백화점",
+    "아울렛",
+    "술집",
+    "주점",
+    "와인바",
+    "칵테일바",
+    "펍",
+    "bar",
     "밥",
     "먹",
     "역",
@@ -1525,7 +1591,10 @@ def _finalize_router_plan(plan):
             or plan.get("clarificationOptions")
             or []
         )
-        plan["clarification_options"] = raw_options if raw_options else ([] if is_ai_plan else _default_clarification_options())
+        if _should_use_default_purpose_options(question, frame, raw_options, is_ai_plan=is_ai_plan):
+            plan["clarification_options"] = _default_clarification_options()
+        else:
+            plan["clarification_options"] = raw_options if raw_options else ([] if is_ai_plan else _default_clarification_options())
         plan["execution_policy"] = _execution_policy(False, False)
         plan["type"] = "clarification"
         plan["can_search_now"] = False
@@ -1584,7 +1653,47 @@ def _finalize_router_plan(plan):
 
 
 def _default_clarification_options():
-    return ["쉬는 곳", "먹을 곳", "산책할 곳", "작업할 곳"]
+    return list(DEFAULT_CLARIFICATION_OPTIONS)
+
+
+def _looks_like_location_clarification(question):
+    compact = _compact(question)
+    if not compact:
+        return False
+    has_location = any(term in compact for term in ["지역", "위치", "기준위치", "어디에서", "어느지역"])
+    has_purpose = any(term in compact for term in ["목적", "상황", "어떤장소", "장소방향", "찾고싶은장소"])
+    return has_location and not has_purpose
+
+
+def _should_use_default_purpose_options(question, frame, options, is_ai_plan=False):
+    if _looks_like_location_clarification(question):
+        return False
+    if not is_ai_plan:
+        return not options
+
+    compact_question = _compact(question)
+    if (
+        _is_generic_clarification_text(question)
+        or any(term in compact_question for term in ["목적", "상황", "어떤장소", "장소방향", "찾고싶은장소"])
+    ):
+        return True
+
+    frame = frame if isinstance(frame, dict) else {}
+    frame_terms = _sanitize_frame_list([
+        frame.get("display_label"),
+        frame.get("displayLabel"),
+        frame.get("user_goal"),
+        frame.get("userGoal"),
+        *(_sanitize_frame_list(frame.get("target_objects") or frame.get("targetObjects") or [])),
+        *(_sanitize_frame_list(frame.get("candidate_place_types") or frame.get("candidatePlaceTypes") or [])),
+        *(_sanitize_frame_list(frame.get("result_match_terms") or frame.get("resultMatchTerms") or [])),
+    ])
+    if frame_terms and _all_terms_are_broad(frame_terms):
+        return True
+
+    broad_options = {_compact(option) for option in BROAD_FRAME_CLARIFICATION_OPTIONS}
+    option_terms = {_compact(option) for option in options or [] if _compact(option)}
+    return bool(option_terms and option_terms.issubset(broad_options))
 
 
 def _is_generic_clarification_text(value):
@@ -3385,6 +3494,8 @@ def get_ai_frame_post_validation_reasons(frame, query):
 def _ai_frame_post_validation_clarification_plan(query, raw_plan, search_plan, frame, reasons):
     question = _contextual_ai_clarification_question(query, frame)
     options = _contextual_ai_clarification_options(frame)
+    if _should_use_default_purpose_options(question, frame, options, is_ai_plan=True):
+        options = _default_clarification_options()
     display_label = _clean_target_query(
         _first_text(
             frame.get("display_label"),
@@ -3566,6 +3677,12 @@ def _enrich_plan_with_intent_group(plan):
         return
 
     config = INTENT_GROUP_CONFIGS[intent_group]
+    avoid_terms = _normalize_text_list(
+        plan.get("avoid")
+        or search_plan.get("avoid")
+        or search_plan.get("exclusions")
+        or []
+    )
     excluded_categories = _unique([
         *_normalize_text_list(
             search_plan.get("excluded_categories")
@@ -3573,9 +3690,15 @@ def _enrich_plan_with_intent_group(plan):
             or []
         ),
         *_extract_excluded_categories(user_query),
+        *avoid_terms,
     ])
     if excluded_categories:
         search_plan["excluded_categories"] = excluded_categories
+    if avoid_terms:
+        search_plan["exclusions"] = _unique([
+            *_normalize_text_list(search_plan.get("exclusions") or []),
+            *avoid_terms,
+        ])
 
     if intent_group != "general_place_search":
         scenario = config["scenario"]
@@ -3668,6 +3791,12 @@ def _classify_intent_group(query, target_query="", scenario=""):
         return "wifi_place"
     if _has_weather_shelter_intent(text):
         return "weather_shelter"
+    if _has_entertainment_place_intent(text):
+        return "entertainment_place"
+    if _has_shopping_place_intent(text):
+        return "shopping_place"
+    if _has_bar_place_intent(text):
+        return "bar_place"
     if _has_walk_healing_natural_intent(text) or scenario == "walk_healing":
         return "walk_healing"
     if _has_food_place_intent(text) or scenario == "restaurant":
@@ -3751,8 +3880,65 @@ def _has_weather_shelter_intent(query):
     ])
 
 
+def _has_entertainment_place_intent(query):
+    return _has_any(query, [
+        "영화관",
+        "영화 볼",
+        "영화볼",
+        "영화 보",
+        "영화보",
+        "극장",
+        "공연장",
+        "공연 볼",
+        "공연볼",
+        "공연 보",
+        "공연보",
+        "문화공간",
+    ])
+
+
+def _has_shopping_place_intent(query):
+    return _has_any(query, [
+        "쇼핑몰",
+        "쇼핑할",
+        "쇼핑 할",
+        "쇼핑",
+        "백화점",
+        "아울렛",
+    ])
+
+
+def _has_bar_place_intent(query):
+    return _has_any(query, [
+        "술집",
+        "술 마",
+        "술마",
+        "주점",
+        "와인바",
+        "칵테일바",
+        "펍",
+        "호프",
+        "bar",
+    ])
+
+
 def _has_food_place_intent(query):
-    return _has_any(query, ["맛집", "먹", "밥", "식사", "식당", "음식점", "브런치", "소금빵", "디저트", "빵집"])
+    return _has_any(query, [
+        "맛집",
+        "먹",
+        "밥",
+        "식사",
+        "식당",
+        "음식점",
+        "브런치",
+        "소금빵",
+        "쌀국수",
+        "파스타",
+        "돈까스",
+        "돈가스",
+        "디저트",
+        "빵집",
+    ])
 
 
 def _has_work_place_intent(query):
@@ -3826,6 +4012,8 @@ def _target_query_for_intent_group(intent_group, query, current_target, scenario
         return "카페"
     if intent_group == "food_place":
         return current_target or _derive_target_query(query, scenario, menu_keywords)
+    if intent_group in {"entertainment_place", "shopping_place", "bar_place"}:
+        return current_target or config.get("target_query")
     if intent_group in {
         "urgent_toilet",
         "health_nearby",
@@ -3913,6 +4101,9 @@ def build_web_search_queries(search_plan: dict, user_query: str) -> list[str]:
         "weather_shelter": ["실내 쉼터", "무더위쉼터", "도서관", "공공시설", "비 피할 곳"],
         "walk_healing": ["산책로", "해변 산책", "걷기 좋은 곳", "바람 쐴 곳", "전망 좋은 곳"],
         "smoking_area": ["흡연구역", "흡연실"],
+        "entertainment_place": ["영화관", "공연장", "문화공간"],
+        "shopping_place": ["쇼핑몰", "백화점", "아울렛"],
+        "bar_place": ["술집", "바", "펍", "와인바", "칵테일바"],
         "food_place": ["맛집", "식당", "음식점"],
     }
     frame_templates = _web_templates_from_frame(frame)
@@ -4336,7 +4527,21 @@ def _extract_avoid_terms(query):
             return []
 
     avoid_terms = []
-    for keyword in ["공원", "카페", "식당", "쉼터", "흡연구역", "관광지"]:
+    for keyword in [
+        "공원",
+        "카페",
+        "디저트",
+        "식당",
+        "음식점",
+        "맛집",
+        "쉼터",
+        "흡연구역",
+        "관광지",
+        "주차장",
+        "주차",
+        "웹",
+        "web",
+    ]:
         if keyword in text:
             avoid_terms.append(keyword)
     return _unique(avoid_terms)

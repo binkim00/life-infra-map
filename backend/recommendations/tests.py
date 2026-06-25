@@ -552,7 +552,10 @@ class RecommendationSearchTests(TestCase):
                 self.assertFalse(data["execution_policy"]["run_search"])
                 self.assertEqual(data["results"], [])
                 self.assertTrue(data["clarification_question"])
-                self.assertEqual(data["clarification_options"], [])
+                self.assertIn("식당/맛집", data["clarification_options"])
+                self.assertIn("영화관/공연장", data["clarification_options"])
+                self.assertIn("쇼핑몰/백화점", data["clarification_options"])
+                self.assertIn("술집/바", data["clarification_options"])
                 self.assertEqual(data["parser_provider"], "gms")
                 self.assertFalse(data["parser_fallback"])
                 self.assertEqual(data["plan_source"], "ai")
@@ -1522,7 +1525,7 @@ class RecommendationSearchTests(TestCase):
     @patch("recommendations.services.ai_search_orchestrator.collect_kakao_candidates")
     @patch("recommendations.services.ai_search_orchestrator.collect_db_candidates")
     @patch("recommendations.services.ai_search_orchestrator.build_ai_intent_plan")
-    def test_ai_search_collects_naver_web_when_db_kakao_are_weak(
+    def test_ai_search_collects_naver_web_when_explicitly_requested(
         self,
         mock_intent,
         mock_db_collector,
@@ -1603,7 +1606,7 @@ class RecommendationSearchTests(TestCase):
 
         response = self.client.post(
             "/api/recommendations/ai-search/",
-            data=json.dumps({"query": "target search", "lat": 35.1, "lng": 129.1}),
+            data=json.dumps({"query": "웹에서 target search 최신 확인", "lat": 35.1, "lng": 129.1}),
             content_type="application/json",
             **self._auth_headers(),
         )
@@ -2675,6 +2678,187 @@ class RecommendationSearchTests(TestCase):
 
         self.assertTrue(any("주차장" in item for item in policy_unmet))
 
+    def test_merge_candidate_policy_review_rejects_study_cafe_for_drink_cafe(self):
+        from recommendations.services.ai_search_orchestrator import _merge_candidate_policy_review
+
+        frame = {
+            "target_objects": ["카페"],
+            "result_match_terms": ["카페", "음료"],
+            "candidate_place_types": ["카페"],
+            "constraints": ["음료 마실 수 있음"],
+        }
+        candidate = {
+            "candidate_source": "kakao",
+            "name": "멘토즈스터디카페 사상역점",
+            "category": "서비스,산업 > 전문대행 > 공간대여 > 스터디카페,스터디룸",
+            "address": "부산 사상구",
+        }
+
+        _, _, _, policy_unmet, _ = _merge_candidate_policy_review(
+            candidate,
+            frame,
+            "strong",
+            [{"type": "target_direct", "value": "카페"}],
+            field="kakao_text",
+            source_strength="external",
+        )
+
+        self.assertTrue(any("음료 카페" in item for item in policy_unmet))
+
+    def test_merge_candidate_policy_review_rejects_bar_substring_false_positive(self):
+        from recommendations.services.ai_search_orchestrator import _external_pre_ai_evidence, _merge_candidate_policy_review
+
+        frame = {
+            "target_objects": ["술집"],
+            "result_match_terms": ["술집", "바", "펍"],
+            "candidate_place_types": ["술집", "주점", "펍", "와인바", "칵테일바"],
+        }
+        candidate = {
+            "candidate_source": "kakao",
+            "name": "바른치킨",
+            "category": "음식점 > 치킨",
+            "address": "부산",
+            "retrieval_query": "바",
+        }
+
+        level, matched = _external_pre_ai_evidence(candidate, frame)
+        _, _, _, policy_unmet, _ = _merge_candidate_policy_review(
+            candidate,
+            frame,
+            level,
+            matched,
+            field="kakao_text",
+            source_strength="external",
+        )
+
+        self.assertFalse(any(item.get("value") == "바" for item in matched))
+        self.assertTrue(any("술집/바" in item for item in policy_unmet))
+
+    def test_merge_candidate_policy_review_rejects_exhibition_substring_false_positive(self):
+        from recommendations.services.ai_search_orchestrator import _external_pre_ai_evidence, _merge_candidate_policy_review
+
+        frame = {
+            "target_objects": ["전시관"],
+            "result_match_terms": ["전시", "전시관", "박물관", "미술관"],
+            "candidate_place_types": ["전시관", "박물관", "미술관", "갤러리"],
+        }
+        candidate = {
+            "candidate_source": "kakao",
+            "name": "감전시장",
+            "category": "가정,생활 > 시장",
+            "address": "부산",
+            "retrieval_query": "전시",
+        }
+
+        level, matched = _external_pre_ai_evidence(candidate, frame)
+        _, _, _, policy_unmet, _ = _merge_candidate_policy_review(
+            candidate,
+            frame,
+            level,
+            matched,
+            field="kakao_text",
+            source_strength="external",
+        )
+
+        self.assertFalse(any(item.get("value") == "전시" for item in matched))
+        self.assertTrue(any("전시/박물관" in item for item in policy_unmet))
+
+    def test_merge_candidate_policy_review_requires_compound_indoor_experience(self):
+        from recommendations.services.ai_search_orchestrator import _merge_candidate_policy_review
+
+        frame = {
+            "target_objects": ["실내 체험"],
+            "result_match_terms": ["실내 체험", "도예", "공예", "VR"],
+            "candidate_place_types": ["도예 체험 스튜디오", "공방", "VR 체험관"],
+            "constraints": ["실내"],
+        }
+        outdoor_candidate = {
+            "candidate_source": "kakao",
+            "name": "강변 산책 체험길",
+            "category": "여행 > 공원 > 산책로",
+            "address": "부산",
+        }
+        indoor_candidate = {
+            "candidate_source": "kakao",
+            "name": "사상 도예 체험 스튜디오",
+            "category": "문화,예술 > 공방",
+            "address": "부산",
+        }
+
+        _, _, _, outdoor_unmet, _ = _merge_candidate_policy_review(
+            outdoor_candidate,
+            frame,
+            "medium",
+            [{"type": "candidate_type", "value": "체험"}],
+            field="kakao_text",
+            source_strength="external",
+        )
+        _, _, _, indoor_unmet, _ = _merge_candidate_policy_review(
+            indoor_candidate,
+            frame,
+            "medium",
+            [{"type": "candidate_type", "value": "도예 체험 스튜디오"}],
+            field="kakao_text",
+            source_strength="external",
+        )
+
+        self.assertTrue(any("실내 체험" in item for item in outdoor_unmet))
+        self.assertFalse(any("실내 체험" in item for item in indoor_unmet))
+
+    def test_merge_candidate_policy_review_rejects_online_shopping_mall_candidate(self):
+        from recommendations.services.ai_search_orchestrator import _merge_candidate_policy_review
+
+        frame = {
+            "target_objects": ["쇼핑몰"],
+            "result_match_terms": ["쇼핑몰", "백화점", "아울렛"],
+            "candidate_place_types": ["쇼핑몰", "백화점", "아울렛"],
+        }
+        candidate = {
+            "candidate_source": "kakao",
+            "name": "사상 인터넷 쇼핑몰",
+            "category": "서비스,산업 > 인터넷쇼핑몰",
+            "address": "부산",
+        }
+
+        _, _, _, policy_unmet, _ = _merge_candidate_policy_review(
+            candidate,
+            frame,
+            "strong",
+            [{"type": "target_direct", "value": "쇼핑몰"}],
+            field="kakao_text",
+            source_strength="external",
+        )
+
+        self.assertTrue(any("오프라인 쇼핑몰" in item for item in policy_unmet))
+
+    def test_direct_db_category_codes_include_shopping_for_mall_requests(self):
+        from recommendations.services.ai_search_orchestrator import _direct_db_category_codes
+
+        frame = {
+            "target_objects": ["쇼핑몰"],
+            "result_match_terms": ["쇼핑몰", "백화점", "아울렛"],
+            "candidate_category_codes": ["shopping"],
+        }
+
+        self.assertEqual(_direct_db_category_codes(frame), ["shopping"])
+
+    def test_db_evidence_terms_use_concrete_indoor_experience_facilities(self):
+        from recommendations.services.ai_search_orchestrator import _db_evidence_terms
+
+        frame = {
+            "target_objects": ["실내 체험"],
+            "result_match_terms": ["실내 체험", "보드게임카페", "방탈출"],
+            "candidate_place_types": ["보드게임카페", "만화카페", "방탈출카페", "공방"],
+            "constraints": ["실내", "체험 활동"],
+            "primary_search_queries": ["보드게임카페", "만화카페", "방탈출"],
+        }
+
+        terms = _db_evidence_terms(frame)
+
+        self.assertIn("보드게임카페", terms["search"])
+        self.assertIn("방탈출", terms["search"])
+        self.assertNotEqual(terms["search"][:2], ["실내", "체험"])
+
     def test_search_radius_uses_nearby_constraints_when_request_radius_missing(self):
         from recommendations.services.ai_search_orchestrator import _search_radius_for_frame
 
@@ -2688,6 +2872,10 @@ class RecommendationSearchTests(TestCase):
         )
         self.assertEqual(
             _search_radius_for_frame(None, {"constraints": ["가까운 곳"]}, "서면역 근처 화장실"),
+            1500,
+        )
+        self.assertEqual(
+            _search_radius_for_frame(None, {"constraints": ["가까운 곳"]}, "서면역 근처 쌀국수집"),
             3000,
         )
         self.assertEqual(
@@ -2796,6 +2984,35 @@ class RecommendationSearchTests(TestCase):
 
         self.assertEqual([item["id"] for item in merged], ["db-restroom"])
         self.assertEqual([item["id"] for item in additions], ["db-restroom"])
+        self.assertEqual(additions[0]["compatibility_gate"], "needs_verification")
+
+    def test_top_up_ranked_candidates_can_restore_kakao_text_supported_food_candidate(self):
+        from recommendations.services.ai_search_orchestrator import _top_up_ranked_candidates
+
+        candidate = {
+            "id": "kakao:pho-compatible",
+            "candidate_source": "kakao",
+            "source": "kakao",
+            "name": "하단 베트남 식당",
+            "category": "음식점 > 아시아음식 > 베트남음식",
+            "pre_ai_evidence_level": "medium",
+            "score": 50,
+            "matched_evidence": [{
+                "type": "target_context",
+                "value": "베트남",
+                "source_strength": "external",
+            }],
+        }
+
+        merged, additions = _top_up_ranked_candidates(
+            [],
+            [candidate],
+            [{"id": "kakao:pho-compatible", "reason": "details need verification"}],
+            limit=5,
+        )
+
+        self.assertEqual([item["id"] for item in merged], ["kakao:pho-compatible"])
+        self.assertEqual([item["id"] for item in additions], ["kakao:pho-compatible"])
         self.assertEqual(additions[0]["compatibility_gate"], "needs_verification")
 
     def test_retrieval_query_only_candidate_is_filtered_before_rerank(self):
@@ -2979,6 +3196,48 @@ class RecommendationSearchTests(TestCase):
 
         self.assertIn(rice_noodle_place.name, candidate_names)
         self.assertNotIn(unrelated_cafe.name, candidate_names)
+
+    def test_collect_db_candidates_prefers_direct_category_over_tag_only_for_cafe(self):
+        from recommendations.services.ai_search_orchestrator import collect_db_candidates
+
+        real_cafe = self._create_place(
+            name="사상 커피 로스터스",
+            category="cafe",
+            external_id="direct-cafe-db",
+            lat=35.16,
+            lng=128.98,
+            data_quality_score=60,
+        )
+        tag_only_place = self._create_place(
+            name="사상 공유 오피스",
+            category="shelter",
+            external_id="tag-only-cafe-db",
+            lat=35.1602,
+            lng=128.9802,
+            data_quality_score=95,
+        )
+        self._add_tag(tag_only_place, "대형카페", is_verified=False)
+        self._add_tag(tag_only_place, "카페검수", is_verified=False)
+
+        frame = {
+            "target_objects": ["카페"],
+            "result_match_terms": ["음료 마실 카페"],
+            "candidate_place_types": ["카페"],
+            "candidate_category_codes": ["cafe"],
+            "primary_search_queries": ["근처 커피 마실 카페"],
+        }
+
+        candidates = collect_db_candidates(
+            frame,
+            lat=35.16,
+            lng=128.98,
+            limit=10,
+            radius=2000,
+        )
+        candidate_names = [candidate["name"] for candidate in candidates]
+
+        self.assertIn(real_cafe.name, candidate_names)
+        self.assertNotIn(tag_only_place.name, candidate_names)
 
     def test_collect_db_candidates_uses_smoking_frame_terms_without_outdoor_cafe_bleed(self):
         from recommendations.services.ai_search_orchestrator import collect_db_candidates
@@ -6759,6 +7018,32 @@ class RecommendationSearchTests(TestCase):
         self.assertIn("kakao", sources)
         self.assertEqual(data["candidate_counts"]["kakao"], 1)
 
+    @patch("recommendations.views.search_places_by_keyword", return_value={"documents": []})
+    def test_general_map_search_without_radius_does_not_apply_default_radius(self, mock_kakao):
+        far_place = Place.objects.create(
+            name="멀리 있는 테스트 카페",
+            category="cafe",
+            address="부산 테스트구 먼길 100",
+            lat=35.5000,
+            lng=129.5000,
+            source="test",
+            external_id="cafe-far",
+            source_name="test",
+        )
+
+        response = self.client.get(
+            "/api/recommendations/map-search/",
+            {"q": "카페", "lat": 35.1556, "lng": 129.0641, "limit": 10},
+            HTTP_HOST="localhost",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        result_names = [item["name"] for item in data["results"]]
+        self.assertEqual(data["filters"]["radius"], 0)
+        self.assertIn(far_place.name, result_names)
+        self.assertIsNone(mock_kakao.call_args.kwargs["radius"])
+
     def test_recommendation_search_does_not_apply_personalization_for_anonymous_user(self):
         UserPreference.objects.create(
             user=self.user,
@@ -9136,7 +9421,7 @@ class RecommendationSearchTests(TestCase):
 
     @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=False)
     def test_intent_group_urgent_toilet_is_place_search(self):
-        for query in ["화장실 급해", "똥 마려워"]:
+        for query in ["화장실 급해", "똥 마려워", "쇼핑몰 화장실 어디야"]:
             with self.subTest(query=query):
                 plan = build_conversational_search_plan(query)
                 search_plan = plan["search_plan"]
@@ -9147,6 +9432,17 @@ class RecommendationSearchTests(TestCase):
                     "화장실" in search_plan["targetQuery"]
                     or "공중화장실" in search_plan["targetQuery"]
                 )
+
+    @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=False)
+    def test_intent_router_preserves_toilet_exclusion_terms(self):
+        plan = build_conversational_search_plan("서면역 근처 화장실 찾아줘 근데 주차장은 빼줘")
+        search_plan = plan["search_plan"]
+        frame = search_plan["place_intent_frame"]
+
+        self.assertEqual(plan["action"], "search")
+        self.assertEqual(search_plan["intent_group"], "urgent_toilet")
+        self.assertIn("주차장", search_plan["excluded_categories"])
+        self.assertTrue(any("주차장" in item for item in frame["exclusions"]))
 
     @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=False)
     def test_intent_group_health_nearby_is_place_guidance_only(self):
@@ -9334,6 +9630,67 @@ class RecommendationSearchTests(TestCase):
         self.assertTrue(plan["needs_clarification"])
         self.assertIn("어떤 상황", plan["clarification_question"])
         self.assertIn("지역과 목적", plan["clarification_question"])
+        self.assertIn("영화관/공연장", plan["clarification_options"])
+        self.assertIn("쇼핑몰/백화점", plan["clarification_options"])
+        self.assertIn("술집/바", plan["clarification_options"])
+
+    @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=False)
+    def test_intent_router_matches_specific_clarification_options(self):
+        cases = [
+            ("영화관/공연장", "entertainment_place", ["영화관", "공연장"]),
+            ("쇼핑몰/백화점", "shopping_place", ["쇼핑몰", "백화점"]),
+            ("술집/바", "bar_place", ["술집", "바"]),
+        ]
+
+        for query, intent_group, expected_keywords in cases:
+            with self.subTest(query=query):
+                plan = build_conversational_search_plan(query)
+                search_plan = plan["search_plan"]
+
+                self.assertEqual(plan["action"], "search")
+                self.assertEqual(search_plan["intent_group"], intent_group)
+                for keyword in expected_keywords:
+                    self.assertIn(keyword, search_plan["kakaoKeywordCandidates"])
+
+    @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=False)
+    def test_clarification_followup_matches_specific_option(self):
+        previous_context = {
+            "is_clarification_followup": True,
+            "clarification_answer": "쇼핑몰/백화점",
+            "previous_user_query": "좋은 곳 추천해줘",
+            "search_plan": {
+                "originalQuery": "좋은 곳 추천해줘",
+                "targetQuery": "장소",
+                "scenario": "waiting_place",
+                "place_intent_frame": {
+                    "decision_action": "ask_clarification",
+                    "user_goal": "좋은 곳 추천",
+                    "location_mode": "clarification_required",
+                    "situation": "general_place",
+                    "display_label": "장소",
+                    "target_objects": ["장소"],
+                    "candidate_place_types": ["장소"],
+                    "search_queries": [],
+                    "result_match_terms": [],
+                    "constraints": [],
+                    "exclusions": [],
+                    "confidence": 0.5,
+                },
+            },
+        }
+
+        plan = build_conversational_search_plan(
+            "쇼핑몰/백화점",
+            lat=35.1556,
+            lng=129.0641,
+            previous_context=previous_context,
+        )
+        search_plan = plan["search_plan"]
+
+        self.assertEqual(plan["action"], "search")
+        self.assertEqual(search_plan["intent_group"], "shopping_place")
+        self.assertIn("쇼핑몰", search_plan["kakaoKeywordCandidates"])
+        self.assertIn("백화점", search_plan["kakaoKeywordCandidates"])
 
     @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=False)
     def test_intent_router_asks_for_ambiguous_place_queries(self):
@@ -10320,6 +10677,88 @@ class RecommendationSearchTests(TestCase):
         self.assertEqual(plan["location"]["fallback"], "current_location")
         self.assertEqual(plan["search_plan"]["scenario"], "restaurant")
         self.assertIn("혼자 이용하기 좋음", plan["conditions"])
+
+    @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=False)
+    def test_ai_intent_planner_local_rules_handle_common_short_queries(self):
+        from recommendations.services.ai_intent_planner import build_ai_intent_plan
+
+        cases = [
+            ("배고파", ["식당"], ["식당", "맛집"]),
+            ("카페/음료 마실 곳", ["카페"], ["카페", "음료 카페"]),
+            ("근처에 콘센트 있는 카페 추천해줘", ["카페"], ["작업 카페", "콘센트 카페"]),
+            ("전시", ["전시관"], ["전시관", "박물관"]),
+            ("술집/바", ["술집"], ["술집", "주점"]),
+            ("쇼핑몰/백화점", ["쇼핑몰"], ["쇼핑몰", "백화점"]),
+            ("쇼핑할 곳", ["쇼핑몰"], ["쇼핑몰", "백화점"]),
+            ("근처 실내 체험 할 곳 찾아줘", ["실내 체험"], ["보드게임카페", "방탈출"]),
+            ("화장실 급해", ["화장실"], ["공중화장실", "화장실"]),
+            ("담배 필 곳", ["흡연구역"], ["흡연구역", "흡연실"]),
+            ("하단역 근처 쌀국수 맛집", ["쌀국수"], ["쌀국수", "베트남 음식점"]),
+            ("목마름", ["음료 살 곳"], ["카페", "음료 카페", "편의점"]),
+            ("물 마실 곳", ["음료 살 곳"], ["편의점", "카페"]),
+        ]
+
+        for query, expected_targets, expected_queries in cases:
+            with self.subTest(query=query):
+                plan = build_ai_intent_plan(query, lat=35.1556, lng=129.0641)
+                frame = plan["frame"]
+
+                self.assertEqual(plan["action"], "search")
+                for target in expected_targets:
+                    self.assertIn(target, frame["target_objects"])
+                for search_query in expected_queries:
+                    self.assertIn(search_query, frame["primary_search_queries"])
+                self.assertEqual(plan["ai_debug"]["planner"]["status"], "local_rule")
+
+    @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=False)
+    def test_ai_intent_planner_local_rules_ask_for_broad_activity_clarification(self):
+        from recommendations.services.ai_intent_planner import build_ai_intent_plan
+
+        plan = build_ai_intent_plan("놀거리 액티비티", lat=35.1556, lng=129.0641)
+
+        self.assertEqual(plan["action"], "ask_clarification")
+        self.assertFalse(plan["can_search_now"])
+        self.assertIn("놀거리", plan["clarification"]["question"])
+        self.assertIn(
+            "실내 체험",
+            [option["value"] for option in plan["clarification"]["options"]],
+        )
+
+    @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=False)
+    def test_ai_intent_planner_local_rules_extract_explicit_location(self):
+        from recommendations.services.ai_intent_planner import build_ai_intent_plan
+
+        cases = [
+            ("서면에서 쇼핑할 곳", "서면", "쇼핑몰"),
+            ("서면 근처 실내체험", "서면", "실내 체험"),
+            ("하단역 쌀국수 맛집", "하단역", "쌀국수"),
+        ]
+
+        for query, expected_anchor, expected_target in cases:
+            with self.subTest(query=query):
+                plan = build_ai_intent_plan(query, lat=35.1556, lng=129.0641)
+                frame = plan["frame"]
+
+                self.assertEqual(plan["action"], "search")
+                self.assertEqual(frame["location_mode"], "explicit")
+                self.assertEqual(frame["anchor_location"], expected_anchor)
+                self.assertIn(expected_target, frame["target_objects"])
+
+    @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=False)
+    def test_ai_intent_planner_balances_thirst_between_cafe_and_convenience(self):
+        from recommendations.services.ai_intent_planner import build_ai_intent_plan
+
+        thirst_plan = build_ai_intent_plan("목마름", lat=35.1556, lng=129.0641)
+        water_plan = build_ai_intent_plan("물 마실 곳", lat=35.1556, lng=129.0641)
+
+        self.assertEqual(thirst_plan["frame"]["target_objects"], ["음료 살 곳"])
+        self.assertEqual(thirst_plan["frame"]["primary_search_queries"][:2], ["카페", "음료 카페"])
+        self.assertIn("편의점", thirst_plan["frame"]["primary_search_queries"])
+        self.assertEqual(thirst_plan["frame"]["ranking_policy"], "evidence_first")
+
+        self.assertEqual(water_plan["frame"]["target_objects"], ["음료 살 곳"])
+        self.assertEqual(water_plan["frame"]["primary_search_queries"][0], "편의점")
+        self.assertIn("카페", water_plan["frame"]["primary_search_queries"])
 
     @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=False)
     def test_conversational_search_planner_asks_for_ambiguous_reference_without_context(self):

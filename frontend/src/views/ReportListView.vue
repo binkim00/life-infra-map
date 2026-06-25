@@ -15,6 +15,7 @@ const reporterMessageByReport = ref({})
 const reportedUserMessageByReport = ref({})
 const penaltyByReport = ref({})
 const openedReportIds = ref(new Set())
+const statusFilter = ref('all')
 
 const penaltyOptions = [
   ['warning', '경고만'],
@@ -23,6 +24,13 @@ const penaltyOptions = [
   ['suspend_30_days', '30일 정지'],
   ['suspend_1_year', '1년 정지'],
   ['permanent_ban', '영구밴'],
+]
+
+const reportStatusOptions = [
+  { value: 'all', label: '전체' },
+  { value: 'pending', label: '대기' },
+  { value: 'passed', label: '패스' },
+  { value: 'penalized', label: '조치 완료' },
 ]
 
 const formatTargetType = (type) => {
@@ -55,6 +63,8 @@ const getUserLabel = (nickname, username, id) => {
 
 const isReportOpen = (reportId) => openedReportIds.value.has(reportId)
 
+const isReportProcessed = (report) => report?.status && report.status !== 'pending'
+
 const toggleReport = (reportId) => {
   const next = new Set(openedReportIds.value)
 
@@ -67,13 +77,25 @@ const toggleReport = (reportId) => {
   openedReportIds.value = next
 }
 
-const fetchPendingReports = async () => {
-  const response = await getReports({ status: 'pending' })
+const initializeReportState = (reportList) => {
+  memoByReport.value = Object.fromEntries(
+    reportList.map((report) => [report.id, memoByReport.value[report.id] ?? report.admin_memo ?? '']),
+  )
+  reporterMessageByReport.value = Object.fromEntries(
+    reportList.map((report) => [report.id, reporterMessageByReport.value[report.id] ?? '']),
+  )
+  reportedUserMessageByReport.value = Object.fromEntries(
+    reportList.map((report) => [report.id, reportedUserMessageByReport.value[report.id] ?? '']),
+  )
+  penaltyByReport.value = Object.fromEntries(
+    reportList.map((report) => [report.id, penaltyByReport.value[report.id] ?? 'warning']),
+  )
+}
+
+const fetchReportList = async () => {
+  const response = await getReports({ status: statusFilter.value })
   reports.value = response.data
-  memoByReport.value = Object.fromEntries(response.data.map((report) => [report.id, '']))
-  reporterMessageByReport.value = Object.fromEntries(response.data.map((report) => [report.id, '']))
-  reportedUserMessageByReport.value = Object.fromEntries(response.data.map((report) => [report.id, '']))
-  penaltyByReport.value = Object.fromEntries(response.data.map((report) => [report.id, 'warning']))
+  initializeReportState(response.data)
 }
 
 const fetchReports = async () => {
@@ -86,7 +108,7 @@ const fetchReports = async () => {
     isLoading.value = true
     errorMessage.value = ''
 
-    await fetchPendingReports()
+    await fetchReportList()
   } catch (error) {
     console.error(error)
 
@@ -103,18 +125,21 @@ const fetchReports = async () => {
 
 const handleProcess = async (report, action) => {
   try {
-    await processReport(report.id, {
+    const response = await processReport(report.id, {
       action,
       admin_memo: memoByReport.value[report.id] || '',
       penalty_type: penaltyByReport.value[report.id] || 'warning',
       penalty_reason: memoByReport.value[report.id] || report.reason,
     })
 
-    reports.value = reports.value.filter((item) => item.id !== report.id)
-
-    const next = new Set(openedReportIds.value)
-    next.delete(report.id)
-    openedReportIds.value = next
+    const updatedReport = response.data
+    reports.value = reports.value.map((item) => (
+      item.id === report.id ? { ...item, ...updatedReport } : item
+    ))
+    memoByReport.value = {
+      ...memoByReport.value,
+      [report.id]: updatedReport.admin_memo || '',
+    }
   } catch (error) {
     console.error(error)
     alert('신고 처리에 실패했습니다.')
@@ -164,10 +189,30 @@ onMounted(() => {
 
         <nav class="admin-tabs">
           <RouterLink to="/admin/reports" class="admin-tab">신고 내역</RouterLink>
+          <RouterLink to="/admin/place-reports" class="admin-tab">장소 제보</RouterLink>
           <RouterLink to="/admin/users" class="admin-tab">유저 관리</RouterLink>
           <RouterLink to="/admin/inquiries" class="admin-tab">문의 관리</RouterLink>
         </nav>
       </header>
+
+      <section class="report-toolbar">
+        <label>
+          <span>처리 상태</span>
+          <select v-model="statusFilter" :disabled="isLoading" @change="fetchReports">
+            <option
+              v-for="option in reportStatusOptions"
+              :key="option.value"
+              :value="option.value"
+            >
+              {{ option.label }}
+            </option>
+          </select>
+        </label>
+
+        <button type="button" :disabled="isLoading" @click="fetchReports">
+          새로고침
+        </button>
+      </section>
 
       <p v-if="isLoading" class="status-text">
         신고 내역을 불러오는 중입니다.
@@ -237,13 +282,13 @@ onMounted(() => {
                 </td>
                 <td>{{ formatDateTime(report.created_at) }}</td>
                 <td>
-                  <span class="status-badge pending">
+                  <span :class="['status-badge', report.status || 'pending']">
                     {{ formatStatus(report.status) }}
                   </span>
                 </td>
                 <td>
                   <button type="button" class="row-action" @click="toggleReport(report.id)">
-                    {{ isReportOpen(report.id) ? '닫기' : '처리' }}
+                    {{ isReportOpen(report.id) ? '닫기' : (isReportProcessed(report) ? '보기' : '처리') }}
                   </button>
                 </td>
               </tr>
@@ -267,7 +312,28 @@ onMounted(() => {
                       원문 보기
                     </RouterLink>
 
-                    <section class="process-panel">
+                    <section v-if="isReportProcessed(report)" class="process-panel process-panel-readonly">
+                      <h3>처리 내역</h3>
+                      <dl class="process-summary-list">
+                        <div>
+                          <dt>상태</dt>
+                          <dd>{{ formatStatus(report.status) }}</dd>
+                        </div>
+                        <div>
+                          <dt>처리자</dt>
+                          <dd>{{ report.processed_by_username || '-' }}</dd>
+                        </div>
+                        <div>
+                          <dt>처리일</dt>
+                          <dd>{{ formatDateTime(report.processed_at) }}</dd>
+                        </div>
+                      </dl>
+                      <p v-if="report.admin_memo" class="process-memo">
+                        {{ report.admin_memo }}
+                      </p>
+                    </section>
+
+                    <section v-else class="process-panel">
                       <h3>신고 처리</h3>
                       <textarea v-model="memoByReport[report.id]" rows="3" placeholder="관리자 메모 또는 조치 사유"></textarea>
 
@@ -319,7 +385,7 @@ onMounted(() => {
         </table>
 
         <p v-if="reports.length === 0" class="empty-text">
-          접수된 신고 내역이 없습니다.
+          {{ statusFilter === 'pending' ? '접수된 신고 내역이 없습니다.' : '표시할 신고 내역이 없습니다.' }}
         </p>
       </section>
     </section>
@@ -389,6 +455,40 @@ onMounted(() => {
   border-color: #f59e0b;
   background: #fff7ed;
   color: #f59e0b;
+}
+
+.report-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  align-items: end;
+  margin-bottom: 14px;
+}
+
+.report-toolbar label {
+  display: grid;
+  gap: 6px;
+  color: #667085;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.report-toolbar select,
+.report-toolbar button {
+  min-height: 40px;
+  border: 1px solid #d0d5dd;
+  border-radius: 12px;
+  background: #ffffff;
+  color: #344054;
+  padding: 0 12px;
+  font: inherit;
+  font-weight: 900;
+}
+
+.report-toolbar button {
+  border-color: #f59e0b;
+  color: #f59e0b;
+  cursor: pointer;
 }
 
 .admin-table-wrap {
@@ -466,6 +566,16 @@ onMounted(() => {
 .status-badge.pending {
   background: #fff7ed;
   color: #f97316;
+}
+
+.status-badge.passed {
+  background: #ecfdf3;
+  color: #027a48;
+}
+
+.status-badge.penalized {
+  background: #fef3f2;
+  color: #b42318;
 }
 
 .title-cell {
@@ -593,6 +703,41 @@ onMounted(() => {
   background: #ffffff;
 }
 
+.process-panel-readonly {
+  background: #f9fafb;
+}
+
+.process-summary-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+
+.process-summary-list div {
+  display: grid;
+  gap: 4px;
+}
+
+.process-summary-list dt {
+  color: #98a2b3;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.process-summary-list dd {
+  margin: 0;
+  color: #344054;
+  font-weight: 900;
+}
+
+.process-memo {
+  margin: 12px 0 0;
+  color: #344054;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
 .process-panel textarea,
 .process-panel select,
 .message-row input {
@@ -681,7 +826,8 @@ onMounted(() => {
   }
 
   .detail-grid,
-  .message-row {
+  .message-row,
+  .process-summary-list {
     grid-template-columns: 1fr;
   }
 }

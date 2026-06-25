@@ -27,11 +27,6 @@ const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
     {
-      path: '/boards/:boardType/:postId/edit',
-      name: 'board-edit',
-      component: BoardEditView,
-    },
-    {
       path: '/admin/reports',
       name: 'admin-reports',
       component: ReportListView,
@@ -127,16 +122,6 @@ const router = createRouter({
       component: BoardListView,
     },
     {
-      path: '/boards/:boardType/write',
-      name: 'board-create',
-      component: BoardCreateView,
-    },
-    {
-      path: '/boards/:boardType/:postId',
-      name: 'board-detail',
-      component: BoardDetailView,
-    },
-    {
       path: '/',
       name: 'home',
       component: HomeView,
@@ -151,11 +136,7 @@ const router = createRouter({
     },
     {
       path: '/recommendation-test',
-      name: 'recommendation-test',
-      component: HomeView,
-      props: {
-        initialTab: 'map',
-      },
+      redirect: { name: 'map-search' },
     },
     {
       path: '/login',

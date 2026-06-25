@@ -45,6 +45,7 @@ CATEGORY_DISPLAY_NAMES = {
     "toilet": "화장실",
     "freewifi": "무료 와이파이",
     "parking": "주차장",
+    "shopping": "쇼핑",
 }
 
 SOURCE_TYPE_LABELS = {

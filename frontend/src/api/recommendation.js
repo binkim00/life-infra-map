@@ -1,7 +1,4 @@
-import axios from 'axios'
 import api from '@/api/axios'
-
-const API_BASE_URL = 'http://127.0.0.1:8000/api'
 
 export const aiSearchRecommendations = async ({
   query,
@@ -11,7 +8,7 @@ export const aiSearchRecommendations = async ({
   radius = null,
   ...extraPayload
 }) => {
-  const response = await axios.post(`${API_BASE_URL}/recommendations/ai-search/`, {
+  const response = await api.post('/recommendations/ai-search/', {
     query,
     lat,
     lng,
@@ -24,7 +21,7 @@ export const aiSearchRecommendations = async ({
 }
 
 export const checkSearchSafety = async ({ query }) => {
-  const response = await axios.post(`${API_BASE_URL}/recommendations/search-safety/`, {
+  const response = await api.post('/recommendations/search-safety/', {
     query,
   })
 
@@ -39,7 +36,7 @@ export const buildConversationalSearchPlan = async ({
   previousContext = null,
   ...extraPayload
 }) => {
-  const response = await axios.post(`${API_BASE_URL}/recommendations/conversational-search-plan/`, {
+  const response = await api.post('/recommendations/conversational-search-plan/', {
     query,
     lat,
     lng,
@@ -61,7 +58,7 @@ export const runAiWebSearch = async ({
   condition = {},
   existingResultsSummary = {},
 }) => {
-  const response = await axios.post(`${API_BASE_URL}/recommendations/ai-web-search/`, {
+  const response = await api.post('/recommendations/ai-web-search/', {
     query,
     lat,
     lng,
@@ -84,7 +81,7 @@ export const getSavedPlaces = async ({
   radius = null,
   limit = 100,
 } = {}) => {
-  const response = await axios.get(`${API_BASE_URL}/recommendations/places/`, {
+  const response = await api.get('/recommendations/places/', {
     params: {
       q,
       category,
@@ -105,25 +102,30 @@ export const searchMapPlaces = async ({
   source = 'all',
   lat = null,
   lng = null,
-  radius = 3000,
+  radius = null,
   limit = 30,
 } = {}) => {
-  const response = await axios.get(`${API_BASE_URL}/recommendations/map-search/`, {
-    params: {
-      q,
-      source,
-      lat,
-      lng,
-      radius,
-      limit,
-    },
+  const params = {
+    q,
+    source,
+    lat,
+    lng,
+    limit,
+  }
+
+  if (radius !== null && radius !== undefined && radius !== '') {
+    params.radius = radius
+  }
+
+  const response = await api.get('/recommendations/map-search/', {
+    params,
   })
 
   return response.data
 }
 
 export const getKakaoPlaceTags = async (externalIds = []) => {
-  const response = await axios.get(`${API_BASE_URL}/recommendations/kakao-place-tags/`, {
+  const response = await api.get('/recommendations/kakao-place-tags/', {
     params: {
       external_ids: externalIds.join(','),
     },

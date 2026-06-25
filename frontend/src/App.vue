@@ -129,7 +129,7 @@ const mascotState = computed(() => {
     return { key: 'home', prop: '⌕', message: '필요한 장소 냄새 맡는 중' }
   }
 
-  if (routeName === 'recommendation-test') {
+  if (routeName === 'map-search') {
     return { key: 'map', prop: '⌖', message: '지도 위를 총총 탐색 중' }
   }
 

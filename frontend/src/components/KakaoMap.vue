@@ -43,6 +43,10 @@ const emit = defineEmits(['select-place', 'center-change', 'marker-target-change
 
 const mapContainer = ref(null)
 const MARKER_OVERLAP_PIXEL_THRESHOLD = 30
+const KAKAO_MAP_SDK_SELECTOR =
+  'script[data-kakao-map-sdk="true"], script[src*="dapi.kakao.com/v2/maps/sdk.js"]'
+const KAKAO_MAP_LOAD_TIMEOUT_MS = 12000
+const KAKAO_MAP_LOAD_ERROR_MESSAGE = '카카오맵 SDK를 불러오지 못했습니다.'
 
 let map = null
 let markers = []
@@ -52,37 +56,90 @@ let activeInfoWindow = null
 let lastFitBoundsKey = null
 let markerTargetFrame = null
 let shouldSkipNextMapClickClose = false
+let kakaoMapSdkLoadPromise = null
+
+const hasKakaoMapServices = () => Boolean(window.kakao?.maps?.services)
 
 const loadKakaoMapScript = () => {
-  return new Promise((resolve, reject) => {
-    if (window.kakao && window.kakao.maps && window.kakao.maps.services) {
-      resolve()
+  if (hasKakaoMapServices()) {
+    return Promise.resolve()
+  }
+
+  if (kakaoMapSdkLoadPromise) {
+    return kakaoMapSdkLoadPromise
+  }
+
+  kakaoMapSdkLoadPromise = new Promise((resolve, reject) => {
+    const kakaoKey = import.meta.env.VITE_KAKAO_JAVASCRIPT_KEY
+    const existingScript = document.querySelector(KAKAO_MAP_SDK_SELECTOR)
+    let settled = false
+
+    const settle = (callback) => {
+      if (settled) return
+      settled = true
+      window.clearTimeout(timeoutId)
+      callback()
+    }
+
+    const resolveAfterMapsLoad = () => {
+      if (hasKakaoMapServices()) {
+        settle(resolve)
+        return
+      }
+
+      if (!window.kakao?.maps?.load) {
+        settle(() => reject(new Error(KAKAO_MAP_LOAD_ERROR_MESSAGE)))
+        return
+      }
+
+      window.kakao.maps.load(() => {
+        if (hasKakaoMapServices()) {
+          settle(resolve)
+          return
+        }
+
+        settle(() => reject(new Error(KAKAO_MAP_LOAD_ERROR_MESSAGE)))
+      })
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      settle(() => reject(new Error(KAKAO_MAP_LOAD_ERROR_MESSAGE)))
+    }, KAKAO_MAP_LOAD_TIMEOUT_MS)
+
+    if (existingScript) {
+      existingScript.dataset.kakaoMapSdk = 'true'
+      if (window.kakao?.maps) {
+        resolveAfterMapsLoad()
+        return
+      }
+
+      existingScript.addEventListener('load', resolveAfterMapsLoad, { once: true })
+      existingScript.addEventListener(
+        'error',
+        () => settle(() => reject(new Error(KAKAO_MAP_LOAD_ERROR_MESSAGE))),
+        { once: true },
+      )
       return
     }
 
-    const kakaoKey = import.meta.env.VITE_KAKAO_JAVASCRIPT_KEY
-
     if (!kakaoKey) {
-      reject(new Error('VITE_KAKAO_JAVASCRIPT_KEY가 설정되지 않았습니다.'))
+      settle(() => reject(new Error('VITE_KAKAO_JAVASCRIPT_KEY가 설정되지 않았습니다.')))
       return
     }
 
     const script = document.createElement('script')
-    script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${kakaoKey}&autoload=false&libraries=services`
+    script.dataset.kakaoMapSdk = 'true'
+    script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${encodeURIComponent(kakaoKey)}&autoload=false&libraries=services`
     script.async = true
-
-    script.onload = () => {
-      window.kakao.maps.load(() => {
-        resolve()
-      })
-    }
-
-    script.onerror = () => {
-      reject(new Error('카카오맵 SDK를 불러오지 못했습니다.'))
-    }
-
+    script.onload = resolveAfterMapsLoad
+    script.onerror = () => settle(() => reject(new Error(KAKAO_MAP_LOAD_ERROR_MESSAGE)))
     document.head.appendChild(script)
+  }).catch((error) => {
+    kakaoMapSdkLoadPromise = null
+    throw error
   })
+
+  return kakaoMapSdkLoadPromise
 }
 
 const initMap = () => {

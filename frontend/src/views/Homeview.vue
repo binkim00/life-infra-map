@@ -14,6 +14,13 @@ import KakaoMap from '@/components/KakaoMap.vue'
 import { useAuthStore } from '@/stores/auth'
 
 const IS_DEV = import.meta.env.DEV
+const KAKAO_MAP_SDK_SELECTOR =
+  'script[data-kakao-map-sdk="true"], script[src*="dapi.kakao.com/v2/maps/sdk.js"]'
+const KAKAO_MAP_LOAD_TIMEOUT_MS = 12000
+const KAKAO_MAP_LOAD_ERROR_MESSAGE =
+  '카카오 지도 서비스를 불러오지 못했습니다. 잠시 후 다시 검색해 주세요.'
+
+let kakaoMapSdkLoadPromise = null
 
 const props = defineProps({
   initialTab: {
@@ -726,7 +733,6 @@ const beginMainSearch = ({ preserveClarificationThread = false } = {}) => {
   preserveBackendResultOrder.value = false
   pendingClarification.value = null
   if (!preserveClarificationThread) {
-    conversationMessages.value = []
     clarificationThread.value = []
   }
   baseLocationCandidates.value = []
@@ -748,6 +754,18 @@ const setMainSearchError = (message) => {
   searchErrorMessage.value = fallbackMessage
   aiSearchError.value = fallbackMessage
   locationMessage.value = fallbackMessage
+}
+
+const handleKakaoMapLoadError = (error) => {
+  console.error(error)
+  baseLocationCandidates.value = []
+  pendingBaseLocationSearch.value = null
+  selectedPlace.value = null
+  showDetailPanel.value = false
+  detailFrameError.value = false
+  isSearchingMap.value = false
+  loadingMessage.value = ''
+  setMainSearchError(KAKAO_MAP_LOAD_ERROR_MESSAGE)
 }
 
 const getDisplayResultKey = (place = {}) => {
@@ -912,6 +930,13 @@ const resultCountText = computed(() => {
 
 const mapParserStatus = computed(() => {
   if (!mapAiParse.value) {
+    return null
+  }
+  if (
+    !displayResults.value.length &&
+    !isSearchingMap.value &&
+    ['empty', 'error', 'idle'].includes(searchResultStatus.value)
+  ) {
     return null
   }
 
@@ -1203,6 +1228,16 @@ const shouldShowResultPanel = computed(() => {
   )
 })
 
+const shouldShowSearchMapContent = computed(() => {
+  return Boolean(
+    activeTab.value === 'map' ||
+    isSearchingMap.value ||
+    displayResults.value.length ||
+    shouldShowAiWebSearchPanel.value ||
+    baseLocationCandidates.value.length,
+  )
+})
+
 const hasSearchExperienceContent = computed(() => {
   return Boolean(
     mapSearchKeyword.value.trim() ||
@@ -1277,6 +1312,10 @@ const syncClarificationThreadFromMessages = () => {
   clarificationThread.value = conversationMessages.value.filter((message) => {
     return ['user', 'assistant'].includes(message.role)
   })
+}
+
+const trimConversationMessages = (messages = [], limit = 12) => {
+  return messages.filter((item) => item && item.text).slice(-limit)
 }
 
 const getClarificationStateKind = (plan = {}, partialFrame = {}) => {
@@ -1371,7 +1410,8 @@ const setClarificationThread = (query, plan, message) => {
   conversationModeStarted.value = true
   followUpInput.value = ''
   clearTopSearchInputsForClarification()
-  conversationMessages.value = [
+  conversationMessages.value = trimConversationMessages([
+    ...conversationMessages.value,
     makeConversationMessage({
       role: 'user',
       type: 'search',
@@ -1385,7 +1425,7 @@ const setClarificationThread = (query, plan, message) => {
       options: clarificationOptions,
       plan,
     }),
-  ].filter(Boolean).slice(-3)
+  ])
   syncClarificationThreadFromMessages()
   focusFollowUpInput()
 }
@@ -1393,7 +1433,8 @@ const setClarificationThread = (query, plan, message) => {
 const setDecisionConversationThread = (query, plan, message, type = 'out_of_scope') => {
   const userText = String(query || '').trim()
   const assistantText = String(message || plan?.message || '').trim()
-  conversationMessages.value = [
+  conversationMessages.value = trimConversationMessages([
+    ...conversationMessages.value,
     makeConversationMessage({
       role: 'user',
       type: 'search',
@@ -1406,7 +1447,7 @@ const setDecisionConversationThread = (query, plan, message, type = 'out_of_scop
       content: assistantText,
       plan,
     }),
-  ].filter(Boolean)
+  ])
   syncClarificationThreadFromMessages()
 }
 
@@ -1923,28 +1964,88 @@ const formatSearchRadius = (radius) => {
   return `${radius}m`
 }
 
+const hasKakaoMapServices = () => Boolean(window.kakao?.maps?.services)
+
 const waitForKakaoServices = () => {
-  return new Promise((resolve, reject) => {
-    let retryCount = 0
+  if (hasKakaoMapServices()) {
+    return Promise.resolve()
+  }
 
-    const checkLoaded = () => {
-      if (window.kakao && window.kakao.maps && window.kakao.maps.services) {
-        resolve()
-        return
-      }
+  if (kakaoMapSdkLoadPromise) {
+    return kakaoMapSdkLoadPromise
+  }
 
-      retryCount += 1
+  kakaoMapSdkLoadPromise = new Promise((resolve, reject) => {
+    const kakaoKey = import.meta.env.VITE_KAKAO_JAVASCRIPT_KEY
+    const existingScript = document.querySelector(KAKAO_MAP_SDK_SELECTOR)
+    let settled = false
 
-      if (retryCount >= 20) {
-        reject(new Error('카카오 지도 서비스를 불러오지 못했습니다.'))
-        return
-      }
-
-      window.setTimeout(checkLoaded, 250)
+    const settle = (callback) => {
+      if (settled) return
+      settled = true
+      window.clearTimeout(timeoutId)
+      callback()
     }
 
-    checkLoaded()
+    const resolveAfterMapsLoad = () => {
+      if (hasKakaoMapServices()) {
+        settle(resolve)
+        return
+      }
+
+      if (!window.kakao?.maps?.load) {
+        settle(() => reject(new Error(KAKAO_MAP_LOAD_ERROR_MESSAGE)))
+        return
+      }
+
+      window.kakao.maps.load(() => {
+        if (hasKakaoMapServices()) {
+          settle(resolve)
+          return
+        }
+
+        settle(() => reject(new Error(KAKAO_MAP_LOAD_ERROR_MESSAGE)))
+      })
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      settle(() => reject(new Error(KAKAO_MAP_LOAD_ERROR_MESSAGE)))
+    }, KAKAO_MAP_LOAD_TIMEOUT_MS)
+
+    if (existingScript) {
+      existingScript.dataset.kakaoMapSdk = 'true'
+      if (window.kakao?.maps) {
+        resolveAfterMapsLoad()
+        return
+      }
+
+      existingScript.addEventListener('load', resolveAfterMapsLoad, { once: true })
+      existingScript.addEventListener(
+        'error',
+        () => settle(() => reject(new Error(KAKAO_MAP_LOAD_ERROR_MESSAGE))),
+        { once: true },
+      )
+      return
+    }
+
+    if (!kakaoKey) {
+      settle(() => reject(new Error('VITE_KAKAO_JAVASCRIPT_KEY가 설정되지 않았습니다.')))
+      return
+    }
+
+    const script = document.createElement('script')
+    script.dataset.kakaoMapSdk = 'true'
+    script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${encodeURIComponent(kakaoKey)}&autoload=false&libraries=services`
+    script.async = true
+    script.onload = resolveAfterMapsLoad
+    script.onerror = () => settle(() => reject(new Error(KAKAO_MAP_LOAD_ERROR_MESSAGE)))
+    document.head.appendChild(script)
+  }).catch((error) => {
+    kakaoMapSdkLoadPromise = null
+    throw error
   })
+
+  return kakaoMapSdkLoadPromise
 }
 
 const handleSearch = async () => {
@@ -1965,8 +2066,7 @@ const handleSearch = async () => {
     await waitForKakaoServices()
     await performUnifiedMapSearch()
   } catch (error) {
-    console.error(error)
-    locationMessage.value = '카카오 지도 서비스를 불러오는 중입니다. 잠시 후 지도 검색 버튼을 눌러주세요.'
+    handleKakaoMapLoadError(error)
   }
 }
 
@@ -3963,7 +4063,7 @@ const buildClarificationFollowUpPlan = (answer = '') => {
 }
 
 const appendClarificationFollowUpThread = (answer = '', message = '') => {
-  conversationMessages.value = [
+  conversationMessages.value = trimConversationMessages([
     ...conversationMessages.value,
     makeConversationMessage({
       role: 'user',
@@ -3975,7 +4075,7 @@ const appendClarificationFollowUpThread = (answer = '', message = '') => {
       type: 'result_summary',
       content: String(message || '').trim(),
     }),
-  ].filter((item) => item && item.text)
+  ])
 
   syncClarificationThreadFromMessages()
   followUpInput.value = ''
@@ -3986,14 +4086,14 @@ const appendClarificationAnswerMessage = (answer = '') => {
   const text = String(answer || '').trim()
   if (!text) return
 
-  conversationMessages.value = [
+  conversationMessages.value = trimConversationMessages([
     ...conversationMessages.value,
     makeConversationMessage({
       role: 'user',
       type: 'clarification_answer',
       content: text,
     }),
-  ].filter((item) => item && item.text)
+  ])
   syncClarificationThreadFromMessages()
 }
 
@@ -4001,7 +4101,7 @@ const appendSearchSummaryMessage = (message = '') => {
   const text = String(message || '').trim()
   if (!text) return
 
-  conversationMessages.value = [
+  conversationMessages.value = trimConversationMessages([
     ...conversationMessages.value,
     makeConversationMessage({
       role: 'assistant',
@@ -4009,7 +4109,7 @@ const appendSearchSummaryMessage = (message = '') => {
       content: text,
       plan: activeSearchPlan.value || null,
     }),
-  ].filter((item) => item && item.text)
+  ])
   syncClarificationThreadFromMessages()
 }
 
@@ -6090,28 +6190,6 @@ const clearSelectedPlaceIfFilteredOut = () => {
 
 const setResultFilterMode = (filterMode) => {
   resultFilterMode.value = filterMode
-}
-
-const useDefaultMapLocation = () => {
-  activeTab.value = 'map'
-  activeResultView.value = 'map'
-  isResultListCollapsed.value = true
-  mapCenter.value = DEFAULT_CENTER
-  currentLocationPlace.value = [
-    {
-      id: 'default-location',
-      name: '기본 설정 위치',
-      lat: DEFAULT_CENTER.lat,
-      lng: DEFAULT_CENTER.lng,
-      address: '',
-      distance: null,
-      markerColor: 'green',
-      searchSource: 'default_location',
-      sourceLabel: '기준',
-      tags: [makeTag('기본위치', 'category_rule')],
-    },
-  ]
-  locationMessage.value = '기본 설정 위치 기준으로 지도를 표시하고 있습니다.'
 }
 
 const getMatchedTagText = (place) => {
@@ -10700,8 +10778,10 @@ const searchKakaoPlaces = async ({ useMapBounds = false, searchPlanOverride = nu
     return
   }
 
-  if (!window.kakao || !window.kakao.maps || !window.kakao.maps.services) {
-    alert('카카오 지도 서비스를 불러오는 중입니다. 잠시 후 다시 검색해주세요.')
+  try {
+    await waitForKakaoServices()
+  } catch (error) {
+    handleKakaoMapLoadError(error)
     return
   }
 
@@ -10824,8 +10904,10 @@ const searchAiRecommendationsOnMap = async (searchPlanOverride = null) => {
     return
   }
 
-  if (!window.kakao || !window.kakao.maps || !window.kakao.maps.services) {
-    alert('카카오 지도 서비스를 불러오는 중입니다. 잠시 후 다시 검색해주세요.')
+  try {
+    await waitForKakaoServices()
+  } catch (error) {
+    handleKakaoMapLoadError(error)
     return
   }
 
@@ -11001,10 +11083,10 @@ const performUnifiedMapSearch = async ({
   })
 
   if (!useMapBounds) {
-    if (!window.kakao || !window.kakao.maps || !window.kakao.maps.services) {
-      alert('移댁뭅??吏???쒕퉬?ㅻ? 遺덈윭?ㅻ뒗 以묒엯?덈떎. ?좎떆 ???ㅼ떆 寃?됲빐二쇱꽭??')
-      isSearchingMap.value = false
-      loadingMessage.value = ''
+    try {
+      await waitForKakaoServices()
+    } catch (error) {
+      handleKakaoMapLoadError(error)
       return
     }
 
@@ -11164,10 +11246,10 @@ const performUnifiedMapSearch = async ({
       : 'distance'
     aiSearchKeyword.value = keyword
     if (useMapBounds) {
-      if (!window.kakao || !window.kakao.maps || !window.kakao.maps.services) {
-        alert('카카오 지도 서비스를 불러오는 중입니다. 잠시 후 다시 검색해 주세요.')
-        isSearchingMap.value = false
-        loadingMessage.value = ''
+      try {
+        await waitForKakaoServices()
+      } catch (error) {
+        handleKakaoMapLoadError(error)
         return
       }
 
@@ -11237,9 +11319,13 @@ const runAiPresetSearch = async (query) => {
 
 const runLandingPresetSearch = async (query) => {
   conversationModeStarted.value = true
-  searchKeyword.value = query
+  searchKeyword.value = ''
+  mapSearchKeyword.value = query
+  activeTab.value = 'search'
+  activeResultView.value = 'results'
+  isResultListCollapsed.value = false
   await nextTick()
-  await handleSearch()
+  await performUnifiedMapSearch({ allowImplicitCurrentContext: true })
 }
 
 const searchCurrentMapView = () => {
@@ -11657,15 +11743,6 @@ onBeforeUnmount(() => {
 
             <button
               type="button"
-              class="map-location-button"
-              :disabled="isSearchingMap"
-              @click="useDefaultMapLocation"
-            >
-              기본 위치
-            </button>
-
-            <button
-              type="button"
               class="map-reset-button map-header-reset"
               :disabled="isSearchingMap"
               @click="resetMapSearch"
@@ -11804,7 +11881,7 @@ onBeforeUnmount(() => {
         </div>
 
         <div
-          v-if="activeTab === 'search' && hasSearchExperienceContent && !isClarificationOnlyState"
+          v-if="activeTab === 'search' && shouldShowSearchMapContent && !isClarificationOnlyState"
           class="view-switch"
           :class="{ 'is-map-active': activeResultView === 'map' }"
           aria-label="결과와 지도 보기 전환"
@@ -11881,7 +11958,7 @@ onBeforeUnmount(() => {
       </section>
 
       <div
-        v-if="!isClarificationOnlyState"
+        v-if="!isClarificationOnlyState && shouldShowSearchMapContent"
         class="map-content search-reveal-area"
         :class="{
           'has-result-list': shouldShowResultPanel,
@@ -14762,6 +14839,8 @@ h1 {
 
   .map-area {
     order: 1;
+    height: var(--workspace-height);
+    min-height: 520px;
   }
 
   .place-detail-panel {
@@ -14785,16 +14864,49 @@ h1 {
     left: auto;
     z-index: 10;
     width: 100%;
-    height: clamp(260px, 38vh, 360px);
-    max-height: clamp(260px, 38vh, 360px);
+    height: clamp(360px, 46vh, 560px);
+    max-height: clamp(360px, 46vh, 560px);
     min-height: 0;
     margin-top: -18px;
     border-radius: 22px 22px 18px 18px;
   }
 
   .map-content.has-selected-place .place-list-panel {
-    height: clamp(220px, 32vh, 320px);
-    max-height: clamp(220px, 32vh, 320px);
+    height: clamp(340px, 44vh, 520px);
+    max-height: clamp(340px, 44vh, 520px);
+    min-height: 0;
+  }
+
+  .map-content.is-result-focused .place-list-panel {
+    order: 2;
+    height: clamp(360px, 46vh, 560px);
+    max-height: clamp(360px, 46vh, 560px);
+    min-height: 0;
+    margin-top: -18px;
+  }
+
+  .map-content.is-result-focused .map-area {
+    display: block;
+    order: 1;
+    height: var(--workspace-height);
+    min-height: 520px;
+  }
+
+  .map-content.is-result-focused .place-detail-panel {
+    order: 3;
+  }
+
+  .map-content.is-map-focused .map-area {
+    order: 1;
+    height: var(--workspace-height);
+    min-height: 520px;
+  }
+
+  .map-content.is-map-focused .place-list-panel {
+    display: flex;
+    order: 2;
+    height: clamp(220px, 32vh, 340px);
+    max-height: clamp(220px, 32vh, 340px);
     min-height: 0;
   }
 
@@ -14818,6 +14930,19 @@ h1 {
     max-height: none;
   }
 
+}
+
+@media (max-width: 1100px) and (max-height: 820px) {
+  .map-content.is-result-focused .place-list-panel {
+    height: clamp(340px, 44vh, 520px);
+    max-height: clamp(340px, 44vh, 520px);
+    min-height: 0;
+  }
+
+  .map-content.is-result-focused .kakao-frame-section {
+    height: 260px;
+    min-height: 220px;
+  }
 }
 
 @media (max-width: 768px) {

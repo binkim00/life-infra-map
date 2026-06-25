@@ -22,9 +22,11 @@ def search_places_by_keyword(keyword, lat=None, lng=None, radius=1000, size=5):
         params.update({
             "x": lng,
             "y": lat,
-            "radius": radius,
             "sort": "distance",
         })
+
+        if radius:
+            params["radius"] = radius
 
     response = requests.get(
         KAKAO_KEYWORD_SEARCH_URL,

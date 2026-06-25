@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import {
   approvePlaceReport,
   fetchAdminPlaceReportDetail,
@@ -7,14 +7,14 @@ import {
   rejectPlaceReport,
 } from '@/api/recommendation'
 import { useAuthStore } from '@/stores/auth'
-import { useRouter } from 'vue-router'
+import { RouterLink, useRouter } from 'vue-router'
 
 const authStore = useAuthStore()
 const router = useRouter()
 
 const reports = ref([])
 const selectedReport = ref(null)
-const statusFilter = ref('pending')
+const statusFilter = ref('')
 const typeFilter = ref('')
 const adminNote = ref('')
 const message = ref('')
@@ -30,10 +30,10 @@ const meta = ref({
 })
 
 const statusOptions = [
+  { value: '', label: '전체' },
   { value: 'pending', label: '검토 대기' },
   { value: 'approved', label: '승인' },
   { value: 'rejected', label: '반려' },
-  { value: '', label: '전체' },
 ]
 
 const typeOptions = [
@@ -43,6 +43,8 @@ const typeOptions = [
   { value: 'tag_suggestion', label: '태그 제안' },
   { value: 'wrong_info', label: '오류 제보' },
 ]
+
+const isSelectedReportPending = computed(() => selectedReport.value?.status === 'pending')
 
 const fetchReports = async () => {
   try {
@@ -141,9 +143,18 @@ onMounted(() => {
   <main class="admin-report-page">
     <section class="admin-report-container">
       <header class="page-title">
-        <p class="eyebrow">ADMIN</p>
-        <h1>장소 제보 검증</h1>
-        <p>사용자 제보를 검토하고 승인 또는 반려할 수 있습니다.</p>
+        <div>
+          <p class="eyebrow">ADMIN</p>
+          <h1>장소 제보 검증</h1>
+          <p>사용자 제보를 검토하고 승인 또는 반려할 수 있습니다.</p>
+        </div>
+
+        <nav class="admin-tabs">
+          <RouterLink to="/admin/reports" class="admin-tab">신고 내역</RouterLink>
+          <RouterLink to="/admin/place-reports" class="admin-tab">장소 제보</RouterLink>
+          <RouterLink to="/admin/users" class="admin-tab">유저 관리</RouterLink>
+          <RouterLink to="/admin/inquiries" class="admin-tab">문의 관리</RouterLink>
+        </nav>
       </header>
 
       <section class="panel filter-panel">
@@ -236,7 +247,11 @@ onMounted(() => {
 
             <p v-if="message" class="status-message">{{ message }}</p>
 
-            <div class="review-actions">
+            <p v-if="!isSelectedReportPending" class="status-message">
+              이미 처리된 제보입니다.
+            </p>
+
+            <div v-else class="review-actions">
               <button
                 type="button"
                 class="approve"
@@ -276,6 +291,13 @@ onMounted(() => {
   gap: 14px;
 }
 
+.page-title {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-end;
+}
+
 .eyebrow,
 .page-title p {
   margin: 0;
@@ -296,6 +318,30 @@ h2 {
 .page-title p {
   color: #667085;
   font-weight: 700;
+}
+
+.admin-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.admin-tab {
+  padding: 10px 14px;
+  border: 1px solid #d0d5dd;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #344054;
+  font-size: 14px;
+  font-weight: 900;
+  text-decoration: none;
+}
+
+.admin-tab.router-link-active {
+  border-color: #2563eb;
+  background: #eff6ff;
+  color: #2563eb;
 }
 
 .panel {
@@ -498,6 +544,15 @@ button:disabled {
 }
 
 @media (max-width: 920px) {
+  .page-title {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .admin-tabs {
+    justify-content: flex-start;
+  }
+
   .workspace {
     grid-template-columns: 1fr;
   }

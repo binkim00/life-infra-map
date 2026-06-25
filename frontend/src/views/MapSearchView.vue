@@ -32,7 +32,6 @@ const SOURCE_META = {
 
 const query = ref('')
 const source = ref('all')
-const radius = ref(3000)
 const places = ref([])
 const selectedPlace = ref(null)
 const mapCenter = ref({ ...DEFAULT_CENTER })
@@ -153,7 +152,6 @@ const runSearch = async () => {
       source: source.value,
       lat: mapCenter.value.lat,
       lng: mapCenter.value.lng,
-      radius: radius.value,
       limit: 40,
     })
 
@@ -258,20 +256,10 @@ const goToPlaceReport = (place) => {
                 </option>
               </select>
             </label>
-
-            <label>
-              <span>반경</span>
-              <select v-model.number="radius">
-                <option :value="1000">1km</option>
-                <option :value="3000">3km</option>
-                <option :value="5000">5km</option>
-                <option :value="10000">10km</option>
-              </select>
-            </label>
           </div>
 
           <button type="submit" :disabled="isLoading">
-            {{ isLoading ? '검색 중' : '검색' }}
+            {{ isLoading ? '검색 중' : '현재 지도에서 검색' }}
           </button>
         </form>
 
@@ -319,6 +307,14 @@ const goToPlaceReport = (place) => {
       </aside>
 
       <section class="map-search-map-area">
+        <button
+          type="button"
+          class="map-research-button"
+          :disabled="isLoading"
+          @click="runSearch"
+        >
+          {{ isLoading ? '검색 중' : '현재 지도에서 재검색' }}
+        </button>
         <KakaoMap
           :places="places"
           :center="mapCenter"
@@ -495,7 +491,7 @@ const goToPlaceReport = (place) => {
 
 .map-search-controls {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr;
   gap: 10px;
 }
 
@@ -634,10 +630,32 @@ const goToPlaceReport = (place) => {
 }
 
 .map-search-map-area {
+  position: relative;
   overflow: hidden;
   border: 2px solid #222;
   border-radius: 8px;
   background: #dbeafe;
+}
+
+.map-research-button {
+  position: absolute;
+  z-index: 4;
+  top: 14px;
+  right: 14px;
+  min-height: 40px;
+  border: 1px solid #222;
+  border-radius: 8px;
+  padding: 0 14px;
+  background: #ffffff;
+  color: #222;
+  font-weight: 900;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.18);
+  cursor: pointer;
+}
+
+.map-research-button:disabled {
+  opacity: 0.65;
+  cursor: wait;
 }
 
 .map-search-map-area :deep(.map-section),

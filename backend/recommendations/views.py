@@ -773,7 +773,7 @@ def map_place_search(request):
     source = request.GET.get("source", "all").strip() or "all"
     lat = parse_optional_float(request.GET.get("lat"))
     lng = parse_optional_float(request.GET.get("lng"))
-    radius = parse_limited_int(request.GET.get("radius"), default=3000, minimum=0, maximum=20000)
+    radius = parse_limited_int(request.GET.get("radius"), default=0, minimum=0, maximum=20000)
     limit = parse_limited_int(request.GET.get("limit"), default=30, minimum=1, maximum=100)
 
     db_results = []
@@ -796,7 +796,7 @@ def map_place_search(request):
                 keyword=keyword,
                 lat=lat,
                 lng=lng,
-                radius=radius or 3000,
+                radius=radius or None,
                 size=min(limit, 15),
             )
             db_external_ids = {

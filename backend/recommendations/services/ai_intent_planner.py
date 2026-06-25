@@ -167,6 +167,352 @@ def _has_coordinates(lat=None, lng=None, map_center=None):
     return False
 
 
+def _has_any(query, keywords):
+    compact = _compact(query)
+    return any(_compact(keyword) and _compact(keyword) in compact for keyword in keywords)
+
+
+def _local_rule_anchor_location(raw_query):
+    text = _clean_text(raw_query, 500)
+    if not text:
+        return ""
+    current_context_markers = {"현재위치", "내위치", "여기", "지금위치", "currentlocation"}
+    location_markers = (
+        "근처에서",
+        "주변에서",
+        "인근에서",
+        "앞에서",
+        "쪽에서",
+        "에서",
+        "근처",
+        "주변",
+        "인근",
+        "앞",
+        "쪽",
+        "일대",
+    )
+    marker_pattern = "|".join(re.escape(marker) for marker in location_markers)
+    match = re.match(rf"^(.{{1,40}}?)\s*(?:{marker_pattern})(?:\s+|$)", text)
+    if not match:
+        suffixes = (
+            "특별자치시",
+            "특별자치도",
+            "광역시",
+            "특별시",
+            "해수욕장",
+            "대학교",
+            "터미널",
+            "공항",
+            "시장",
+            "역",
+            "구",
+            "군",
+            "시",
+            "읍",
+            "면",
+            "동",
+            "리",
+            "대",
+        )
+        suffix_pattern = "|".join(re.escape(suffix) for suffix in suffixes)
+        match = re.match(rf"^(.{{1,40}}?(?:{suffix_pattern}))\s+", text)
+    if not match:
+        return ""
+    anchor = _clean_text(match.group(1), 80).strip(" \"'“”‘’.,")
+    if not anchor:
+        return ""
+    if _compact(anchor) in current_context_markers:
+        return ""
+    if _has_any(anchor, ["쇼핑", "실내", "체험", "놀거리", "액티비티", "카페", "식당", "맛집"]):
+        return ""
+    return anchor
+
+
+def _local_rule_search_plan(
+    raw_query,
+    *,
+    normalized_query,
+    target_objects,
+    candidate_place_types,
+    result_match_terms,
+    primary_search_queries,
+    constraints=None,
+    exclusions=None,
+    candidate_category_codes=None,
+    ranking_policy="evidence_first",
+):
+    anchor_location = _local_rule_anchor_location(raw_query)
+    location_mode = "explicit" if anchor_location else "current_context"
+    return {
+        "action": "search",
+        "decision_action": "search",
+        "can_search_now": True,
+        "normalized_query": normalized_query,
+        "frame": {
+            "location_mode": location_mode,
+            "anchor_location": anchor_location,
+            "target_objects": target_objects,
+            "candidate_place_types": candidate_place_types,
+            "result_match_terms": result_match_terms,
+            "constraints": constraints or [],
+            "exclusions": exclusions or [],
+            "candidate_category_codes": candidate_category_codes or [],
+            "ranking_policy": ranking_policy,
+            "primary_search_queries": primary_search_queries,
+            "secondary_search_queries": [],
+        },
+        "clarification": {},
+        "confidence": 0.86,
+        "ai_retry_count": 0,
+        "ai_debug": {
+            "planner": {
+                "status": "local_rule",
+                "reason": "high_confidence_known_place_intent",
+                "retry_count": 0,
+                "call_count": 0,
+                "validation_errors": [],
+            },
+        },
+    }
+
+
+def _local_rule_clarification_plan(raw_query, *, question, options, missing_fields, expected_patch_fields):
+    anchor_location = _local_rule_anchor_location(raw_query)
+    location_mode = "explicit" if anchor_location else "current_context"
+    return {
+        "action": "ask_clarification",
+        "decision_action": "ask_clarification",
+        "can_search_now": False,
+        "normalized_query": _clean_text(raw_query, 500),
+        "frame": {
+            "location_mode": location_mode,
+            "anchor_location": anchor_location,
+            "target_objects": [],
+            "candidate_place_types": [],
+            "result_match_terms": [],
+            "constraints": [],
+            "exclusions": [],
+            "candidate_category_codes": [],
+            "ranking_policy": "evidence_first",
+            "primary_search_queries": [],
+            "secondary_search_queries": [],
+        },
+        "clarification": {
+            "question": question,
+            "options": options,
+            "missing_fields": missing_fields,
+            "expected_patch_fields": expected_patch_fields,
+        },
+        "confidence": 0.86,
+        "ai_retry_count": 0,
+        "ai_debug": {
+            "planner": {
+                "status": "local_rule",
+                "reason": "high_confidence_known_place_intent_needs_clarification",
+                "retry_count": 0,
+                "call_count": 0,
+                "validation_errors": [],
+            },
+        },
+    }
+
+
+def _local_rule_plan_for_known_intent(raw_query):
+    text = _clean_text(raw_query, 500)
+    if not text:
+        return None
+
+    toilet_request = _has_any(text, ["화장실", "공중화장실", "개방화장실", "똥", "소변", "마려"])
+    if toilet_request:
+        urgent = _has_any(text, ["급해", "급한", "바로", "마려", "똥", "소변"])
+        return _local_rule_search_plan(
+            text,
+            normalized_query="공중화장실",
+            target_objects=["화장실"],
+            candidate_place_types=["공중화장실", "개방화장실", "화장실"],
+            result_match_terms=["화장실", "공중화장실", "개방화장실"],
+            primary_search_queries=["공중화장실", "개방화장실", "화장실"],
+            constraints=["긴급", "가까운 곳"] if urgent else ["가까운 곳"],
+            exclusions=[],
+            candidate_category_codes=["toilet"],
+            ranking_policy="urgent_nearest" if urgent else "distance_first",
+        )
+
+    if _has_any(text, ["흡연구역", "흡연장", "흡연실", "흡연", "담배필", "담배 필", "담배피", "담배 피", "담배"]):
+        outdoor = _has_any(text, ["실외", "외부", "밖", "야외", "옥외"])
+        indoor = _has_any(text, ["실내", "안", "내부", "건물"])
+        constraints = ["가까운 곳"]
+        exclusions = []
+        if outdoor:
+            constraints.append("실외")
+            exclusions.append("실내 제외")
+        elif indoor:
+            constraints.append("실내")
+            exclusions.append("실외 제외")
+        return _local_rule_search_plan(
+            text,
+            normalized_query="흡연구역",
+            target_objects=["흡연구역"],
+            candidate_place_types=["흡연구역", "흡연실", "실외흡연구역", "실내흡연실"],
+            result_match_terms=["흡연구역", "흡연실", "흡연"],
+            primary_search_queries=["흡연구역", "흡연실"],
+            constraints=constraints,
+            exclusions=exclusions,
+            candidate_category_codes=["smoking_area"],
+            ranking_policy="distance_first",
+        )
+
+    if _has_any(text, ["술집", "술 마", "술마", "주점", "와인바", "칵테일바", "펍", "호프", "bar"]):
+        return _local_rule_search_plan(
+            text,
+            normalized_query="술집/바",
+            target_objects=["술집"],
+            candidate_place_types=["술집", "주점", "펍", "와인바", "칵테일바"],
+            result_match_terms=["술집", "주점", "펍", "와인바", "칵테일바", "호프"],
+            primary_search_queries=["술집", "주점", "펍", "와인바"],
+        )
+
+    if _has_any(text, ["쇼핑몰", "쇼핑할", "쇼핑 할", "쇼핑", "백화점", "아울렛", "복합쇼핑", "쇼핑센터", "상업시설"]):
+        return _local_rule_search_plan(
+            text,
+            normalized_query="쇼핑몰/백화점",
+            target_objects=["쇼핑몰"],
+            candidate_place_types=["쇼핑몰", "백화점", "아울렛", "복합쇼핑몰", "쇼핑센터", "대형마트"],
+            result_match_terms=["쇼핑몰", "백화점", "아울렛", "복합쇼핑몰", "쇼핑센터", "대형마트"],
+            primary_search_queries=["쇼핑몰", "백화점", "아울렛", "복합쇼핑몰", "쇼핑센터"],
+            candidate_category_codes=["shopping"],
+        )
+
+    if _has_any(text, ["쌀국수", "분짜", "반미", "베트남음식", "베트남 음식", "베트남식"]):
+        return _local_rule_search_plan(
+            text,
+            normalized_query="쌀국수/베트남 음식점",
+            target_objects=["쌀국수"],
+            candidate_place_types=["쌀국수 전문점", "베트남 음식점", "아시아 음식점", "식당"],
+            result_match_terms=["쌀국수", "베트남음식", "베트남 음식", "포"],
+            primary_search_queries=["쌀국수", "베트남 음식점", "베트남음식"],
+            constraints=["식사 가능"],
+            candidate_category_codes=["restaurant"],
+        )
+
+    if _has_any(text, ["전시", "전시회", "전시관", "전시장", "박물관", "미술관", "갤러리"]):
+        return _local_rule_search_plan(
+            text,
+            normalized_query="전시/박물관",
+            target_objects=["전시관"],
+            candidate_place_types=["전시관", "박물관", "미술관", "갤러리"],
+            result_match_terms=["전시관", "전시장", "전시회", "박물관", "미술관", "갤러리"],
+            primary_search_queries=["전시관", "박물관", "미술관", "갤러리"],
+        )
+
+    has_indoor = _has_any(text, ["실내", "실내체험", "실내 체험", "실내액티비티", "실내 액티비티", "indoor", "indoors"])
+    has_experience = _has_any(text, [
+        "체험",
+        "액티비티",
+        "놀거리",
+        "놀 거리",
+        "도예",
+        "공예",
+        "vr",
+        "브이알",
+        "방탈출",
+        "보드게임",
+        "클라이밍",
+        "만화카페",
+        "키즈카페",
+    ])
+    if has_indoor and has_experience:
+        return _local_rule_search_plan(
+            text,
+            normalized_query="실내 체험",
+            target_objects=["실내 체험"],
+            candidate_place_types=[
+                "보드게임카페",
+                "만화카페",
+                "방탈출카페",
+                "공방",
+                "VR 체험관",
+                "도예 체험 스튜디오",
+                "실내 클라이밍",
+            ],
+            result_match_terms=["실내 체험", "보드게임카페", "만화카페", "방탈출", "공방", "VR", "도예", "공예", "클라이밍"],
+            primary_search_queries=["보드게임카페", "만화카페", "방탈출", "공방", "VR"],
+            constraints=["실내", "체험 활동"],
+            exclusions=["야외 산책 제외", "공원 제외", "시장 제외"],
+        )
+
+    if _has_any(text, ["놀거리", "놀 거리", "액티비티", "뭐하지", "뭐 하지", "심심"]):
+        return _local_rule_clarification_plan(
+            text,
+            question="원하시는 놀거리 유형을 골라 주세요.",
+            options=[
+                {"label": "실내 체험", "value": "실내 체험"},
+                {"label": "영화관/공연장", "value": "영화관/공연장"},
+                {"label": "전시/박물관", "value": "전시/박물관"},
+                {"label": "야외 산책", "value": "야외 산책"},
+            ],
+            missing_fields=["activity_type"],
+            expected_patch_fields=["target_objects", "candidate_place_types", "primary_search_queries"],
+        )
+
+    has_cafe = _has_any(text, ["카페", "커피"])
+    has_drink = _has_any(text, ["음료", "커피", "차 마", "차마", "마실", "마시"])
+    has_work = _has_any(text, ["작업", "공부", "스터디", "노트북", "놋북", "카공", "콘센트"])
+    if has_cafe and has_work:
+        return _local_rule_search_plan(
+            text,
+            normalized_query="작업/공부 카페",
+            target_objects=["카페"],
+            candidate_place_types=["카페", "작업 카페", "스터디카페"],
+            result_match_terms=["카페", "노트북", "콘센트", "와이파이", "작업"],
+            primary_search_queries=["작업 카페", "노트북 카페", "콘센트 카페", "카페"],
+            constraints=["노트북 작업 가능", "콘센트 확인 필요", "와이파이 확인 필요"],
+            candidate_category_codes=["cafe"],
+        )
+    if has_cafe and has_drink and not has_work:
+        return _local_rule_search_plan(
+            text,
+            normalized_query="음료 마실 카페",
+            target_objects=["카페"],
+            candidate_place_types=["카페"],
+            result_match_terms=["카페", "커피", "음료"],
+            primary_search_queries=["카페", "커피", "음료 카페"],
+            constraints=["음료 마실 수 있음"],
+            exclusions=["스터디카페 제외", "스터디룸 제외", "공간대여 제외"],
+        )
+
+    if _has_any(text, ["목마", "목 마", "물 마", "물마", "음료수", "마실거", "마실 것"]):
+        wants_water = _has_any(text, ["물 마", "물마", "물", "생수"])
+        drink_queries = (
+            ["편의점", "카페", "음료 카페"]
+            if wants_water
+            else ["카페", "음료 카페", "편의점"]
+        )
+        return _local_rule_search_plan(
+            text,
+            normalized_query="음료 살 곳",
+            target_objects=["음료 살 곳"],
+            candidate_place_types=["카페", "편의점", "음료 매장"],
+            result_match_terms=["카페", "편의점", "커피", "음료", "물"],
+            primary_search_queries=drink_queries,
+            constraints=["음료 구매 가능", "가까운 곳"],
+            candidate_category_codes=["cafe"],
+            ranking_policy="evidence_first",
+        )
+
+    if _has_any(text, ["배고파", "배고픈", "배고프", "출출", "허기", "뭐 먹", "뭐먹", "밥 먹", "밥먹"]):
+        return _local_rule_search_plan(
+            text,
+            normalized_query="식당/맛집",
+            target_objects=["식당"],
+            candidate_place_types=["식당", "음식점", "맛집"],
+            result_match_terms=["식당", "음식점", "맛집", "밥"],
+            primary_search_queries=["식당", "맛집", "음식점"],
+        )
+
+    return None
+
+
 def _broad_frame_terms():
     return {
         "place",
@@ -454,6 +800,10 @@ def build_ai_intent_plan(query, *, lat=None, lng=None, map_center=None, previous
             "ai_retry_count": 0,
             "ai_debug": {"planner": {"status": "empty_query"}},
         }
+
+    local_plan = _local_rule_plan_for_known_intent(raw_query)
+    if local_plan:
+        return local_plan
 
     enabled, reason = _is_ai_enabled()
     if not enabled:

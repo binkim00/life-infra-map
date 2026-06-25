@@ -31,6 +31,19 @@ logger = logging.getLogger(__name__)
 VERIFIED_TAG_SOURCES = {"checked", "user_verified"}
 SUGGESTED_TAG_SOURCES = {"ai_suggested", "blog_search"}
 DB_FIRST_CATEGORY_CODES = {"smoking_area"}
+DB_CATEGORY_SEARCH_CODES = {
+    "cafe",
+    "restaurant",
+    "shelter",
+    "city_park",
+    "beach",
+    "tourism",
+    "toilet",
+    "freewifi",
+    "parking",
+    "smoking_area",
+    "shopping",
+}
 POLICY_AWARE_CATEGORY_CODES = {"smoking_area"}
 PLACE_POLICY_TERMS = {
     "outdoor": {
@@ -521,6 +534,26 @@ def _db_first_category_codes(frame):
     ]
 
 
+def _direct_db_category_codes(frame):
+    direct_text = _compact(" ".join([
+        *_frame_terms(frame, "target_objects", "targetObjects"),
+        *_frame_terms(frame, "result_match_terms", "resultMatchTerms"),
+    ]))
+    if not direct_text:
+        return []
+
+    direct_codes = []
+    for code in _frame_category_codes(frame):
+        if code not in DB_CATEGORY_SEARCH_CODES:
+            continue
+        code_text = _compact(code)
+        label_text = _compact(get_category_display_name(code))
+        if (code_text and code_text in direct_text) or (label_text and label_text in direct_text):
+            direct_codes.append(code)
+
+    return list(dict.fromkeys(direct_codes))
+
+
 def _evidence_terms(frame):
     return {
         "target": _frame_terms(frame, "target_objects"),
@@ -544,13 +577,15 @@ def _search_radius_for_frame(request_radius, frame, raw_query):
     urgent_markers = ["긴급", "급한", "급해", "바로", "즉시"]
     walking_markers = ["도보", "걸어서", "걸어", "멀지", "너무멀"]
     nearby_markers = ["근처", "가까운", "가까이", "인근", "주변"]
+    toilet_markers = ["화장실", "공중화장실", "개방화장실", "대변", "소변", "마려"]
+    is_toilet_search = any(_compact(marker) in text for marker in toilet_markers)
 
     if any(_compact(marker) in text for marker in urgent_markers):
         return 1500
     if any(_compact(marker) in text for marker in walking_markers):
         return 2000
     if any(_compact(marker) in text for marker in nearby_markers):
-        return 3000
+        return 1500 if is_toilet_search else 3000
     return None
 
 
@@ -997,6 +1032,24 @@ def _append_non_redundant_terms(base_terms, extra_terms, max_items=12):
 
 
 def _db_evidence_terms(frame):
+    if _is_indoor_experience_frame(frame):
+        indoor_experience_terms = [
+            "보드게임카페",
+            "만화카페",
+            "방탈출",
+            "공방",
+            "VR",
+            "도예",
+            "공예",
+            "클라이밍",
+        ]
+        return {
+            "target": indoor_experience_terms,
+            "candidate": indoor_experience_terms,
+            "constraints": ["실내"],
+            "search": indoor_experience_terms,
+        }
+
     target_terms = _select_target_db_terms(frame)
     candidate_terms = _select_candidate_db_terms(frame, target_terms)
     constraint_terms = _specific_evidence_terms(_evidence_terms(frame)["constraints"], frame=frame)
@@ -1087,6 +1140,157 @@ def _generic_exclusion_review(text, frame, candidate=None):
     return list(dict.fromkeys(unmet))
 
 
+def _frame_semantic_text(frame):
+    return " ".join([
+        *_frame_terms(frame, "target_objects", "targetObjects"),
+        *_frame_terms(frame, "result_match_terms", "resultMatchTerms"),
+        *_frame_terms(frame, "candidate_place_types", "candidatePlaceTypes"),
+        *_frame_terms(frame, "constraints"),
+        *_frame_terms(frame, "primary_search_queries", "search_queries", "searchQueries"),
+    ])
+
+
+def _candidate_semantic_text(candidate):
+    return " ".join([
+        _clean_text(candidate.get("name")),
+        _clean_text(candidate.get("category")),
+        _clean_text(candidate.get("kakao_category")),
+        _clean_text(candidate.get("source_category")),
+        _clean_text(candidate.get("external_category")),
+        " ".join(_as_list(candidate.get("matched_tags"))),
+        " ".join(_as_list(candidate.get("matched_tag_labels"))),
+        " ".join(_as_list(candidate.get("verified_tags"))),
+        " ".join(_as_list(candidate.get("suggested_tags"))),
+        " ".join(_as_list(candidate.get("candidate_tags"))),
+        " ".join(_as_list(candidate.get("place_natures"))),
+    ])
+
+
+def _semantic_category_review(candidate, frame):
+    frame_text = _compact(_frame_semantic_text(frame))
+    candidate_text = _compact(_candidate_semantic_text(candidate))
+    unmet = []
+    if not frame_text or not candidate_text:
+        return unmet
+
+    drink_cafe_request = (
+        "카페" in frame_text
+        and any(term in frame_text for term in ["음료", "커피", "마실", "마시"])
+        and not any(term in frame_text for term in ["작업", "공부", "스터디", "노트북", "놋북", "카공"])
+    )
+    if drink_cafe_request:
+        forbidden = ["스터디카페", "스터디룸", "공간대여", "전문대행", "독서실", "study_cafe", "studyroom"]
+        if any(term in candidate_text for term in forbidden):
+            unmet.append("음료 카페 요청과 맞지 않는 스터디/공간대여 후보")
+
+    bar_request = any(term in frame_text for term in ["술집", "주점", "와인바", "칵테일바", "펍", "호프"])
+    if bar_request:
+        bar_positive = ["술집", "주점", "와인바", "칵테일바", "스포츠바", "펍", "호프", "포차", "이자카야", "bar"]
+        if not any(term in candidate_text for term in bar_positive):
+            unmet.append("술집/바 요청과 맞지 않는 후보")
+
+    shopping_request = any(term in frame_text for term in ["쇼핑몰", "백화점", "아울렛", "복합쇼핑몰", "대형마트"])
+    if shopping_request:
+        shopping_positive = ["쇼핑몰", "백화점", "아울렛", "복합쇼핑", "쇼핑센터", "대형마트", "몰링"]
+        shopping_forbidden = [
+            "인터넷쇼핑몰",
+            "온라인쇼핑",
+            "전자상거래",
+            "통신판매",
+            "쇼핑몰제작",
+            "쇼핑몰관리",
+            "쇼핑몰솔루션",
+            "온라인몰",
+        ]
+        if any(term in candidate_text for term in shopping_forbidden):
+            unmet.append("오프라인 쇼핑몰/백화점 요청과 맞지 않는 온라인 쇼핑 후보")
+        elif not any(term in candidate_text for term in shopping_positive):
+            unmet.append("쇼핑몰/백화점 요청과 맞지 않는 후보")
+
+    exhibition_request = any(term in frame_text for term in ["전시", "전시관", "전시장", "전시회", "박물관", "미술관", "갤러리"])
+    if exhibition_request:
+        exhibition_positive = [
+            "전시관",
+            "전시회",
+            "전시실",
+            "전시센터",
+            "박물관",
+            "미술관",
+            "갤러리",
+            "아트센터",
+            "문화회관",
+        ]
+        if not any(term in candidate_text for term in exhibition_positive):
+            unmet.append("전시/박물관 요청과 맞지 않는 후보")
+
+    indoor_experience_request = _is_indoor_experience_frame_text(frame_text)
+    if indoor_experience_request:
+        experience_positive = [
+            "체험",
+            "액티비티",
+            "도예",
+            "공예",
+            "vr",
+            "브이알",
+            "공방",
+            "원데이클래스",
+            "클래스",
+            "스튜디오",
+            "방탈출",
+            "실내놀이터",
+            "키즈카페",
+            "보드게임",
+            "만화카페",
+            "클라이밍",
+            "메이커",
+            "만들기",
+        ]
+        indoor_positive = [
+            "실내",
+            "도예",
+            "공예",
+            "vr",
+            "브이알",
+            "공방",
+            "원데이클래스",
+            "클래스",
+            "스튜디오",
+            "방탈출",
+            "실내놀이터",
+            "키즈카페",
+            "보드게임",
+            "클라이밍",
+            "만화카페",
+            "박물관",
+            "미술관",
+            "전시관",
+        ]
+        outdoor_negative = ["공원", "산책", "해수욕장", "등산", "야외", "광장", "시장", "거리"]
+        has_experience = any(term in candidate_text for term in experience_positive)
+        has_indoor = any(term in candidate_text for term in indoor_positive)
+        has_outdoor = any(term in candidate_text for term in outdoor_negative)
+        if not has_experience:
+            unmet.append("실내 체험 요청과 맞지 않는 후보")
+        if has_outdoor and not has_indoor:
+            unmet.append("실내 체험 요청과 맞지 않는 야외/산책형 후보")
+
+    return list(dict.fromkeys(unmet))
+
+
+def _is_indoor_experience_frame_text(frame_text):
+    return (
+        any(term in frame_text for term in ["실내체험", "실내액티비티"])
+        or (
+            any(term in frame_text for term in ["실내", "indoors", "indoor"])
+            and any(term in frame_text for term in ["체험", "액티비티", "놀거리", "도예", "공예", "vr", "방탈출", "보드게임", "만화카페"])
+        )
+    )
+
+
+def _is_indoor_experience_frame(frame):
+    return _is_indoor_experience_frame_text(_compact(_frame_semantic_text(frame)))
+
+
 def _has_actionable_place_target(frame):
     terms = _evidence_terms(frame)
     target_terms = [term for term in [*terms["target"], *terms["result"]] if not _is_broad_term(term)]
@@ -1136,12 +1340,28 @@ def _contains_any(text, terms):
     return any(_compact(term) and _compact(term) in compact_text for term in terms)
 
 
-def _matched_terms(text, terms):
+def _term_matches_text(term, text):
+    compact_term = _compact(term)
     compact_text = _compact(text)
+    if not compact_term or not compact_text:
+        return False
+    if compact_term == "전시":
+        return any(
+            marker in compact_text
+            for marker in ["전시관", "전시장", "전시회", "전시실", "전시센터", "전시공간", "전시홀"]
+        )
+    if compact_term == "바":
+        return any(
+            marker in compact_text
+            for marker in ["와인바", "칵테일바", "스포츠바", "펍", "bar"]
+        ) or bool(re.search(r"(^|[^가-힣a-zA-Z0-9])바($|[^가-힣a-zA-Z0-9])", _clean_text(text)))
+    return compact_term in compact_text
+
+
+def _matched_terms(text, terms):
     matched = []
     for term in terms:
-        compact_term = _compact(term)
-        if compact_term and compact_term in compact_text:
+        if _term_matches_text(term, text):
             matched.append(term)
     return matched
 
@@ -1249,6 +1469,7 @@ def _db_evidence(place, tag_lists, frame):
     )
     frame_category_codes = _frame_category_codes(frame)
     db_first_category_codes = _db_first_category_codes(frame)
+    direct_category_codes = _direct_db_category_codes(frame)
     category_label = _clean_text(get_category_display_name(place.category))
     category_text = " ".join([_clean_text(place.category), category_label])
     text_fields = {
@@ -1276,9 +1497,21 @@ def _db_evidence(place, tag_lists, frame):
     policy_unmet = [
         *policy_unmet,
         *_generic_exclusion_review(policy_text, frame),
+        *_semantic_category_review(
+            {
+                "name": place.name,
+                "category": " ".join([place.category, category_label]),
+                "matched_tags": [
+                    *tag_lists["verified"],
+                    *tag_lists["suggested"],
+                    *tag_lists["candidate"],
+                ],
+            },
+            frame,
+        ),
     ]
 
-    if place.category in db_first_category_codes:
+    if place.category in direct_category_codes or place.category in db_first_category_codes:
         matched.append({
             "type": "structured_category_direct",
             "field": "category",
@@ -1334,6 +1567,15 @@ def _db_evidence(place, tag_lists, frame):
         level = "strong"
 
     for term in _matched_terms(" ".join(tag_lists["suggested"]), target_terms):
+        term_is_direct_category = any(
+            _compact(term) in {
+                _compact(code),
+                _compact(get_category_display_name(code)),
+            }
+            for code in direct_category_codes
+        )
+        if term_is_direct_category and place.category not in direct_category_codes:
+            continue
         matched.append({
             "type": "suggested_tag_direct",
             "field": "suggested_tags",
@@ -1344,6 +1586,15 @@ def _db_evidence(place, tag_lists, frame):
             level = "medium"
 
     for term in _matched_terms(" ".join(tag_lists["candidate"]), target_terms):
+        term_is_direct_category = any(
+            _compact(term) in {
+                _compact(code),
+                _compact(get_category_display_name(code)),
+            }
+            for code in direct_category_codes
+        )
+        if term_is_direct_category and place.category not in direct_category_codes:
+            continue
         matched.append({
             "type": "candidate_tag_direct",
             "field": "candidate_tags",
@@ -1402,7 +1653,8 @@ def collect_db_candidates(frame, *, lat=None, lng=None, limit=50, radius=None):
     terms = _db_evidence_terms(frame)
     search_terms = terms["search"]
     db_first_category_codes = _db_first_category_codes(frame)
-    if not search_terms and not db_first_category_codes:
+    direct_category_codes = _direct_db_category_codes(frame)
+    if not search_terms and not db_first_category_codes and not direct_category_codes:
         return []
 
     query = Q()
@@ -1418,6 +1670,8 @@ def collect_db_candidates(frame, *, lat=None, lng=None, limit=50, radius=None):
         )
     if db_first_category_codes:
         query |= Q(category__in=db_first_category_codes)
+    if direct_category_codes:
+        query |= Q(category__in=direct_category_codes)
 
     radius = _radius(radius)
     bounds = _nearby_bounds(lat, lng, radius)
@@ -1443,6 +1697,13 @@ def collect_db_candidates(frame, *, lat=None, lng=None, limit=50, radius=None):
             continue
         tag_lists = _db_tag_lists(place)
         level, matched, policy_unmet, policy_verification_needed = _db_evidence(place, tag_lists, frame)
+        if direct_category_codes and place.category not in direct_category_codes:
+            has_strong_non_category_evidence = any(
+                item.get("type") in {"target_direct", "verified_tag_direct"}
+                for item in matched
+            )
+            if not has_strong_non_category_evidence:
+                continue
         policy_matched = [
             item["value"]
             for item in matched
@@ -1593,6 +1854,7 @@ def _merge_candidate_policy_review(candidate, frame, level, matched, *, field, s
     policy_unmet = [
         *policy_unmet,
         *_generic_exclusion_review(_candidate_text(candidate), frame, candidate=candidate),
+        *_semantic_category_review(candidate, frame),
     ]
     merged_matched = [*matched, *policy_matched_evidence]
     adjusted_level = _adjust_evidence_level_for_policy(
@@ -1885,10 +2147,15 @@ def _explicit_external_verification_requested(query, frame):
         "official",
         "verify",
         "latest",
+        "review",
+        "blog",
         "웹",
         "외부",
         "공식",
         "최신",
+        "리뷰",
+        "블로그",
+        "후기",
     }
     return any(_compact(marker) in text for marker in markers)
 
@@ -1973,12 +2240,25 @@ def _balanced_rerank_shortlist(candidates, limit):
 
 def _can_top_up_excluded_candidate(candidate):
     source = _clean_text(candidate.get("candidate_source") or candidate.get("source"))
-    if source != "db":
-        return False
     level = _clean_text(candidate.get("pre_ai_evidence_level") or candidate.get("evidence_level"))
-    if level != "strong":
+    if candidate.get("pre_ai_unmet_constraints"):
         return False
     matched_evidence = candidate.get("matched_evidence") if isinstance(candidate.get("matched_evidence"), list) else []
+    if source == "kakao" and level in {"strong", "medium"}:
+        external_types = {
+            "target_direct",
+            "candidate_type",
+            "target_context",
+            "policy_constraint",
+        }
+        return any(
+            isinstance(item, dict) and item.get("type") in external_types
+            for item in matched_evidence
+        )
+    if source != "db":
+        return False
+    if level != "strong":
+        return False
     direct_types = {
         "target_direct",
         "verified_tag_direct",
@@ -2618,11 +2898,7 @@ def run_ai_search(request_data, *, user=None):
 
     web_candidates = []
     external_verification_requested = _explicit_external_verification_requested(original_query or query, frame)
-    can_use_web_for_location = bool(frame.get("anchor_location")) and frame.get("location_mode") == "explicit"
-    should_collect_web = (
-        external_verification_requested
-        or (can_use_web_for_location and _needs_candidate_recall_boost(initial_candidates, limit=limit))
-    )
+    should_collect_web = external_verification_requested
     if should_collect_web:
         web_started = time.perf_counter()
         web_candidates = collect_web_candidates(

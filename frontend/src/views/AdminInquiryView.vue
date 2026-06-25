@@ -176,6 +176,7 @@ onMounted(fetchInquiries)
 
         <nav class="admin-tabs">
           <RouterLink to="/admin/reports" class="admin-tab">신고 내역</RouterLink>
+          <RouterLink to="/admin/place-reports" class="admin-tab">장소 제보</RouterLink>
           <RouterLink to="/admin/users" class="admin-tab">유저 관리</RouterLink>
           <RouterLink to="/admin/inquiries" class="admin-tab">문의 관리</RouterLink>
         </nav>
