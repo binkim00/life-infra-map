@@ -3,13 +3,13 @@ from django.db.models.functions import TruncDate
 
 
 TIER_RULES = [
-    (22, "challenger", "챌린저"),
-    (21, "master", "마스터"),
-    (20, "diamond", "다이아"),
-    (19, "platinum", "플래티넘"),
-    (18, "gold", "골드"),
-    (17, "silver", "실버"),
-    (16, "bronze", "브론즈"),
+    (13, "challenger", "챌린저"),
+    (12, "master", "마스터"),
+    (11, "diamond", "다이아"),
+    (10, "platinum", "플래티넘"),
+    (9, "gold", "골드"),
+    (8, "silver", "실버"),
+    (7, "bronze", "브론즈"),
     (0, "iron", "아이언"),
 ]
 
@@ -27,7 +27,7 @@ TIER_COLORS = {
 POSTS_PER_CONTRIBUTION_POINT = 1
 COMMENTS_PER_CONTRIBUTION_POINT = 1
 DAILY_ACTIVITY_CONTRIBUTION_LIMIT = 100
-STAFF_DEMO_BASE_CONTRIBUTION = 15
+STAFF_DEMO_BASE_CONTRIBUTION = 6
 REPORT_CONTRIBUTION_REWARDS = {
     "tag_suggestion": 10,
     "wrong_info": 5,
