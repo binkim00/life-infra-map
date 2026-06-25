@@ -540,6 +540,17 @@ onBeforeUnmount(() => {
           <span class="nav-text">홈</span>
         </RouterLink>
 
+        <RouterLink to="/map" class="nav-link">
+          <span class="nav-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <path d="M9 18 3 21V6l6-3 6 3 6-3v15l-6 3-6-3Z" />
+              <path d="M9 3v15" />
+              <path d="M15 6v15" />
+            </svg>
+          </span>
+          <span class="nav-text">지도</span>
+        </RouterLink>
+
         <RouterLink to="/boards/notice" class="nav-link">
           <span class="nav-icon" aria-hidden="true">
             <svg viewBox="0 0 24 24">

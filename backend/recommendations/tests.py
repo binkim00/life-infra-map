@@ -1210,6 +1210,61 @@ class RecommendationSearchTests(TestCase):
         CONVERSATIONAL_SEARCH_AI_ENABLED=True,
         AI_WEB_SEARCH_AUTO_MERGE_ENABLED=False,
     )
+    @patch("recommendations.services.ai_search_orchestrator._resolve_anchor_location", side_effect=AssertionError("current coordinates must not be geocoded"))
+    @patch("recommendations.services.ai_search_orchestrator.semantic_rerank_candidates", side_effect=AssertionError("reranker must not run without collected candidates"))
+    @patch("recommendations.services.ai_search_orchestrator.collect_kakao_candidates", return_value=([], [{"query": "카페", "count": 0}]))
+    @patch("recommendations.services.ai_search_orchestrator.collect_db_candidates", return_value=[])
+    @patch("recommendations.services.ai_search_orchestrator.build_ai_intent_plan")
+    def test_ai_search_treats_current_coordinates_anchor_as_current_context(
+        self,
+        mock_intent,
+        mock_db_collector,
+        mock_kakao_collector,
+        mock_rerank,
+        mock_resolve_anchor,
+    ):
+        mock_intent.return_value = {
+            "action": "search",
+            "decision_action": "search",
+            "normalized_query": "카페",
+            "frame": {
+                "location_mode": "explicit",
+                "anchor_location": "current_coordinates",
+                "target_objects": ["카페"],
+                "candidate_place_types": ["카페"],
+                "result_match_terms": ["카페"],
+                "constraints": [],
+                "exclusions": [],
+                "ranking_policy": "evidence_first",
+                "primary_search_queries": ["카페"],
+                "secondary_search_queries": [],
+            },
+            "clarification": {},
+            "confidence": 0.9,
+            "ai_retry_count": 0,
+        }
+
+        response = self.client.post(
+            "/api/recommendations/ai-search/",
+            data=json.dumps({"query": "카페", "lat": 35.1, "lng": 129.1, "limit": 10}),
+            content_type="application/json",
+            **self._auth_headers(),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        frame = data["search_plan"]["place_intent_frame"]
+        self.assertEqual(data["decision_action"], "search")
+        self.assertEqual(frame["location_mode"], "current_context")
+        self.assertEqual(frame["anchor_location"], "")
+        self.assertEqual(data["debug_pipeline"]["location_resolution"]["status"], "resolved")
+        self.assertEqual(data["debug_pipeline"]["location_resolution"]["source"], "request_coordinates")
+        mock_resolve_anchor.assert_not_called()
+
+    @override_settings(
+        CONVERSATIONAL_SEARCH_AI_ENABLED=True,
+        AI_WEB_SEARCH_AUTO_MERGE_ENABLED=False,
+    )
     @patch("recommendations.services.ai_search_orchestrator.semantic_rerank_candidates")
     @patch("recommendations.services.ai_search_orchestrator.collect_kakao_candidates")
     @patch("recommendations.services.ai_search_orchestrator.collect_db_candidates", return_value=[])
@@ -2182,6 +2237,56 @@ class RecommendationSearchTests(TestCase):
         GMS_API_URL="https://example.invalid/parser",
     )
     @patch("recommendations.services.ai_candidate_reranker._call_gms_chat_json")
+    def test_ai_candidate_reranker_rewrites_internal_english_reason(self, mock_ai):
+        from recommendations.services.ai_candidate_reranker import semantic_rerank_candidates
+
+        mock_ai.return_value = {
+            "candidates": [
+                {
+                    "candidate_id": "cafe-1",
+                    "decision": "needs_verification",
+                    "semantic_score": 64,
+                    "evidence_level": "medium",
+                    "matched_fields": ["category"],
+                    "unmet_constraints": [],
+                    "reason": "Candidate is a cafe within target type. Frames require cafe and evidence_level is medium.",
+                }
+            ]
+        }
+
+        ranked, debug = semantic_rerank_candidates(
+            {
+                "target_objects": ["카페"],
+                "result_match_terms": ["카페"],
+                "candidate_place_types": ["카페"],
+            },
+            [
+                {
+                    "id": "cafe-1",
+                    "candidate_source": "db",
+                    "name": "조용한 카페",
+                    "category": "카페",
+                    "distance": 280,
+                    "matched_evidence": [
+                        {"type": "target_direct", "value": "카페", "field": "category"}
+                    ],
+                }
+            ],
+        )
+
+        self.assertEqual(debug["status"], "executed")
+        self.assertEqual(len(ranked), 1)
+        reason = ranked[0]["recommendation_reason"]
+        self.assertIn("카페", reason)
+        self.assertIn("확인", reason)
+        self.assertNotRegex(reason, r"Candidate|Frames|evidence_level|semantic_score")
+
+    @override_settings(
+        CONVERSATIONAL_SEARCH_AI_ENABLED=True,
+        GMS_API_KEY="fake-gms",
+        GMS_API_URL="https://example.invalid/parser",
+    )
+    @patch("recommendations.services.ai_candidate_reranker._call_gms_chat_json")
     def test_ai_candidate_reranker_retries_missing_batch_once_after_timeout(self, mock_ai):
         from recommendations.services.ai_candidate_reranker import semantic_rerank_candidates
 
@@ -2518,6 +2623,78 @@ class RecommendationSearchTests(TestCase):
         self.assertEqual(local_level, "strong")
         self.assertEqual(local_matched[0]["type"], "target_direct")
 
+    def test_external_pre_ai_evidence_uses_ai_target_context_for_kakao_category(self):
+        from recommendations.services.ai_search_orchestrator import _external_pre_ai_evidence
+
+        frame = {
+            "location_mode": "explicit",
+            "anchor_location": "하단역",
+            "target_objects": ["베트남 쌀국수 전문점"],
+            "result_match_terms": ["쌀국수"],
+            "candidate_place_types": ["쌀국수 전문점", "베트남 음식점"],
+            "primary_search_queries": ["하단역 쌀국수"],
+        }
+        candidate = {
+            "candidate_source": "kakao",
+            "name": "하단 베트남 식당",
+            "category": "음식점 > 아시아음식 > 동남아음식 > 베트남음식",
+            "address": "부산 사하구 하단동",
+            "retrieval_query": "하단역 쌀국수",
+        }
+
+        level, matched = _external_pre_ai_evidence(candidate, frame)
+
+        self.assertEqual(level, "medium")
+        self.assertTrue(any(item["type"] == "target_context" and item["value"] == "베트남" for item in matched))
+        self.assertFalse(all(item["type"] == "retrieval_query_target" for item in matched))
+
+    def test_merge_candidate_policy_review_marks_generic_exclusions(self):
+        from recommendations.services.ai_search_orchestrator import _merge_candidate_policy_review
+
+        frame = {
+            "target_objects": ["공중화장실"],
+            "result_match_terms": ["화장실"],
+            "candidate_place_types": ["공중화장실"],
+            "exclusions": ["주차장 제외"],
+        }
+        candidate = {
+            "candidate_source": "kakao",
+            "name": "지하 공영주차장",
+            "category": "교통,수송 > 주차장",
+            "address": "부산 부산진구",
+        }
+
+        _, _, _, policy_unmet, _ = _merge_candidate_policy_review(
+            candidate,
+            frame,
+            "medium",
+            [{"type": "candidate_type", "value": "화장실"}],
+            field="kakao_text",
+            source_strength="external",
+        )
+
+        self.assertTrue(any("주차장" in item for item in policy_unmet))
+
+    def test_search_radius_uses_nearby_constraints_when_request_radius_missing(self):
+        from recommendations.services.ai_search_orchestrator import _search_radius_for_frame
+
+        self.assertEqual(
+            _search_radius_for_frame(None, {"constraints": ["가까운 곳", "긴급"]}, "근처 화장실 바로 찾아줘"),
+            1500,
+        )
+        self.assertEqual(
+            _search_radius_for_frame(None, {"constraints": ["도보 가능한 거리"]}, "걸어서 갈 수 있는 쌀국수집"),
+            2000,
+        )
+        self.assertEqual(
+            _search_radius_for_frame(None, {"constraints": ["가까운 곳"]}, "서면역 근처 화장실"),
+            3000,
+        )
+        self.assertEqual(
+            _search_radius_for_frame(7000, {"constraints": ["가까운 곳"]}, "서면역 근처 화장실"),
+            7000,
+        )
+
     def test_external_verification_ignores_ai_generated_confirmation_constraint(self):
         from recommendations.services.ai_search_orchestrator import _explicit_external_verification_requested
 
@@ -2738,6 +2915,28 @@ class RecommendationSearchTests(TestCase):
         for unrelated in ["담배", "가능", "가능한", "야외", "실외", "테라스"]:
             self.assertNotIn(unrelated, terms["search"])
 
+    def test_db_evidence_terms_keep_explicit_walk_target_place_type(self):
+        from recommendations.services.ai_search_orchestrator import _db_evidence_terms
+
+        frame = {
+            "location_mode": "current_context",
+            "target_objects": ["산책로", "공원", "강변 산책로"],
+            "result_match_terms": ["산책하기 좋은", "경치 좋은", "평탄한 길"],
+            "candidate_place_types": ["공원", "도시산책로", "하천변 산책로", "숲길"],
+            "constraints": ["도보 접근 가능"],
+            "primary_search_queries": [
+                "산책로 가까운 공원",
+                "도심 가까운 숲길 산책로",
+                "강변 산책로 근처",
+            ],
+        }
+
+        terms = _db_evidence_terms(frame)
+
+        self.assertEqual(terms["search"], ["산책로", "공원"])
+        self.assertNotIn("도보", terms["search"])
+        self.assertNotIn("가능", terms["search"])
+
     def test_collect_db_candidates_does_not_pull_cafe_from_candidate_type_when_target_is_specific(self):
         from recommendations.services.ai_search_orchestrator import collect_db_candidates
 
@@ -2885,6 +3084,49 @@ class RecommendationSearchTests(TestCase):
             },
             nearby_candidate["matched_evidence"],
         )
+
+    def test_db_evidence_uses_frame_candidate_type_category_label_without_db_first(self):
+        from recommendations.services.ai_search_orchestrator import _db_evidence
+
+        park = self._create_place(
+            name="신호공원",
+            category="city_park",
+            external_id="walk-category-label-park",
+            lat=35.096,
+            lng=128.854,
+            data_quality_score=70,
+        )
+        frame = {
+            "location_mode": "current_context",
+            "target_objects": ["산책로", "공원"],
+            "result_match_terms": ["산책하기 좋은", "경치 좋은"],
+            "candidate_place_types": ["공원", "도시산책로", "숲길"],
+            "constraints": ["도보 접근 가능"],
+            "primary_search_queries": ["산책로 가까운 공원"],
+        }
+
+        level, matched, policy_unmet, policy_verification_needed = _db_evidence(
+            park,
+            {
+                "verified": [],
+                "suggested": [],
+                "candidate": [],
+                "warning": [],
+            },
+            frame,
+        )
+
+        self.assertEqual(level, "weak")
+        self.assertEqual(policy_unmet, [])
+        self.assertEqual(policy_verification_needed, [])
+        self.assertTrue(any(
+            item["type"] == "category_label" and item["label"] == "공원"
+            for item in matched
+        ))
+        self.assertFalse(any(
+            item["type"] == "structured_category_direct"
+            for item in matched
+        ))
 
     def test_collect_db_candidates_marks_smoking_indoor_outdoor_policy(self):
         from recommendations.services.ai_search_orchestrator import collect_db_candidates
@@ -6346,6 +6588,42 @@ class RecommendationSearchTests(TestCase):
             ).exists()
         )
 
+    @patch("recommendations.views.search_places_by_keyword", return_value={"documents": []})
+    def test_tag_suggestion_approval_makes_tag_searchable_on_general_map(self, mock_kakao):
+        tag = Tag.objects.create(name="조용함", tag_type="recommendation")
+        report = PlaceReport.objects.create(
+            user=self.user,
+            place=self.place,
+            report_type="tag_suggestion",
+            suggested_tags=["조용함"],
+            description="지도 검색에 쓰일 태그",
+        )
+
+        approve_response = self.client.post(
+            f"/api/recommendations/admin/place-reports/{report.id}/approve/",
+            data=json.dumps({"admin_note": "태그 확인"}, ensure_ascii=False),
+            content_type="application/json",
+            **self._staff_headers(),
+        )
+        search_response = self.client.get(
+            "/api/recommendations/map-search/",
+            {"q": "조용함", "source": "db", "limit": 10},
+            HTTP_HOST="localhost",
+        )
+
+        self.assertEqual(approve_response.status_code, 200)
+        self.assertEqual(search_response.status_code, 200)
+        result_names = [item["name"] for item in search_response.json()["results"]]
+        self.assertIn(self.place.name, result_names)
+        self.assertTrue(
+            PlaceTag.objects.filter(
+                place=self.place,
+                tag=tag,
+                source="user_verified",
+                status="confirmed",
+            ).exists()
+        )
+
     def test_tag_suggestion_approval_does_not_duplicate_place_tag(self):
         report = PlaceReport.objects.create(
             user=self.user,
@@ -6370,8 +6648,8 @@ class RecommendationSearchTests(TestCase):
             before_count,
         )
 
-    def test_non_tag_report_approval_only_updates_status_and_note(self):
-        for report_type in ["new_place", "edit_place", "wrong_info"]:
+    def test_non_db_linking_report_approval_only_updates_status_and_note(self):
+        for report_type in ["wrong_info"]:
             report = PlaceReport.objects.create(
                 user=self.user,
                 report_type=report_type,
@@ -6390,6 +6668,96 @@ class RecommendationSearchTests(TestCase):
             report.refresh_from_db()
             self.assertEqual(report.status, "approved")
             self.assertEqual(report.admin_note, "후속 처리 예정")
+
+    def test_new_place_report_approval_requires_place_fields(self):
+        report = PlaceReport.objects.create(
+            user=self.user,
+            report_type="new_place",
+            suggested_name="좌표 없는 장소",
+            description="좌표 누락",
+        )
+
+        response = self.client.post(
+            f"/api/recommendations/admin/place-reports/{report.id}/approve/",
+            data=json.dumps({"admin_note": "확인"}, ensure_ascii=False),
+            content_type="application/json",
+            **self._staff_headers(),
+        )
+
+        self.assertEqual(response.status_code, 400)
+        report.refresh_from_db()
+        self.assertEqual(report.status, "pending")
+
+    @patch("recommendations.views.search_places_by_keyword", return_value={"documents": []})
+    def test_new_place_report_approval_creates_searchable_place(self, mock_kakao):
+        report = PlaceReport.objects.create(
+            user=self.user,
+            report_type="new_place",
+            suggested_name="새 지도 쉼터",
+            suggested_category="쉼터",
+            suggested_address="부산 테스트구 새길 10",
+            suggested_lat=35.155800,
+            suggested_lng=129.064300,
+            suggested_tags=["새태그"],
+            description="새 장소 제보",
+        )
+
+        approve_response = self.client.post(
+            f"/api/recommendations/admin/place-reports/{report.id}/approve/",
+            data=json.dumps({"admin_note": "새 장소 확인"}, ensure_ascii=False),
+            content_type="application/json",
+            **self._staff_headers(),
+        )
+        report.refresh_from_db()
+        search_response = self.client.get(
+            "/api/recommendations/map-search/",
+            {"q": "새 지도 쉼터", "source": "db", "limit": 10},
+            HTTP_HOST="localhost",
+        )
+
+        self.assertEqual(approve_response.status_code, 200)
+        self.assertEqual(approve_response.json()["created_places"], 1)
+        self.assertIsNotNone(report.place)
+        self.assertEqual(report.place.name, "새 지도 쉼터")
+        self.assertTrue(
+            PlaceTag.objects.filter(place=report.place, tag__name="새태그", source="user_verified").exists()
+        )
+        self.assertEqual(search_response.status_code, 200)
+        result = search_response.json()["results"][0]
+        self.assertEqual(result["name"], "새 지도 쉼터")
+        self.assertEqual(result["result_source"], "db")
+
+    @patch("recommendations.views.search_places_by_keyword")
+    def test_general_map_search_combines_db_and_kakao_places(self, mock_kakao):
+        mock_kakao.return_value = {
+            "documents": [
+                {
+                    "id": "987654321",
+                    "place_name": "카카오 테스트 카페",
+                    "category_name": "음식점 > 카페",
+                    "road_address_name": "부산 테스트구 카카오로 1",
+                    "address_name": "부산 테스트동",
+                    "x": "129.064500",
+                    "y": "35.155900",
+                    "phone": "051-000-0000",
+                    "place_url": "https://place.map.kakao.com/987654321",
+                    "distance": "120",
+                }
+            ]
+        }
+
+        response = self.client.get(
+            "/api/recommendations/map-search/",
+            {"q": "카페", "lat": 35.1556, "lng": 129.0641, "radius": 1000, "limit": 10},
+            HTTP_HOST="localhost",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        sources = {item["result_source"] for item in data["results"]}
+        self.assertIn("db", sources)
+        self.assertIn("kakao", sources)
+        self.assertEqual(data["candidate_counts"]["kakao"], 1)
 
     def test_recommendation_search_does_not_apply_personalization_for_anonymous_user(self):
         UserPreference.objects.create(

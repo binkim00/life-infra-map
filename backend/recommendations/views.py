@@ -51,6 +51,7 @@ from .services.smoking_area_data import (
     search_nearby_smoking_areas,
     map_smoking_area_to_recommendation,
 )
+from .services.tag_utils import get_category_display_name
 from .services.user_preferences import (
     USER_SELECTED_SOURCE,
     create_or_update_user_selected_preference,
@@ -404,38 +405,145 @@ def admin_place_report_detail(request, report_id):
     return Response(serializer.data)
 
 
-def apply_place_report_approval(report):
-    if report.report_type != "tag_suggestion" or not report.place or not report.suggested_tags:
-        return {
-            "created_place_tags": 0,
-            "skipped_tags": [],
-        }
-
+def attach_report_tags_to_place(report, place, *, create_missing_tags=False):
     created_count = 0
     skipped_tags = []
 
     for tag_label in unique_valid_labels(report.suggested_tags):
         tag = Tag.objects.filter(name=tag_label).first()
+        if not tag and create_missing_tags:
+            tag = Tag.objects.create(name=tag_label, tag_type="recommendation")
         if not tag:
             skipped_tags.append(tag_label)
             continue
-
-        if PlaceTag.objects.filter(place=report.place, tag=tag).exists():
+        if PlaceTag.objects.filter(place=place, tag=tag).exists():
             continue
 
-        PlaceTag.objects.create(
-            place=report.place,
+        _, created = PlaceTag.objects.get_or_create(
+            place=place,
             tag=tag,
             source="user_verified",
-            status="confirmed",
-            confidence=80,
-            evidence=f"사용자 제보 #{report.id} 관리자 승인",
-            is_verified=True,
-            verified_at=timezone.now(),
+            defaults={
+                "status": "confirmed",
+                "confidence": 80,
+                "evidence": f"사용자 제보 #{report.id} 관리자 승인",
+                "is_verified": True,
+                "verified_at": timezone.now(),
+            },
         )
-        created_count += 1
+        if created:
+            created_count += 1
+
+    return created_count, skipped_tags
+
+
+def create_place_from_report(report):
+    if not report.suggested_name:
+        raise ValueError("새 장소 제보 승인에는 장소명이 필요합니다.")
+    if not report.suggested_category:
+        raise ValueError("새 장소 제보 승인에는 카테고리가 필요합니다.")
+    if report.suggested_lat is None or report.suggested_lng is None:
+        raise ValueError("새 장소 제보 승인에는 좌표가 필요합니다.")
+
+    place, created = Place.objects.update_or_create(
+        source="user_report",
+        external_id=f"place-report-{report.id}",
+        defaults={
+            "name": report.suggested_name,
+            "category": report.suggested_category,
+            "address": report.suggested_address,
+            "lat": float(report.suggested_lat),
+            "lng": float(report.suggested_lng),
+            "source_name": "사용자 장소 제보",
+            "detail_location": "",
+            "data_quality_status": "candidate",
+            "data_quality_score": 60,
+            "raw": {
+                "place_report_id": report.id,
+                "report_type": report.report_type,
+                "description": report.description,
+            },
+        },
+    )
+
+    return place, created
+
+
+def update_place_from_report(report):
+    if not report.place:
+        raise ValueError("장소 수정 제보 승인에는 연결된 장소가 필요합니다.")
+
+    place = report.place
+    update_fields = []
+    field_map = [
+        ("suggested_name", "name"),
+        ("suggested_category", "category"),
+        ("suggested_address", "address"),
+        ("suggested_lat", "lat"),
+        ("suggested_lng", "lng"),
+    ]
+
+    for report_field, place_field in field_map:
+        value = getattr(report, report_field)
+        if value in (None, ""):
+            continue
+        if place_field in {"lat", "lng"}:
+            value = float(value)
+        setattr(place, place_field, value)
+        update_fields.append(place_field)
+
+    if update_fields:
+        place.data_quality_status = "candidate"
+        place.raw = {
+            **(place.raw or {}),
+            "last_edit_report_id": report.id,
+            "last_edit_report_description": report.description,
+        }
+        update_fields.extend(["data_quality_status", "raw", "updated_at"])
+        place.save(update_fields=list(dict.fromkeys(update_fields)))
+
+    return place, bool(update_fields)
+
+
+def apply_place_report_approval(report):
+    if report.report_type == "new_place":
+        place, created = create_place_from_report(report)
+        report.place = place
+        created_tag_count, skipped_tags = attach_report_tags_to_place(
+            report,
+            place,
+            create_missing_tags=True,
+        )
+        return {
+            "created_places": 1 if created else 0,
+            "updated_places": 0 if created else 1,
+            "created_place_tags": created_tag_count,
+            "skipped_tags": skipped_tags,
+        }
+
+    if report.report_type == "edit_place":
+        place, updated = update_place_from_report(report)
+        created_tag_count, skipped_tags = attach_report_tags_to_place(report, place)
+        return {
+            "created_places": 0,
+            "updated_places": 1 if updated else 0,
+            "created_place_tags": created_tag_count,
+            "skipped_tags": skipped_tags,
+        }
+
+    if report.report_type != "tag_suggestion" or not report.place or not report.suggested_tags:
+        return {
+            "created_places": 0,
+            "updated_places": 0,
+            "created_place_tags": 0,
+            "skipped_tags": [],
+        }
+
+    created_count, skipped_tags = attach_report_tags_to_place(report, report.place)
 
     return {
+        "created_places": 0,
+        "updated_places": 0,
         "created_place_tags": created_count,
         "skipped_tags": skipped_tags,
     }
@@ -452,7 +560,10 @@ def review_place_report(request, report_id, review_status):
         approval_result = {}
         previous_tier = get_current_user_tier(report.user)
         if review_status == "approved":
-            approval_result = apply_place_report_approval(report)
+            try:
+                approval_result = apply_place_report_approval(report)
+            except ValueError as exc:
+                return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
         report.status = review_status
         report.admin_note = serializer.validated_data.get("admin_note", "")
@@ -464,6 +575,7 @@ def review_place_report(request, report_id, review_status):
                 "admin_note",
                 "reviewed_by",
                 "reviewed_at",
+                "place",
                 "updated_at",
             ],
         )
@@ -507,6 +619,7 @@ def serialize_place(place, distance=None):
         "id": place.id,
         "name": place.name,
         "category": place.category,
+        "category_label": get_category_display_name(place.category),
         "address": place.address,
         "detail_location": place.detail_location,
         "lat": place.lat,
@@ -545,6 +658,207 @@ def serialize_place(place, distance=None):
         data["distance"] = distance
 
     return data
+
+
+def parse_optional_float(value):
+    try:
+        return float(value) if value not in (None, "") else None
+    except (TypeError, ValueError):
+        return None
+
+
+def parse_limited_int(value, *, default=30, minimum=1, maximum=100):
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        parsed = default
+    return min(max(parsed, minimum), maximum)
+
+
+def build_place_keyword_filter(keyword):
+    matched_categories = get_matching_categories(keyword)
+    return (
+        Q(name__icontains=keyword)
+        | Q(address__icontains=keyword)
+        | Q(detail_location__icontains=keyword)
+        | Q(category__icontains=keyword)
+        | Q(source__icontains=keyword)
+        | Q(source_name__icontains=keyword)
+        | Q(external_id__icontains=keyword)
+        | Q(place_tags__tag__name__icontains=keyword)
+        | Q(category__in=matched_categories)
+    )
+
+
+def search_saved_map_places(*, keyword="", lat=None, lng=None, radius=0, limit=30):
+    places = Place.objects.all().order_by("-updated_at", "-id")
+
+    if keyword:
+        places = places.filter(build_place_keyword_filter(keyword)).distinct()
+
+    distance_by_place_id = {}
+
+    if lat is not None and lng is not None:
+        nearby_place_ids = []
+
+        for place in places.only("id", "lat", "lng").iterator(chunk_size=1000):
+            distance = calculate_distance_m(lat, lng, place.lat, place.lng)
+
+            if radius and distance > radius:
+                continue
+
+            distance_by_place_id[place.id] = distance
+            nearby_place_ids.append(place.id)
+
+        nearby_place_ids.sort(key=lambda place_id: distance_by_place_id[place_id])
+        limited_place_ids = nearby_place_ids[:limit]
+        places_by_id = {
+            place.id: place
+            for place in (
+                Place.objects
+                .filter(id__in=limited_place_ids)
+                .prefetch_related("place_tags__tag")
+            )
+        }
+
+        return [
+            serialize_place(
+                places_by_id[place_id],
+                distance=distance_by_place_id[place_id],
+            )
+            for place_id in limited_place_ids
+            if place_id in places_by_id
+        ], len(nearby_place_ids)
+
+    total_count = places.count()
+    return [
+        serialize_place(place)
+        for place in places.prefetch_related("place_tags__tag")[:limit]
+    ], total_count
+
+
+def serialize_kakao_map_place(place, *, lat=None, lng=None):
+    place_lat = parse_optional_float(place.get("y"))
+    place_lng = parse_optional_float(place.get("x"))
+    distance = None
+    if place.get("distance") not in (None, ""):
+        distance = parse_optional_float(place.get("distance"))
+    elif lat is not None and lng is not None and place_lat is not None and place_lng is not None:
+        distance = calculate_distance_m(lat, lng, place_lat, place_lng)
+
+    return {
+        "id": place.get("id"),
+        "name": place.get("place_name", ""),
+        "category": place.get("category_name", ""),
+        "category_label": place.get("category_name", ""),
+        "address": place.get("road_address_name") or place.get("address_name", ""),
+        "detail_location": "",
+        "lat": place_lat,
+        "lng": place_lng,
+        "source": "kakao",
+        "external_id": place.get("id", ""),
+        "source_name": "카카오 지도",
+        "kakao_place_url": place.get("place_url", ""),
+        "place_url": place.get("place_url", ""),
+        "phone": place.get("phone", ""),
+        "distance": distance,
+        "tags": [],
+        "raw": place,
+    }
+
+
+@api_view(["GET"])
+def map_place_search(request):
+    keyword = request.GET.get("q", "").strip()
+    source = request.GET.get("source", "all").strip() or "all"
+    lat = parse_optional_float(request.GET.get("lat"))
+    lng = parse_optional_float(request.GET.get("lng"))
+    radius = parse_limited_int(request.GET.get("radius"), default=3000, minimum=0, maximum=20000)
+    limit = parse_limited_int(request.GET.get("limit"), default=30, minimum=1, maximum=100)
+
+    db_results = []
+    db_total_count = 0
+    kakao_results = []
+    kakao_error = ""
+
+    if source in {"all", "db"}:
+        db_results, db_total_count = search_saved_map_places(
+            keyword=keyword,
+            lat=lat,
+            lng=lng,
+            radius=radius,
+            limit=limit,
+        )
+
+    if keyword and source in {"all", "kakao"}:
+        try:
+            kakao_data = search_places_by_keyword(
+                keyword=keyword,
+                lat=lat,
+                lng=lng,
+                radius=radius or 3000,
+                size=min(limit, 15),
+            )
+            db_external_ids = {
+                str(place.get("external_id"))
+                for place in db_results
+                if place.get("source") == "kakao_local" and place.get("external_id")
+            }
+            kakao_results = [
+                serialize_kakao_map_place(place, lat=lat, lng=lng)
+                for place in kakao_data.get("documents", [])
+                if str(place.get("id")) not in db_external_ids
+            ]
+        except Exception as exc:
+            logger.info("Kakao map search failed.", exc_info=True)
+            kakao_error = str(exc)
+
+    combined_results = [
+        *[
+            {
+                **place,
+                "result_source": "db",
+                "source_label": "저장 장소",
+            }
+            for place in db_results
+        ],
+        *[
+            {
+                **place,
+                "result_source": "kakao",
+                "source_label": "카카오 장소",
+            }
+            for place in kakao_results
+        ],
+    ]
+
+    if lat is not None and lng is not None:
+        combined_results.sort(key=lambda place: (
+            place.get("distance") is None,
+            place.get("distance") if place.get("distance") is not None else 999999999,
+            0 if place.get("result_source") == "db" else 1,
+            str(place.get("name", "")),
+        ))
+
+    return Response({
+        "query": keyword,
+        "count": len(combined_results),
+        "candidate_counts": {
+            "db": len(db_results),
+            "kakao": len(kakao_results),
+            "db_total": db_total_count,
+        },
+        "filters": {
+            "q": keyword,
+            "source": source,
+            "lat": lat,
+            "lng": lng,
+            "radius": radius,
+            "limit": limit,
+        },
+        "kakao_error": kakao_error,
+        "results": combined_results,
+    })
 
 
 @api_view(["GET"])

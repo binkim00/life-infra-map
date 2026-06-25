@@ -168,6 +168,7 @@ const clearMarkers = () => {
 
 const createNumberMarkerImage = (label, markerColor = '', overlapCount = 0) => {
   const safeLabel = String(label || '')
+  const accentColor = markerColor || '#222222'
   const fontSize = safeLabel.length >= 2 ? 13 : 16
   const safeOverlapCount = Number(overlapCount)
   const shouldShowOverlapBadge = Number.isFinite(safeOverlapCount) && safeOverlapCount > 1
@@ -178,7 +179,7 @@ const createNumberMarkerImage = (label, markerColor = '', overlapCount = 0) => {
   const badgeSvg = shouldShowOverlapBadge
     ? `
       <g filter="url(#badgeShadow)">
-        <circle cx="49" cy="46" r="14" fill="#d9fbeb" fill-opacity="0.94"/>
+        <circle cx="49" cy="46" r="14" fill="${accentColor}" fill-opacity="0.94"/>
         <text
           x="49"
           y="46"
@@ -187,7 +188,7 @@ const createNumberMarkerImage = (label, markerColor = '', overlapCount = 0) => {
           font-size="${overlapFontSize}"
           font-weight="900"
           font-family="Arial, sans-serif"
-          fill="#222222"
+          fill="#ffffff"
         >${overlapText}</text>
       </g>
     `
@@ -219,7 +220,7 @@ const createNumberMarkerImage = (label, markerColor = '', overlapCount = 0) => {
              L17.7 15.8
              C14.2 14.2 12.6 9.8 14.6 6.2 Z"
           fill="#ffffff"
-          stroke="#222222"
+          stroke="${accentColor}"
           stroke-width="4"
           stroke-linejoin="round"
         />

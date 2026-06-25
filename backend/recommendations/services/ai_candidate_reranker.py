@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 
 from django.conf import settings
 
@@ -53,6 +54,8 @@ Rules:
 - If the target is specific, do not include broad unrelated cafe/shelter/restaurant candidates.
 - For urgent_nearest, include only semantically compatible candidates; distance is sorted later.
 - Return a row only for candidate_id values that exist in the input.
+- reason must be natural Korean for end users, one short sentence.
+- Do not mention internal field names such as frame, evidence_level, semantic_score, candidate_id, or retrieval_query in reason.
 """.strip()
 
 
@@ -97,6 +100,119 @@ def _distance(candidate):
         if value >= 0:
             return value
     return 999999999.0
+
+
+def _format_distance(distance):
+    if distance is None or distance >= 999999999.0:
+        return ""
+    if distance >= 1000:
+        return f"약 {distance / 1000:.1f}km"
+    return f"약 {int(round(distance))}m"
+
+
+def _has_korean(value):
+    return any("\uac00" <= char <= "\ud7a3" for char in _clean_text(value, 500))
+
+
+def _has_ascii_word(value):
+    return bool(re.search(r"[A-Za-z]{3,}", _clean_text(value, 500)))
+
+
+def _looks_internal_or_english_reason(value):
+    text = _clean_text(value, 500)
+    if not text:
+        return True
+    lowered = text.lower()
+    internal_markers = (
+        "candidate",
+        "frames require",
+        "frame",
+        "evidence_level",
+        "semantic_score",
+        "retrieval_query",
+        "pre_ai",
+        "details need verification",
+        "compatible evidence",
+        "within target type",
+        "matching with",
+    )
+    if any(marker in lowered for marker in internal_markers):
+        return True
+    return _has_ascii_word(text) and not _has_korean(text)
+
+
+def _public_source_label(candidate):
+    source = _clean_text(
+        candidate.get("candidate_source")
+        or candidate.get("source_type")
+        or candidate.get("source")
+    ).lower()
+    if "db" in source:
+        return "저장된 장소 정보"
+    if "kakao" in source:
+        return "카카오 지도 정보"
+    if "web" in source:
+        return "웹 참고 정보"
+    return "수집된 장소 정보"
+
+
+def _public_category(candidate):
+    category = _clean_text(candidate.get("category"), 80)
+    return category if category and _has_korean(category) else ""
+
+
+def _public_matched_labels(candidate, decision, max_items=2):
+    labels = []
+    evidence = candidate.get("matched_evidence")
+    if isinstance(evidence, list):
+        for item in evidence:
+            if not isinstance(item, dict):
+                continue
+            if item.get("type") == "retrieval_query_target":
+                continue
+            text = _clean_text(item.get("label") or item.get("value"), 40)
+            if text and _has_korean(text) and text not in labels:
+                labels.append(text)
+            if len(labels) >= max_items:
+                return labels
+    for field in decision.get("matched_fields") or []:
+        text = _clean_text(field, 40)
+        if text and _has_korean(text) and text not in labels:
+            labels.append(text)
+        if len(labels) >= max_items:
+            break
+    return labels
+
+
+def _public_semantic_reason(candidate, decision, *, needs_verification=False):
+    matched_labels = _public_matched_labels(candidate, decision)
+    category = _public_category(candidate)
+    source_label = _public_source_label(candidate)
+    distance_text = _format_distance(_distance(candidate))
+
+    if matched_labels:
+        reason = f"{', '.join(matched_labels)} 조건이 보여서 후보로 정리했어요."
+    elif category:
+        reason = f"{category} 분류가 요청 조건과 맞아 보여 후보로 정리했어요."
+    else:
+        reason = f"{source_label}를 기준으로 요청 조건과 가까운 후보로 정리했어요."
+
+    if distance_text:
+        reason = f"{reason} 기준 위치에서 {distance_text} 거리예요."
+
+    if needs_verification and "확인" not in reason:
+        reason = f"{reason} 세부 정보는 방문 전에 확인해 주세요."
+
+    return reason
+
+
+def _safe_semantic_reason(candidate, decision, *, needs_verification=False):
+    reason = _clean_text(decision.get("reason"), 300)
+    if _looks_internal_or_english_reason(reason):
+        return _public_semantic_reason(candidate, decision, needs_verification=needs_verification)
+    if needs_verification and "확인" not in reason:
+        return f"{reason} 세부 정보는 방문 전에 확인해 주세요."
+    return reason
 
 
 def _is_ai_enabled():
@@ -282,13 +398,11 @@ def semantic_rerank_candidates(frame, candidates, *, ranking_policy="evidence_fi
         if not candidate:
             continue
         needs_verification = decision["decision"] == "needs_verification"
-        semantic_reason = decision["reason"]
-        if needs_verification:
-            semantic_reason = (
-                semantic_reason or "Candidate type is compatible, but details need verification."
-            )
-            if "확인" not in semantic_reason and "verification" not in semantic_reason.lower():
-                semantic_reason = f"{semantic_reason} 세부 조건은 방문 전 확인 필요."
+        semantic_reason = _safe_semantic_reason(
+            candidate,
+            decision,
+            needs_verification=needs_verification,
+        )
         updated = {
             **candidate,
             "semantic_reranker": decision,

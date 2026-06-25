@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import HomeView from '../views/Homeview.vue'
+import MapSearchView from '@/views/MapSearchView.vue'
 import LoginView from '@/views/LoginView.vue'
 import SignupView from '@/views/SignupView.vue'
 import BoardListView from '@/views/BoardListView.vue'
@@ -142,6 +143,11 @@ const router = createRouter({
       props: {
         initialTab: 'search',
       },
+    },
+    {
+      path: '/map',
+      name: 'map-search',
+      component: MapSearchView,
     },
     {
       path: '/recommendation-test',

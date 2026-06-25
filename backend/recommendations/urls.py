@@ -4,6 +4,7 @@ from . import views
 urlpatterns = [
     path("health/", views.health_check),
     path("places/", views.place_list),
+    path("map-search/", views.map_place_search),
     path("kakao-place-tags/", views.kakao_place_tag_lookup),
     path("search/", views.recommendation_search),
     path("search-safety/", views.search_safety_check),

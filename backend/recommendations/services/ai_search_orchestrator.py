@@ -22,6 +22,7 @@ from recommendations.services.ai_web_search_provider import (
 from recommendations.services.kakao_local import search_places_by_keyword
 from recommendations.services.place_urls import get_kakao_place_url
 from recommendations.services.smoking_area_data import calculate_distance_m
+from recommendations.services.tag_utils import get_category_display_name
 
 
 logger = logging.getLogger(__name__)
@@ -78,6 +79,37 @@ def _clean_text(value, max_length=240):
 
 def _compact(value):
     return _clean_text(value, 500).lower().replace(" ", "")
+
+
+def _is_current_context_anchor(value):
+    key = _compact(value).replace("_", "").replace("-", "")
+    return key in {
+        "currentcoordinates",
+        "currentcoordinate",
+        "currentcontext",
+        "currentlocation",
+        "현재좌표",
+        "현재위치",
+        "현위치",
+        "내위치",
+    }
+
+
+def _normalize_current_context_anchor_frame(frame):
+    if not isinstance(frame, dict):
+        return {}
+    location_mode = _clean_text(frame.get("location_mode") or frame.get("locationMode")).lower()
+    anchor_location = _clean_text(frame.get("anchor_location") or frame.get("anchorLocation"))
+    if location_mode != "explicit" or not _is_current_context_anchor(anchor_location):
+        return frame
+    normalized = {
+        **frame,
+        "location_mode": "current_context",
+        "locationMode": "current_context",
+        "anchor_location": "",
+        "anchorLocation": "",
+    }
+    return normalized
 
 
 def _as_list(value, max_items=20):
@@ -499,6 +531,29 @@ def _evidence_terms(frame):
     }
 
 
+def _search_radius_for_frame(request_radius, frame, raw_query):
+    if request_radius not in (None, ""):
+        return _radius(request_radius)
+
+    text = _compact(" ".join([
+        raw_query or "",
+        *_frame_terms(frame, "constraints"),
+        *_frame_terms(frame, "result_match_terms"),
+        *_frame_terms(frame, "target_objects"),
+    ]))
+    urgent_markers = ["긴급", "급한", "급해", "바로", "즉시"]
+    walking_markers = ["도보", "걸어서", "걸어", "멀지", "너무멀"]
+    nearby_markers = ["근처", "가까운", "가까이", "인근", "주변"]
+
+    if any(_compact(marker) in text for marker in urgent_markers):
+        return 1500
+    if any(_compact(marker) in text for marker in walking_markers):
+        return 2000
+    if any(_compact(marker) in text for marker in nearby_markers):
+        return 3000
+    return None
+
+
 def _policy_enabled(frame):
     return any(
         code in POLICY_AWARE_CATEGORY_CODES
@@ -792,10 +847,19 @@ def _term_support(term, buckets):
     return support
 
 
-def _drop_short_qualifiers_when_specific_terms_exist(terms):
+def _drop_short_qualifiers_when_specific_terms_exist(terms, protected_terms=None):
     if not any(len(_compact(term)) >= 3 for term in terms):
         return terms
-    return [term for term in terms if len(_compact(term)) >= 3]
+    protected_compacts = {
+        _compact(term)
+        for term in protected_terms or []
+        if _compact(term)
+    }
+    return [
+        term
+        for term in terms
+        if len(_compact(term)) >= 3 or _compact(term) in protected_compacts
+    ]
 
 
 def _prefer_result_supported_terms(terms, buckets):
@@ -883,11 +947,21 @@ def _select_candidate_db_terms(frame, target_terms, max_items=12):
     selected = []
     seen = set()
     target_compacts = [_compact(term) for term in target_terms if _compact(term)]
+    raw_target_value_compacts = {
+        _compact(value)
+        for value in _frame_terms(frame, "target_objects", "targetObjects")
+        if _compact(value)
+    }
     for term in raw_terms:
         compact_term = _compact(term)
         if not compact_term:
             continue
-        if not any(target in compact_term or compact_term in target for target in target_compacts):
+        overlaps_selected_target = any(
+            target in compact_term or compact_term in target
+            for target in target_compacts
+        )
+        is_explicit_target_object = compact_term in raw_target_value_compacts
+        if not overlaps_selected_target and not is_explicit_target_object:
             continue
         if compact_term in seen:
             continue
@@ -895,20 +969,122 @@ def _select_candidate_db_terms(frame, target_terms, max_items=12):
         selected.append(term)
         if len(selected) >= max_items:
             break
-    return _drop_short_qualifiers_when_specific_terms_exist(selected)[:max_items]
+    return _drop_short_qualifiers_when_specific_terms_exist(
+        selected,
+        protected_terms=raw_target_value_compacts,
+    )[:max_items]
+
+
+def _append_non_redundant_terms(base_terms, extra_terms, max_items=12):
+    result = []
+    seen = set()
+
+    for term in [*(base_terms or []), *(extra_terms or [])]:
+        compact_term = _compact(term)
+        if not compact_term or compact_term in seen:
+            continue
+        if any(
+            existing != compact_term and (existing in compact_term or compact_term in existing)
+            for existing in seen
+        ):
+            continue
+        seen.add(compact_term)
+        result.append(term)
+        if len(result) >= max_items:
+            break
+
+    return result
 
 
 def _db_evidence_terms(frame):
     target_terms = _select_target_db_terms(frame)
     candidate_terms = _select_candidate_db_terms(frame, target_terms)
     constraint_terms = _specific_evidence_terms(_evidence_terms(frame)["constraints"], frame=frame)
-    search_terms = target_terms or candidate_terms or constraint_terms
+    search_terms = _append_non_redundant_terms(
+        target_terms,
+        candidate_terms,
+    ) or candidate_terms or constraint_terms
     return {
         "target": target_terms,
         "candidate": candidate_terms,
         "constraints": constraint_terms,
         "search": search_terms,
     }
+
+
+def _raw_target_evidence_terms(frame, max_items=12):
+    terms = _specific_evidence_terms(
+        [
+            *_frame_terms(frame, "target_objects", "targetObjects"),
+            *_frame_terms(frame, "result_match_terms", "resultMatchTerms"),
+        ],
+        frame=frame,
+        max_items=30,
+    )
+    return _drop_short_qualifiers_when_specific_terms_exist(
+        terms,
+        protected_terms=_frame_terms(frame, "target_objects", "targetObjects"),
+    )[:max_items]
+
+
+def _clean_exclusion_text(value):
+    text = _clean_text(value, 120)
+    if not text:
+        return ""
+    for marker in (
+        "제외해줘",
+        "제외",
+        "빼줘",
+        "빼고",
+        "빼",
+        "말고",
+        "아닌",
+        "아니고",
+        "않고",
+        "없이",
+    ):
+        text = re.sub(re.escape(marker), " ", text, flags=re.IGNORECASE)
+    return _clean_text(text, 120)
+
+
+def _frame_exclusion_match_terms(frame):
+    terms = []
+    seen = set()
+    for value in _frame_terms(frame, "exclusions", "excluded_place_natures", "avoid"):
+        cleaned = _clean_exclusion_text(value)
+        if not cleaned:
+            continue
+        parts = [part for part in re.split(r"[,/;|]+", cleaned) if _clean_text(part)]
+        if len(parts) <= 1 and len(re.split(r"\s+", cleaned.strip())) > 1:
+            parts = [cleaned]
+        for part in parts:
+            split_terms = _specific_evidence_terms([part], frame=frame, max_items=8)
+            if not split_terms:
+                split_terms = [_trim_evidence_suffixes(part)]
+            for term in split_terms:
+                compact_term = _compact(term)
+                if not compact_term or compact_term in seen or _is_broad_term(term):
+                    continue
+                seen.add(compact_term)
+                terms.append(term)
+    return terms
+
+
+def _source_excluded_by_frame(candidate, frame):
+    source = _clean_text(candidate.get("candidate_source") or candidate.get("source"))
+    if source != "web":
+        return False
+    exclusion_text = _compact(" ".join(_frame_terms(frame, "exclusions", "excluded_place_natures", "avoid")))
+    return bool(exclusion_text and ("웹" in exclusion_text or "web" in exclusion_text))
+
+
+def _generic_exclusion_review(text, frame, candidate=None):
+    unmet = []
+    if candidate and _source_excluded_by_frame(candidate, frame):
+        unmet.append("제외 조건과 맞지 않는 웹 후보")
+    for term in _matched_terms(text, _frame_exclusion_match_terms(frame)):
+        unmet.append(f"제외 조건과 맞지 않는 {term} 정보")
+    return list(dict.fromkeys(unmet))
 
 
 def _has_actionable_place_target(frame):
@@ -1058,7 +1234,23 @@ def _db_evidence(place, tag_lists, frame):
     terms = _db_evidence_terms(frame)
     target_terms = terms["target"]
     candidate_terms = terms["candidate"]
+    raw_target_terms = _specific_evidence_terms(
+        [
+            *_frame_terms(frame, "target_objects", "targetObjects"),
+            *_frame_terms(frame, "result_match_terms", "resultMatchTerms"),
+        ],
+        frame=frame,
+        max_items=30,
+    )
+    raw_candidate_terms = _specific_evidence_terms(
+        _frame_terms(frame, "candidate_place_types", "candidatePlaceTypes"),
+        frame=frame,
+        max_items=30,
+    )
+    frame_category_codes = _frame_category_codes(frame)
     db_first_category_codes = _db_first_category_codes(frame)
+    category_label = _clean_text(get_category_display_name(place.category))
+    category_text = " ".join([_clean_text(place.category), category_label])
     text_fields = {
         "name": _clean_text(place.name),
         "category": _clean_text(place.category),
@@ -1081,6 +1273,10 @@ def _db_evidence(place, tag_lists, frame):
         field="db_tags_or_place_text",
         source_strength="verified",
     )
+    policy_unmet = [
+        *policy_unmet,
+        *_generic_exclusion_review(policy_text, frame),
+    ]
 
     if place.category in db_first_category_codes:
         matched.append({
@@ -1091,8 +1287,35 @@ def _db_evidence(place, tag_lists, frame):
         })
         level = "strong"
 
+    if place.category in frame_category_codes and place.category not in db_first_category_codes:
+        matched.append({
+            "type": "category_code",
+            "field": "category",
+            "value": place.category,
+            "label": category_label,
+            "source_strength": "category_only",
+        })
+
+    for term in _matched_terms(category_text, raw_target_terms):
+        matched.append({
+            "type": "target_category_label",
+            "field": "category",
+            "value": term,
+            "label": category_label,
+            "source_strength": "category_only",
+        })
+
+    for term in _matched_terms(category_text, raw_candidate_terms or candidate_terms):
+        matched.append({
+            "type": "category_label",
+            "field": "category",
+            "value": term,
+            "label": category_label,
+            "source_strength": "category_only",
+        })
+
     for field_name, text in text_fields.items():
-        for term in _matched_terms(text, target_terms):
+        for term in _matched_terms(text, target_terms or raw_target_terms):
             matched.append({
                 "type": "target_direct",
                 "field": field_name,
@@ -1330,6 +1553,11 @@ def _external_pre_ai_evidence(candidate, frame):
     db_terms = _db_evidence_terms(frame)
     target_terms = db_terms["target"]
     candidate_terms = db_terms["candidate"]
+    raw_target_terms = [
+        term
+        for term in _raw_target_evidence_terms(frame, max_items=20)
+        if _compact(term) not in {_compact(item) for item in target_terms}
+    ]
     text = _candidate_text(candidate)
     retrieval_query = _clean_text(candidate.get("retrieval_query"))
     source = _clean_text(candidate.get("candidate_source") or candidate.get("source"))
@@ -1342,6 +1570,10 @@ def _external_pre_ai_evidence(candidate, frame):
             return "strong", matched
         for term in _matched_terms(text, candidate_terms):
             matched.append({"type": "candidate_type", "value": term, "source_strength": "external"})
+        if matched:
+            return "medium", matched
+        for term in _matched_terms(text, raw_target_terms):
+            matched.append({"type": "target_context", "value": term, "source_strength": "external"})
         if matched:
             return "medium", matched
     for term in _matched_terms(retrieval_query, target_terms):
@@ -1358,6 +1590,10 @@ def _merge_candidate_policy_review(candidate, frame, level, matched, *, field, s
         field=field,
         source_strength=source_strength,
     )
+    policy_unmet = [
+        *policy_unmet,
+        *_generic_exclusion_review(_candidate_text(candidate), frame, candidate=candidate),
+    ]
     merged_matched = [*matched, *policy_matched_evidence]
     adjusted_level = _adjust_evidence_level_for_policy(
         level,
@@ -1788,9 +2024,7 @@ def _top_up_ranked_candidates(ranked_candidates, candidate_pool, excluded_candid
         if matched_evidence and all(item.get("type") == "retrieval_query_target" for item in matched_evidence if isinstance(item, dict)):
             continue
         evidence_level = "medium" if level == "strong" else level
-        reason = (
-            "Collected candidate has compatible evidence, but details need verification."
-        )
+        reason = "요청 조건과 맞아 보이는 후보예요. 세부 정보는 방문 전에 확인해 주세요."
         additions.append({
             **candidate,
             "semantic_score": max(float(candidate.get("score") or 0), 45.0),
@@ -2134,8 +2368,12 @@ def run_ai_search(request_data, *, user=None):
         0,
     )
     action = intent_plan.get("decision_action") or intent_plan.get("action")
+    frame = _normalize_current_context_anchor_frame(
+        intent_plan.get("frame") if isinstance(intent_plan.get("frame"), dict) else {}
+    )
+    if frame is not intent_plan.get("frame"):
+        intent_plan = {**intent_plan, "frame": frame}
     search_plan = to_search_plan(intent_plan, raw_query=original_query or query)
-    frame = intent_plan.get("frame") if isinstance(intent_plan.get("frame"), dict) else {}
 
     if action in {"ai_unavailable", "ask_clarification", "out_of_scope", "blocked"}:
         message = ""
@@ -2287,6 +2525,8 @@ def run_ai_search(request_data, *, user=None):
         search_lng = location_resolution.get("lng")
         search_plan["resolved_anchor_location"] = location_resolution
         search_plan["resolvedAnchorLocation"] = location_resolution
+
+    radius = _search_radius_for_frame(radius, frame, original_query or query)
 
     primary_queries = _normalize_search_queries(frame.get("primary_search_queries"))
     primary_limit = _as_int(getattr(settings, "AI_SEARCH_PRIMARY_QUERY_LIMIT", 2), 2)

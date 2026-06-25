@@ -895,6 +895,10 @@ const resultCountText = computed(() => {
     return ''
   }
 
+  if (isResultListCollapsed.value) {
+    return '검색 결과'
+  }
+
   const suffix = resultMessageSuffix.value
     ? ` · ${resultMessageSuffix.value}`
     : ''
@@ -6121,7 +6125,8 @@ const shouldRewriteRecommendationReason = (reason = '') => {
   if (!text) return true
 
   return (
-    /collected candidate|compatible evidence|details need verification|candidate type/i.test(text) ||
+    /collected candidate|compatible evidence|details need verification|candidate type|candidate is|frames require|evidence_level|semantic_score|retrieval_query|pre_ai|matching with|within target type/i.test(text) ||
+    (/[A-Za-z]{3,}/.test(text) && !/[가-힣]/.test(text)) ||
     text.includes('추천 근거 높음') ||
     text.includes('DB 후보') ||
     text.includes('카카오 검색 근거 후보') ||
@@ -6152,7 +6157,7 @@ const getRecommendationReason = (place) => {
   if (matchedLabels.length) {
     const distancePhrase = distanceText ? ` 기준 위치에서 ${distanceText} 정도로 가까운 편이에요.` : ''
     const verifyPhrase = needsVerification ? ' 세부 정보는 방문 전에 한 번 더 확인해 주세요.' : ''
-    return `${matchedLabels.join(', ')} 조건이 확인된 ${sourceText} 장소예요.${distancePhrase}${verifyPhrase}`.trim()
+    return `${matchedLabels.join(', ')} 조건과 맞아 보이는 장소예요.${distancePhrase}${verifyPhrase}`.trim()
   }
 
   const savedTags = [
@@ -6162,14 +6167,14 @@ const getRecommendationReason = (place) => {
 
   if (savedTags.length) {
     const verifyPhrase = needsVerification ? ' 다만 세부 조건은 방문 전 확인이 필요합니다.' : ''
-    return `${sourceText}에 저장된 장소 정보가 검색 조건과 가까워 후보로 올렸어요.${verifyPhrase}`
+    return `저장된 장소 정보가 검색 조건과 가까워 후보로 올렸어요.${verifyPhrase}`
   }
 
   if (getDistanceValue(place) !== null) {
-    return `검색 기준 위치에서 ${distanceText} 정도 떨어진 ${sourceText} 장소예요.`
+    return `검색 기준 위치에서 ${distanceText} 정도 떨어진 후보예요.`
   }
 
-  return `${sourceText}에서 검색 조건과 가까운 장소로 정리했어요.`
+  return `${sourceText}를 참고해 검색 조건과 가까운 장소로 정리했어요.`
 }
 
 const getRecommendationReasonSummary = (place) => {
@@ -9630,7 +9635,11 @@ const getBackendResultMessageSuffix = ({
   scenarioLabel = '',
   unifiedOrder = true,
 } = {}) => {
-  const parts = [`저장 장소 ${dbCount}개`]
+  const parts = []
+
+  if (dbCount > 0) {
+    parts.push(`저장 장소 ${dbCount}개`)
+  }
 
   if (externalCount > 0) {
     parts.push(`참고 정보 ${externalCount}개`)
@@ -9640,9 +9649,13 @@ const getBackendResultMessageSuffix = ({
     parts.push(`카카오 ${kakaoCount}개`)
   }
 
-  parts.push('조건 가까운 순')
+  if (!parts.length) {
+    parts.push('조건에 맞는 후보')
+  }
 
-  if (scenarioLabel) {
+  parts.push('추천순')
+
+  if (scenarioLabel && /[가-힣]/.test(scenarioLabel) && !/_/.test(scenarioLabel)) {
     parts.push(scenarioLabel)
   }
 
@@ -12066,7 +12079,7 @@ onBeforeUnmount(() => {
           </section>
 
           <div v-if="isResultListCollapsed" class="collapsed-panel-summary">
-            {{ displayResults.length }}개
+            검색 결과
           </div>
 
           <template v-else>
@@ -12128,10 +12141,6 @@ onBeforeUnmount(() => {
 
                       <small v-if="getDistanceText(place)">
                         {{ getDistanceText(place) }}
-                      </small>
-
-                      <small v-if="isRecommendationPlace(place) && getDisplayRecommendScore(place)">
-                        추천 점수 {{ getDisplayRecommendScore(place) }}
                       </small>
 
                       <small v-if="isRecommendationPlace(place) && getPersonalizationBoost(place) > 0">
@@ -12372,11 +12381,6 @@ onBeforeUnmount(() => {
 
               <div class="info-list compact-info-list">
                 <div v-if="isRecommendationPlace(selectedPlace)" class="recommendation-summary">
-                  <div v-if="isRecommendationPlace(selectedPlace) && getDisplayRecommendScore(selectedPlace)">
-                    <span>추천 점수</span>
-                    <strong>{{ getDisplayRecommendScore(selectedPlace) }}점</strong>
-                  </div>
-
                   <div v-if="getRecommendationMetaText(selectedPlace) || getRecommendationConfidence(selectedPlace)">
                     <span>출처/신뢰도</span>
                     <strong>

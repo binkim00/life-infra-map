@@ -100,6 +100,28 @@ export const getSavedPlaces = async ({
   return response.data
 }
 
+export const searchMapPlaces = async ({
+  q = '',
+  source = 'all',
+  lat = null,
+  lng = null,
+  radius = 3000,
+  limit = 30,
+} = {}) => {
+  const response = await axios.get(`${API_BASE_URL}/recommendations/map-search/`, {
+    params: {
+      q,
+      source,
+      lat,
+      lng,
+      radius,
+      limit,
+    },
+  })
+
+  return response.data
+}
+
 export const getKakaoPlaceTags = async (externalIds = []) => {
   const response = await axios.get(`${API_BASE_URL}/recommendations/kakao-place-tags/`, {
     params: {
