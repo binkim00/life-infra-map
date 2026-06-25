@@ -1,34 +1,72 @@
 [
   {
-    "model": "auth.user",
-    "pk": 9001,
-    "fields": {
-      "password": "!fixture-user-has-no-login-password",
-      "last_login": null,
-      "is_superuser": false,
-      "username": "notice_seed_admin",
-      "first_name": "생활틈지도",
-      "last_name": "운영팀",
-      "email": "notice@example.com",
-      "is_staff": true,
-      "is_active": true,
-      "date_joined": "2026-06-22T00:00:00+09:00",
-      "groups": [],
-      "user_permissions": []
-    }
-  },
-  {
     "model": "boards.post",
     "pk": 9001,
     "fields": {
-      "author": 9001,
+      "author": ["admin"],
       "board_type": "notice",
-      "title": "[필독] 생활틈지도 공지사항 안내",
-      "content": "생활틈지도 공지사항 게시판입니다.\n\n서비스 이용 안내, 업데이트 소식, 운영 정책 변경처럼 모든 사용자가 확인해야 하는 내용을 이곳에 고정글로 안내합니다.\n\n이 글은 Django fixture로 제공되는 초기 데이터입니다. 필요할 때 `python manage.py loaddata boards_notice_seed` 명령으로 다시 로드할 수 있습니다.",
+      "title": "[필독] 여기일지도 서비스 이용 안내",
+      "content": "안녕하세요. 여기일지도 운영팀입니다.\n\n여기일지도는 현재 위치나 선택한 지역을 기준으로 공중화장실, 주차장, 흡연구역, 무료 와이파이, 공원, 쉼터, 관광지처럼 생활 속에서 필요한 장소를 상황에 맞게 추천하는 지도 서비스입니다.\n\n검색어를 입력하거나 지도 화면에서 현재 위치를 선택하면 추천 장소를 지도와 목록으로 확인할 수 있습니다.\n\n더 정확한 추천을 위해 위치 권한과 검색 조건을 확인한 뒤 이용해 주세요.",
       "view_count": 0,
       "is_pinned": true,
       "created_at": "2026-06-22T00:00:00+09:00",
       "updated_at": "2026-06-22T00:00:00+09:00"
+    }
+  },
+  {
+    "model": "boards.post",
+    "pk": 9002,
+    "fields": {
+      "author": ["admin"],
+      "board_type": "notice",
+      "title": "[안내] 자연어 검색 기능 사용 방법",
+      "content": "여기일지도에서는 단순 키워드뿐 아니라 상황을 담은 문장으로도 장소를 검색할 수 있습니다.\n\n예시:\n- 화장실 급해\n- 근처 주차장 찾아줘\n- 조용히 작업할 카페 추천해줘\n- 비 피하면서 잠깐 쉴 곳 있어?\n- 산책하기 좋은 곳 알려줘\n\n입력한 문장은 추천 조건으로 변환되며, 조건에 맞는 DB 장소와 외부 지도 검색 후보를 함께 보여줄 수 있습니다.",
+      "view_count": 0,
+      "is_pinned": true,
+      "created_at": "2026-06-22T00:05:00+09:00",
+      "updated_at": "2026-06-22T00:05:00+09:00"
+    }
+  },
+  {
+    "model": "boards.post",
+    "pk": 9003,
+    "fields": {
+      "author": ["admin"],
+      "board_type": "notice",
+      "title": "[안내] 장소 정보와 추천 결과 기준",
+      "content": "여기일지도의 추천 결과는 공공데이터, 외부 지도 API, 내부 장소 DB, 태그 정보, 거리, 신뢰도 등을 함께 고려해 표시됩니다.\n\n추천 결과에는 장소명, 카테고리, 주소, 거리, 추천 태그, 추천 이유 등이 포함될 수 있습니다.\n\n일부 외부 검색 후보는 DB에 저장된 검증 정보가 부족할 수 있으므로, 실제 방문 전 상세 정보를 한 번 더 확인해 주세요.",
+      "view_count": 0,
+      "is_pinned": true,
+      "created_at": "2026-06-22T00:10:00+09:00",
+      "updated_at": "2026-06-22T00:10:00+09:00"
+    }
+  },
+  {
+    "model": "boards.post",
+    "pk": 9004,
+    "fields": {
+      "author": ["admin"],
+      "board_type": "notice",
+      "title": "[안내] 장소 제보 및 수정 요청 안내",
+      "content": "서비스 이용 중 새로운 장소를 발견했거나 기존 장소 정보가 실제와 다르다면 장소 제보 기능을 이용해 주세요.\n\n제보 가능한 내용:\n- 신규 장소 추가\n- 장소명, 주소, 좌표 등 기본 정보 수정\n- 추천 태그 제안\n- 잘못된 정보 신고\n- 사진 또는 설명 보완\n\n접수된 제보는 운영자 검토 후 승인 또는 반려될 수 있습니다.",
+      "view_count": 0,
+      "is_pinned": true,
+      "created_at": "2026-06-22T00:15:00+09:00",
+      "updated_at": "2026-06-22T00:15:00+09:00"
+    }
+  },
+  {
+    "model": "boards.post",
+    "pk": 9005,
+    "fields": {
+      "author": ["admin"],
+      "board_type": "notice",
+      "title": "[운영정책] 게시판 및 신고 기능 안내",
+      "content": "여기일지도 게시판은 사용자 간 정보 공유와 서비스 이용 문의를 위한 공간입니다.\n\n다른 이용자에게 불쾌감을 주는 글, 허위 정보, 광고성 게시글, 개인정보 노출 게시글은 신고 또는 관리자 조치 대상이 될 수 있습니다.\n\n신고가 접수된 게시글과 댓글은 운영자가 확인하며, 필요 시 경고 또는 이용 제한 조치가 적용될 수 있습니다.",
+      "view_count": 0,
+      "is_pinned": true,
+      "created_at": "2026-06-22T00:20:00+09:00",
+      "updated_at": "2026-06-22T00:20:00+09:00"
     }
   }
 ]

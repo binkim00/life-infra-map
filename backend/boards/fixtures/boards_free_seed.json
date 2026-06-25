@@ -1,0 +1,3121 @@
+[
+  {
+    "model": "boards.post",
+    "pk": 9101,
+    "fields": {
+      "author": [
+        "parkj"
+      ],
+      "board_type": "free",
+      "title": "밥싸피 홍보합니다",
+      "content": "안녕하세요. 제가 만든 웹사이트 밥싸피 홍보합니다! SSAFY 점심 메뉴와 밥 약속을 더 쉽게 정리하려고 만든 서비스입니다. 다들 한 번씩 들어와 주세요. 매일 쓰면 점심 고민이 사라집니다.",
+      "view_count": 64,
+      "is_pinned": false,
+      "created_at": "2026-06-25T13:00:00+09:00",
+      "updated_at": "2026-06-25T13:00:00+09:00"
+    }
+  },
+  {
+    "model": "boards.post",
+    "pk": 9102,
+    "fields": {
+      "author": [
+        "jongk"
+      ],
+      "board_type": "free",
+      "title": "무료 와이파이 잡으러 갔다가 제 자존심이 끊겼어요",
+      "content": "와이파이는 빵빵했는데 제 노트북 배터리가 3퍼였습니다. 콘센트 태그의 소중함을 온몸으로 배웠습니다.",
+      "view_count": 25,
+      "is_pinned": false,
+      "created_at": "2026-06-25T13:11:00+09:00",
+      "updated_at": "2026-06-25T13:11:00+09:00"
+    }
+  },
+  {
+    "model": "boards.post",
+    "pk": 9103,
+    "fields": {
+      "author": [
+        "jaej"
+      ],
+      "board_type": "free",
+      "title": "주차장 찾다가 차랑 대화를 시작했습니다",
+      "content": "차가 조용히 떨고 있길래 괜찮냐고 물어봤습니다. 공영주차장 찾으니 그제야 진정하더라고요.",
+      "view_count": 32,
+      "is_pinned": false,
+      "created_at": "2026-06-25T13:22:00+09:00",
+      "updated_at": "2026-06-25T13:22:00+09:00"
+    }
+  },
+  {
+    "model": "boards.post",
+    "pk": 9104,
+    "fields": {
+      "author": [
+        "sook"
+      ],
+      "board_type": "free",
+      "title": "조용한 카페 검색했는데 제 배가 제일 시끄러웠습니다",
+      "content": "분위기는 완벽했는데 배에서 회의 알림 같은 소리가 났습니다. 다음 검색어는 밥집입니다.",
+      "view_count": 39,
+      "is_pinned": false,
+      "created_at": "2026-06-25T13:33:00+09:00",
+      "updated_at": "2026-06-25T13:33:00+09:00"
+    }
+  },
+  {
+    "model": "boards.post",
+    "pk": 9105,
+    "fields": {
+      "author": [
+        "youj"
+      ],
+      "board_type": "free",
+      "title": "산책하기 좋은 곳 찾다가 운동한 척했습니다",
+      "content": "지도에서 공원을 세 군데 비교했더니 이미 마음속으로는 만 보 걸었습니다. 실제로는 엘리베이터까지 걸었습니다.",
+      "view_count": 46,
+      "is_pinned": false,
+      "created_at": "2026-06-25T13:44:00+09:00",
+      "updated_at": "2026-06-25T13:44:00+09:00"
+    }
+  },
+  {
+    "model": "boards.post",
+    "pk": 9106,
+    "fields": {
+      "author": [
+        "yeas"
+      ],
+      "board_type": "free",
+      "title": "흡연구역 찾는 친구 따라갔다가 바람만 맞았습니다",
+      "content": "저는 비흡연자인데 위치 설명 담당이 됐습니다. 그래도 지도 덕분에 길 잃은 척은 안 했습니다.",
+      "view_count": 53,
+      "is_pinned": false,
+      "created_at": "2026-06-25T13:55:00+09:00",
+      "updated_at": "2026-06-25T13:55:00+09:00"
+    }
+  },
+  {
+    "model": "boards.post",
+    "pk": 9107,
+    "fields": {
+      "author": [
+        "bongm"
+      ],
+      "board_type": "free",
+      "title": "화장실 급할 때 인간은 누구나 스프린터가 됩니다",
+      "content": "평소엔 계단도 싫어하는데 오늘은 자동문보다 빨랐습니다. 가까운 순 정렬은 생명입니다.",
+      "view_count": 60,
+      "is_pinned": false,
+      "created_at": "2026-06-25T14:06:00+09:00",
+      "updated_at": "2026-06-25T14:06:00+09:00"
+    }
+  },
+  {
+    "model": "boards.post",
+    "pk": 9108,
+    "fields": {
+      "author": [
+        "woob"
+      ],
+      "board_type": "free",
+      "title": "장소 제보하려고 사진 찍다 사진작가 됐습니다",
+      "content": "입구 사진 하나 찍으려다 구도 잡고 있더라고요. 제보 기능이 사람을 성장시킵니다.",
+      "view_count": 21,
+      "is_pinned": false,
+      "created_at": "2026-06-25T14:17:00+09:00",
+      "updated_at": "2026-06-25T14:17:00+09:00"
+    }
+  },
+  {
+    "model": "boards.post",
+    "pk": 9109,
+    "fields": {
+      "author": [
+        "simh"
+      ],
+      "board_type": "free",
+      "title": "야경 명소 찾다가 제 얼굴이 제일 어두웠습니다",
+      "content": "조명은 예뻤는데 카메라가 저를 못 살렸습니다. 그래도 장소는 추천할 만했습니다.",
+      "view_count": 28,
+      "is_pinned": false,
+      "created_at": "2026-06-25T14:28:00+09:00",
+      "updated_at": "2026-06-25T14:28:00+09:00"
+    }
+  },
+  {
+    "model": "boards.post",
+    "pk": 9110,
+    "fields": {
+      "author": [
+        "seoh"
+      ],
+      "board_type": "free",
+      "title": "혼밥 장소 찾는데 제일 큰 조건은 당당함이었습니다",
+      "content": "혼자 앉기 좋은 자리보다 제 멘탈이 더 중요했습니다. 그래도 태그 있으면 마음이 든든합니다.",
+      "view_count": 35,
+      "is_pinned": false,
+      "created_at": "2026-06-25T14:39:00+09:00",
+      "updated_at": "2026-06-25T14:39:00+09:00"
+    }
+  },
+  {
+    "model": "boards.post",
+    "pk": 9111,
+    "fields": {
+      "author": [
+        "gae"
+      ],
+      "board_type": "free",
+      "title": "검색 기록 보다가 제 생활 패턴을 들켰습니다",
+      "content": "화장실, 카페, 주차장, 또 카페. 여기일지도는 저보다 저를 잘 아는 것 같습니다.",
+      "view_count": 42,
+      "is_pinned": false,
+      "created_at": "2026-06-25T14:50:00+09:00",
+      "updated_at": "2026-06-25T14:50:00+09:00"
+    }
+  },
+  {
+    "model": "boards.post",
+    "pk": 9112,
+    "fields": {
+      "author": [
+        "jaeh"
+      ],
+      "board_type": "free",
+      "title": "최신 확인일 보고 안심했는데 제 약속 시간은 오래됐습니다",
+      "content": "장소 정보는 최신인데 저는 지각입니다. 신뢰도는 장소 말고 제 시간관념에 필요합니다.",
+      "view_count": 49,
+      "is_pinned": false,
+      "created_at": "2026-06-25T15:01:00+09:00",
+      "updated_at": "2026-06-25T15:01:00+09:00"
+    }
+  },
+  {
+    "model": "boards.post",
+    "pk": 9113,
+    "fields": {
+      "author": [
+        "mir"
+      ],
+      "board_type": "free",
+      "title": "비 피할 곳 찾다가 비랑 협상했습니다",
+      "content": "잠깐만 기다려달라고 했는데 비가 안 들어줬습니다. 실내쉼터 후보가 제 편이었습니다.",
+      "view_count": 56,
+      "is_pinned": false,
+      "created_at": "2026-06-25T15:12:00+09:00",
+      "updated_at": "2026-06-25T15:12:00+09:00"
+    }
+  },
+  {
+    "model": "boards.post",
+    "pk": 9114,
+    "fields": {
+      "author": [
+        "juns"
+      ],
+      "board_type": "free",
+      "title": "공원 추천받고 벤치와 내적 친밀감 생겼습니다",
+      "content": "잠깐 앉았을 뿐인데 벤치가 저를 이해해주는 느낌이었습니다. 힐링 태그 인정합니다.",
+      "view_count": 63,
+      "is_pinned": false,
+      "created_at": "2026-06-25T15:23:00+09:00",
+      "updated_at": "2026-06-25T15:23:00+09:00"
+    }
+  },
+  {
+    "model": "boards.post",
+    "pk": 9115,
+    "fields": {
+      "author": [
+        "sungw"
+      ],
+      "board_type": "free",
+      "title": "카페 콘센트 찾는 눈빛이 사냥꾼 같았대요",
+      "content": "커피보다 콘센트를 먼저 봤습니다. 노트북 작업 가능 태그는 현대인의 나침반입니다.",
+      "view_count": 24,
+      "is_pinned": false,
+      "created_at": "2026-06-25T15:34:00+09:00",
+      "updated_at": "2026-06-25T15:34:00+09:00"
+    }
+  },
+  {
+    "model": "boards.post",
+    "pk": 9116,
+    "fields": {
+      "author": [
+        "yoonj"
+      ],
+      "board_type": "free",
+      "title": "길찾기 눌렀는데 제 방향감각도 같이 눌렸습니다",
+      "content": "지도는 정확했는데 제가 반대로 걸었습니다. 그래도 다시 안내해줘서 살았습니다.",
+      "view_count": 31,
+      "is_pinned": false,
+      "created_at": "2026-06-25T15:45:00+09:00",
+      "updated_at": "2026-06-25T15:45:00+09:00"
+    }
+  },
+  {
+    "model": "boards.post",
+    "pk": 9117,
+    "fields": {
+      "author": [
+        "soonc"
+      ],
+      "board_type": "free",
+      "title": "맛집 검색하다가 메뉴판 사진만 20분 봤습니다",
+      "content": "결정장애가 검색 결과보다 많았습니다. 추천 이유가 있으면 제 마음도 정렬될 것 같아요.",
+      "view_count": 38,
+      "is_pinned": false,
+      "created_at": "2026-06-25T15:56:00+09:00",
+      "updated_at": "2026-06-25T15:56:00+09:00"
+    }
+  },
+  {
+    "model": "boards.post",
+    "pk": 9118,
+    "fields": {
+      "author": [
+        "euns"
+      ],
+      "board_type": "free",
+      "title": "장소 태그 보다가 제 성격 태그도 필요해졌습니다",
+      "content": "조용함, 혼자이용좋음, 오래머물기좋음. 이쯤 되면 장소가 아니라 제 프로필입니다.",
+      "view_count": 45,
+      "is_pinned": false,
+      "created_at": "2026-06-25T16:07:00+09:00",
+      "updated_at": "2026-06-25T16:07:00+09:00"
+    }
+  },
+  {
+    "model": "boards.post",
+    "pk": 9119,
+    "fields": {
+      "author": [
+        "jinh"
+      ],
+      "board_type": "free",
+      "title": "여기일지도 켜고 나가니 계획적인 사람처럼 보입니다",
+      "content": "사실 즉흥인데 앱이 모든 걸 수습해줬습니다. 오늘도 문명에게 빚졌습니다.",
+      "view_count": 52,
+      "is_pinned": false,
+      "created_at": "2026-06-25T16:18:00+09:00",
+      "updated_at": "2026-06-25T16:18:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9201,
+    "fields": {
+      "post": 9101,
+      "author": [
+        "jongk"
+      ],
+      "parent": null,
+      "content": "이 글 보고 웃다가 검색어 까먹었습니다.",
+      "created_at": "2026-06-25T18:00:00+09:00",
+      "updated_at": "2026-06-25T18:00:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9202,
+    "fields": {
+      "post": 9101,
+      "author": [
+        "jaej"
+      ],
+      "parent": null,
+      "content": "시연 때 이 글 나오면 분위기 바로 풀리겠네요.",
+      "created_at": "2026-06-25T18:01:00+09:00",
+      "updated_at": "2026-06-25T18:01:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9203,
+    "fields": {
+      "post": 9101,
+      "author": [
+        "sook"
+      ],
+      "parent": null,
+      "content": "공감됩니다. 저도 비슷한 상황 겪었어요.",
+      "created_at": "2026-06-25T18:02:00+09:00",
+      "updated_at": "2026-06-25T18:02:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9204,
+    "fields": {
+      "post": 9101,
+      "author": [
+        "youj"
+      ],
+      "parent": null,
+      "content": "이건 추천 이유보다 생존 이유에 가깝네요.",
+      "created_at": "2026-06-25T18:03:00+09:00",
+      "updated_at": "2026-06-25T18:03:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9205,
+    "fields": {
+      "post": 9101,
+      "author": [
+        "yeas"
+      ],
+      "parent": null,
+      "content": "태그 하나 추가해야겠어요. 웃김.",
+      "created_at": "2026-06-25T18:04:00+09:00",
+      "updated_at": "2026-06-25T18:04:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9206,
+    "fields": {
+      "post": 9102,
+      "author": [
+        "jaej"
+      ],
+      "parent": null,
+      "content": "시연 때 이 글 나오면 분위기 바로 풀리겠네요.",
+      "created_at": "2026-06-25T18:05:00+09:00",
+      "updated_at": "2026-06-25T18:05:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9207,
+    "fields": {
+      "post": 9102,
+      "author": [
+        "sook"
+      ],
+      "parent": null,
+      "content": "공감됩니다. 저도 비슷한 상황 겪었어요.",
+      "created_at": "2026-06-25T18:06:00+09:00",
+      "updated_at": "2026-06-25T18:06:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9208,
+    "fields": {
+      "post": 9102,
+      "author": [
+        "youj"
+      ],
+      "parent": null,
+      "content": "이건 추천 이유보다 생존 이유에 가깝네요.",
+      "created_at": "2026-06-25T18:07:00+09:00",
+      "updated_at": "2026-06-25T18:07:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9209,
+    "fields": {
+      "post": 9102,
+      "author": [
+        "yeas"
+      ],
+      "parent": null,
+      "content": "태그 하나 추가해야겠어요. 웃김.",
+      "created_at": "2026-06-25T18:08:00+09:00",
+      "updated_at": "2026-06-25T18:08:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9210,
+    "fields": {
+      "post": 9102,
+      "author": [
+        "bongm"
+      ],
+      "parent": null,
+      "content": "장소보다 작성자 상태가 더 궁금합니다.",
+      "created_at": "2026-06-25T18:09:00+09:00",
+      "updated_at": "2026-06-25T18:09:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9211,
+    "fields": {
+      "post": 9103,
+      "author": [
+        "sook"
+      ],
+      "parent": null,
+      "content": "공감됩니다. 저도 비슷한 상황 겪었어요.",
+      "created_at": "2026-06-25T18:10:00+09:00",
+      "updated_at": "2026-06-25T18:10:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9212,
+    "fields": {
+      "post": 9103,
+      "author": [
+        "youj"
+      ],
+      "parent": null,
+      "content": "이건 추천 이유보다 생존 이유에 가깝네요.",
+      "created_at": "2026-06-25T18:11:00+09:00",
+      "updated_at": "2026-06-25T18:11:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9213,
+    "fields": {
+      "post": 9103,
+      "author": [
+        "yeas"
+      ],
+      "parent": null,
+      "content": "태그 하나 추가해야겠어요. 웃김.",
+      "created_at": "2026-06-25T18:12:00+09:00",
+      "updated_at": "2026-06-25T18:12:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9214,
+    "fields": {
+      "post": 9103,
+      "author": [
+        "bongm"
+      ],
+      "parent": null,
+      "content": "장소보다 작성자 상태가 더 궁금합니다.",
+      "created_at": "2026-06-25T18:13:00+09:00",
+      "updated_at": "2026-06-25T18:13:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9215,
+    "fields": {
+      "post": 9103,
+      "author": [
+        "woob"
+      ],
+      "parent": null,
+      "content": "이 정도면 여기일지도 공식 후기 아닌가요.",
+      "created_at": "2026-06-25T18:14:00+09:00",
+      "updated_at": "2026-06-25T18:14:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9216,
+    "fields": {
+      "post": 9104,
+      "author": [
+        "youj"
+      ],
+      "parent": null,
+      "content": "이건 추천 이유보다 생존 이유에 가깝네요.",
+      "created_at": "2026-06-25T18:15:00+09:00",
+      "updated_at": "2026-06-25T18:15:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9217,
+    "fields": {
+      "post": 9104,
+      "author": [
+        "yeas"
+      ],
+      "parent": null,
+      "content": "태그 하나 추가해야겠어요. 웃김.",
+      "created_at": "2026-06-25T18:16:00+09:00",
+      "updated_at": "2026-06-25T18:16:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9218,
+    "fields": {
+      "post": 9104,
+      "author": [
+        "bongm"
+      ],
+      "parent": null,
+      "content": "장소보다 작성자 상태가 더 궁금합니다.",
+      "created_at": "2026-06-25T18:17:00+09:00",
+      "updated_at": "2026-06-25T18:17:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9219,
+    "fields": {
+      "post": 9104,
+      "author": [
+        "woob"
+      ],
+      "parent": null,
+      "content": "이 정도면 여기일지도 공식 후기 아닌가요.",
+      "created_at": "2026-06-25T18:18:00+09:00",
+      "updated_at": "2026-06-25T18:18:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9220,
+    "fields": {
+      "post": 9104,
+      "author": [
+        "simh"
+      ],
+      "parent": null,
+      "content": "다음엔 저도 이 조건으로 검색해보겠습니다.",
+      "created_at": "2026-06-25T18:19:00+09:00",
+      "updated_at": "2026-06-25T18:19:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9221,
+    "fields": {
+      "post": 9105,
+      "author": [
+        "yeas"
+      ],
+      "parent": null,
+      "content": "태그 하나 추가해야겠어요. 웃김.",
+      "created_at": "2026-06-25T18:20:00+09:00",
+      "updated_at": "2026-06-25T18:20:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9222,
+    "fields": {
+      "post": 9105,
+      "author": [
+        "bongm"
+      ],
+      "parent": null,
+      "content": "장소보다 작성자 상태가 더 궁금합니다.",
+      "created_at": "2026-06-25T18:21:00+09:00",
+      "updated_at": "2026-06-25T18:21:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9223,
+    "fields": {
+      "post": 9105,
+      "author": [
+        "woob"
+      ],
+      "parent": null,
+      "content": "이 정도면 여기일지도 공식 후기 아닌가요.",
+      "created_at": "2026-06-25T18:22:00+09:00",
+      "updated_at": "2026-06-25T18:22:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9224,
+    "fields": {
+      "post": 9105,
+      "author": [
+        "simh"
+      ],
+      "parent": null,
+      "content": "다음엔 저도 이 조건으로 검색해보겠습니다.",
+      "created_at": "2026-06-25T18:23:00+09:00",
+      "updated_at": "2026-06-25T18:23:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9225,
+    "fields": {
+      "post": 9105,
+      "author": [
+        "seoh"
+      ],
+      "parent": null,
+      "content": "말투가 너무 현실적이라 더 웃겨요.",
+      "created_at": "2026-06-25T18:24:00+09:00",
+      "updated_at": "2026-06-25T18:24:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9226,
+    "fields": {
+      "post": 9106,
+      "author": [
+        "bongm"
+      ],
+      "parent": null,
+      "content": "장소보다 작성자 상태가 더 궁금합니다.",
+      "created_at": "2026-06-25T18:25:00+09:00",
+      "updated_at": "2026-06-25T18:25:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9227,
+    "fields": {
+      "post": 9106,
+      "author": [
+        "woob"
+      ],
+      "parent": null,
+      "content": "이 정도면 여기일지도 공식 후기 아닌가요.",
+      "created_at": "2026-06-25T18:26:00+09:00",
+      "updated_at": "2026-06-25T18:26:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9228,
+    "fields": {
+      "post": 9106,
+      "author": [
+        "simh"
+      ],
+      "parent": null,
+      "content": "다음엔 저도 이 조건으로 검색해보겠습니다.",
+      "created_at": "2026-06-25T18:27:00+09:00",
+      "updated_at": "2026-06-25T18:27:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9229,
+    "fields": {
+      "post": 9106,
+      "author": [
+        "seoh"
+      ],
+      "parent": null,
+      "content": "말투가 너무 현실적이라 더 웃겨요.",
+      "created_at": "2026-06-25T18:28:00+09:00",
+      "updated_at": "2026-06-25T18:28:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9230,
+    "fields": {
+      "post": 9106,
+      "author": [
+        "gae"
+      ],
+      "parent": null,
+      "content": "기능 설명도 되고 게시판도 살아 보여서 좋네요.",
+      "created_at": "2026-06-25T18:29:00+09:00",
+      "updated_at": "2026-06-25T18:29:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9231,
+    "fields": {
+      "post": 9107,
+      "author": [
+        "woob"
+      ],
+      "parent": null,
+      "content": "이 정도면 여기일지도 공식 후기 아닌가요.",
+      "created_at": "2026-06-25T18:30:00+09:00",
+      "updated_at": "2026-06-25T18:30:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9232,
+    "fields": {
+      "post": 9107,
+      "author": [
+        "simh"
+      ],
+      "parent": null,
+      "content": "다음엔 저도 이 조건으로 검색해보겠습니다.",
+      "created_at": "2026-06-25T18:31:00+09:00",
+      "updated_at": "2026-06-25T18:31:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9233,
+    "fields": {
+      "post": 9107,
+      "author": [
+        "seoh"
+      ],
+      "parent": null,
+      "content": "말투가 너무 현실적이라 더 웃겨요.",
+      "created_at": "2026-06-25T18:32:00+09:00",
+      "updated_at": "2026-06-25T18:32:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9234,
+    "fields": {
+      "post": 9107,
+      "author": [
+        "gae"
+      ],
+      "parent": null,
+      "content": "기능 설명도 되고 게시판도 살아 보여서 좋네요.",
+      "created_at": "2026-06-25T18:33:00+09:00",
+      "updated_at": "2026-06-25T18:33:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9235,
+    "fields": {
+      "post": 9107,
+      "author": [
+        "jaeh"
+      ],
+      "parent": null,
+      "content": "이 글 보고 웃다가 검색어 까먹었습니다.",
+      "created_at": "2026-06-25T18:34:00+09:00",
+      "updated_at": "2026-06-25T18:34:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9236,
+    "fields": {
+      "post": 9108,
+      "author": [
+        "simh"
+      ],
+      "parent": null,
+      "content": "다음엔 저도 이 조건으로 검색해보겠습니다.",
+      "created_at": "2026-06-25T18:35:00+09:00",
+      "updated_at": "2026-06-25T18:35:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9237,
+    "fields": {
+      "post": 9108,
+      "author": [
+        "seoh"
+      ],
+      "parent": null,
+      "content": "말투가 너무 현실적이라 더 웃겨요.",
+      "created_at": "2026-06-25T18:36:00+09:00",
+      "updated_at": "2026-06-25T18:36:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9238,
+    "fields": {
+      "post": 9108,
+      "author": [
+        "gae"
+      ],
+      "parent": null,
+      "content": "기능 설명도 되고 게시판도 살아 보여서 좋네요.",
+      "created_at": "2026-06-25T18:37:00+09:00",
+      "updated_at": "2026-06-25T18:37:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9239,
+    "fields": {
+      "post": 9108,
+      "author": [
+        "jaeh"
+      ],
+      "parent": null,
+      "content": "이 글 보고 웃다가 검색어 까먹었습니다.",
+      "created_at": "2026-06-25T18:38:00+09:00",
+      "updated_at": "2026-06-25T18:38:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9240,
+    "fields": {
+      "post": 9108,
+      "author": [
+        "mir"
+      ],
+      "parent": null,
+      "content": "시연 때 이 글 나오면 분위기 바로 풀리겠네요.",
+      "created_at": "2026-06-25T18:39:00+09:00",
+      "updated_at": "2026-06-25T18:39:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9241,
+    "fields": {
+      "post": 9109,
+      "author": [
+        "seoh"
+      ],
+      "parent": null,
+      "content": "말투가 너무 현실적이라 더 웃겨요.",
+      "created_at": "2026-06-25T18:40:00+09:00",
+      "updated_at": "2026-06-25T18:40:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9242,
+    "fields": {
+      "post": 9109,
+      "author": [
+        "gae"
+      ],
+      "parent": null,
+      "content": "기능 설명도 되고 게시판도 살아 보여서 좋네요.",
+      "created_at": "2026-06-25T18:41:00+09:00",
+      "updated_at": "2026-06-25T18:41:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9243,
+    "fields": {
+      "post": 9109,
+      "author": [
+        "jaeh"
+      ],
+      "parent": null,
+      "content": "이 글 보고 웃다가 검색어 까먹었습니다.",
+      "created_at": "2026-06-25T18:42:00+09:00",
+      "updated_at": "2026-06-25T18:42:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9244,
+    "fields": {
+      "post": 9109,
+      "author": [
+        "mir"
+      ],
+      "parent": null,
+      "content": "시연 때 이 글 나오면 분위기 바로 풀리겠네요.",
+      "created_at": "2026-06-25T18:43:00+09:00",
+      "updated_at": "2026-06-25T18:43:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9245,
+    "fields": {
+      "post": 9109,
+      "author": [
+        "juns"
+      ],
+      "parent": null,
+      "content": "공감됩니다. 저도 비슷한 상황 겪었어요.",
+      "created_at": "2026-06-25T18:44:00+09:00",
+      "updated_at": "2026-06-25T18:44:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9246,
+    "fields": {
+      "post": 9110,
+      "author": [
+        "gae"
+      ],
+      "parent": null,
+      "content": "기능 설명도 되고 게시판도 살아 보여서 좋네요.",
+      "created_at": "2026-06-25T18:45:00+09:00",
+      "updated_at": "2026-06-25T18:45:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9247,
+    "fields": {
+      "post": 9110,
+      "author": [
+        "jaeh"
+      ],
+      "parent": null,
+      "content": "이 글 보고 웃다가 검색어 까먹었습니다.",
+      "created_at": "2026-06-25T18:46:00+09:00",
+      "updated_at": "2026-06-25T18:46:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9248,
+    "fields": {
+      "post": 9110,
+      "author": [
+        "mir"
+      ],
+      "parent": null,
+      "content": "시연 때 이 글 나오면 분위기 바로 풀리겠네요.",
+      "created_at": "2026-06-25T18:47:00+09:00",
+      "updated_at": "2026-06-25T18:47:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9249,
+    "fields": {
+      "post": 9110,
+      "author": [
+        "juns"
+      ],
+      "parent": null,
+      "content": "공감됩니다. 저도 비슷한 상황 겪었어요.",
+      "created_at": "2026-06-25T18:48:00+09:00",
+      "updated_at": "2026-06-25T18:48:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9250,
+    "fields": {
+      "post": 9110,
+      "author": [
+        "sungw"
+      ],
+      "parent": null,
+      "content": "이건 추천 이유보다 생존 이유에 가깝네요.",
+      "created_at": "2026-06-25T18:49:00+09:00",
+      "updated_at": "2026-06-25T18:49:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9251,
+    "fields": {
+      "post": 9111,
+      "author": [
+        "jaeh"
+      ],
+      "parent": null,
+      "content": "이 글 보고 웃다가 검색어 까먹었습니다.",
+      "created_at": "2026-06-25T18:50:00+09:00",
+      "updated_at": "2026-06-25T18:50:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9252,
+    "fields": {
+      "post": 9111,
+      "author": [
+        "mir"
+      ],
+      "parent": null,
+      "content": "시연 때 이 글 나오면 분위기 바로 풀리겠네요.",
+      "created_at": "2026-06-25T18:51:00+09:00",
+      "updated_at": "2026-06-25T18:51:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9253,
+    "fields": {
+      "post": 9111,
+      "author": [
+        "juns"
+      ],
+      "parent": null,
+      "content": "공감됩니다. 저도 비슷한 상황 겪었어요.",
+      "created_at": "2026-06-25T18:52:00+09:00",
+      "updated_at": "2026-06-25T18:52:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9254,
+    "fields": {
+      "post": 9111,
+      "author": [
+        "sungw"
+      ],
+      "parent": null,
+      "content": "이건 추천 이유보다 생존 이유에 가깝네요.",
+      "created_at": "2026-06-25T18:53:00+09:00",
+      "updated_at": "2026-06-25T18:53:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9255,
+    "fields": {
+      "post": 9111,
+      "author": [
+        "yoonj"
+      ],
+      "parent": null,
+      "content": "태그 하나 추가해야겠어요. 웃김.",
+      "created_at": "2026-06-25T18:54:00+09:00",
+      "updated_at": "2026-06-25T18:54:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9256,
+    "fields": {
+      "post": 9112,
+      "author": [
+        "mir"
+      ],
+      "parent": null,
+      "content": "시연 때 이 글 나오면 분위기 바로 풀리겠네요.",
+      "created_at": "2026-06-25T18:55:00+09:00",
+      "updated_at": "2026-06-25T18:55:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9257,
+    "fields": {
+      "post": 9112,
+      "author": [
+        "juns"
+      ],
+      "parent": null,
+      "content": "공감됩니다. 저도 비슷한 상황 겪었어요.",
+      "created_at": "2026-06-25T18:56:00+09:00",
+      "updated_at": "2026-06-25T18:56:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9258,
+    "fields": {
+      "post": 9112,
+      "author": [
+        "sungw"
+      ],
+      "parent": null,
+      "content": "이건 추천 이유보다 생존 이유에 가깝네요.",
+      "created_at": "2026-06-25T18:57:00+09:00",
+      "updated_at": "2026-06-25T18:57:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9259,
+    "fields": {
+      "post": 9112,
+      "author": [
+        "yoonj"
+      ],
+      "parent": null,
+      "content": "태그 하나 추가해야겠어요. 웃김.",
+      "created_at": "2026-06-25T18:58:00+09:00",
+      "updated_at": "2026-06-25T18:58:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9260,
+    "fields": {
+      "post": 9112,
+      "author": [
+        "soonc"
+      ],
+      "parent": null,
+      "content": "장소보다 작성자 상태가 더 궁금합니다.",
+      "created_at": "2026-06-25T18:59:00+09:00",
+      "updated_at": "2026-06-25T18:59:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9261,
+    "fields": {
+      "post": 9113,
+      "author": [
+        "juns"
+      ],
+      "parent": null,
+      "content": "공감됩니다. 저도 비슷한 상황 겪었어요.",
+      "created_at": "2026-06-25T19:00:00+09:00",
+      "updated_at": "2026-06-25T19:00:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9262,
+    "fields": {
+      "post": 9113,
+      "author": [
+        "sungw"
+      ],
+      "parent": null,
+      "content": "이건 추천 이유보다 생존 이유에 가깝네요.",
+      "created_at": "2026-06-25T19:01:00+09:00",
+      "updated_at": "2026-06-25T19:01:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9263,
+    "fields": {
+      "post": 9113,
+      "author": [
+        "yoonj"
+      ],
+      "parent": null,
+      "content": "태그 하나 추가해야겠어요. 웃김.",
+      "created_at": "2026-06-25T19:02:00+09:00",
+      "updated_at": "2026-06-25T19:02:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9264,
+    "fields": {
+      "post": 9113,
+      "author": [
+        "soonc"
+      ],
+      "parent": null,
+      "content": "장소보다 작성자 상태가 더 궁금합니다.",
+      "created_at": "2026-06-25T19:03:00+09:00",
+      "updated_at": "2026-06-25T19:03:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9265,
+    "fields": {
+      "post": 9113,
+      "author": [
+        "euns"
+      ],
+      "parent": null,
+      "content": "이 정도면 여기일지도 공식 후기 아닌가요.",
+      "created_at": "2026-06-25T19:04:00+09:00",
+      "updated_at": "2026-06-25T19:04:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9266,
+    "fields": {
+      "post": 9114,
+      "author": [
+        "sungw"
+      ],
+      "parent": null,
+      "content": "이건 추천 이유보다 생존 이유에 가깝네요.",
+      "created_at": "2026-06-25T19:05:00+09:00",
+      "updated_at": "2026-06-25T19:05:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9267,
+    "fields": {
+      "post": 9114,
+      "author": [
+        "yoonj"
+      ],
+      "parent": null,
+      "content": "태그 하나 추가해야겠어요. 웃김.",
+      "created_at": "2026-06-25T19:06:00+09:00",
+      "updated_at": "2026-06-25T19:06:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9268,
+    "fields": {
+      "post": 9114,
+      "author": [
+        "soonc"
+      ],
+      "parent": null,
+      "content": "장소보다 작성자 상태가 더 궁금합니다.",
+      "created_at": "2026-06-25T19:07:00+09:00",
+      "updated_at": "2026-06-25T19:07:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9269,
+    "fields": {
+      "post": 9114,
+      "author": [
+        "euns"
+      ],
+      "parent": null,
+      "content": "이 정도면 여기일지도 공식 후기 아닌가요.",
+      "created_at": "2026-06-25T19:08:00+09:00",
+      "updated_at": "2026-06-25T19:08:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9270,
+    "fields": {
+      "post": 9114,
+      "author": [
+        "jinh"
+      ],
+      "parent": null,
+      "content": "다음엔 저도 이 조건으로 검색해보겠습니다.",
+      "created_at": "2026-06-25T19:09:00+09:00",
+      "updated_at": "2026-06-25T19:09:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9271,
+    "fields": {
+      "post": 9115,
+      "author": [
+        "yoonj"
+      ],
+      "parent": null,
+      "content": "태그 하나 추가해야겠어요. 웃김.",
+      "created_at": "2026-06-25T19:10:00+09:00",
+      "updated_at": "2026-06-25T19:10:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9272,
+    "fields": {
+      "post": 9115,
+      "author": [
+        "soonc"
+      ],
+      "parent": null,
+      "content": "장소보다 작성자 상태가 더 궁금합니다.",
+      "created_at": "2026-06-25T19:11:00+09:00",
+      "updated_at": "2026-06-25T19:11:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9273,
+    "fields": {
+      "post": 9115,
+      "author": [
+        "euns"
+      ],
+      "parent": null,
+      "content": "이 정도면 여기일지도 공식 후기 아닌가요.",
+      "created_at": "2026-06-25T19:12:00+09:00",
+      "updated_at": "2026-06-25T19:12:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9274,
+    "fields": {
+      "post": 9115,
+      "author": [
+        "jinh"
+      ],
+      "parent": null,
+      "content": "다음엔 저도 이 조건으로 검색해보겠습니다.",
+      "created_at": "2026-06-25T19:13:00+09:00",
+      "updated_at": "2026-06-25T19:13:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9275,
+    "fields": {
+      "post": 9115,
+      "author": [
+        "parkj"
+      ],
+      "parent": null,
+      "content": "말투가 너무 현실적이라 더 웃겨요.",
+      "created_at": "2026-06-25T19:14:00+09:00",
+      "updated_at": "2026-06-25T19:14:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9276,
+    "fields": {
+      "post": 9116,
+      "author": [
+        "soonc"
+      ],
+      "parent": null,
+      "content": "장소보다 작성자 상태가 더 궁금합니다.",
+      "created_at": "2026-06-25T19:15:00+09:00",
+      "updated_at": "2026-06-25T19:15:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9277,
+    "fields": {
+      "post": 9116,
+      "author": [
+        "euns"
+      ],
+      "parent": null,
+      "content": "이 정도면 여기일지도 공식 후기 아닌가요.",
+      "created_at": "2026-06-25T19:16:00+09:00",
+      "updated_at": "2026-06-25T19:16:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9278,
+    "fields": {
+      "post": 9116,
+      "author": [
+        "jinh"
+      ],
+      "parent": null,
+      "content": "다음엔 저도 이 조건으로 검색해보겠습니다.",
+      "created_at": "2026-06-25T19:17:00+09:00",
+      "updated_at": "2026-06-25T19:17:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9279,
+    "fields": {
+      "post": 9116,
+      "author": [
+        "parkj"
+      ],
+      "parent": null,
+      "content": "말투가 너무 현실적이라 더 웃겨요.",
+      "created_at": "2026-06-25T19:18:00+09:00",
+      "updated_at": "2026-06-25T19:18:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9280,
+    "fields": {
+      "post": 9116,
+      "author": [
+        "jongk"
+      ],
+      "parent": null,
+      "content": "기능 설명도 되고 게시판도 살아 보여서 좋네요.",
+      "created_at": "2026-06-25T19:19:00+09:00",
+      "updated_at": "2026-06-25T19:19:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9281,
+    "fields": {
+      "post": 9117,
+      "author": [
+        "euns"
+      ],
+      "parent": null,
+      "content": "이 정도면 여기일지도 공식 후기 아닌가요.",
+      "created_at": "2026-06-25T19:20:00+09:00",
+      "updated_at": "2026-06-25T19:20:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9282,
+    "fields": {
+      "post": 9117,
+      "author": [
+        "jinh"
+      ],
+      "parent": null,
+      "content": "다음엔 저도 이 조건으로 검색해보겠습니다.",
+      "created_at": "2026-06-25T19:21:00+09:00",
+      "updated_at": "2026-06-25T19:21:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9283,
+    "fields": {
+      "post": 9117,
+      "author": [
+        "parkj"
+      ],
+      "parent": null,
+      "content": "말투가 너무 현실적이라 더 웃겨요.",
+      "created_at": "2026-06-25T19:22:00+09:00",
+      "updated_at": "2026-06-25T19:22:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9284,
+    "fields": {
+      "post": 9117,
+      "author": [
+        "jongk"
+      ],
+      "parent": null,
+      "content": "기능 설명도 되고 게시판도 살아 보여서 좋네요.",
+      "created_at": "2026-06-25T19:23:00+09:00",
+      "updated_at": "2026-06-25T19:23:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9285,
+    "fields": {
+      "post": 9117,
+      "author": [
+        "jaej"
+      ],
+      "parent": null,
+      "content": "이 글 보고 웃다가 검색어 까먹었습니다.",
+      "created_at": "2026-06-25T19:24:00+09:00",
+      "updated_at": "2026-06-25T19:24:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9286,
+    "fields": {
+      "post": 9118,
+      "author": [
+        "jinh"
+      ],
+      "parent": null,
+      "content": "다음엔 저도 이 조건으로 검색해보겠습니다.",
+      "created_at": "2026-06-25T19:25:00+09:00",
+      "updated_at": "2026-06-25T19:25:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9287,
+    "fields": {
+      "post": 9118,
+      "author": [
+        "parkj"
+      ],
+      "parent": null,
+      "content": "말투가 너무 현실적이라 더 웃겨요.",
+      "created_at": "2026-06-25T19:26:00+09:00",
+      "updated_at": "2026-06-25T19:26:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9288,
+    "fields": {
+      "post": 9118,
+      "author": [
+        "jongk"
+      ],
+      "parent": null,
+      "content": "기능 설명도 되고 게시판도 살아 보여서 좋네요.",
+      "created_at": "2026-06-25T19:27:00+09:00",
+      "updated_at": "2026-06-25T19:27:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9289,
+    "fields": {
+      "post": 9118,
+      "author": [
+        "jaej"
+      ],
+      "parent": null,
+      "content": "이 글 보고 웃다가 검색어 까먹었습니다.",
+      "created_at": "2026-06-25T19:28:00+09:00",
+      "updated_at": "2026-06-25T19:28:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9290,
+    "fields": {
+      "post": 9118,
+      "author": [
+        "sook"
+      ],
+      "parent": null,
+      "content": "시연 때 이 글 나오면 분위기 바로 풀리겠네요.",
+      "created_at": "2026-06-25T19:29:00+09:00",
+      "updated_at": "2026-06-25T19:29:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9291,
+    "fields": {
+      "post": 9119,
+      "author": [
+        "parkj"
+      ],
+      "parent": null,
+      "content": "말투가 너무 현실적이라 더 웃겨요.",
+      "created_at": "2026-06-25T19:30:00+09:00",
+      "updated_at": "2026-06-25T19:30:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9292,
+    "fields": {
+      "post": 9119,
+      "author": [
+        "jongk"
+      ],
+      "parent": null,
+      "content": "기능 설명도 되고 게시판도 살아 보여서 좋네요.",
+      "created_at": "2026-06-25T19:31:00+09:00",
+      "updated_at": "2026-06-25T19:31:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9293,
+    "fields": {
+      "post": 9119,
+      "author": [
+        "jaej"
+      ],
+      "parent": null,
+      "content": "이 글 보고 웃다가 검색어 까먹었습니다.",
+      "created_at": "2026-06-25T19:32:00+09:00",
+      "updated_at": "2026-06-25T19:32:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9294,
+    "fields": {
+      "post": 9119,
+      "author": [
+        "sook"
+      ],
+      "parent": null,
+      "content": "시연 때 이 글 나오면 분위기 바로 풀리겠네요.",
+      "created_at": "2026-06-25T19:33:00+09:00",
+      "updated_at": "2026-06-25T19:33:00+09:00"
+    }
+  },
+  {
+    "model": "boards.comment",
+    "pk": 9295,
+    "fields": {
+      "post": 9119,
+      "author": [
+        "youj"
+      ],
+      "parent": null,
+      "content": "공감됩니다. 저도 비슷한 상황 겪었어요.",
+      "created_at": "2026-06-25T19:34:00+09:00",
+      "updated_at": "2026-06-25T19:34:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9301,
+    "fields": {
+      "post": 9101,
+      "user": [
+        "simh"
+      ],
+      "created_at": "2026-06-25T21:00:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9302,
+    "fields": {
+      "post": 9101,
+      "user": [
+        "gae"
+      ],
+      "created_at": "2026-06-25T21:01:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9303,
+    "fields": {
+      "post": 9101,
+      "user": [
+        "jinh"
+      ],
+      "created_at": "2026-06-25T21:02:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9304,
+    "fields": {
+      "post": 9101,
+      "user": [
+        "sungw"
+      ],
+      "created_at": "2026-06-25T21:03:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9305,
+    "fields": {
+      "post": 9101,
+      "user": [
+        "youj"
+      ],
+      "created_at": "2026-06-25T21:04:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9306,
+    "fields": {
+      "post": 9101,
+      "user": [
+        "woob"
+      ],
+      "created_at": "2026-06-25T21:05:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9307,
+    "fields": {
+      "post": 9101,
+      "user": [
+        "juns"
+      ],
+      "created_at": "2026-06-25T21:06:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9308,
+    "fields": {
+      "post": 9101,
+      "user": [
+        "soonc"
+      ],
+      "created_at": "2026-06-25T21:07:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9309,
+    "fields": {
+      "post": 9101,
+      "user": [
+        "sook"
+      ],
+      "created_at": "2026-06-25T21:08:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9310,
+    "fields": {
+      "post": 9102,
+      "user": [
+        "yoonj"
+      ],
+      "created_at": "2026-06-25T21:09:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9311,
+    "fields": {
+      "post": 9102,
+      "user": [
+        "parkj"
+      ],
+      "created_at": "2026-06-25T21:10:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9312,
+    "fields": {
+      "post": 9102,
+      "user": [
+        "jaeh"
+      ],
+      "created_at": "2026-06-25T21:11:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9313,
+    "fields": {
+      "post": 9102,
+      "user": [
+        "bongm"
+      ],
+      "created_at": "2026-06-25T21:12:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9314,
+    "fields": {
+      "post": 9102,
+      "user": [
+        "gae"
+      ],
+      "created_at": "2026-06-25T21:13:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9315,
+    "fields": {
+      "post": 9102,
+      "user": [
+        "woob"
+      ],
+      "created_at": "2026-06-25T21:14:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9316,
+    "fields": {
+      "post": 9102,
+      "user": [
+        "mir"
+      ],
+      "created_at": "2026-06-25T21:15:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9317,
+    "fields": {
+      "post": 9102,
+      "user": [
+        "yeas"
+      ],
+      "created_at": "2026-06-25T21:16:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9318,
+    "fields": {
+      "post": 9102,
+      "user": [
+        "seoh"
+      ],
+      "created_at": "2026-06-25T21:17:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9319,
+    "fields": {
+      "post": 9103,
+      "user": [
+        "seoh"
+      ],
+      "created_at": "2026-06-25T21:18:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9320,
+    "fields": {
+      "post": 9103,
+      "user": [
+        "mir"
+      ],
+      "created_at": "2026-06-25T21:19:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9321,
+    "fields": {
+      "post": 9103,
+      "user": [
+        "gae"
+      ],
+      "created_at": "2026-06-25T21:20:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9322,
+    "fields": {
+      "post": 9103,
+      "user": [
+        "jinh"
+      ],
+      "created_at": "2026-06-25T21:21:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9323,
+    "fields": {
+      "post": 9103,
+      "user": [
+        "sungw"
+      ],
+      "created_at": "2026-06-25T21:22:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9324,
+    "fields": {
+      "post": 9103,
+      "user": [
+        "bongm"
+      ],
+      "created_at": "2026-06-25T21:23:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9325,
+    "fields": {
+      "post": 9103,
+      "user": [
+        "juns"
+      ],
+      "created_at": "2026-06-25T21:24:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9326,
+    "fields": {
+      "post": 9104,
+      "user": [
+        "youj"
+      ],
+      "created_at": "2026-06-25T21:25:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9327,
+    "fields": {
+      "post": 9104,
+      "user": [
+        "bongm"
+      ],
+      "created_at": "2026-06-25T21:26:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9328,
+    "fields": {
+      "post": 9104,
+      "user": [
+        "gae"
+      ],
+      "created_at": "2026-06-25T21:27:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9329,
+    "fields": {
+      "post": 9104,
+      "user": [
+        "yoonj"
+      ],
+      "created_at": "2026-06-25T21:28:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9330,
+    "fields": {
+      "post": 9104,
+      "user": [
+        "sungw"
+      ],
+      "created_at": "2026-06-25T21:29:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9331,
+    "fields": {
+      "post": 9105,
+      "user": [
+        "jongk"
+      ],
+      "created_at": "2026-06-25T21:30:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9332,
+    "fields": {
+      "post": 9105,
+      "user": [
+        "euns"
+      ],
+      "created_at": "2026-06-25T21:31:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9333,
+    "fields": {
+      "post": 9105,
+      "user": [
+        "jinh"
+      ],
+      "created_at": "2026-06-25T21:32:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9334,
+    "fields": {
+      "post": 9105,
+      "user": [
+        "jaeh"
+      ],
+      "created_at": "2026-06-25T21:33:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9335,
+    "fields": {
+      "post": 9106,
+      "user": [
+        "gae"
+      ],
+      "created_at": "2026-06-25T21:34:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9336,
+    "fields": {
+      "post": 9106,
+      "user": [
+        "bongm"
+      ],
+      "created_at": "2026-06-25T21:35:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9337,
+    "fields": {
+      "post": 9106,
+      "user": [
+        "euns"
+      ],
+      "created_at": "2026-06-25T21:36:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9338,
+    "fields": {
+      "post": 9106,
+      "user": [
+        "soonc"
+      ],
+      "created_at": "2026-06-25T21:37:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9339,
+    "fields": {
+      "post": 9106,
+      "user": [
+        "woob"
+      ],
+      "created_at": "2026-06-25T21:38:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9340,
+    "fields": {
+      "post": 9106,
+      "user": [
+        "parkj"
+      ],
+      "created_at": "2026-06-25T21:39:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9341,
+    "fields": {
+      "post": 9107,
+      "user": [
+        "euns"
+      ],
+      "created_at": "2026-06-25T21:40:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9342,
+    "fields": {
+      "post": 9107,
+      "user": [
+        "gae"
+      ],
+      "created_at": "2026-06-25T21:41:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9343,
+    "fields": {
+      "post": 9107,
+      "user": [
+        "yoonj"
+      ],
+      "created_at": "2026-06-25T21:42:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9344,
+    "fields": {
+      "post": 9107,
+      "user": [
+        "jinh"
+      ],
+      "created_at": "2026-06-25T21:43:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9345,
+    "fields": {
+      "post": 9107,
+      "user": [
+        "seoh"
+      ],
+      "created_at": "2026-06-25T21:44:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9346,
+    "fields": {
+      "post": 9107,
+      "user": [
+        "sook"
+      ],
+      "created_at": "2026-06-25T21:45:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9347,
+    "fields": {
+      "post": 9107,
+      "user": [
+        "jaeh"
+      ],
+      "created_at": "2026-06-25T21:46:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9348,
+    "fields": {
+      "post": 9108,
+      "user": [
+        "sungw"
+      ],
+      "created_at": "2026-06-25T21:47:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9349,
+    "fields": {
+      "post": 9108,
+      "user": [
+        "jaej"
+      ],
+      "created_at": "2026-06-25T21:48:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9350,
+    "fields": {
+      "post": 9108,
+      "user": [
+        "seoh"
+      ],
+      "created_at": "2026-06-25T21:49:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9351,
+    "fields": {
+      "post": 9108,
+      "user": [
+        "mir"
+      ],
+      "created_at": "2026-06-25T21:50:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9352,
+    "fields": {
+      "post": 9108,
+      "user": [
+        "soonc"
+      ],
+      "created_at": "2026-06-25T21:51:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9353,
+    "fields": {
+      "post": 9109,
+      "user": [
+        "yoonj"
+      ],
+      "created_at": "2026-06-25T21:52:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9354,
+    "fields": {
+      "post": 9109,
+      "user": [
+        "youj"
+      ],
+      "created_at": "2026-06-25T21:53:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9355,
+    "fields": {
+      "post": 9109,
+      "user": [
+        "jaej"
+      ],
+      "created_at": "2026-06-25T21:54:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9356,
+    "fields": {
+      "post": 9109,
+      "user": [
+        "sook"
+      ],
+      "created_at": "2026-06-25T21:55:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9357,
+    "fields": {
+      "post": 9109,
+      "user": [
+        "euns"
+      ],
+      "created_at": "2026-06-25T21:56:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9358,
+    "fields": {
+      "post": 9109,
+      "user": [
+        "jaeh"
+      ],
+      "created_at": "2026-06-25T21:57:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9359,
+    "fields": {
+      "post": 9109,
+      "user": [
+        "jongk"
+      ],
+      "created_at": "2026-06-25T21:58:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9360,
+    "fields": {
+      "post": 9110,
+      "user": [
+        "jinh"
+      ],
+      "created_at": "2026-06-25T21:59:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9361,
+    "fields": {
+      "post": 9110,
+      "user": [
+        "woob"
+      ],
+      "created_at": "2026-06-25T22:00:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9362,
+    "fields": {
+      "post": 9110,
+      "user": [
+        "jaeh"
+      ],
+      "created_at": "2026-06-25T22:01:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9363,
+    "fields": {
+      "post": 9110,
+      "user": [
+        "soonc"
+      ],
+      "created_at": "2026-06-25T22:02:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9364,
+    "fields": {
+      "post": 9110,
+      "user": [
+        "sungw"
+      ],
+      "created_at": "2026-06-25T22:03:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9365,
+    "fields": {
+      "post": 9110,
+      "user": [
+        "bongm"
+      ],
+      "created_at": "2026-06-25T22:04:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9366,
+    "fields": {
+      "post": 9110,
+      "user": [
+        "euns"
+      ],
+      "created_at": "2026-06-25T22:05:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9367,
+    "fields": {
+      "post": 9111,
+      "user": [
+        "parkj"
+      ],
+      "created_at": "2026-06-25T22:06:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9368,
+    "fields": {
+      "post": 9111,
+      "user": [
+        "woob"
+      ],
+      "created_at": "2026-06-25T22:07:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9369,
+    "fields": {
+      "post": 9111,
+      "user": [
+        "jinh"
+      ],
+      "created_at": "2026-06-25T22:08:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9370,
+    "fields": {
+      "post": 9111,
+      "user": [
+        "seoh"
+      ],
+      "created_at": "2026-06-25T22:09:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9371,
+    "fields": {
+      "post": 9111,
+      "user": [
+        "jaeh"
+      ],
+      "created_at": "2026-06-25T22:10:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9372,
+    "fields": {
+      "post": 9111,
+      "user": [
+        "jongk"
+      ],
+      "created_at": "2026-06-25T22:11:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9373,
+    "fields": {
+      "post": 9112,
+      "user": [
+        "mir"
+      ],
+      "created_at": "2026-06-25T22:12:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9374,
+    "fields": {
+      "post": 9112,
+      "user": [
+        "soonc"
+      ],
+      "created_at": "2026-06-25T22:13:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9375,
+    "fields": {
+      "post": 9112,
+      "user": [
+        "yeas"
+      ],
+      "created_at": "2026-06-25T22:14:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9376,
+    "fields": {
+      "post": 9112,
+      "user": [
+        "parkj"
+      ],
+      "created_at": "2026-06-25T22:15:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9377,
+    "fields": {
+      "post": 9112,
+      "user": [
+        "woob"
+      ],
+      "created_at": "2026-06-25T22:16:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9378,
+    "fields": {
+      "post": 9112,
+      "user": [
+        "sook"
+      ],
+      "created_at": "2026-06-25T22:17:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9379,
+    "fields": {
+      "post": 9112,
+      "user": [
+        "juns"
+      ],
+      "created_at": "2026-06-25T22:18:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9380,
+    "fields": {
+      "post": 9112,
+      "user": [
+        "youj"
+      ],
+      "created_at": "2026-06-25T22:19:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9381,
+    "fields": {
+      "post": 9112,
+      "user": [
+        "jaej"
+      ],
+      "created_at": "2026-06-25T22:20:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9382,
+    "fields": {
+      "post": 9113,
+      "user": [
+        "sook"
+      ],
+      "created_at": "2026-06-25T22:21:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9383,
+    "fields": {
+      "post": 9113,
+      "user": [
+        "jaeh"
+      ],
+      "created_at": "2026-06-25T22:22:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9384,
+    "fields": {
+      "post": 9113,
+      "user": [
+        "seoh"
+      ],
+      "created_at": "2026-06-25T22:23:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9385,
+    "fields": {
+      "post": 9113,
+      "user": [
+        "yeas"
+      ],
+      "created_at": "2026-06-25T22:24:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9386,
+    "fields": {
+      "post": 9113,
+      "user": [
+        "woob"
+      ],
+      "created_at": "2026-06-25T22:25:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9387,
+    "fields": {
+      "post": 9113,
+      "user": [
+        "bongm"
+      ],
+      "created_at": "2026-06-25T22:26:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9388,
+    "fields": {
+      "post": 9113,
+      "user": [
+        "parkj"
+      ],
+      "created_at": "2026-06-25T22:27:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9389,
+    "fields": {
+      "post": 9113,
+      "user": [
+        "soonc"
+      ],
+      "created_at": "2026-06-25T22:28:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9390,
+    "fields": {
+      "post": 9114,
+      "user": [
+        "youj"
+      ],
+      "created_at": "2026-06-25T22:29:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9391,
+    "fields": {
+      "post": 9114,
+      "user": [
+        "seoh"
+      ],
+      "created_at": "2026-06-25T22:30:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9392,
+    "fields": {
+      "post": 9114,
+      "user": [
+        "simh"
+      ],
+      "created_at": "2026-06-25T22:31:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9393,
+    "fields": {
+      "post": 9114,
+      "user": [
+        "woob"
+      ],
+      "created_at": "2026-06-25T22:32:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9394,
+    "fields": {
+      "post": 9114,
+      "user": [
+        "sook"
+      ],
+      "created_at": "2026-06-25T22:33:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9395,
+    "fields": {
+      "post": 9114,
+      "user": [
+        "parkj"
+      ],
+      "created_at": "2026-06-25T22:34:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9396,
+    "fields": {
+      "post": 9114,
+      "user": [
+        "mir"
+      ],
+      "created_at": "2026-06-25T22:35:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9397,
+    "fields": {
+      "post": 9115,
+      "user": [
+        "jongk"
+      ],
+      "created_at": "2026-06-25T22:36:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9398,
+    "fields": {
+      "post": 9115,
+      "user": [
+        "simh"
+      ],
+      "created_at": "2026-06-25T22:37:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9399,
+    "fields": {
+      "post": 9115,
+      "user": [
+        "jaeh"
+      ],
+      "created_at": "2026-06-25T22:38:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9400,
+    "fields": {
+      "post": 9115,
+      "user": [
+        "soonc"
+      ],
+      "created_at": "2026-06-25T22:39:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9401,
+    "fields": {
+      "post": 9115,
+      "user": [
+        "gae"
+      ],
+      "created_at": "2026-06-25T22:40:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9402,
+    "fields": {
+      "post": 9115,
+      "user": [
+        "yeas"
+      ],
+      "created_at": "2026-06-25T22:41:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9403,
+    "fields": {
+      "post": 9115,
+      "user": [
+        "seoh"
+      ],
+      "created_at": "2026-06-25T22:42:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9404,
+    "fields": {
+      "post": 9115,
+      "user": [
+        "sook"
+      ],
+      "created_at": "2026-06-25T22:43:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9405,
+    "fields": {
+      "post": 9116,
+      "user": [
+        "jaeh"
+      ],
+      "created_at": "2026-06-25T22:44:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9406,
+    "fields": {
+      "post": 9116,
+      "user": [
+        "jinh"
+      ],
+      "created_at": "2026-06-25T22:45:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9407,
+    "fields": {
+      "post": 9116,
+      "user": [
+        "euns"
+      ],
+      "created_at": "2026-06-25T22:46:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9408,
+    "fields": {
+      "post": 9116,
+      "user": [
+        "woob"
+      ],
+      "created_at": "2026-06-25T22:47:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9409,
+    "fields": {
+      "post": 9116,
+      "user": [
+        "soonc"
+      ],
+      "created_at": "2026-06-25T22:48:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9410,
+    "fields": {
+      "post": 9116,
+      "user": [
+        "juns"
+      ],
+      "created_at": "2026-06-25T22:49:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9411,
+    "fields": {
+      "post": 9116,
+      "user": [
+        "jaej"
+      ],
+      "created_at": "2026-06-25T22:50:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9412,
+    "fields": {
+      "post": 9116,
+      "user": [
+        "parkj"
+      ],
+      "created_at": "2026-06-25T22:51:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9413,
+    "fields": {
+      "post": 9116,
+      "user": [
+        "sook"
+      ],
+      "created_at": "2026-06-25T22:52:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9414,
+    "fields": {
+      "post": 9117,
+      "user": [
+        "euns"
+      ],
+      "created_at": "2026-06-25T22:53:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9415,
+    "fields": {
+      "post": 9117,
+      "user": [
+        "youj"
+      ],
+      "created_at": "2026-06-25T22:54:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9416,
+    "fields": {
+      "post": 9117,
+      "user": [
+        "seoh"
+      ],
+      "created_at": "2026-06-25T22:55:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9417,
+    "fields": {
+      "post": 9117,
+      "user": [
+        "mir"
+      ],
+      "created_at": "2026-06-25T22:56:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9418,
+    "fields": {
+      "post": 9117,
+      "user": [
+        "simh"
+      ],
+      "created_at": "2026-06-25T22:57:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9419,
+    "fields": {
+      "post": 9117,
+      "user": [
+        "bongm"
+      ],
+      "created_at": "2026-06-25T22:58:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9420,
+    "fields": {
+      "post": 9117,
+      "user": [
+        "parkj"
+      ],
+      "created_at": "2026-06-25T22:59:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9421,
+    "fields": {
+      "post": 9117,
+      "user": [
+        "yeas"
+      ],
+      "created_at": "2026-06-25T23:00:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9422,
+    "fields": {
+      "post": 9117,
+      "user": [
+        "jongk"
+      ],
+      "created_at": "2026-06-25T23:01:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9423,
+    "fields": {
+      "post": 9118,
+      "user": [
+        "seoh"
+      ],
+      "created_at": "2026-06-25T23:02:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9424,
+    "fields": {
+      "post": 9118,
+      "user": [
+        "yoonj"
+      ],
+      "created_at": "2026-06-25T23:03:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9425,
+    "fields": {
+      "post": 9118,
+      "user": [
+        "parkj"
+      ],
+      "created_at": "2026-06-25T23:04:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9426,
+    "fields": {
+      "post": 9118,
+      "user": [
+        "gae"
+      ],
+      "created_at": "2026-06-25T23:05:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9427,
+    "fields": {
+      "post": 9119,
+      "user": [
+        "sook"
+      ],
+      "created_at": "2026-06-25T23:06:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9428,
+    "fields": {
+      "post": 9119,
+      "user": [
+        "parkj"
+      ],
+      "created_at": "2026-06-25T23:07:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9429,
+    "fields": {
+      "post": 9119,
+      "user": [
+        "jaeh"
+      ],
+      "created_at": "2026-06-25T23:08:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9430,
+    "fields": {
+      "post": 9119,
+      "user": [
+        "yoonj"
+      ],
+      "created_at": "2026-06-25T23:09:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9431,
+    "fields": {
+      "post": 9119,
+      "user": [
+        "sungw"
+      ],
+      "created_at": "2026-06-25T23:10:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9432,
+    "fields": {
+      "post": 9119,
+      "user": [
+        "juns"
+      ],
+      "created_at": "2026-06-25T23:11:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9433,
+    "fields": {
+      "post": 9119,
+      "user": [
+        "simh"
+      ],
+      "created_at": "2026-06-25T23:12:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9434,
+    "fields": {
+      "post": 9119,
+      "user": [
+        "seoh"
+      ],
+      "created_at": "2026-06-25T23:13:00+09:00"
+    }
+  },
+  {
+    "model": "boards.postlike",
+    "pk": 9435,
+    "fields": {
+      "post": 9119,
+      "user": [
+        "euns"
+      ],
+      "created_at": "2026-06-25T23:14:00+09:00"
+    }
+  }
+]

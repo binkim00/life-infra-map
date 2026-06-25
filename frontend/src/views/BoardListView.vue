@@ -11,34 +11,92 @@ const authStore = useAuthStore()
 const posts = ref([])
 const isLoading = ref(false)
 const errorMessage = ref('')
+const searchQuery = ref('')
+const sortMode = ref('latest')
+const currentPage = ref(1)
+const pageSize = 10
 
 const boardType = computed(() => route.params.boardType || 'free')
 
 const boardTitle = computed(() => {
   if (boardType.value === 'notice') return '공지사항'
-  return '자유게시판'
+  return '전체 게시판'
 })
 
-const numberedPosts = computed(() => {
-  const normalPostCount = posts.value.filter((post) => !post.is_pinned).length
-  let normalPostIndex = 0
+const boardCountLabel = computed(() => {
+  return `총 ${filteredPosts.value.length.toLocaleString('ko-KR')}개`
+})
 
-  return posts.value.map((post) => {
-    if (post.is_pinned) {
-      return {
-        ...post,
-        displayNumber: '-',
-      }
-    }
+const filteredPosts = computed(() => {
+  const keyword = searchQuery.value.trim().toLowerCase()
 
-    const displayNumber = normalPostCount - normalPostIndex
-    normalPostIndex += 1
+  if (!keyword) {
+    return posts.value
+  }
 
-    return {
-      ...post,
-      displayNumber,
-    }
+  return posts.value.filter((post) => {
+    return [
+      post.title,
+      post.author_nickname,
+      post.author_username,
+    ].some((value) => String(value || '').toLowerCase().includes(keyword))
   })
+})
+
+const sortedPosts = computed(() => {
+  const nextPosts = [...filteredPosts.value]
+
+  nextPosts.sort((a, b) => {
+    if (a.is_pinned !== b.is_pinned) {
+      return Number(b.is_pinned) - Number(a.is_pinned)
+    }
+
+    if (sortMode.value === 'likes') {
+      return (b.likes_count || 0) - (a.likes_count || 0)
+    }
+
+    if (sortMode.value === 'comments') {
+      return (b.comments_count || 0) - (a.comments_count || 0)
+    }
+
+    return new Date(b.created_at || 0) - new Date(a.created_at || 0)
+  })
+
+  return nextPosts
+})
+
+const totalPages = computed(() => {
+  return Math.max(1, Math.ceil(sortedPosts.value.length / pageSize))
+})
+
+const paginatedPosts = computed(() => {
+  const start = (currentPage.value - 1) * pageSize
+  return sortedPosts.value.slice(start, start + pageSize)
+})
+
+const pageNumbers = computed(() => {
+  const pages = []
+  const total = totalPages.value
+  const current = currentPage.value
+
+  if (total <= 7) {
+    for (let page = 1; page <= total; page += 1) pages.push(page)
+    return pages
+  }
+
+  pages.push(1)
+
+  const start = Math.max(2, current - 1)
+  const end = Math.min(total - 1, current + 1)
+
+  if (start > 2) pages.push('start-ellipsis')
+
+  for (let page = start; page <= end; page += 1) pages.push(page)
+
+  if (end < total - 1) pages.push('end-ellipsis')
+
+  pages.push(total)
+  return pages
 })
 
 const canWritePost = computed(() => {
@@ -67,10 +125,22 @@ const formatBoardDate = (value) => {
   }
 
   return date.toLocaleDateString('ko-KR', {
-    year: '2-digit',
     month: '2-digit',
     day: '2-digit',
   }).replace(/\. /g, '.').replace(/\.$/, '')
+}
+
+const getAuthorInitial = (post) => {
+  const name = post.author_nickname || post.author_username || '?'
+  return name.slice(0, 1)
+}
+
+const goToPage = (page) => {
+  if (page < 1 || page > totalPages.value) {
+    return
+  }
+
+  currentPage.value = page
 }
 
 const fetchPosts = async () => {
@@ -80,6 +150,7 @@ const fetchPosts = async () => {
 
     const response = await getPosts(boardType.value)
     posts.value = response.data
+    currentPage.value = 1
   } catch (error) {
     console.error(error)
     errorMessage.value = '게시글 목록을 불러오지 못했습니다.'
@@ -89,6 +160,14 @@ const fetchPosts = async () => {
 }
 
 watch(boardType, fetchPosts)
+watch([searchQuery, sortMode], () => {
+  currentPage.value = 1
+})
+watch(totalPages, (nextTotalPages) => {
+  if (currentPage.value > nextTotalPages) {
+    currentPage.value = nextTotalPages
+  }
+})
 
 onMounted(() => {
   fetchPosts()
@@ -99,12 +178,27 @@ onMounted(() => {
   <main class="board-page">
     <section class="board-container">
       <header class="board-header">
-        <div>
-          <p class="eyebrow">COMMUNITY</p>
+        <div class="board-title-group">
           <h1>{{ boardTitle }}</h1>
+          <span>{{ boardCountLabel }}</span>
         </div>
 
         <div class="board-actions">
+          <label class="search-field">
+            <input
+              v-model="searchQuery"
+              type="search"
+              placeholder="제목, 작성자 검색"
+            />
+            <span aria-hidden="true">⌕</span>
+          </label>
+
+          <select v-model="sortMode" class="sort-select" aria-label="게시글 정렬">
+            <option value="latest">최신순</option>
+            <option value="comments">댓글순</option>
+            <option value="likes">좋아요순</option>
+          </select>
+
           <RouterLink
             v-if="canWritePost"
             :to="`/boards/${boardType}/write`"
@@ -134,8 +228,6 @@ onMounted(() => {
       <section v-else class="board-table-wrap">
         <table class="board-table">
           <colgroup>
-            <col class="col-number" />
-            <col class="col-category" />
             <col class="col-title" />
             <col class="col-author" />
             <col class="col-date" />
@@ -145,37 +237,33 @@ onMounted(() => {
 
           <thead>
             <tr>
-              <th>번호</th>
-              <th>말머리</th>
               <th>제목</th>
-              <th>글쓴이</th>
+              <th>작성자</th>
               <th>작성일</th>
-              <th>조회</th>
-              <th>추천</th>
+              <th>댓글</th>
+              <th>좋아요</th>
             </tr>
           </thead>
 
           <tbody>
             <tr
-              v-for="post in numberedPosts"
+              v-for="post in paginatedPosts"
               :key="post.id"
               :class="{ pinned: post.is_pinned }"
             >
-              <td class="number-cell">{{ post.displayNumber }}</td>
-              <td>
-                <span class="category-label" :class="post.board_type">
-                  <span v-if="post.is_pinned" class="pin-dot">!</span>
-                  {{ post.board_type === 'notice' ? '공지' : '일반' }}
-                </span>
-              </td>
               <td class="title-cell">
                 <RouterLink :to="`/boards/${post.board_type}/${post.id}`" class="title-link">
+                  <span
+                    v-if="post.board_type === 'notice' || post.is_pinned"
+                    class="notice-badge"
+                  >
+                    공지
+                  </span>
                   <span class="title-text">{{ post.title }}</span>
-                  <span v-if="post.comments_count" class="comment-count">[{{ post.comments_count }}]</span>
-                  <span v-if="post.is_edited" class="edited-mark">수정됨</span>
+                  <span v-if="post.is_pinned" class="pin-mark" aria-label="고정됨">◆</span>
                 </RouterLink>
               </td>
-              <td class="author-cell">
+              <td class="author-cell" data-label="작성자">
                 <span class="author-chip">
                   <span class="author-avatar">
                     <img
@@ -183,9 +271,14 @@ onMounted(() => {
                       :src="post.author_profile_image_url"
                       :alt="post.author_nickname"
                     />
-                    <span v-else class="default-avatar" aria-hidden="true"></span>
+                    <span v-else class="default-avatar" aria-hidden="true">
+                      {{ getAuthorInitial(post) }}
+                    </span>
                   </span>
-                  <span :style="post.author_nickname_color ? { color: post.author_nickname_color } : {}">
+                  <span
+                    class="author-name"
+                    :style="post.author_nickname_color ? { color: post.author_nickname_color } : {}"
+                  >
                     {{ post.author_nickname }}
                   </span>
                   <img
@@ -196,16 +289,61 @@ onMounted(() => {
                   />
                 </span>
               </td>
-              <td>{{ formatBoardDate(post.created_at) }}</td>
-              <td>{{ post.view_count }}</td>
-              <td>{{ post.likes_count }}</td>
+              <td data-label="작성일">{{ formatBoardDate(post.created_at) }}</td>
+              <td data-label="댓글">
+                <span class="metric-cell comment">
+                  <svg class="comment-icon" viewBox="0 0 24 24" aria-hidden="true">
+                    <path class="comment-icon-bubble" d="M4.7 16.1A8.5 8.5 0 0 1 3 11.1C3 6.4 7.1 2.8 12.2 2.8s9.2 3.6 9.2 8.3-4.1 8.3-9.2 8.3a10.4 10.4 0 0 1-3.7-.7 6.7 6.7 0 0 1-4.5 2l-.8-.1.5-.7a6.7 6.7 0 0 0 1-3.8Z" />
+                    <path class="comment-icon-dot" d="M8.2 11.2h.1M12.2 11.2h.1M16.2 11.2h.1" />
+                  </svg>
+                  {{ post.comments_count }}
+                </span>
+              </td>
+              <td data-label="좋아요">
+                <span class="metric-cell like">
+                  <span aria-hidden="true">♥</span>
+                  {{ post.likes_count }}
+                </span>
+              </td>
             </tr>
           </tbody>
         </table>
 
-        <p v-if="posts.length === 0" class="empty-text">
-          아직 등록된 글이 없습니다.
+        <p v-if="filteredPosts.length === 0" class="empty-text">
+          조건에 맞는 게시글이 없습니다.
         </p>
+
+        <nav
+          v-if="filteredPosts.length > 0"
+          class="pagination"
+          aria-label="게시글 페이지"
+        >
+          <button
+            type="button"
+            :disabled="currentPage === 1"
+            @click="goToPage(currentPage - 1)"
+          >
+            ‹
+          </button>
+          <template v-for="page in pageNumbers" :key="page">
+            <span v-if="typeof page === 'string'" class="page-ellipsis">...</span>
+            <button
+              v-else
+              type="button"
+              :class="{ active: page === currentPage }"
+              @click="goToPage(page)"
+            >
+              {{ page }}
+            </button>
+          </template>
+          <button
+            type="button"
+            :disabled="currentPage === totalPages"
+            @click="goToPage(currentPage + 1)"
+          >
+            ›
+          </button>
+        </nav>
       </section>
     </section>
   </main>
@@ -214,117 +352,179 @@ onMounted(() => {
 <style scoped>
 .board-page {
   min-height: 100vh;
-  padding: 40px 24px;
-  background: #f6f7fb;
+  padding: 40px 24px 56px;
+  background: #ffffff;
 }
 
 .board-container {
-  max-width: 1120px;
+  width: 100%;
+  max-width: 1040px;
   margin: 0 auto;
 }
 
 .board-header {
   display: flex;
   justify-content: space-between;
-  gap: 16px;
+  gap: 20px;
   align-items: center;
-  margin-bottom: 24px;
+  margin-bottom: 34px;
 }
 
-.eyebrow {
-  margin: 0 0 6px;
-  color: #2563eb;
-  font-size: 13px;
-  font-weight: 900;
-  letter-spacing: 0.08em;
+.board-title-group {
+  min-width: 0;
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
 }
 
-.board-header h1 {
+.board-title-group h1 {
   margin: 0;
-  color: #111827;
-  font-size: 32px;
+  color: #101828;
+  font-size: 28px;
+  font-weight: 900;
+  line-height: 1.2;
+}
+
+.board-title-group span {
+  color: #98a2b3;
+  font-size: 15px;
+  font-weight: 800;
 }
 
 .board-actions {
+  min-width: 0;
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  flex: 1 1 auto;
+  gap: 12px;
   justify-content: flex-end;
+  align-items: center;
+}
+
+.search-field {
+  box-sizing: border-box;
+  width: min(300px, 34vw);
+  min-width: 220px;
+  height: 52px;
+  padding: 0 16px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid #edf0f4;
+  border-radius: 10px;
+  background: #ffffff;
+  box-shadow: 0 8px 22px rgba(16, 24, 40, 0.04);
+}
+
+.search-field input {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #101828;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.search-field input::placeholder {
+  color: #b5bdc9;
+}
+
+.search-field span {
+  flex: 0 0 auto;
+  color: #111827;
+  font-size: 26px;
+  line-height: 1;
+}
+
+.sort-select {
+  max-width: 100%;
+  height: 52px;
+  padding: 0 38px 0 16px;
+  border: 1px solid #edf0f4;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #101828;
+  font-size: 15px;
+  font-weight: 900;
+  box-shadow: 0 8px 22px rgba(16, 24, 40, 0.04);
+  cursor: pointer;
 }
 
 .write-button {
-  padding: 10px 14px;
-  border-radius: 999px;
-  font-size: 14px;
-  font-weight: 800;
+  flex: 0 0 auto;
+  min-height: 52px;
+  padding: 0 18px;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 900;
   text-decoration: none;
-}
-
-.write-button {
-  border: 1px solid #2563eb;
-  background: #2563eb;
+  border: 0;
+  background: #1f7aec;
   color: #ffffff;
 }
 
 .board-table-wrap {
-  overflow: hidden;
-  border: 1px solid #d7dce5;
-  border-radius: 8px;
+  width: 100%;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
   background: #ffffff;
-  box-shadow: 0 10px 28px rgba(20, 35, 70, 0.06);
+  box-shadow: none;
 }
 
 .board-table {
   width: 100%;
   border-collapse: collapse;
   table-layout: fixed;
-  color: #111827;
-  font-size: 13px;
+  color: #344054;
+  font-size: 15px;
 }
 
 .board-table th,
 .board-table td {
-  height: 30px;
-  padding: 0 8px;
-  border-bottom: 1px solid #edf0f4;
+  height: 80px;
+  padding: 0 18px;
+  border-bottom: 1px solid #f0f2f5;
   vertical-align: middle;
 }
 
 .board-table th {
-  border-bottom-color: #cfd6e2;
-  background: #fbfcfe;
-  color: #111827;
-  font-size: 12px;
+  height: 50px;
+  border-bottom: 0;
+  background: #f8f9fb;
+  color: #1d2939;
+  font-size: 14px;
   font-weight: 900;
+  text-align: left;
+}
+
+.board-table th:not(:first-child),
+.board-table td:not(.title-cell) {
   text-align: center;
 }
 
-.board-table tbody tr:hover {
-  background: #f4f7fb;
+.board-table tbody tr {
+  transition: background 0.16s ease;
 }
 
-.board-table tbody tr.pinned {
-  background: #f8fafc;
+.board-table tbody tr:hover {
+  background: #fbfcff;
+}
+
+.board-table tbody tr.pinned .title-text {
+  font-weight: 900;
 }
 
 .board-table tbody tr:last-child td {
   border-bottom: 0;
 }
 
-.col-number { width: 64px; }
-.col-category { width: 86px; }
-.col-author { width: 150px; }
-.col-date { width: 90px; }
-.col-count { width: 60px; }
-
-.board-table td:not(.title-cell) {
-  text-align: center;
-  white-space: nowrap;
-}
-
-.number-cell {
-  color: #667085;
-}
+.col-author { width: 190px; }
+.col-date { width: 130px; }
+.col-count { width: 112px; }
 
 .title-cell {
   min-width: 0;
@@ -335,9 +535,10 @@ onMounted(() => {
   min-width: 0;
   display: inline-flex;
   max-width: 100%;
-  gap: 4px;
+  gap: 8px;
   align-items: center;
-  color: #111827;
+  overflow: hidden;
+  color: #1d2939;
   font-weight: 800;
   text-decoration: none;
 }
@@ -345,62 +546,35 @@ onMounted(() => {
 .title-text {
   min-width: 0;
   overflow: hidden;
+  line-height: 1.4;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .title-link:hover {
-  color: #dc2626;
-  text-decoration: underline;
+  color: #1f7aec;
 }
 
-.title-link::first-letter {
-  text-transform: none;
-}
-
-.comment-count {
+.notice-badge {
   flex: 0 0 auto;
-  color: #64748b;
-  font-size: 11px;
-  font-weight: 800;
-}
-
-.edited-mark {
-  flex: 0 0 auto;
-  color: #94a3b8;
-  font-size: 11px;
-}
-
-.category-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  color: #344054;
-  font-weight: 800;
-}
-
-.category-label.notice {
-  color: #dc2626;
-}
-
-.category-label.free {
-  color: #344054;
-}
-
-.pin-dot {
-  width: 16px;
-  height: 16px;
-  display: inline-grid;
-  place-items: center;
-  border-radius: 50%;
-  background: #f97316;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: #1f7aec;
   color: #ffffff;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 900;
+  line-height: 1.2;
+}
+
+.pin-mark {
+  flex: 0 0 auto;
+  color: #f05d6f;
+  font-size: 13px;
+  transform: rotate(-18deg);
 }
 
 .author-cell {
-  color: #344054;
+  color: #475467;
 }
 
 .author-chip {
@@ -408,19 +582,24 @@ onMounted(() => {
   display: inline-flex;
   max-width: 100%;
   align-items: center;
-  gap: 5px;
+  gap: 9px;
   font-weight: 800;
 }
 
 .author-avatar {
   position: relative;
   display: inline-flex;
-  width: 18px;
-  height: 18px;
+  width: 34px;
+  height: 34px;
   flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
   overflow: hidden;
   border-radius: 50%;
-  background: #8fb8cc;
+  background: linear-gradient(135deg, #d7efff, #b8f1d5);
+  color: #1f2937;
+  font-size: 13px;
+  font-weight: 900;
 }
 
 .author-avatar img {
@@ -429,72 +608,288 @@ onMounted(() => {
   object-fit: cover;
 }
 
+.author-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .tier-icon {
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   flex: 0 0 auto;
   object-fit: contain;
 }
 
 .default-avatar {
-  position: relative;
-  display: block;
-  width: 100%;
-  height: 100%;
+  display: inline-grid;
+  place-items: center;
 }
 
-.default-avatar::before,
-.default-avatar::after {
-  position: absolute;
-  left: 50%;
-  content: "";
-  transform: translateX(-50%);
-  background: #c8ddea;
+.metric-cell {
+  display: inline-flex;
+  gap: 7px;
+  align-items: center;
+  justify-content: center;
+  color: #475467;
+  font-weight: 800;
 }
 
-.default-avatar::before {
-  top: 20%;
-  width: 34%;
-  height: 34%;
-  border-radius: 50%;
+.metric-cell span {
+  color: #667085;
+  font-size: 18px;
+  line-height: 1;
 }
 
-.default-avatar::after {
-  bottom: -10%;
-  width: 72%;
-  height: 48%;
-  border-radius: 50% 50% 0 0;
+.comment-icon {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
+  fill: none;
+  overflow: visible;
+}
+
+.comment-icon-bubble {
+  fill: #83c5e8;
+  stroke: #25305f;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.comment-icon-dot {
+  fill: none;
+  stroke: #ffffff;
+  stroke-linecap: round;
+  stroke-width: 2.8;
+}
+
+.metric-cell.like span {
+  color: #f26f82;
 }
 
 .status-text,
 .empty-text,
 .error-text {
-  padding: 32px;
-  border-radius: 18px;
+  padding: 46px;
+  border: 1px solid #f0f2f5;
+  border-radius: 12px;
   background: #ffffff;
+  color: #667085;
+  font-weight: 800;
   text-align: center;
+}
+
+.empty-text {
+  margin: 18px 0 0;
 }
 
 .error-text {
   color: #ef4444;
 }
 
+.pagination {
+  margin-top: 34px;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: center;
+}
+
+.pagination button {
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: #475467;
+  font-size: 15px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.pagination button:hover:not(:disabled) {
+  background: #f1f5f9;
+}
+
+.pagination button.active {
+  background: #1f7aec;
+  color: #ffffff;
+  box-shadow: 0 8px 20px rgba(31, 122, 236, 0.28);
+}
+
+.pagination button:disabled {
+  color: #c0c7d2;
+  cursor: not-allowed;
+}
+
+.page-ellipsis {
+  color: #667085;
+  font-size: 14px;
+  font-weight: 900;
+}
+
 @media (max-width: 720px) {
+  .board-page {
+    padding: 24px 16px 42px;
+  }
+
   .board-header {
     align-items: flex-start;
     flex-direction: column;
   }
 
   .board-actions {
+    width: 100%;
     justify-content: flex-start;
+    flex-wrap: wrap;
   }
 
-  .board-table-wrap {
-    overflow-x: auto;
+  .search-field {
+    min-width: min(100%, 240px);
+    flex: 1 1 100%;
+    width: auto;
+  }
+
+  .sort-select,
+  .write-button {
+    flex: 1;
+    min-width: 120px;
   }
 
   .board-table {
-    min-width: 760px;
+    border-collapse: separate;
+    border-spacing: 0 12px;
+  }
+
+  .board-table colgroup,
+  .board-table thead {
+    display: none;
+  }
+
+  .board-table tbody,
+  .board-table tr,
+  .board-table td {
+    display: block;
+  }
+
+  .board-table tbody tr {
+    padding: 14px;
+    border: 1px solid #eef0f4;
+    border-radius: 14px;
+    background: #ffffff;
+    box-shadow: 0 7px 0 #f2d7b0;
+  }
+
+  .board-table tbody tr:hover {
+    background: #ffffff;
+  }
+
+  .board-table th,
+  .board-table td {
+    height: auto;
+    padding: 0;
+    border-bottom: 0;
+  }
+
+  .board-table td:not(.title-cell) {
+    margin-top: 10px;
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: center;
+    color: #475467;
+    text-align: right;
+  }
+
+  .board-table td:not(.title-cell)::before {
+    flex: 0 0 auto;
+    color: #98a2b3;
+    font-size: 12px;
+    font-weight: 900;
+    content: attr(data-label);
+  }
+
+  .title-cell {
+    width: 100%;
+  }
+
+  .title-link {
+    width: 100%;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    overflow: visible;
+  }
+
+  .title-text {
+    flex: 1 1 180px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .pin-mark {
+    margin-top: 2px;
+  }
+
+  .author-chip {
+    max-width: min(70%, 260px);
+    justify-content: flex-end;
+  }
+
+  .author-name {
+    max-width: 160px;
+  }
+
+  .pagination {
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 480px) {
+  .board-page {
+    padding: 18px 12px 34px;
+  }
+
+  .board-header {
+    gap: 14px;
+    margin-bottom: 20px;
+  }
+
+  .board-title-group {
+    width: 100%;
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .board-title-group h1 {
+    font-size: 24px;
+  }
+
+  .sort-select,
+  .write-button {
+    width: 100%;
+    flex-basis: 100%;
+  }
+
+  .board-table tbody tr {
+    padding: 12px;
+    border-radius: 12px;
+  }
+
+  .notice-badge {
+    font-size: 12px;
+  }
+
+  .author-chip {
+    max-width: 66%;
+  }
+
+  .pagination button {
+    width: 30px;
+    height: 30px;
   }
 }
 </style>

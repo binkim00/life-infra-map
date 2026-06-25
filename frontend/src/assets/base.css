@@ -58,8 +58,15 @@
   font-weight: normal;
 }
 
+html {
+  width: 100%;
+  overflow-x: hidden;
+}
+
 body {
+  width: 100%;
   min-height: 100vh;
+  overflow-x: hidden;
   color: var(--color-text);
   background: var(--color-background);
   transition:
@@ -83,4 +90,30 @@ body {
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+img,
+svg,
+video,
+canvas,
+iframe {
+  max-width: 100%;
+}
+
+button,
+input,
+select,
+textarea {
+  min-width: 0;
+  font: inherit;
+}
+
+a,
+p,
+span,
+strong,
+small,
+td,
+th {
+  overflow-wrap: anywhere;
 }
