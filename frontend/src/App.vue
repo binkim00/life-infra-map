@@ -16,6 +16,7 @@ const notifications = ref([])
 const isAccountMenuOpen = ref(false)
 const isSidebarAccountMenuOpen = ref(false)
 const isNotificationMenuOpen = ref(false)
+const selectedNotification = ref(null)
 const notificationMenuRef = ref(null)
 const accountMenuRef = ref(null)
 const sidebarProfileRef = ref(null)
@@ -36,6 +37,12 @@ let notificationTimer = null
 let mascotFetchTimer = null
 const TIER_UP_NOTIFICATION_TITLE = '등급 승급 안내'
 const handledTierUpNotificationIds = new Set()
+const notificationDetailTypes = new Set([
+  'admin_warning',
+  'penalty_notice',
+  'report_passed',
+  'report_penalty',
+])
 
 const handleLogout = async () => {
   closeAllDropdowns()
@@ -215,6 +222,60 @@ const formatNotificationTime = (value) => {
   return `${diffDays}일 전`
 }
 
+const getNotificationTypeLabel = (notification) => {
+  const labels = {
+    admin_warning: '관리자 메시지',
+    penalty_notice: '제재 안내',
+    report_passed: '신고 검토 결과',
+    report_penalty: '신고 처리 결과',
+    inquiry_answered: '문의 답변',
+    post_commented: '댓글 알림',
+    post_liked: '좋아요 알림',
+    comment_liked: '댓글 좋아요',
+    system: '시스템 알림',
+  }
+
+  return labels[notification?.notification_type] || '알림'
+}
+
+const shouldOpenNotificationDetail = (notification) => {
+  return notificationDetailTypes.has(notification?.notification_type)
+}
+
+const getNotificationIconType = (notification) => {
+  const type = notification?.notification_type
+
+  if (type === 'post_commented') {
+    return 'comment'
+  }
+
+  if (type === 'post_liked' || type === 'comment_liked') {
+    return 'like'
+  }
+
+  if (type === 'report_passed' || type === 'report_penalty') {
+    return 'report'
+  }
+
+  if (notification?.title === TIER_UP_NOTIFICATION_TITLE) {
+    return 'tier-up'
+  }
+
+  if (type === 'penalty_notice') {
+    return 'penalty'
+  }
+
+  if (type === 'admin_warning') {
+    return 'admin'
+  }
+
+  if (type === 'inquiry_answered') {
+    return 'message'
+  }
+
+  return 'system'
+}
+
 const isCustomerCenterActive = computed(() => {
   return route.path.startsWith('/inquiries')
 })
@@ -285,12 +346,31 @@ const openNotificationMenu = async () => {
 const moveToNotificationTarget = (notification) => {
   closeAllDropdowns()
 
+  if (shouldOpenNotificationDetail(notification)) {
+    selectedNotification.value = notification
+    return
+  }
+
   if (notification.notification_type === 'inquiry_answered') {
     router.push('/inquiries/my')
     return
   }
 
   router.push(notification.target_route || '/')
+}
+
+const closeNotificationDetail = () => {
+  selectedNotification.value = null
+}
+
+const moveToSelectedNotificationTarget = () => {
+  const targetRoute = selectedNotification.value?.target_route
+
+  closeNotificationDetail()
+
+  if (targetRoute) {
+    router.push(targetRoute)
+  }
 }
 
 const closeAllDropdowns = () => {
@@ -675,7 +755,56 @@ onBeforeUnmount(() => {
                   @click="moveToNotificationTarget(notification)"
                   @keyup.enter="moveToNotificationTarget(notification)"
                 >
-                  <span class="notification-dot" aria-hidden="true"></span>
+                  <span class="notification-icon-wrap" :class="getNotificationIconType(notification)" aria-hidden="true">
+                    <svg
+                      v-if="getNotificationIconType(notification) === 'comment'"
+                      class="notification-comment-icon"
+                      viewBox="0 0 24 24"
+                    >
+                      <path class="notification-comment-bubble" d="M4.7 16.1A8.5 8.5 0 0 1 3 11.1C3 6.4 7.1 2.8 12.2 2.8s9.2 3.6 9.2 8.3-4.1 8.3-9.2 8.3a10.4 10.4 0 0 1-3.7-.7 6.7 6.7 0 0 1-4.5 2l-.8-.1.5-.7a6.7 6.7 0 0 0 1-3.8Z" />
+                      <path class="notification-comment-dot" d="M8.2 11.2h.1M12.2 11.2h.1M16.2 11.2h.1" />
+                    </svg>
+                    <span v-else-if="getNotificationIconType(notification) === 'like'" class="notification-like-icon">♥</span>
+                    <svg v-else-if="getNotificationIconType(notification) === 'report'" viewBox="0 0 24 24">
+                      <path d="M6 11a6 6 0 0 1 12 0v4l2 3H4l2-3v-4Z" />
+                      <path d="M10 21h4" />
+                      <path d="M4 6 2.5 4.5" />
+                      <path d="M20 6 21.5 4.5" />
+                      <path d="M9 3.5 8.2 1.8" />
+                      <path d="M15 3.5l.8-1.7" />
+                    </svg>
+                    <svg v-else-if="getNotificationIconType(notification) === 'tier-up'" viewBox="0 0 24 24">
+                      <path d="M7 12.5 4.5 10a1.6 1.6 0 0 0-2.2 2.3l4.1 4.1" />
+                      <path d="M10.5 8.5 8 6a1.6 1.6 0 0 0-2.2 2.3l4.2 4.2" />
+                      <path d="M14 7.5 11.5 5a1.6 1.6 0 0 0-2.2 2.3l4.2 4.2" />
+                      <path d="M17.2 9.3 15.5 7.6a1.6 1.6 0 0 0-2.2 2.3l2.8 2.8" />
+                      <path d="M7.5 16.5c2.8 3 6.5 3.9 9.2 1.2 1.8-1.8 2-4.4.8-6.7" />
+                      <path d="M19.5 5.5 21 4" />
+                      <path d="M20.8 9h2" />
+                      <path d="M16.8 3.2l.5-2" />
+                    </svg>
+                    <svg v-else-if="getNotificationIconType(notification) === 'penalty'" viewBox="0 0 24 24">
+                      <path d="M12 3 20 7v5c0 5-3.4 8-8 9-4.6-1-8-4-8-9V7l8-4Z" />
+                      <path d="M9 9l6 6" />
+                      <path d="M15 9l-6 6" />
+                    </svg>
+                    <svg v-else-if="getNotificationIconType(notification) === 'admin'" viewBox="0 0 24 24">
+                      <path d="M12 3 20 7v5c0 5-3.4 8-8 9-4.6-1-8-4-8-9V7l8-4Z" />
+                      <path d="M9 12h6" />
+                      <path d="M12 9v6" />
+                    </svg>
+                    <svg v-else-if="getNotificationIconType(notification) === 'message'" viewBox="0 0 24 24">
+                      <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4Z" />
+                      <path d="M8 9h8" />
+                      <path d="M8 13h5" />
+                    </svg>
+                    <svg v-else viewBox="0 0 24 24">
+                      <path d="M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20Z" />
+                      <path d="M12 8v5" />
+                      <path d="M12 16h.01" />
+                    </svg>
+                    <span v-if="!notification.is_read" class="notification-dot"></span>
+                  </span>
                   <div class="notification-copy">
                     <strong>{{ notification.title }}</strong>
                     <p>{{ notification.message }}</p>
@@ -753,6 +882,49 @@ onBeforeUnmount(() => {
         </template>
       </div>
     </header>
+
+    <div
+      v-if="selectedNotification"
+      class="notification-detail-backdrop"
+      role="presentation"
+      @click.self="closeNotificationDetail"
+    >
+      <section
+        class="notification-detail-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="notification-detail-title"
+      >
+        <header class="notification-detail-header">
+          <div>
+            <span>{{ getNotificationTypeLabel(selectedNotification) }}</span>
+            <h2 id="notification-detail-title">{{ selectedNotification.title }}</h2>
+          </div>
+          <button type="button" class="notification-detail-close" aria-label="알림 상세 닫기" @click="closeNotificationDetail">
+            ×
+          </button>
+        </header>
+
+        <p class="notification-detail-message">{{ selectedNotification.message }}</p>
+
+        <footer class="notification-detail-footer">
+          <time>{{ formatNotificationTime(selectedNotification.created_at) }}</time>
+          <div class="notification-detail-actions">
+            <button type="button" class="notification-detail-button secondary" @click="closeNotificationDetail">
+              닫기
+            </button>
+            <button
+              v-if="selectedNotification.target_route"
+              type="button"
+              class="notification-detail-button primary"
+              @click="moveToSelectedNotificationTarget"
+            >
+              관련 글 보기
+            </button>
+          </div>
+        </footer>
+      </section>
+    </div>
 
     <div class="app-main">
       <aside
@@ -2058,9 +2230,11 @@ input {
 
 .notification-dropdown-item {
   position: relative;
-  padding: 14px 16px 14px 32px;
+  padding: 14px 16px;
   display: grid;
-  gap: 4px;
+  grid-template-columns: 32px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
   border-bottom: 1px solid rgba(255, 255, 255, 0.07);
   cursor: pointer;
 }
@@ -2075,18 +2249,84 @@ input {
   outline: none;
 }
 
-.notification-dropdown-item.unread .notification-dot {
-  background: #3b82f6;
+.notification-icon-wrap {
+  position: relative;
+  width: 28px;
+  height: 28px;
+  display: inline-grid;
+  place-items: center;
+  color: #d4d4d8;
+}
+
+.notification-icon-wrap svg {
+  width: 23px;
+  height: 23px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+  overflow: visible;
+}
+
+.notification-icon-wrap.comment svg {
+  width: 24px;
+  height: 24px;
+}
+
+.notification-comment-bubble {
+  fill: #83c5e8;
+  stroke: #25305f;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.notification-comment-dot {
+  fill: none;
+  stroke: #ffffff;
+  stroke-linecap: round;
+  stroke-width: 2.8;
+}
+
+.notification-like-icon {
+  color: #f26f82;
+  font-size: 24px;
+  line-height: 1;
+}
+
+.notification-icon-wrap.report {
+  color: #f97316;
+}
+
+.notification-icon-wrap.tier-up {
+  color: #facc15;
+}
+
+.notification-icon-wrap.penalty {
+  color: #ef4444;
+}
+
+.notification-icon-wrap.admin {
+  color: #60a5fa;
+}
+
+.notification-icon-wrap.message {
+  color: #34d399;
+}
+
+.notification-icon-wrap.system {
+  color: #a1a1aa;
 }
 
 .notification-dot {
   position: absolute;
-  top: 22px;
-  left: 14px;
+  top: -1px;
+  right: -1px;
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: transparent;
+  background: #3b82f6;
 }
 
 .notification-copy {
@@ -2120,6 +2360,125 @@ input {
   margin: 0;
   padding: 22px 16px;
   text-align: center;
+}
+
+.notification-detail-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(17, 24, 39, 0.46);
+  backdrop-filter: blur(5px);
+}
+
+.notification-detail-modal {
+  width: min(480px, 100%);
+  max-height: min(560px, calc(100vh - 40px));
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
+  border: 2px solid #222222;
+  border-radius: 14px;
+  background: #ffffff;
+  color: #222222;
+  box-shadow: 0 18px 0 rgba(242, 215, 176, 0.92), 0 28px 80px rgba(0, 0, 0, 0.24);
+}
+
+.notification-detail-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px 22px 16px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.notification-detail-header span {
+  display: block;
+  margin-bottom: 6px;
+  color: #2563eb;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.notification-detail-header h2 {
+  margin: 0;
+  color: #111827;
+  font-size: 20px;
+  line-height: 1.35;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.notification-detail-close {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border: 2px solid #222222;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #222222;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.notification-detail-message {
+  margin: 0;
+  min-height: 120px;
+  overflow-y: auto;
+  padding: 20px 22px;
+  color: #374151;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.notification-detail-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 16px 22px 20px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.notification-detail-footer time {
+  color: #6b7280;
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.notification-detail-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.notification-detail-button {
+  min-height: 38px;
+  padding: 0 14px;
+  border: 2px solid #222222;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.notification-detail-button.primary {
+  background: #222222;
+  color: #ffffff;
+}
+
+.notification-detail-button.secondary {
+  background: #ffffff;
+  color: #222222;
 }
 
 .global-account-menu {
