@@ -24,6 +24,8 @@ const mascotFetchedPlaceId = ref(null)
 const mascotFetchedPlaceName = ref('')
 const mascotFetchedMarkerLabel = ref('')
 const isMarkerChoiceMenuOpen = ref(false)
+const isMascotSearchLoading = ref(false)
+const mascotSearchMessage = ref('')
 const mascotRunX = ref('-36vw')
 const mascotRunY = ref('-17vh')
 const mascotRunMidX = ref('-18vw')
@@ -171,6 +173,14 @@ const activeMascotState = computed(() => {
       message: mascotFetchedPlaceName.value
         ? `${mascotFetchedPlaceName.value} 마커 물고 있는 중`
         : '뼈다귀 마커 물고 있는 중',
+    }
+  }
+
+  if (isMascotSearchLoading.value) {
+    return {
+      key: 'searching',
+      prop: '',
+      message: mascotSearchMessage.value || '조건에 맞는 장소 찾는 중',
     }
   }
 
@@ -423,6 +433,11 @@ const triggerMascotFetch = (event) => {
   }, 1100)
 }
 
+const handleSearchLoadingChange = (event) => {
+  isMascotSearchLoading.value = Boolean(event.detail?.isSearching)
+  mascotSearchMessage.value = event.detail?.message || ''
+}
+
 onMounted(() => {
   document.addEventListener('click', handleDocumentClick)
   window.addEventListener('place-marker-fetch', triggerMascotFetch)
@@ -430,6 +445,7 @@ onMounted(() => {
   window.addEventListener('place-marker-fetch-clear', clearMascotFetch)
   window.addEventListener('place-marker-choice-open', handleMarkerChoiceMenuOpen)
   window.addEventListener('place-marker-choice-close', handleMarkerChoiceMenuClose)
+  window.addEventListener('search-loading-change', handleSearchLoadingChange)
 
   authStore.fetchMe()
     .then(() => {
@@ -476,6 +492,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('place-marker-fetch-clear', clearMascotFetch)
   window.removeEventListener('place-marker-choice-open', handleMarkerChoiceMenuOpen)
   window.removeEventListener('place-marker-choice-close', handleMarkerChoiceMenuClose)
+  window.removeEventListener('search-loading-change', handleSearchLoadingChange)
   clearMascotFetch()
 
   if (notificationTimer) {
@@ -755,6 +772,7 @@ onBeforeUnmount(() => {
             'is-tier-mascot': authStore.isLoggedIn,
             'is-fetching': mascotFetchPhase === 'fetching',
             'is-carrying': mascotFetchPhase === 'carrying',
+            'is-search-loading': isMascotSearchLoading && !mascotFetchPhase,
             'is-choice-menu-open': isMarkerChoiceMenuOpen,
           },
         ]"
@@ -1579,6 +1597,40 @@ input {
   pointer-events: auto;
 }
 
+.route-mascot.is-search-loading {
+  z-index: 64;
+  animation: mascot-search-orbit 16s linear infinite;
+}
+
+.route-mascot.is-search-loading .mascot-dog {
+  width: 176px;
+  height: 176px;
+  margin-right: -18px;
+  animation: mascot-search-run-bob 1.8s ease-in-out infinite;
+}
+
+.route-mascot.is-search-loading .mascot-dog::before {
+  display: block;
+  animation: mascot-run-frame 0.72s steps(1, end) infinite;
+}
+
+.route-mascot.is-search-loading .mascot-dog::after {
+  display: none;
+}
+
+.route-mascot.is-search-loading .mascot-dog > span {
+  opacity: 0;
+}
+
+.route-mascot.is-search-loading .mascot-tail {
+  animation-duration: 0.55s;
+}
+
+.route-mascot.is-search-loading .mascot-prop,
+.route-mascot.is-search-loading .mascot-fetch-bone {
+  display: none;
+}
+
 .route-mascot.is-choice-menu-open {
   z-index: 0;
 }
@@ -1725,6 +1777,66 @@ input {
 
   100% {
     transform: translate(var(--mascot-run-x, -36vw), var(--mascot-run-y, -17vh)) scale(1);
+  }
+}
+
+@keyframes mascot-search-orbit {
+  0% {
+    transform: translate(0, 0) scale(1);
+  }
+
+  8% {
+    transform: translate(-13vw, -6vh) scale(1.01);
+  }
+
+  17% {
+    transform: translate(-32vw, -10vh) scale(1.03);
+  }
+
+  25% {
+    transform: translate(-52vw, -19vh) scale(1.01);
+  }
+
+  33% {
+    transform: translate(-66vw, -34vh) scale(0.98);
+  }
+
+  42% {
+    transform: translate(-59vw, -50vh) scale(0.96);
+  }
+
+  50% {
+    transform: translate(-39vw, -59vh) scale(0.97);
+  }
+
+  58% {
+    transform: translate(-18vw, -54vh) scale(1);
+  }
+
+  67% {
+    transform: translate(-7vw, -39vh) scale(1.02);
+  }
+
+  75% {
+    transform: translate(-12vw, -23vh) scale(1.03);
+  }
+
+  84% {
+    transform: translate(-25vw, -11vh) scale(1.01);
+  }
+
+  92% {
+    transform: translate(-10vw, -4vh) scale(1);
+  }
+
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+}
+
+@keyframes mascot-search-run-bob {
+  50% {
+    transform: translateY(-6px) rotate(-2deg);
   }
 }
 
@@ -2239,6 +2351,10 @@ input {
     animation-name: mascot-run-to-marker-mobile;
   }
 
+  .route-mascot.is-search-loading {
+    animation: mascot-search-orbit-mobile 14s linear infinite;
+  }
+
   .route-mascot.is-carrying {
     z-index: 2;
     transform: translate(var(--mascot-run-x, -18vw), calc(var(--mascot-run-y, -13vh) - 8px)) scale(0.82);
@@ -2255,6 +2371,44 @@ input {
 
     100% {
       transform: translate(var(--mascot-run-x, -18vw), var(--mascot-run-y, -13vh)) scale(0.82);
+    }
+  }
+
+  @keyframes mascot-search-orbit-mobile {
+    0% {
+      transform: translate(0, 0) scale(0.82);
+    }
+
+    12% {
+      transform: translate(-18vw, -5vh) scale(0.84);
+    }
+
+    25% {
+      transform: translate(-48vw, -13vh) scale(0.83);
+    }
+
+    38% {
+      transform: translate(-72vw, -30vh) scale(0.8);
+    }
+
+    50% {
+      transform: translate(-56vw, -54vh) scale(0.78);
+    }
+
+    63% {
+      transform: translate(-24vw, -59vh) scale(0.8);
+    }
+
+    76% {
+      transform: translate(-8vw, -38vh) scale(0.83);
+    }
+
+    88% {
+      transform: translate(-20vw, -12vh) scale(0.84);
+    }
+
+    100% {
+      transform: translate(0, 0) scale(0.82);
     }
   }
 }

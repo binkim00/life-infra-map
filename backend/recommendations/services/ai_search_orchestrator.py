@@ -1,5 +1,6 @@
 import json
 import logging
+import math
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -28,6 +29,7 @@ logger = logging.getLogger(__name__)
 
 VERIFIED_TAG_SOURCES = {"checked", "user_verified"}
 SUGGESTED_TAG_SOURCES = {"ai_suggested", "blog_search"}
+DB_FIRST_CATEGORY_CODES = {"smoking_area"}
 COORDINATE_PAIR_RE = re.compile(
     r"[-+]?\d{1,3}(?:\.\d+)?\s*[,，]\s*[-+]?\d{1,3}(?:\.\d+)?"
 )
@@ -441,6 +443,18 @@ def _frame_terms(frame, *names):
     return values
 
 
+def _frame_category_codes(frame):
+    return _frame_terms(frame, "candidate_category_codes")
+
+
+def _db_first_category_codes(frame):
+    return [
+        code
+        for code in _frame_category_codes(frame)
+        if code in DB_FIRST_CATEGORY_CODES
+    ]
+
+
 def _evidence_terms(frame):
     return {
         "target": _frame_terms(frame, "target_objects"),
@@ -816,6 +830,23 @@ def _distance(lat, lng, place_lat, place_lng):
     return calculate_distance_m(lat, lng, place_lat, place_lng)
 
 
+def _nearby_bounds(lat, lng, radius):
+    lat = _as_float(lat)
+    lng = _as_float(lng)
+    radius = _radius(radius)
+    if lat is None or lng is None:
+        return None
+    lat_delta = radius / 111_000
+    lng_scale = max(math.cos(math.radians(lat)), 0.2)
+    lng_delta = radius / (111_000 * lng_scale)
+    return {
+        "lat_min": lat - lat_delta,
+        "lat_max": lat + lat_delta,
+        "lng_min": lng - lng_delta,
+        "lng_max": lng + lng_delta,
+    }
+
+
 def _source_label(source):
     if source == "db":
         return "DB 후보"
@@ -877,6 +908,7 @@ def _db_evidence(place, tag_lists, frame):
     terms = _db_evidence_terms(frame)
     target_terms = terms["target"]
     candidate_terms = terms["candidate"]
+    db_first_category_codes = _db_first_category_codes(frame)
     text_fields = {
         "name": _clean_text(place.name),
         "category": _clean_text(place.category),
@@ -887,6 +919,15 @@ def _db_evidence(place, tag_lists, frame):
     }
     matched = []
     level = "weak"
+
+    if place.category in db_first_category_codes:
+        matched.append({
+            "type": "structured_category_direct",
+            "field": "category",
+            "value": place.category,
+            "source_strength": "verified",
+        })
+        level = "strong"
 
     for field_name, text in text_fields.items():
         for term in _matched_terms(text, target_terms):
@@ -971,7 +1012,8 @@ def _candidate_base(candidate_id, source, name, category, address, lat=None, lng
 def collect_db_candidates(frame, *, lat=None, lng=None, limit=50, radius=None):
     terms = _db_evidence_terms(frame)
     search_terms = terms["search"]
-    if not search_terms:
+    db_first_category_codes = _db_first_category_codes(frame)
+    if not search_terms and not db_first_category_codes:
         return []
 
     query = Q()
@@ -985,15 +1027,26 @@ def collect_db_candidates(frame, *, lat=None, lng=None, limit=50, radius=None):
             | Q(place_tags__tag__name__icontains=term)
             | Q(place_tags__evidence__icontains=term)
         )
+    if db_first_category_codes:
+        query |= Q(category__in=db_first_category_codes)
 
+    radius = _radius(radius)
+    bounds = _nearby_bounds(lat, lng, radius)
     queryset = (
         Place.objects
         .filter(query)
         .distinct()
         .prefetch_related("place_tags__tag")
-        .order_by("-data_quality_score", "-updated_at")
     )
-    radius = _radius(radius)
+    if bounds:
+        queryset = queryset.filter(
+            lat__gte=bounds["lat_min"],
+            lat__lte=bounds["lat_max"],
+            lng__gte=bounds["lng_min"],
+            lng__lte=bounds["lng_max"],
+        )
+
+    queryset = queryset.order_by("-data_quality_score", "-updated_at")
     candidates = []
     for place in queryset[: max(limit * 5, 100)]:
         distance = _distance(lat, lng, place.lat, place.lng)
@@ -1056,21 +1109,54 @@ def _candidate_text(candidate):
     )
 
 
+def _candidate_has_location_text_evidence(candidate, frame):
+    location_mode = _clean_text(frame.get("location_mode"))
+    anchor_locations = _as_list(frame.get("anchor_location"), max_items=3)
+    if not anchor_locations:
+        return location_mode != "explicit"
+    text = _compact(_candidate_text(candidate))
+    if not text:
+        return False
+
+    for anchor in anchor_locations:
+        anchor_key = _compact(anchor)
+        if anchor_key and anchor_key in text:
+            return True
+        tokens = [
+            _compact(token)
+            for token in re.split(r"[\s,;/|]+", anchor)
+            if len(_compact(token)) >= 2
+        ]
+        if len(tokens) >= 2 and all(token in text for token in tokens):
+            return True
+        for alias in _anchor_location_aliases(anchor):
+            alias_key = alias.get("key")
+            area_tokens = alias.get("area_tokens") or []
+            if not alias_key or alias_key == anchor_key:
+                continue
+            if alias_key in text and all(token in text for token in area_tokens):
+                return True
+    return False
+
+
 def _external_pre_ai_evidence(candidate, frame):
     db_terms = _db_evidence_terms(frame)
     target_terms = db_terms["target"]
     candidate_terms = db_terms["candidate"]
     text = _candidate_text(candidate)
     retrieval_query = _clean_text(candidate.get("retrieval_query"))
+    source = _clean_text(candidate.get("candidate_source") or candidate.get("source"))
+    has_location_text_evidence = source != "web" or _candidate_has_location_text_evidence(candidate, frame)
     matched = []
-    for term in _matched_terms(text, target_terms):
-        matched.append({"type": "target_direct", "value": term, "source_strength": "external"})
-    if matched:
-        return "strong", matched
-    for term in _matched_terms(text, candidate_terms):
-        matched.append({"type": "candidate_type", "value": term, "source_strength": "external"})
-    if matched:
-        return "medium", matched
+    if has_location_text_evidence:
+        for term in _matched_terms(text, target_terms):
+            matched.append({"type": "target_direct", "value": term, "source_strength": "external"})
+        if matched:
+            return "strong", matched
+        for term in _matched_terms(text, candidate_terms):
+            matched.append({"type": "candidate_type", "value": term, "source_strength": "external"})
+        if matched:
+            return "medium", matched
     for term in _matched_terms(retrieval_query, target_terms):
         matched.append({"type": "retrieval_query_target", "value": term, "source_strength": "external_query"})
     if matched:
@@ -1288,11 +1374,7 @@ def _query_needs_repair(queries):
 
 
 def _explicit_external_verification_requested(query, frame):
-    text = _compact(" ".join([
-        query,
-        *frame.get("constraints", []),
-        *frame.get("result_match_terms", []),
-    ]))
+    text = _compact(query)
     markers = {
         "web",
         "external",
@@ -1302,7 +1384,6 @@ def _explicit_external_verification_requested(query, frame):
         "웹",
         "외부",
         "공식",
-        "확인",
         "최신",
     }
     return any(_compact(marker) in text for marker in markers)
@@ -2015,7 +2096,7 @@ def run_ai_search(request_data, *, user=None):
 
     web_candidates = []
     external_verification_requested = _explicit_external_verification_requested(original_query or query, frame)
-    can_use_web_for_location = bool(frame.get("anchor_location")) or frame.get("location_mode") == "explicit"
+    can_use_web_for_location = bool(frame.get("anchor_location")) and frame.get("location_mode") == "explicit"
     should_collect_web = (
         external_verification_requested
         or (can_use_web_for_location and _needs_candidate_recall_boost(initial_candidates, limit=limit))
@@ -2046,6 +2127,10 @@ def run_ai_search(request_data, *, user=None):
         candidate
         for candidate in candidate_pool
         if not _has_only_retrieval_query_evidence(candidate)
+        and (
+            candidate.get("pre_ai_evidence_level") != "weak"
+            or candidate.get("matched_evidence")
+        )
     ]
     pre_rerank_limit = _as_int(getattr(settings, "AI_SEARCH_RERANK_MAX_CANDIDATES", 20), 20)
     pre_rerank_limit = min(max(pre_rerank_limit, 5), 30)
