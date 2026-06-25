@@ -141,6 +141,57 @@ def _looks_internal_or_english_reason(value):
     return _has_ascii_word(text) and not _has_korean(text)
 
 
+def _reason_conflicts_with_candidate_type(candidate, reason):
+    reason_text = _clean_text(reason, 500)
+    if not reason_text:
+        return False
+    candidate_text = " ".join(
+        _clean_text(candidate.get(key), 500)
+        for key in (
+            "name",
+            "category",
+            "kakao_category",
+            "source_category",
+            "external_category",
+        )
+    )
+    for field in (
+        "matched_tags",
+        "matched_tag_labels",
+        "verified_tags",
+        "verified_tag_labels",
+        "suggested_tags",
+        "suggested_tag_labels",
+        "candidate_tags",
+        "candidate_tag_labels",
+    ):
+        candidate_text = f"{candidate_text} {' '.join(_as_list(candidate.get(field), max_items=8))}"
+    compact_candidate = candidate_text.replace(" ", "").lower()
+    type_terms = [
+        "도서관",
+        "카페",
+        "식당",
+        "음식점",
+        "공원",
+        "화장실",
+        "흡연구역",
+        "흡연실",
+        "주차장",
+        "노래방",
+        "쇼핑몰",
+        "백화점",
+        "아울렛",
+        "박물관",
+        "미술관",
+        "갤러리",
+    ]
+    for term in type_terms:
+        compact_term = term.replace(" ", "").lower()
+        if compact_term in reason_text.replace(" ", "").lower() and compact_term not in compact_candidate:
+            return True
+    return False
+
+
 def _public_source_label(candidate):
     source = _clean_text(
         candidate.get("candidate_source")
@@ -209,6 +260,8 @@ def _public_semantic_reason(candidate, decision, *, needs_verification=False):
 def _safe_semantic_reason(candidate, decision, *, needs_verification=False):
     reason = _clean_text(decision.get("reason"), 300)
     if _looks_internal_or_english_reason(reason):
+        return _public_semantic_reason(candidate, decision, needs_verification=needs_verification)
+    if _reason_conflicts_with_candidate_type(candidate, reason):
         return _public_semantic_reason(candidate, decision, needs_verification=needs_verification)
     if needs_verification and "확인" not in reason:
         return f"{reason} 세부 정보는 방문 전에 확인해 주세요."

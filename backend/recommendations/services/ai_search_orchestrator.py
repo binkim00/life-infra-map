@@ -41,8 +41,39 @@ DB_CATEGORY_SEARCH_CODES = {
     "toilet",
     "freewifi",
     "parking",
+    "pharmacy",
     "smoking_area",
     "shopping",
+    "karaoke",
+}
+STRUCTURED_PLACE_TYPE_TERMS = {
+    "카페",
+    "커피",
+    "식당",
+    "음식점",
+    "맛집",
+    "약국",
+    "화장실",
+    "공중화장실",
+    "개방화장실",
+    "흡연구역",
+    "흡연실",
+    "노래방",
+    "코인노래방",
+    "쇼핑몰",
+    "백화점",
+    "아울렛",
+    "쇼핑센터",
+    "대형마트",
+    "도서관",
+    "공공도서관",
+    "코워킹스페이스",
+    "주차장",
+    "공원",
+    "산책로",
+    "박물관",
+    "미술관",
+    "갤러리",
 }
 POLICY_AWARE_CATEGORY_CODES = {"smoking_area"}
 PLACE_POLICY_TERMS = {
@@ -618,7 +649,6 @@ def _frame_policy_requirements(frame):
     positive_text = " ".join([
         *terms["target"],
         *terms["result"],
-        *terms["candidate"],
         *terms["constraints"],
     ])
     exclusion_text = " ".join(terms["exclusions"])
@@ -987,6 +1017,11 @@ def _select_candidate_db_terms(frame, target_terms, max_items=12):
         for value in _frame_terms(frame, "target_objects", "targetObjects")
         if _compact(value)
     }
+    structured_place_type_compacts = {
+        _compact(term)
+        for term in STRUCTURED_PLACE_TYPE_TERMS
+        if _compact(term)
+    }
     for term in raw_terms:
         compact_term = _compact(term)
         if not compact_term:
@@ -996,7 +1031,8 @@ def _select_candidate_db_terms(frame, target_terms, max_items=12):
             for target in target_compacts
         )
         is_explicit_target_object = compact_term in raw_target_value_compacts
-        if not overlaps_selected_target and not is_explicit_target_object:
+        is_structured_place_type = compact_term in structured_place_type_compacts
+        if not overlaps_selected_target and not is_explicit_target_object and not is_structured_place_type:
             continue
         if compact_term in seen:
             continue
@@ -1006,7 +1042,10 @@ def _select_candidate_db_terms(frame, target_terms, max_items=12):
             break
     return _drop_short_qualifiers_when_specific_terms_exist(
         selected,
-        protected_terms=raw_target_value_compacts,
+        protected_terms=[
+            *raw_target_value_compacts,
+            *structured_place_type_compacts,
+        ],
     )[:max_items]
 
 
@@ -1032,8 +1071,21 @@ def _append_non_redundant_terms(base_terms, extra_terms, max_items=12):
 
 
 def _db_evidence_terms(frame):
+    boardgame_text = _compact(" ".join([
+        *_frame_terms(frame, "target_objects", "targetObjects"),
+    ]))
+    if any(term in boardgame_text for term in ["보드게임", "보드카페", "보드게임카페"]):
+        boardgame_terms = ["보드게임카페", "보드게임", "보드카페"]
+        return {
+            "target": boardgame_terms,
+            "candidate": boardgame_terms,
+            "constraints": [],
+            "search": boardgame_terms,
+        }
+
     if _is_indoor_experience_frame(frame):
         indoor_experience_terms = [
+            "키즈카페",
             "보드게임카페",
             "만화카페",
             "방탈출",
@@ -1166,18 +1218,179 @@ def _candidate_semantic_text(candidate):
     ])
 
 
+_CASUAL_VISITOR_INTENT_TERMS = tuple(_compact(term) for term in [
+    "\uce74\ud398",
+    "\ucee4\ud53c",
+    "\uc74c\ub8cc",
+    "\uc2dd\uc0ac",
+    "\uc74c\uc2dd",
+    "\ub9db\uc9d1",
+    "\uc1fc\ud551",
+    "\ubc31\ud654\uc810",
+    "\uc544\uc6b8\ub81b",
+    "\uc804\uc2dc",
+    "\ubc15\ubb3c\uad00",
+    "\ubbf8\uc220\uad00",
+    "\uac24\ub7ec\ub9ac",
+    "\uc2e4\ub0b4\uccb4\ud5d8",
+    "\uccb4\ud5d8",
+    "\uc561\ud2f0\ube44\ud2f0",
+    "\ub180\uac70\ub9ac",
+    "\uc0b0\ucc45",
+    "\uc270\uacf3",
+    "\uc26c",
+    "\uae30\ub2e4",
+    "\ub370\uc774\ud2b8",
+    "\ube44\ud53c",
+    "\ub354\uc6cc",
+    "\uc88b\uc740\uacf3",
+    "\uc2dc\uac04\ubcf4\ub0bc",
+    "\ucd94\ucc9c",
+])
+
+_CASUAL_VISITOR_UNFRIENDLY_TERMS = tuple(_compact(term) for term in [
+    "\uacbd\ub85c\ub2f9",
+    "\ub178\uc778\uc815",
+    "\ub178\uc778\ud68c",
+    "\ub178\uc778\ud68c\uad00",
+    "\ub178\uc778\ubcf5\uc9c0",
+    "\ub9c8\uc744\ud68c\uad00",
+    "\ud589\uc815\ubcf5\uc9c0\uc13c\ud130",
+    "\uc8fc\ubbfc\uc13c\ud130",
+    "\ub3d9\uc8fc\ubbfc\uc13c\ud130",
+    "\uad6c\uccad",
+    "\uc2dc\uccad",
+    "\uc0c1\ub2f4\uc13c\ud130",
+    "\uccad\uc18c\ub144\uc0c1\ub2f4",
+    "\uc815\uc2e0\uac74\uac15\ubcf5\uc9c0\uc13c\ud130",
+    "\ub9c8\uc74c\uc270\ud130",
+    "\ub9c8\uc74c\uac74\uac15",
+    "\uac74\uac15\uac00\uc815\uc9c0\uc6d0\uc13c\ud130",
+    "\uac00\uc871\uc13c\ud130",
+    "\uace0\uc6a9\ubcf5\uc9c0\uc13c\ud130",
+    "\uc790\ud65c\uc13c\ud130",
+    "\uc9c0\uc5ed\uc544\ub3d9\uc13c\ud130",
+    "\uc885\ud569\uc0ac\ud68c\ubcf5\uc9c0\uad00",
+    "\ubcf5\uc9c0\uad00",
+    "\uce58\ub9e4\uc548\uc2ec\uc13c\ud130",
+])
+
+_CASUAL_VISITOR_UNFRIENDLY_EXEMPT_TERMS = tuple(_compact(term) for term in [
+    "\uacbd\ub85c\ub2f9",
+    "\uc8fc\ubbfc\uc13c\ud130",
+    "\ud589\uc815\ubcf5\uc9c0\uc13c\ud130",
+    "\ubcf5\uc9c0\uad00",
+    "\uc0c1\ub2f4",
+    "\ub9c8\uc74c",
+    "\uacf5\uacf5\uae30\uad00",
+    "\ubbfc\uc6d0",
+    "\ubb34\ub354\uc704\uc270\ud130",
+    "\ud55c\ud30c\uc270\ud130",
+    "\ud654\uc7a5\uc2e4",
+    "\ud761\uc5f0",
+    "\uc57d\uad6d",
+    "\ubcd1\uc6d0",
+    "\uc8fc\ucc28",
+    "\uacbd\ucc30",
+    "\uc18c\ubc29",
+    "\ubcf4\uac74\uc18c",
+])
+
+
+def _casual_visitor_unfriendly_review(candidate_text, frame_text):
+    if not any(term and term in frame_text for term in _CASUAL_VISITOR_INTENT_TERMS):
+        return []
+    if any(term and term in frame_text for term in _CASUAL_VISITOR_UNFRIENDLY_EXEMPT_TERMS):
+        return []
+    if any(term and term in candidate_text for term in _CASUAL_VISITOR_UNFRIENDLY_TERMS):
+        return [
+            "\uc77c\ubc18 \ubc29\ubb38 \ucd94\ucc9c \ub9e5\ub77d\uacfc \ub9de\uc9c0 \uc54a\ub294 "
+            "\uacf5\uacf5/\ubcf5\uc9c0/\uc0c1\ub2f4 \uacc4\uc5f4 \ud6c4\ubcf4"
+        ]
+    return []
+
+
 def _semantic_category_review(candidate, frame):
     frame_text = _compact(_frame_semantic_text(frame))
     candidate_text = _compact(_candidate_semantic_text(candidate))
+    candidate_category_text = _compact(_clean_text(candidate.get("category")))
+    frame_target_text = _compact(" ".join([
+        *_frame_terms(frame, "target_objects", "targetObjects"),
+    ]))
+    frame_target_result_text = _compact(" ".join([
+        *_frame_terms(frame, "target_objects", "targetObjects"),
+        *_frame_terms(frame, "result_match_terms", "resultMatchTerms"),
+    ]))
     unmet = []
     if not frame_text or not candidate_text:
         return unmet
+    unmet.extend(_casual_visitor_unfriendly_review(candidate_text, frame_text))
+
+    personal_power_request = any(
+        term in frame_text
+        for term in [
+            "\ucf58\uc13c\ud2b8",
+            "\ubc30\ud130\ub9ac",
+            "\ud734\ub300\ud3f0\ucda9\uc804",
+            "\ucda9\uc804\uac00\ub2a5",
+            "\ub178\ud2b8\ubd81",
+        ]
+    )
+    if personal_power_request:
+        power_positive = ["\uce74\ud398", "\ub3c4\uc11c\uad00", "\ucf54\uc6cc\ud0b9", "\ucf58\uc13c\ud2b8", "\ub178\ud2b8\ubd81", "\uc640\uc774\ud30c\uc774"]
+        power_forbidden = [
+            "\uc804\uae30\ucc28\ucda9\uc804",
+            "ev\ucda9\uc804",
+            "lpg\ucda9\uc804",
+            "\uac00\uc2a4\ucda9\uc804",
+            "\ucda9\uc804\uc18c",
+            "\uc8fc\uc720\uc18c",
+            "\uc8fc\ucc28\uc7a5",
+            "freewifi",
+            "\uacf5\uacf5\uc640\uc774\ud30c\uc774",
+            "\uc640\uc774\ud30c\uc774\uc874",
+            "\ubc84\uc2a4\uc815\ub958\uc7a5",
+            "\ucd08\ub4f1\ud559\uad50",
+        ]
+        if any(term in candidate_text for term in power_forbidden) and not any(
+            term in candidate_text for term in power_positive
+        ):
+            unmet.append("\ud734\ub300\uae30\uae30 \ucda9\uc804/\ucf58\uc13c\ud2b8 \uc694\uccad\uacfc \ub9de\uc9c0 \uc54a\ub294 \ucc28\ub7c9 \ucda9\uc804\uc18c/\uc8fc\ucc28\uc7a5 \ud6c4\ubcf4")
 
     drink_cafe_request = (
-        "카페" in frame_text
-        and any(term in frame_text for term in ["음료", "커피", "마실", "마시"])
-        and not any(term in frame_text for term in ["작업", "공부", "스터디", "노트북", "놋북", "카공"])
+        ("카페" in frame_target_text or "커피" in frame_target_result_text)
+        and any(term in frame_target_result_text for term in ["음료", "커피", "마실", "마시"])
+        and not any(term in frame_target_result_text for term in ["작업", "공부", "스터디", "노트북", "놋북", "카공"])
     )
+    cafe_request = (
+        "카페" in frame_target_text
+        or "커피" in frame_target_result_text
+        or "음료" in frame_target_result_text
+    )
+    if cafe_request:
+        cafe_forbidden = [
+            "사진관",
+            "포토스튜디오",
+            "즉석사진",
+            "전문대행",
+            "공간대여",
+            "스터디룸",
+            "독서실",
+            "인터넷쇼핑몰",
+            "통신판매",
+            "카페거리",
+            "카페골목",
+            "freewifi",
+            "공공와이파이",
+            "와이파이존",
+            "버스정류장",
+            "초등학교",
+            "중학교",
+            "고등학교",
+        ]
+        if any(term in candidate_text for term in cafe_forbidden):
+            unmet.append("카페 요청과 맞지 않는 비카페 후보")
+
     if drink_cafe_request:
         forbidden = ["스터디카페", "스터디룸", "공간대여", "전문대행", "독서실", "study_cafe", "studyroom"]
         if any(term in candidate_text for term in forbidden):
@@ -1189,7 +1402,16 @@ def _semantic_category_review(candidate, frame):
         if not any(term in candidate_text for term in bar_positive):
             unmet.append("술집/바 요청과 맞지 않는 후보")
 
-    shopping_request = any(term in frame_text for term in ["쇼핑몰", "백화점", "아울렛", "복합쇼핑몰", "대형마트"])
+    boardgame_request = any(term in frame_target_text for term in ["보드게임", "보드카페", "보드게임카페"])
+    if boardgame_request and not any(term in candidate_text for term in ["보드게임", "보드카페", "보드게임카페"]):
+        unmet.append("보드게임카페 요청과 맞지 않는 후보")
+
+    restaurant_request = any(term in frame_target_text for term in ["식당", "음식점", "밥", "맛집"])
+    if restaurant_request and ("카페" in candidate_category_text or candidate_category_text == "cafe"):
+        if not any(term in frame_text for term in ["카페", "커피", "디저트", "브런치"]):
+            unmet.append("식당 요청과 맞지 않는 카페 카테고리 후보")
+
+    shopping_request = any(term in frame_target_text for term in ["쇼핑몰", "백화점", "아울렛", "복합쇼핑몰", "대형마트", "쇼핑할곳"])
     if shopping_request:
         shopping_positive = ["쇼핑몰", "백화점", "아울렛", "복합쇼핑", "쇼핑센터", "대형마트", "몰링"]
         shopping_forbidden = [
@@ -1202,12 +1424,36 @@ def _semantic_category_review(candidate, frame):
             "쇼핑몰솔루션",
             "온라인몰",
         ]
+        shopping_tenant_forbidden = [
+            "음식점",
+            "식당",
+            "카페",
+            "약국",
+            "병원",
+            "치과",
+            "의원",
+            "주차장",
+            "찌개",
+            "국밥",
+            "분식",
+            "고기",
+            "의류판매",
+            "스포츠용품",
+            "생활용품점",
+            "주방용품",
+            "패션잡화점",
+            "상설할인매장",
+            "안경",
+            "화장품",
+        ]
         if any(term in candidate_text for term in shopping_forbidden):
             unmet.append("오프라인 쇼핑몰/백화점 요청과 맞지 않는 온라인 쇼핑 후보")
+        elif any(term in candidate_text for term in shopping_tenant_forbidden):
+            unmet.append("쇼핑몰/백화점 요청과 맞지 않는 입점 식음료/편의시설 후보")
         elif not any(term in candidate_text for term in shopping_positive):
             unmet.append("쇼핑몰/백화점 요청과 맞지 않는 후보")
 
-    exhibition_request = any(term in frame_text for term in ["전시", "전시관", "전시장", "전시회", "박물관", "미술관", "갤러리"])
+    exhibition_request = any(term in frame_target_text for term in ["전시", "전시관", "전시장", "전시회", "박물관", "미술관", "갤러리"])
     if exhibition_request:
         exhibition_positive = [
             "전시관",
@@ -1220,8 +1466,63 @@ def _semantic_category_review(candidate, frame):
             "아트센터",
             "문화회관",
         ]
-        if not any(term in candidate_text for term in exhibition_positive):
+        exhibition_forbidden = [
+            "패션잡화점",
+            "구두",
+            "신발",
+            "의류판매",
+            "생활용품점",
+            "상설할인매장",
+            "도매",
+            "시장",
+        ]
+        if any(term in candidate_text for term in exhibition_forbidden):
+            unmet.append("전시/박물관 요청과 맞지 않는 판매/시장 후보")
+        elif not any(term in candidate_text for term in exhibition_positive):
             unmet.append("전시/박물관 요청과 맞지 않는 후보")
+
+    smoking_request = "흡연" in frame_text or "담배" in frame_text
+    if smoking_request:
+        smoking_policy_text = _compact(" ".join([
+            *_frame_terms(frame, "target_objects", "targetObjects"),
+            *_frame_terms(frame, "result_match_terms", "resultMatchTerms"),
+            *_frame_terms(frame, "constraints"),
+            *_frame_terms(frame, "exclusions", "excluded_place_natures", "avoid"),
+        ]))
+        wants_outdoor = any(term in smoking_policy_text for term in ["실외", "외부", "밖", "야외", "옥외", "실내제외"])
+        wants_indoor = any(term in smoking_policy_text for term in ["실내", "내부", "건물내", "실외제외"])
+        outdoor_positive = ["실외", "외부", "야외", "옥외", "흡연부스", "개방형", "도로변", "보도"]
+        indoor_positive = ["실내", "내부", "건물내", "건물안", "실내흡연실"]
+        likely_indoor_venue = [
+            "pc",
+            "pc방",
+            "pc카페",
+            "pc클럽",
+            "pccafe",
+            "피씨방",
+            "피씨",
+            "피씨까페",
+            "피씨카페",
+            "당구장",
+            "카페",
+            "음식점",
+            "주점",
+            "노래방",
+            "게임장",
+            "호텔",
+            "상가",
+            "건물",
+        ]
+        if wants_outdoor:
+            has_outdoor = any(term in candidate_text for term in outdoor_positive)
+            if any(term in candidate_text for term in indoor_positive):
+                unmet.append("실외 흡연구역 요청과 다른 실내 흡연 후보")
+            elif any(term in candidate_text for term in likely_indoor_venue) and not has_outdoor:
+                unmet.append("실외 흡연구역 요청에 실외 근거가 부족한 실내 업장 후보")
+        if wants_indoor and any(term in candidate_text for term in outdoor_positive) and not any(
+            term in candidate_text for term in indoor_positive
+        ):
+            unmet.append("실내 흡연실 요청과 다른 실외 흡연 후보")
 
     indoor_experience_request = _is_indoor_experience_frame_text(frame_text)
     if indoor_experience_request:
@@ -1647,6 +1948,19 @@ def _candidate_base(candidate_id, source, name, category, address, lat=None, lng
         "can_show_on_map": lat is not None and lng is not None,
         "is_external": source in {"kakao", "web"},
     }
+
+
+def _candidate_has_invalid_display(candidate):
+    pieces = [
+        _clean_text(candidate.get("name")),
+        _clean_text(candidate.get("address")),
+        _clean_text(candidate.get("detail_location")),
+    ]
+    if any("??" in piece for piece in pieces if piece):
+        return True
+    name = _clean_text(candidate.get("name"))
+    address = _clean_text(candidate.get("address") or candidate.get("detail_location"))
+    return "검증 태그" in name or "테스트로" in address
 
 
 def collect_db_candidates(frame, *, lat=None, lng=None, limit=50, radius=None):
@@ -2916,6 +3230,23 @@ def run_ai_search(request_data, *, user=None):
         candidate_counts["web"] = len(web_candidates)
 
     candidate_pool = _dedupe_candidates([*db_candidates, *kakao_candidates, *web_candidates])
+    invalid_display_candidates = [
+        candidate
+        for candidate in candidate_pool
+        if _candidate_has_invalid_display(candidate)
+    ]
+    if invalid_display_candidates:
+        invalid_display_ids = {
+            _clean_text(candidate.get("id"))
+            for candidate in invalid_display_candidates
+            if _clean_text(candidate.get("id"))
+        }
+        candidate_pool = [
+            candidate
+            for candidate in candidate_pool
+            if _clean_text(candidate.get("id")) not in invalid_display_ids
+        ]
+        candidate_counts["removed_invalid_display"] = len(invalid_display_candidates)
     retrieval_only_candidates = [
         candidate
         for candidate in candidate_pool
@@ -3008,6 +3339,27 @@ def run_ai_search(request_data, *, user=None):
 
     hidden_weak = reranker_debug.get("excluded_candidates") or []
     unresolved_candidates = reranker_debug.get("unresolved_candidates") or []
+    policy_conflict_candidates = [
+        candidate
+        for candidate in ranked_candidates or []
+        if candidate.get("pre_ai_unmet_constraints")
+    ]
+    if policy_conflict_candidates:
+        policy_conflict_ids = {_clean_text(candidate.get("id")) for candidate in policy_conflict_candidates}
+        ranked_candidates = [
+            candidate
+            for candidate in ranked_candidates
+            if _clean_text(candidate.get("id")) not in policy_conflict_ids
+        ]
+        hidden_weak = [*hidden_weak, *policy_conflict_candidates]
+        reranker_debug = {
+            **reranker_debug,
+            "post_filter_policy_conflict_count": len(policy_conflict_candidates),
+            "post_filter_policy_conflict_ids": [
+                candidate.get("id")
+                for candidate in policy_conflict_candidates
+            ],
+        }
     ranked_candidates, top_up_candidates = _top_up_ranked_candidates(
         ranked_candidates,
         candidate_pool,
