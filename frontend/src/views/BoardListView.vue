@@ -293,7 +293,8 @@ onMounted(() => {
               <td data-label="댓글">
                 <span class="metric-cell comment">
                   <svg class="comment-icon" viewBox="0 0 24 24" aria-hidden="true">
-                    <path d="M21 15a4 4 0 0 1-4 4H7l-4 4V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z" />
+                    <path class="comment-icon-bubble" d="M4.7 16.1A8.5 8.5 0 0 1 3 11.1C3 6.4 7.1 2.8 12.2 2.8s9.2 3.6 9.2 8.3-4.1 8.3-9.2 8.3a10.4 10.4 0 0 1-3.7-.7 6.7 6.7 0 0 1-4.5 2l-.8-.1.5-.7a6.7 6.7 0 0 0 1-3.8Z" />
+                    <path class="comment-icon-dot" d="M8.2 11.2h.1M12.2 11.2h.1M16.2 11.2h.1" />
                   </svg>
                   {{ post.comments_count }}
                 </span>
@@ -642,14 +643,26 @@ onMounted(() => {
 }
 
 .comment-icon {
-  width: 19px;
-  height: 19px;
+  width: 22px;
+  height: 22px;
   flex: 0 0 auto;
   fill: none;
-  stroke: #667085;
+  overflow: visible;
+}
+
+.comment-icon-bubble {
+  fill: #83c5e8;
+  stroke: #25305f;
   stroke-linecap: round;
   stroke-linejoin: round;
-  stroke-width: 2;
+  stroke-width: 1.8;
+}
+
+.comment-icon-dot {
+  fill: none;
+  stroke: #ffffff;
+  stroke-linecap: round;
+  stroke-width: 2.8;
 }
 
 .metric-cell.like span {
