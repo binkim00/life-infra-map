@@ -1019,6 +1019,27 @@ class RecommendationSearchTests(TestCase):
         self.assertEqual(resolved["lng"], 129.0831)
 
     @patch("recommendations.services.ai_search_orchestrator.search_places_by_keyword")
+    def test_ai_search_anchor_resolution_rejects_address_only_business_for_ambiguous_road(self, mock_kakao):
+        from recommendations.services.ai_search_orchestrator import _resolve_anchor_location
+
+        mock_kakao.return_value = {
+            "documents": [{
+                "id": "nearby-business",
+                "place_name": "대명유압",
+                "x": "129.0632",
+                "y": "35.1606",
+                "address_name": "부산 부산진구 전포동 608-1",
+                "road_address_name": "부산 부산진구 동성로 143",
+                "category_name": "서비스,산업 > 제조업 > 산업용품",
+            }]
+        }
+
+        resolved = _resolve_anchor_location("동성로", lat=35.1579, lng=129.0592)
+
+        self.assertEqual(resolved["status"], "failed")
+        self.assertEqual(resolved["reason"], "ambiguous_address_only_anchor")
+
+    @patch("recommendations.services.ai_search_orchestrator.search_places_by_keyword")
     def test_ai_search_anchor_resolution_repairs_region_prefixed_station_alias(self, mock_kakao):
         from recommendations.services.ai_search_orchestrator import _resolve_anchor_location
 

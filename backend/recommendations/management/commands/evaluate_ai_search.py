@@ -413,6 +413,8 @@ def _issues_for_case(case, data, frame, top_results):
     query_key = _compact(case.get("query"))
     action = data.get("decision_action") or data.get("decisionAction") or data.get("type") or ""
     count = int(data.get("result_count") or data.get("count") or 0)
+    debug = data.get("debug_pipeline") or {}
+    location_resolution = debug.get("location_resolution") or {}
     issues = []
     expected_action = case.get("expected_action")
     allow_empty = bool(case.get("allow_empty"))
@@ -436,6 +438,33 @@ def _issues_for_case(case, data, frame, top_results):
         issues.append("AI/local rule이 실행 가능한 의도로 처리하지 못함")
     if action == "ask_clarification" and not data.get("clarification_question"):
         issues.append("되묻기인데 질문 문구 없음")
+    if action == "search" and any(row.get("unmet_constraints") for row in top_results[:5]):
+        issues.append("상위 결과에 미충족 조건이 남아 있음")
+    if action == "search" and (frame.get("location_mode") or frame.get("locationMode")) == "explicit":
+        anchor = str(frame.get("anchor_location") or frame.get("anchorLocation") or "")
+        anchor_key = _compact(anchor)
+        resolution_source = str(location_resolution.get("source") or "")
+        resolution_label = str(location_resolution.get("label") or "")
+        resolution_address = str(location_resolution.get("address") or "")
+        if location_resolution and location_resolution.get("status") != "resolved":
+            issues.append("명시 위치를 지도 기준점으로 확정하지 못함")
+        if (
+            anchor_key
+            and resolution_source == "kakao_keyword_nearby"
+            and anchor_key not in _compact(resolution_label)
+            and anchor_key in _compact(resolution_address)
+        ):
+            issues.append("명시 위치가 주변 주소의 임의 사업장으로 해석됨")
+        expected_address_terms = [_compact(term) for term in case.get("expected_address_terms") or [] if _compact(term)]
+        if expected_address_terms:
+            top_address_text = _compact(" ".join([
+                str(location_resolution.get("address") or ""),
+                str(location_resolution.get("label") or ""),
+                *(str(row.get("address") or "") for row in top_results[:5]),
+            ]))
+            missing_terms = [term for term in expected_address_terms if term not in top_address_text]
+            if missing_terms:
+                issues.append(f"상위 결과 주소가 기대 지역과 맞지 않음: {', '.join(missing_terms)}")
     if expected_options and action == "ask_clarification":
         option_text = _compact(" ".join(
             _option_label(option)
@@ -592,6 +621,7 @@ def _case_summary(case, data, elapsed_ms, top_n):
                 or []
             ),
         },
+        "location_resolution": debug.get("location_resolution") or {},
         "counts": {
             "db": counts.get("db", 0),
             "kakao": counts.get("kakao", 0),

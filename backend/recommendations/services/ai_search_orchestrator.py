@@ -298,6 +298,45 @@ REGION_PREFIXES = (
 )
 
 
+LOCATION_ANCHOR_CATEGORY_HINTS = (
+    "지하철",
+    "전철",
+    "철도",
+    "도시철도",
+    "역",
+    "터미널",
+    "공항",
+    "관광",
+    "명소",
+    "관광안내",
+    "해수욕장",
+    "공원",
+    "시장",
+    "광장",
+)
+
+
+def _has_region_prefix(value):
+    key = _compact(value)
+    return any(_compact(prefix) and _compact(prefix) in key for prefix in REGION_PREFIXES)
+
+
+def _address_only_anchor_is_too_weak(anchor_location, *, name_key, address_key, category_key, anchor_key, anchor_tokens, alias_key, alias_match, transit_match):
+    if transit_match:
+        return False
+    if anchor_key and anchor_key in name_key:
+        return False
+    if alias_match and alias_key and alias_key in name_key:
+        return False
+    if any(_compact(term) and _compact(term) in category_key for term in LOCATION_ANCHOR_CATEGORY_HINTS):
+        return False
+    if not ((anchor_key and anchor_key in address_key) or (anchor_tokens and all(token in address_key for token in anchor_tokens))):
+        return False
+    if _has_region_prefix(anchor_location) or len(anchor_tokens) >= 2:
+        return False
+    return True
+
+
 def _anchor_location_aliases(anchor_location):
     text = _clean_text(anchor_location, 100)
     compact_text = _compact(text)
@@ -443,6 +482,19 @@ def _resolve_anchor_location(anchor_location, *, lat=None, lng=None):
                 or name_key == alias_key
                 or name_key.startswith(f"{alias_key} ")
             )
+            if _address_only_anchor_is_too_weak(
+                anchor_location,
+                name_key=name_key,
+                address_key=address_key,
+                category_key=category_key,
+                anchor_key=anchor_key,
+                anchor_tokens=anchor_tokens,
+                alias_key=alias_key,
+                alias_match=alias_match,
+                transit_match=transit_match,
+            ):
+                last_error_reason = "ambiguous_address_only_anchor"
+                continue
             score = 0
             if name_key == anchor_key:
                 score += 100
@@ -1467,6 +1519,20 @@ def _semantic_category_review(candidate, frame):
             "쇼핑몰관리",
             "쇼핑몰솔루션",
             "온라인몰",
+            "부동산",
+            "공인중개",
+            "제조업",
+            "산업용품",
+            "비닐",
+            "종교용품",
+            "약국",
+            "의약품",
+            "네일",
+            "미용",
+            "반려동물",
+            "휴대폰",
+            "전자제품판매",
+            "통신기기",
         ]
         shopping_tenant_forbidden = [
             "음식점",
@@ -2629,6 +2695,20 @@ def _can_top_up_excluded_candidate(candidate):
     )
 
 
+def _blocking_unmet_constraints(candidate):
+    if not isinstance(candidate, dict):
+        return []
+    unmet = []
+    unmet.extend(_as_list(candidate.get("pre_ai_unmet_constraints")))
+    semantic = candidate.get("semantic_reranker") if isinstance(candidate.get("semantic_reranker"), dict) else {}
+    unmet.extend(_as_list(semantic.get("unmet_constraints")))
+    return [
+        _clean_text(item, 120)
+        for item in unmet
+        if _clean_text(item, 120) and _clean_text(item, 120) != "details_need_verification"
+    ]
+
+
 def _minimum_result_count(limit):
     configured = _as_int(getattr(settings, "AI_SEARCH_MIN_RESULTS", 10), 10)
     return min(max(configured, 1), max(_as_int(limit, 15), 1), 20)
@@ -2651,9 +2731,9 @@ def _top_up_ranked_candidates(ranked_candidates, candidate_pool, excluded_candid
         candidate_id = _clean_text(candidate.get("id"))
         if not candidate_id or candidate_id in ranked_ids:
             continue
-        if candidate.get("pre_ai_unmet_constraints"):
+        if _blocking_unmet_constraints(candidate):
             continue
-        if candidate_id in excluded_ids and not _can_top_up_excluded_candidate(candidate):
+        if candidate_id in excluded_ids:
             continue
         level = _clean_text(candidate.get("pre_ai_evidence_level") or candidate.get("evidence_level"))
         if level not in {"strong", "medium"}:
@@ -3386,7 +3466,7 @@ def run_ai_search(request_data, *, user=None):
     policy_conflict_candidates = [
         candidate
         for candidate in ranked_candidates or []
-        if candidate.get("pre_ai_unmet_constraints")
+        if _blocking_unmet_constraints(candidate)
     ]
     if policy_conflict_candidates:
         policy_conflict_ids = {_clean_text(candidate.get("id")) for candidate in policy_conflict_candidates}

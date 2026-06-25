@@ -928,6 +928,19 @@ const resultCountText = computed(() => {
   return `${searchedPlaces.value.length}개를 찾았어요${suffix}`
 })
 
+const resultPanelTitle = computed(() => {
+  if (resultCountText.value) {
+    return resultCountText.value
+  }
+  if (['empty', 'filtered_empty'].includes(searchResultStatus.value)) {
+    return '조건에 맞는 장소를 찾지 못했어요'
+  }
+  if (searchResultStatus.value === 'error') {
+    return '검색 결과를 표시하지 못했어요'
+  }
+  return '검색 결과'
+})
+
 const mapParserStatus = computed(() => {
   if (!mapAiParse.value) {
     return null
@@ -11976,7 +11989,7 @@ onBeforeUnmount(() => {
           <div class="place-list-top">
             <div>
               <p class="place-list-label">검색 결과</p>
-              <h2>{{ resultCountText || '조건에 맞는 장소를 정리했어요' }}</h2>
+              <h2>{{ resultPanelTitle }}</h2>
             </div>
 
             <button
