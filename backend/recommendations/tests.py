@@ -879,8 +879,8 @@ class RecommendationSearchTests(TestCase):
 
         def fake_kakao(keyword, lat=None, lng=None, radius=1000, size=5):
             if keyword == "Station":
-                self.assertIsNone(lat)
-                self.assertIsNone(lng)
+                if lat is not None or lng is not None:
+                    return {"documents": []}
                 return {
                     "documents": [{
                         "id": "anchor-1",
@@ -945,14 +945,113 @@ class RecommendationSearchTests(TestCase):
         self.assertEqual(data["debug_pipeline"]["used_path"], "ai_first_orchestrator")
         self.assertEqual(data["debug_pipeline"]["location_resolution"]["status"], "resolved")
         self.assertEqual(data["debug_pipeline"]["location_resolution"]["lat"], 35.2)
+        self.assertEqual(data["debug_pipeline"]["search_origin"]["search_lat"], 35.2)
+        self.assertEqual(data["debug_pipeline"]["search_origin"]["search_lng"], 129.2)
+        self.assertIn("db", data["debug_pipeline"]["search_origin"]["marker_sources"])
         self.assertEqual(data["debug_pipeline"]["candidate_counts"]["db"], 1)
         self.assertTrue(data["frontend_should_skip_kakao_fallback"])
         self.assertFalse(data["execution_policy"]["allow_kakao_fallback"])
         self.assertEqual(data["results"][0]["name"], "Pho House")
         self.assertEqual(data["results"][0]["score_breakdown"]["personalization_boost"], 0)
         self.assertEqual(mock_kakao.call_args_list[0].kwargs["keyword"], "Station")
-        self.assertEqual(mock_kakao.call_args_list[1].kwargs["lat"], 35.2)
+        candidate_search_calls = [
+            call.kwargs
+            for call in mock_kakao.call_args_list
+            if call.kwargs.get("keyword") == "Station pho"
+        ]
+        self.assertTrue(
+            any(call.get("lat") == 35.2 and call.get("lng") == 129.2 for call in candidate_search_calls)
+        )
         mock_rerank.assert_called_once()
+
+    @patch("recommendations.services.ai_search_orchestrator.search_places_by_keyword")
+    def test_ai_search_anchor_resolution_prefers_exact_short_place_name(self, mock_kakao):
+        from recommendations.services.ai_search_orchestrator import _resolve_anchor_location
+
+        mock_kakao.return_value = {
+            "documents": [
+                {
+                    "id": "long-nearby",
+                    "place_name": "부산시청역중앙하이츠 홍보관",
+                    "x": "129.05",
+                    "y": "35.14",
+                    "address_name": "부산 부산진구 중앙대로 622",
+                },
+                {
+                    "id": "station",
+                    "place_name": "부산시청역",
+                    "x": "129.0595",
+                    "y": "35.1798",
+                    "address_name": "부산 연제구 중앙대로 지하",
+                },
+            ]
+        }
+
+        resolved = _resolve_anchor_location("부산시청역", lat=35.1, lng=129.1)
+
+        self.assertEqual(resolved["label"], "부산시청역")
+        self.assertEqual(resolved["external_id"], "station")
+        self.assertEqual(resolved["lat"], 35.1798)
+        self.assertEqual(resolved["lng"], 129.0595)
+
+    @patch("recommendations.services.ai_search_orchestrator.search_places_by_keyword")
+    def test_ai_search_anchor_resolution_accepts_admin_area_address_tokens(self, mock_kakao):
+        from recommendations.services.ai_search_orchestrator import _resolve_anchor_location
+
+        mock_kakao.return_value = {
+            "documents": [{
+                "id": "yeonsan-admin-area",
+                "place_name": "온천천시민공원 연산동입구",
+                "x": "129.0831",
+                "y": "35.1844",
+                "address_name": "부산 연제구 연산동 503-1",
+            }]
+        }
+
+        resolved = _resolve_anchor_location("부산 연산동", lat=35.1, lng=129.1)
+
+        self.assertEqual(resolved["status"], "resolved")
+        self.assertEqual(resolved["external_id"], "yeonsan-admin-area")
+        self.assertEqual(resolved["lat"], 35.1844)
+        self.assertEqual(resolved["lng"], 129.0831)
+
+    @patch("recommendations.services.ai_search_orchestrator.search_places_by_keyword")
+    def test_ai_search_anchor_resolution_repairs_region_prefixed_station_alias(self, mock_kakao):
+        from recommendations.services.ai_search_orchestrator import _resolve_anchor_location
+
+        def fake_kakao(*, keyword, **kwargs):
+            if keyword == "부산시청역":
+                return {
+                    "documents": [{
+                        "id": "long-nearby",
+                        "place_name": "부산시청역중앙하이츠 홍보관",
+                        "x": "129.0595",
+                        "y": "35.1481",
+                        "address_name": "부산 부산진구 범천동 856-4",
+                        "category_name": "부동산 > 부동산서비스 > 분양사무소",
+                    }]
+                }
+            if keyword == "시청역":
+                return {
+                    "documents": [{
+                        "id": "station",
+                        "place_name": "시청역 부산1호선",
+                        "x": "129.0766",
+                        "y": "35.1797",
+                        "address_name": "부산 연제구 연산동 1416-2",
+                        "category_name": "교통,수송 > 지하철,전철 > 부산1호선",
+                    }]
+                }
+            return {"documents": []}
+
+        mock_kakao.side_effect = fake_kakao
+
+        resolved = _resolve_anchor_location("부산시청역", lat=35.1, lng=129.1)
+
+        self.assertEqual(resolved["label"], "시청역 부산1호선")
+        self.assertEqual(resolved["external_id"], "station")
+        self.assertEqual(resolved["lat"], 35.1797)
+        self.assertEqual(resolved["lng"], 129.0766)
 
     @override_settings(
         CONVERSATIONAL_SEARCH_AI_ENABLED=True,
@@ -1567,6 +1666,68 @@ class RecommendationSearchTests(TestCase):
             data["debug_pipeline"]["location_resolution"]["reason"],
             "missing_current_context_coordinates",
         )
+
+    @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=True)
+    @patch("recommendations.services.ai_search_orchestrator.collect_kakao_candidates")
+    @patch("recommendations.services.ai_search_orchestrator.collect_db_candidates")
+    @patch("recommendations.services.ai_search_orchestrator.build_ai_intent_plan")
+    def test_ai_search_current_context_coordinates_are_used_and_traced(
+        self,
+        mock_intent,
+        mock_db_collector,
+        mock_kakao_collector,
+    ):
+        mock_intent.return_value = {
+            "action": "search",
+            "decision_action": "search",
+            "normalized_query": "urgent restroom nearby",
+            "frame": {
+                "location_mode": "current_context",
+                "anchor_location": "",
+                "target_objects": ["화장실"],
+                "candidate_place_types": ["공중화장실"],
+                "result_match_terms": ["화장실", "공중화장실"],
+                "constraints": ["가까운 곳"],
+                "exclusions": [],
+                "ranking_policy": "urgent_nearest",
+                "primary_search_queries": ["공중화장실"],
+                "secondary_search_queries": [],
+            },
+            "clarification": {},
+            "confidence": 0.9,
+            "ai_retry_count": 0,
+        }
+
+        def fake_db(frame, *, lat=None, lng=None, **kwargs):
+            self.assertEqual(lat, 35.106)
+            self.assertEqual(lng, 128.966)
+            return []
+
+        def fake_kakao(frame, queries, *, lat=None, lng=None, **kwargs):
+            self.assertEqual(lat, 35.106)
+            self.assertEqual(lng, 128.966)
+            return [], []
+
+        mock_db_collector.side_effect = fake_db
+        mock_kakao_collector.side_effect = fake_kakao
+
+        response = self.client.post(
+            "/api/recommendations/ai-search/",
+            data=json.dumps(
+                {"query": "지금 너무 급한데 근처 화장실 바로 갈 수 있는 곳 찾아줘", "lat": 35.106, "lng": 128.966},
+                ensure_ascii=False,
+            ),
+            content_type="application/json",
+            **self._auth_headers(),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["decision_action"], "search")
+        self.assertEqual(data["debug_pipeline"]["location_resolution"]["status"], "resolved")
+        self.assertEqual(data["debug_pipeline"]["location_resolution"]["reason"], "current_context")
+        self.assertEqual(data["debug_pipeline"]["search_origin"]["search_lat"], 35.106)
+        self.assertEqual(data["debug_pipeline"]["search_origin"]["search_lng"], 128.966)
 
     @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=True)
     @patch("recommendations.services.ai_search_orchestrator.semantic_rerank_candidates")
@@ -2389,6 +2550,34 @@ class RecommendationSearchTests(TestCase):
         self.assertEqual(merged, [])
         self.assertEqual(additions, [])
 
+    def test_top_up_ranked_candidates_can_restore_strong_db_direct_evidence(self):
+        from recommendations.services.ai_search_orchestrator import _top_up_ranked_candidates
+
+        candidate = {
+            "id": "db-restroom",
+            "candidate_source": "db",
+            "name": "공중화장실",
+            "pre_ai_evidence_level": "strong",
+            "score": 80,
+            "matched_evidence": [{
+                "type": "target_direct",
+                "field": "name",
+                "value": "화장실",
+                "source_strength": "verified",
+            }],
+        }
+
+        merged, additions = _top_up_ranked_candidates(
+            [],
+            [candidate],
+            [{"id": "db-restroom", "reason": "details need verification"}],
+            limit=5,
+        )
+
+        self.assertEqual([item["id"] for item in merged], ["db-restroom"])
+        self.assertEqual([item["id"] for item in additions], ["db-restroom"])
+        self.assertEqual(additions[0]["compatibility_gate"], "needs_verification")
+
     def test_retrieval_query_only_candidate_is_filtered_before_rerank(self):
         from recommendations.services.ai_search_orchestrator import _has_only_retrieval_query_evidence
 
@@ -2427,6 +2616,23 @@ class RecommendationSearchTests(TestCase):
         self.assertNotIn("\uce74\ud398", terms["search"])
         self.assertNotIn("\ub9db\uc9d1", terms["search"])
 
+    def test_db_evidence_terms_drop_place_descriptors_when_result_supports_core_target(self):
+        from recommendations.services.ai_search_orchestrator import _db_evidence_terms
+
+        frame = {
+            "anchor_location": "하단역",
+            "target_objects": ["쌀국수 전문점", "베트남 쌀국수집"],
+            "result_match_terms": ["쌀국수", "포", "맛집"],
+            "candidate_place_types": ["쌀국수 전문점", "아시아 음식점"],
+            "constraints": ["도보 가능한 거리"],
+            "primary_search_queries": ["하단역 쌀국수 전문점", "하단역 도보 쌀국수 맛집"],
+        }
+
+        terms = _db_evidence_terms(frame)
+
+        self.assertEqual(terms["search"], ["쌀국수"])
+        self.assertNotIn("전문점", terms["search"])
+
     def test_db_evidence_terms_remove_auxiliary_words_from_long_facility_request(self):
         from recommendations.services.ai_search_orchestrator import _db_evidence_terms
 
@@ -2446,6 +2652,48 @@ class RecommendationSearchTests(TestCase):
         self.assertNotIn("\uc218", terms["search"])
         self.assertNotIn("\uc788\ub294", terms["search"])
         self.assertNotIn("\uac08", terms["search"])
+
+    def test_db_evidence_terms_prefer_restroom_core_over_access_place_types(self):
+        from recommendations.services.ai_search_orchestrator import _db_evidence_terms
+
+        frame = {
+            "location_mode": "current_context",
+            "target_objects": ["공중화장실", "편의점 화장실", "카페 화장실", "지하철역 화장실"],
+            "result_match_terms": ["남녀구분 화장실", "장애인화장실", "24시간", "즉시 이용 가능"],
+            "candidate_place_types": ["공중화장실", "편의점", "카페", "지하철역"],
+            "constraints": ["가까운 곳"],
+            "primary_search_queries": [
+                "공중화장실 현재 위치 인근",
+                "편의점 화장실 현재 위치 인근 24시간",
+                "카페 화장실 현재 위치 인근 영업중",
+            ],
+        }
+
+        terms = _db_evidence_terms(frame)
+
+        self.assertEqual(terms["search"], ["화장실"])
+        for unrelated in ["편의점", "카페", "지하철역", "24시간", "즉시", "이용", "가능"]:
+            self.assertNotIn(unrelated, terms["search"])
+
+    def test_db_evidence_terms_keep_smoking_facility_terms_not_activity_modifiers(self):
+        from recommendations.services.ai_search_orchestrator import _db_evidence_terms
+
+        frame = {
+            "location_mode": "explicit",
+            "anchor_location": "부산 연산동",
+            "target_objects": ["흡연실", "실외 흡연구역", "흡연 가능한 야외 테라스"],
+            "result_match_terms": ["흡연실", "흡연구역", "담배", "흡연 가능", "실외 흡연"],
+            "candidate_place_types": ["흡연실(공용)", "흡연구역(도로변/공원)", "카페 테라스 내 지정 흡연실"],
+            "constraints": [],
+            "primary_search_queries": ["연산동 흡연실", "연산동 흡연구역", "연산동 지정 흡연부스"],
+        }
+
+        terms = _db_evidence_terms(frame)
+
+        self.assertIn("흡연실", terms["search"])
+        self.assertIn("흡연구역", terms["search"])
+        for unrelated in ["담배", "가능", "가능한", "야외", "실외", "테라스"]:
+            self.assertNotIn(unrelated, terms["search"])
 
     def test_collect_db_candidates_does_not_pull_cafe_from_candidate_type_when_target_is_specific(self):
         from recommendations.services.ai_search_orchestrator import collect_db_candidates
@@ -2489,6 +2737,49 @@ class RecommendationSearchTests(TestCase):
 
         self.assertIn(rice_noodle_place.name, candidate_names)
         self.assertNotIn(unrelated_cafe.name, candidate_names)
+
+    def test_collect_db_candidates_uses_smoking_frame_terms_without_outdoor_cafe_bleed(self):
+        from recommendations.services.ai_search_orchestrator import collect_db_candidates
+
+        smoking_place = self._create_place(
+            name="연산 테스트 흡연구역",
+            category="smoking_area",
+            external_id="specific-smoking-area-db",
+            lat=35.18,
+            lng=129.08,
+            data_quality_score=70,
+        )
+        self._add_tag(smoking_place, "실외흡연구역", is_verified=True)
+        outdoor_cafe = self._create_place(
+            name="연산 야외 카페",
+            category="cafe",
+            external_id="outdoor-cafe-not-smoking-db",
+            lat=35.1802,
+            lng=129.0802,
+            data_quality_score=95,
+        )
+        self._add_tag(outdoor_cafe, "야외좌석", is_verified=True)
+
+        frame = {
+            "anchor_location": "부산 연산동",
+            "target_objects": ["흡연실", "실외 흡연구역", "흡연 가능한 야외 공간"],
+            "result_match_terms": ["흡연실", "흡연구역", "담배", "흡연 가능", "실외 흡연"],
+            "candidate_place_types": ["흡연실(공용)", "흡연구역(도로변/공원)", "카페/시설 내 지정 흡연실"],
+            "constraints": [],
+            "primary_search_queries": ["연산동 흡연실", "연산동 흡연구역"],
+        }
+
+        candidates = collect_db_candidates(
+            frame,
+            lat=35.18,
+            lng=129.08,
+            limit=10,
+            radius=2000,
+        )
+        candidate_names = [candidate["name"] for candidate in candidates]
+
+        self.assertIn(smoking_place.name, candidate_names)
+        self.assertNotIn(outdoor_cafe.name, candidate_names)
 
     def test_broad_place_target_is_not_actionable_search_target(self):
         from recommendations.services.ai_search_orchestrator import _has_actionable_place_target

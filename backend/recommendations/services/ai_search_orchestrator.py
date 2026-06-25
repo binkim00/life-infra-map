@@ -140,6 +140,15 @@ def _context_coordinates(lat=None, lng=None, map_center=None):
     return None, None
 
 
+def _context_coordinate_source(lat=None, lng=None, map_center=None):
+    if _as_float(lat) is not None and _as_float(lng) is not None:
+        return "request_coordinates"
+    if isinstance(map_center, dict):
+        if _as_float(map_center.get("lat")) is not None and _as_float(map_center.get("lng")) is not None:
+            return "map_center"
+    return ""
+
+
 def _as_int(value, default=0):
     try:
         return int(value)
@@ -154,6 +163,64 @@ def _limit(value, default=15):
 def _radius(value):
     parsed = _as_int(value, 8000)
     return min(max(parsed, 300), 20000)
+
+
+REGION_PREFIXES = (
+    "서울",
+    "부산",
+    "대구",
+    "인천",
+    "광주",
+    "대전",
+    "울산",
+    "세종",
+    "경기",
+    "강원",
+    "충북",
+    "충남",
+    "전북",
+    "전남",
+    "경북",
+    "경남",
+    "제주",
+)
+
+
+def _anchor_location_aliases(anchor_location):
+    text = _clean_text(anchor_location, 100)
+    compact_text = _compact(text)
+    aliases = []
+    seen = set()
+
+    def add_alias(value, area_tokens=None):
+        value = _clean_text(value, 100)
+        key = _compact(value)
+        if not key or key in seen:
+            return
+        seen.add(key)
+        aliases.append({
+            "text": value,
+            "key": key,
+            "area_tokens": [_compact(token) for token in (area_tokens or []) if _compact(token)],
+        })
+
+    add_alias(text)
+    tokens = [token for token in re.split(r"[\s,;/|]+", text) if _clean_text(token)]
+    if len(tokens) >= 2 and _compact(tokens[-1]).endswith("역"):
+        area_tokens = tokens[:-1]
+        if len(_compact(tokens[-1])) >= 3:
+            add_alias(tokens[-1], area_tokens=area_tokens)
+
+    for prefix in REGION_PREFIXES:
+        prefix_key = _compact(prefix)
+        if not compact_text.startswith(prefix_key):
+            continue
+        remainder = compact_text[len(prefix_key):]
+        if len(remainder) >= 3 and remainder.endswith("역"):
+            add_alias(remainder, area_tokens=[prefix])
+            break
+
+    return aliases
 
 
 def _resolve_anchor_location(anchor_location, *, lat=None, lng=None):
@@ -182,16 +249,34 @@ def _resolve_anchor_location(anchor_location, *, lat=None, lng=None):
         }
 
     anchor_key = _compact(anchor_location)
+    anchor_tokens = [
+        _compact(token)
+        for token in re.split(r"[\s,;/|]+", anchor_location)
+        if len(_compact(token)) >= 2
+    ]
 
-    search_attempts = [{"lat": None, "lng": None, "source": "kakao_keyword"}]
-    if lat not in (None, "") and lng not in (None, ""):
-        search_attempts.append({"lat": lat, "lng": lng, "source": "kakao_keyword_nearby"})
+    anchor_aliases = _anchor_location_aliases(anchor_location)
+    search_attempts = []
+    seen_attempts = set()
+    for alias in anchor_aliases:
+        for attempt in (
+            {"lat": None, "lng": None, "source": "kakao_keyword", "keyword": alias["text"], "alias": alias},
+            {"lat": lat, "lng": lng, "source": "kakao_keyword_nearby", "keyword": alias["text"], "alias": alias},
+        ):
+            if attempt["source"] == "kakao_keyword_nearby" and (lat in (None, "") or lng in (None, "")):
+                continue
+            key = (attempt["source"], _compact(attempt["keyword"]), attempt["lat"], attempt["lng"])
+            if key in seen_attempts:
+                continue
+            seen_attempts.add(key)
+            search_attempts.append(attempt)
 
     last_error_reason = ""
+    resolved_candidates = []
     for attempt in search_attempts:
         try:
             response = search_places_by_keyword(
-                keyword=anchor_location,
+                keyword=attempt["keyword"],
                 lat=attempt["lat"],
                 lng=attempt["lng"],
                 radius=20000,
@@ -207,31 +292,99 @@ def _resolve_anchor_location(anchor_location, *, lat=None, lng=None):
         for item in documents:
             if not isinstance(item, dict):
                 continue
-            searchable_text = _compact(
-                " ".join([
-                    _clean_text(item.get("place_name")),
-                    _clean_text(item.get("address_name")),
-                    _clean_text(item.get("road_address_name")),
-                    _clean_text(item.get("category_name")),
-                ])
+            place_name = _clean_text(item.get("place_name"))
+            address = _clean_text(item.get("road_address_name") or item.get("address_name"))
+            category_name = _clean_text(item.get("category_name"))
+            searchable_values = [place_name, address, category_name]
+            searchable_text = _compact(" ".join(searchable_values))
+            token_match = bool(anchor_tokens) and all(token in searchable_text for token in anchor_tokens)
+            alias = attempt["alias"]
+            alias_key = alias.get("key")
+            alias_area_tokens = alias.get("area_tokens") or []
+            alias_area_match = not alias_area_tokens or all(token in searchable_text for token in alias_area_tokens)
+            alias_match = (
+                bool(alias_key)
+                and alias_key != anchor_key
+                and alias_area_match
+                and (alias_key in _compact(place_name) or alias_key in _compact(address))
             )
-            if anchor_key and anchor_key not in searchable_text:
+            if (
+                anchor_key
+                and not any(anchor_key in _compact(value) for value in searchable_values)
+                and anchor_key not in searchable_text
+                and not token_match
+                and not alias_match
+            ):
                 continue
             resolved_lat = _as_float(item.get("y"))
             resolved_lng = _as_float(item.get("x"))
             if resolved_lat is None or resolved_lng is None:
                 continue
-            label = _clean_text(item.get("place_name") or item.get("address_name") or anchor_location)
-            return {
+            name_key = _compact(place_name)
+            address_key = _compact(address)
+            category_key = _compact(category_name)
+            transit_match = alias_key and alias_key.endswith("역") and (
+                "지하철" in category_name
+                or "전철" in category_name
+                or "철도" in category_name
+                or "도시철도" in category_name
+                or name_key == alias_key
+                or name_key.startswith(f"{alias_key} ")
+            )
+            score = 0
+            if name_key == anchor_key:
+                score += 100
+            elif name_key.startswith(anchor_key):
+                score += 80
+            elif anchor_key and anchor_key in name_key:
+                score += 60
+            if address_key == anchor_key:
+                score += 50
+            elif anchor_key and anchor_key in address_key:
+                score += 30
+            if alias_match:
+                if name_key == alias_key:
+                    score += 95
+                elif name_key.startswith(alias_key):
+                    score += 70
+                elif alias_key in name_key:
+                    score += 45
+                elif alias_key in address_key:
+                    score += 25
+            if transit_match:
+                score += 60
+            if category_key and "부동산" in category_key and not transit_match:
+                score -= 25
+            if token_match:
+                score += 20 * len(anchor_tokens)
+                if all(token in address_key for token in anchor_tokens):
+                    score += 15
+            score -= max(len(name_key) - len(anchor_key), 0) / 100
+            label = _clean_text(place_name or item.get("address_name") or anchor_location)
+            source = attempt["source"]
+            if alias_match and alias_key != anchor_key:
+                source = f"{source}_alias"
+            if token_match and anchor_key not in name_key and anchor_key not in address_key:
+                source = f"{source}_address_tokens"
+            resolved_candidates.append({
+                "score": score,
+                "name_length": len(name_key),
                 "status": "resolved",
                 "reason": "",
                 "lat": resolved_lat,
                 "lng": resolved_lng,
                 "label": label,
-                "source": attempt["source"],
+                "source": source,
                 "external_id": _clean_text(item.get("id")),
-                "address": _clean_text(item.get("road_address_name") or item.get("address_name")),
-            }
+                "address": address,
+            })
+
+    if resolved_candidates:
+        resolved_candidates.sort(key=lambda item: (-item["score"], item["name_length"]))
+        selected = dict(resolved_candidates[0])
+        selected.pop("score", None)
+        selected.pop("name_length", None)
+        return selected
 
     return {
         "status": "failed",
@@ -396,6 +549,8 @@ def _split_specific_evidence_terms(value, frame=None):
     if not text:
         return []
 
+    text = re.sub(r"[\(\[\{（［【][^\)\]\}）］】]*[\)\]\}）］】]", " ", text)
+
     anchors = _as_list((frame or {}).get("anchor_location"), max_items=3)
     for anchor in anchors:
         if anchor:
@@ -447,11 +602,142 @@ def _specific_evidence_terms(values, frame=None, max_items=12):
     return result
 
 
+def _frame_support_buckets(frame):
+    return {
+        "target": _frame_terms(frame, "target_objects"),
+        "result": _frame_terms(frame, "result_match_terms"),
+        "candidate": _frame_terms(frame, "candidate_place_types"),
+        "query": _frame_terms(frame, "primary_search_queries", "secondary_search_queries"),
+    }
+
+
+def _term_support(term, buckets):
+    compact_term = _compact(term)
+    support = {key: 0 for key in buckets}
+    if not compact_term:
+        return support
+    for key, values in buckets.items():
+        seen_values = set()
+        for value in values or []:
+            compact_value = _compact(value)
+            if not compact_value or compact_value in seen_values:
+                continue
+            if compact_term in compact_value:
+                support[key] += 1
+                seen_values.add(compact_value)
+    return support
+
+
+def _drop_short_qualifiers_when_specific_terms_exist(terms):
+    if not any(len(_compact(term)) >= 3 for term in terms):
+        return terms
+    return [term for term in terms if len(_compact(term)) >= 3]
+
+
+def _prefer_result_supported_terms(terms, buckets):
+    result_supported = [
+        term
+        for term in terms
+        if _term_support(term, buckets).get("result", 0) >= 1
+    ]
+    return result_supported or terms
+
+
+def _select_target_db_terms(frame, max_items=12):
+    buckets = _frame_support_buckets(frame)
+    raw_terms = _specific_evidence_terms(
+        [
+            *buckets["target"],
+            *buckets["result"],
+        ],
+        frame=frame,
+        max_items=30,
+    )
+    target_terms = _specific_evidence_terms(buckets["target"], frame=frame, max_items=30)
+    selected = []
+    seen = set()
+
+    high_target_support = []
+    for term in target_terms:
+        support = _term_support(term, buckets)
+        if support.get("target", 0) >= 2:
+            high_target_support.append(term)
+
+    cross_supported_terms = []
+    for term in raw_terms:
+        support = _term_support(term, buckets)
+        if support.get("target", 0) >= 1 and (
+            support.get("result", 0) >= 1
+            or support.get("candidate", 0) >= 1
+        ):
+            cross_supported_terms.append(term)
+
+    if high_target_support and all(len(_compact(term)) <= 2 for term in high_target_support):
+        source_terms = [*high_target_support, *cross_supported_terms]
+    else:
+        source_terms = high_target_support or cross_supported_terms or raw_terms
+    for term in source_terms:
+        support = _term_support(term, buckets)
+        keep = False
+        if support.get("target", 0) >= 2:
+            keep = True
+        elif support.get("target", 0) >= 1 and (
+            support.get("result", 0) >= 1
+            or support.get("candidate", 0) >= 1
+        ):
+            keep = True
+        elif not high_target_support and support.get("target", 0) == 0 and selected:
+            keep = False
+        elif not high_target_support and not selected and support.get("target", 0) >= 1:
+            keep = True
+
+        if not keep:
+            continue
+        key = _compact(term)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        selected.append(term)
+        if len(selected) >= max_items:
+            break
+
+    selected = _prefer_result_supported_terms(selected, buckets)
+    selected = _drop_short_qualifiers_when_specific_terms_exist(selected)
+    if selected:
+        return selected[:max_items]
+
+    fallback = _prefer_result_supported_terms(target_terms or raw_terms, buckets)
+    fallback = _drop_short_qualifiers_when_specific_terms_exist(fallback)
+    return fallback[:max_items]
+
+
+def _select_candidate_db_terms(frame, target_terms, max_items=12):
+    raw_terms = _specific_evidence_terms(_frame_terms(frame, "candidate_place_types"), frame=frame, max_items=30)
+    if not target_terms:
+        return _drop_short_qualifiers_when_specific_terms_exist(raw_terms)[:max_items]
+
+    selected = []
+    seen = set()
+    target_compacts = [_compact(term) for term in target_terms if _compact(term)]
+    for term in raw_terms:
+        compact_term = _compact(term)
+        if not compact_term:
+            continue
+        if not any(target in compact_term or compact_term in target for target in target_compacts):
+            continue
+        if compact_term in seen:
+            continue
+        seen.add(compact_term)
+        selected.append(term)
+        if len(selected) >= max_items:
+            break
+    return _drop_short_qualifiers_when_specific_terms_exist(selected)[:max_items]
+
+
 def _db_evidence_terms(frame):
-    terms = _evidence_terms(frame)
-    target_terms = _specific_evidence_terms([*terms["target"], *terms["result"]], frame=frame)
-    candidate_terms = _specific_evidence_terms(terms["candidate"], frame=frame)
-    constraint_terms = _specific_evidence_terms(terms["constraints"], frame=frame)
+    target_terms = _select_target_db_terms(frame)
+    candidate_terms = _select_candidate_db_terms(frame, target_terms)
+    constraint_terms = _specific_evidence_terms(_evidence_terms(frame)["constraints"], frame=frame)
     search_terms = target_terms or candidate_terms or constraint_terms
     return {
         "target": target_terms,
@@ -657,12 +943,17 @@ def _db_evidence(place, tag_lists, frame):
 
 
 def _candidate_base(candidate_id, source, name, category, address, lat=None, lng=None, distance=None):
+    source_type = {
+        "db": "db_candidate",
+        "kakao": "kakao_candidate",
+        "web": "web_evidence_candidate",
+    }.get(source, f"{source}_candidate")
     return {
         "id": candidate_id,
         "candidate_source": source,
         "unified_candidate_source": source,
         "source": source,
-        "source_type": f"{source}_candidate",
+        "source_type": source_type,
         "source_label": _source_label(source),
         "name": name,
         "category": category,
@@ -1086,6 +1377,26 @@ def _balanced_rerank_shortlist(candidates, limit):
     return selected
 
 
+def _can_top_up_excluded_candidate(candidate):
+    source = _clean_text(candidate.get("candidate_source") or candidate.get("source"))
+    if source != "db":
+        return False
+    level = _clean_text(candidate.get("pre_ai_evidence_level") or candidate.get("evidence_level"))
+    if level != "strong":
+        return False
+    matched_evidence = candidate.get("matched_evidence") if isinstance(candidate.get("matched_evidence"), list) else []
+    direct_types = {
+        "target_direct",
+        "verified_tag_direct",
+        "suggested_tag_direct",
+        "candidate_tag_direct",
+    }
+    return any(
+        isinstance(item, dict) and item.get("type") in direct_types
+        for item in matched_evidence
+    )
+
+
 def _minimum_result_count(limit):
     configured = _as_int(getattr(settings, "AI_SEARCH_MIN_RESULTS", 10), 10)
     return min(max(configured, 1), max(_as_int(limit, 15), 1), 20)
@@ -1106,7 +1417,9 @@ def _top_up_ranked_candidates(ranked_candidates, candidate_pool, excluded_candid
     additions = []
     for candidate in sorted(candidate_pool or [], key=_candidate_sort_key):
         candidate_id = _clean_text(candidate.get("id"))
-        if not candidate_id or candidate_id in ranked_ids or candidate_id in excluded_ids:
+        if not candidate_id or candidate_id in ranked_ids:
+            continue
+        if candidate_id in excluded_ids and not _can_top_up_excluded_candidate(candidate):
             continue
         level = _clean_text(candidate.get("pre_ai_evidence_level") or candidate.get("evidence_level"))
         if level not in {"strong", "medium"}:
@@ -1183,6 +1496,40 @@ def _markers(results):
     return markers
 
 
+def _candidate_debug_sample(candidates, *, source=None, limit=5):
+    sample = []
+    for candidate in candidates or []:
+        if source and candidate.get("candidate_source") != source:
+            continue
+        matched_evidence = candidate.get("matched_evidence") if isinstance(candidate.get("matched_evidence"), list) else []
+        sample.append({
+            "id": candidate.get("id"),
+            "name": candidate.get("name"),
+            "source": candidate.get("candidate_source"),
+            "category": candidate.get("category"),
+            "retrieval_query": candidate.get("retrieval_query"),
+            "pre_ai_evidence_level": candidate.get("pre_ai_evidence_level"),
+            "matched_evidence": matched_evidence[:5],
+        })
+        if len(sample) >= limit:
+            break
+    return sample
+
+
+def _search_origin_debug(frame, location_resolution, top_results):
+    location_resolution = location_resolution if isinstance(location_resolution, dict) else {}
+    markers = _markers(top_results)
+    return {
+        "location_mode": frame.get("location_mode"),
+        "search_lat": location_resolution.get("lat"),
+        "search_lng": location_resolution.get("lng"),
+        "source": location_resolution.get("source") or location_resolution.get("reason") or "",
+        "label": location_resolution.get("label") or "",
+        "marker_count": len(markers),
+        "marker_sources": list(dict.fromkeys(marker.get("source") for marker in markers if marker.get("source"))),
+    }
+
+
 def _debug_pipeline(
     *,
     intent_plan,
@@ -1193,6 +1540,7 @@ def _debug_pipeline(
     reranker_debug=None,
     top_results=None,
     hidden_weak=None,
+    candidate_pool=None,
     location_resolution=None,
     fallback_used=False,
     fallback_created_candidates=False,
@@ -1231,6 +1579,11 @@ def _debug_pipeline(
             "status": "skipped",
             "reason": "",
         },
+        "search_origin": _search_origin_debug(
+            frame,
+            location_resolution or {"status": "skipped", "reason": ""},
+            top_results,
+        ),
         "candidate_counts": {
             "db": _as_int(candidate_counts.get("db"), 0),
             "kakao": _as_int(candidate_counts.get("kakao"), 0),
@@ -1260,12 +1613,26 @@ def _debug_pipeline(
                 "id": result.get("id"),
                 "name": result.get("name"),
                 "source": result.get("candidate_source"),
+                "category": result.get("category"),
+                "retrieval_query": result.get("retrieval_query"),
                 "semantic_score": result.get("semantic_score"),
                 "evidence_level": result.get("evidence_level"),
+                "matched_evidence": (
+                    result.get("matched_evidence")[:6]
+                    if isinstance(result.get("matched_evidence"), list)
+                    else []
+                ),
+                "semantic_decision": (result.get("semantic_reranker") or {}).get("decision"),
+                "semantic_unmet_constraints": (result.get("semantic_reranker") or {}).get("unmet_constraints") or [],
                 "reason": result.get("semantic_reason"),
             }
             for result in top_results[:15]
         ],
+        "candidate_samples": {
+            "db": _candidate_debug_sample(candidate_pool, source="db"),
+            "kakao": _candidate_debug_sample(candidate_pool, source="kakao"),
+            "web": _candidate_debug_sample(candidate_pool, source="web"),
+        },
         "search_plan": {
             "plan_source": search_plan.get("plan_source"),
             "execution_mode": search_plan.get("execution_mode"),
@@ -1484,6 +1851,7 @@ def run_ai_search(request_data, *, user=None):
         return data
 
     context_lat, context_lng = _context_coordinates(lat=lat, lng=lng, map_center=map_center)
+    context_source = _context_coordinate_source(lat=lat, lng=lng, map_center=map_center)
     if frame.get("location_mode") == "current_context" and (context_lat is None or context_lng is None):
         intent_plan = {
             **intent_plan,
@@ -1514,7 +1882,14 @@ def run_ai_search(request_data, *, user=None):
 
     search_lat = context_lat
     search_lng = context_lng
-    location_resolution = {"status": "skipped", "reason": "current_context"}
+    location_resolution = {
+        "status": "resolved",
+        "reason": "current_context",
+        "lat": search_lat,
+        "lng": search_lng,
+        "label": "current_context",
+        "source": context_source or "current_context",
+    }
     if frame.get("location_mode") == "explicit":
         location_resolution = _resolve_anchor_location(
             frame.get("anchor_location"),
@@ -1688,11 +2063,14 @@ def run_ai_search(request_data, *, user=None):
         timings["reranker_latency_ms"] = round((time.perf_counter() - reranker_started) * 1000, 2)
         ai_call_count += _as_int(reranker_debug.get("call_count"), 0)
     else:
+        skipped_reason = "no_candidates_collected"
+        if candidate_pool and retrieval_only_candidates and len(retrieval_only_candidates) == len(candidate_pool):
+            skipped_reason = "only_retrieval_query_evidence"
         ranked_candidates = []
         reranker_debug = {
             "status": "skipped",
-            "reason": "no_candidates_collected",
-            "input_count": 0,
+            "reason": skipped_reason,
+            "input_count": len(candidate_pool),
             "included_count": 0,
             "excluded_count": 0,
             "excluded_candidates": [],
@@ -1721,6 +2099,7 @@ def run_ai_search(request_data, *, user=None):
         })
         data["debug_pipeline"]["query_generation"] = query_generation
         data["debug_pipeline"]["location_resolution"] = location_resolution
+        data["debug_pipeline"]["search_origin"] = _search_origin_debug(frame, location_resolution, [])
         data["debug_pipeline"]["reranker"] = reranker_debug
         data["debug_pipeline"].update({
             "ai_included_count": _as_int(reranker_debug.get("ai_included_count"), 0),
@@ -1780,6 +2159,7 @@ def run_ai_search(request_data, *, user=None):
         },
         top_results=results,
         hidden_weak=hidden_weak,
+        candidate_pool=candidate_pool,
         location_resolution=location_resolution,
         fallback_used=query_repair_debug.get("status") == "executed",
         fallback_created_candidates=False,

@@ -1930,6 +1930,55 @@ const makeCurrentLocationMarker = ({ lat, lng }) => {
   }
 }
 
+const applyBackendAiSearchOrigin = (data = {}, fallbackCenter = null, fallbackLabel = '') => {
+  const debugPipeline = data?.debug_pipeline || {}
+  const searchOrigin = debugPipeline.search_origin || {}
+  const locationResolution = debugPipeline.location_resolution || {}
+  const lat = toFiniteCoordinate(searchOrigin.search_lat ?? locationResolution.lat)
+  const lng = toFiniteCoordinate(searchOrigin.search_lng ?? locationResolution.lng)
+
+  if (lat === null || lng === null) {
+    return false
+  }
+
+  const nextCenter = { lat, lng }
+  const source = getTextValue(searchOrigin.source || locationResolution.source)
+  const locationMode = getTextValue(
+    searchOrigin.location_mode ||
+    getFrameLocationMode(data?.search_plan || data?.place_intent_frame || {}),
+  )
+  const isCurrentContext = locationMode === 'current_context' || source.includes('current')
+  const label = getTextValue(locationResolution.label || searchOrigin.label || fallbackLabel)
+  const markerName = isCurrentContext
+    ? '현재 위치'
+    : `검색 기준 위치: ${label || 'AI 기준 위치'}`
+
+  if (!isSameMapCenter(mapCenter.value, nextCenter)) {
+    mapCenter.value = nextCenter
+  }
+
+  currentLocationPlace.value = [
+    {
+      id: isCurrentContext
+        ? 'current-location'
+        : `backend-location-${locationResolution.external_id || `${lat}-${lng}`}`,
+      name: markerName,
+      category: '',
+      address: locationResolution.address || '',
+      lat,
+      lng,
+      distance: null,
+      markerColor: 'green',
+      searchSource: isCurrentContext ? 'current_location' : 'base_location',
+      sourceLabel: '기준',
+      tags: [makeTag(isCurrentContext ? '현재위치' : '검색기준위치', 'category_rule')],
+      tagSource: 'Backend AI-first location resolution',
+    },
+  ]
+
+  return true
+}
+
 const requestBrowserLocation = () => {
   return new Promise((resolve, reject) => {
     if (!navigator.geolocation) {
@@ -9356,6 +9405,14 @@ const runAiMapSearchAtCenter = async ({
       unresolvedCount: data?.debug_pipeline?.unresolved_count,
       totalLatencyMs: data?.debug_pipeline?.total_latency_ms,
       locationResolution: data?.debug_pipeline?.location_resolution,
+      searchOrigin: data?.debug_pipeline?.search_origin,
+      backendMarkers: toArray(data?.markers).map((marker) => ({
+        id: marker.id,
+        source: marker.source,
+        rank: marker.rank,
+        lat: marker.lat,
+        lng: marker.lng,
+      })),
       locationMode: getFrameLocationMode(data?.place_intent_frame ? { place_intent_frame: data.place_intent_frame } : parsedIntent),
       anchorLocation: getFrameAnchorLocation(data?.place_intent_frame ? { place_intent_frame: data.place_intent_frame } : parsedIntent),
       locationQuery: parsedIntent?.locationQuery || parsedIntent?.location_query || '',
@@ -9364,6 +9421,9 @@ const runAiMapSearchAtCenter = async ({
   const backendSearchPlan = data?.search_plan || data?.ai_parse?.search_plan || parsedIntent || {}
   const backendAction = data?.decision_action || data?.decisionAction || data?.ai_parse?.decision_action || ''
   const backendIsAiFirst = isBackendAiFirstResponse(data, parsedIntent)
+  if (backendIsAiFirst && (!backendAction || backendAction === 'search')) {
+    applyBackendAiSearchOrigin(data, center, baseLabel)
+  }
   activeSearchPlan.value = backendSearchPlan
   const resultScenarioLabel = getFrameDisplayLabel(backendSearchPlan) ||
     getIntentGroupDisplayLabel(backendSearchPlan?.intentGroup || backendSearchPlan?.intent_group || '') ||
