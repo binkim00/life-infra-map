@@ -9906,7 +9906,14 @@ const runAiMapSearchAtCenter = async ({
       ? backendDbResultCount
       : (data.relevant_result_count ?? frameDirectMatchCount ?? backendDbResultCount),
   )
+  const backendCandidateSourceCounts = data?.candidate_source_counts || data?.candidateSourceCounts || {}
   if (backendIsAiFirst) {
+    const backendSearchLogCondition = getRecommendationConditionData(data)
+    const backendSearchLogPlan = {
+      ...(parsedIntent || {}),
+      ...(backendSearchPlan || {}),
+    }
+
     fallbackResults.value = []
     resultFilterMode.value = 'all'
     visibleCount.value = DISPLAY_BATCH_SIZE
@@ -9942,6 +9949,19 @@ const runAiMapSearchAtCenter = async ({
     }
     loadingMessage.value = ''
     isSearchingMap.value = false
+    await saveSearchLogSilently(buildSearchLogPayload({
+      query: originalQuery,
+      searchMode: parsedIntent?.searchMode || backendSearchPlan?.searchMode || 'recommendation_query',
+      scenario: data.scenario,
+      baseLabel,
+      center,
+      searchPlan: backendSearchLogPlan,
+      condition: backendSearchLogCondition,
+      results: recommendationResults,
+      dbResultCount: backendCandidateSourceCounts.db ?? backendDbResultCount,
+      kakaoResultCount: backendCandidateSourceCounts.kakao ?? backendExternalResultCount,
+      aiWebResultCount: backendCandidateSourceCounts.web ?? 0,
+    }))
     await logSearchResultState()
     return
   }
