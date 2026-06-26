@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { getNotifications, markAllNotificationsRead } from '@/api/boards'
+import { getNotifications, markAllNotificationsRead, markNotificationRead } from '@/api/boards'
 import { getTierIcon, getTierLabel } from '@/utils/tierIcons'
 import { useAuthStore } from '@/stores/auth'
 import { useSettingsStore } from '@/stores/settings'
@@ -40,6 +40,7 @@ const handledTierUpNotificationIds = new Set()
 const notificationDetailTypes = new Set([
   'admin_warning',
   'penalty_notice',
+  'report_received',
   'report_passed',
   'report_penalty',
 ])
@@ -226,6 +227,7 @@ const getNotificationTypeLabel = (notification) => {
   const labels = {
     admin_warning: '관리자 메시지',
     penalty_notice: '제재 안내',
+    report_received: '신고 접수',
     report_passed: '신고 검토 결과',
     report_penalty: '신고 처리 결과',
     inquiry_answered: '문의 답변',
@@ -253,7 +255,7 @@ const getNotificationIconType = (notification) => {
     return 'like'
   }
 
-  if (type === 'report_passed' || type === 'report_penalty') {
+  if (type === 'report_received' || type === 'report_passed' || type === 'report_penalty') {
     return 'report'
   }
 
@@ -316,24 +318,57 @@ const fetchNotifications = async () => {
   }
 }
 
-const markNotificationsReadLocally = () => {
+const getNotificationId = (notification) => notification?.id
+
+const findNotificationById = (notificationId) => {
+  return notifications.value.find((notification) => {
+    return String(notification.id) === String(notificationId)
+  }) || null
+}
+
+const markNotificationReadLocally = (notificationId) => {
+  notifications.value = notifications.value.map((notification) => (
+    String(notification.id) === String(notificationId)
+      ? { ...notification, is_read: true }
+      : notification
+  ))
+
+  if (
+    selectedNotification.value &&
+    String(selectedNotification.value.id) === String(notificationId)
+  ) {
+    selectedNotification.value = {
+      ...selectedNotification.value,
+      is_read: true,
+    }
+  }
+}
+
+const markNotificationAsRead = async (notification) => {
+  const notificationId = getNotificationId(notification)
+  if (!notificationId || notification.is_read) return
+
+  markNotificationReadLocally(notificationId)
+
+  try {
+    await markNotificationRead(notificationId)
+  } catch (error) {
+    console.error(error)
+    fetchNotifications()
+  }
+}
+
+const markAllNotificationsReadLocally = () => {
   notifications.value = notifications.value.map((notification) => ({
     ...notification,
     is_read: true,
   }))
 }
 
-const openNotificationMenu = async () => {
-  const willOpen = !isNotificationMenuOpen.value
-  isNotificationMenuOpen.value = willOpen
-  isAccountMenuOpen.value = false
-  isSidebarAccountMenuOpen.value = false
+const markAllVisibleNotificationsAsRead = async () => {
+  if (unreadNotificationCount.value === 0) return
 
-  if (!willOpen || unreadNotificationCount.value === 0) {
-    return
-  }
-
-  markNotificationsReadLocally()
+  markAllNotificationsReadLocally()
 
   try {
     await markAllNotificationsRead()
@@ -343,28 +378,40 @@ const openNotificationMenu = async () => {
   }
 }
 
-const moveToNotificationTarget = (notification) => {
-  closeAllDropdowns()
+const openNotificationMenu = () => {
+  const willOpen = !isNotificationMenuOpen.value
+  isNotificationMenuOpen.value = willOpen
+  isAccountMenuOpen.value = false
+  isSidebarAccountMenuOpen.value = false
+}
 
-  if (shouldOpenNotificationDetail(notification)) {
-    selectedNotification.value = notification
+const moveToNotificationTarget = async (notification) => {
+  closeAllDropdowns()
+  await markNotificationAsRead(notification)
+  const currentNotification = findNotificationById(getNotificationId(notification)) || notification
+
+  if (shouldOpenNotificationDetail(currentNotification)) {
+    selectedNotification.value = currentNotification
     return
   }
 
-  if (notification.notification_type === 'inquiry_answered') {
+  if (currentNotification.notification_type === 'inquiry_answered') {
     router.push('/inquiries/my')
     return
   }
 
-  router.push(notification.target_route || '/')
+  router.push(currentNotification.target_route || '/')
 }
 
 const closeNotificationDetail = () => {
   selectedNotification.value = null
 }
 
-const moveToSelectedNotificationTarget = () => {
-  const targetRoute = selectedNotification.value?.target_route
+const moveToSelectedNotificationTarget = async () => {
+  const notification = selectedNotification.value
+  const targetRoute = notification?.target_route
+
+  await markNotificationAsRead(notification)
 
   closeNotificationDetail()
 
@@ -529,11 +576,13 @@ onMounted(() => {
 
   authStore.fetchMe()
     .then(() => {
-      fetchNotifications()
-      startNotificationPolling()
+      if (authStore.isLoggedIn) {
+        fetchNotifications()
+        startNotificationPolling()
+      }
     })
     .catch(() => {
-      authStore.logout()
+      authStore.clearAuthState()
     })
 })
 
@@ -753,6 +802,14 @@ onBeforeUnmount(() => {
             <div v-if="isNotificationMenuOpen" class="notification-dropdown">
               <header class="notification-dropdown-header">
                 <strong>알림</strong>
+                <button
+                  v-if="unreadNotificationCount"
+                  type="button"
+                  class="notification-read-all-button"
+                  @click.stop="markAllVisibleNotificationsAsRead"
+                >
+                  전체 읽음
+                </button>
               </header>
 
               <div v-if="recentNotifications.length" class="notification-dropdown-list">
@@ -2228,11 +2285,34 @@ input {
 
 .notification-dropdown-header {
   padding: 14px 16px;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
   border-bottom: 1px solid #3f3f46;
 }
 
 .notification-dropdown-header strong {
   font-size: 16px;
+}
+
+.notification-read-all-button {
+  min-height: 28px;
+  padding: 0 9px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 8px;
+  background: transparent;
+  color: #dbeafe;
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.notification-read-all-button:hover,
+.notification-read-all-button:focus-visible {
+  border-color: #93c5fd;
+  color: #ffffff;
+  outline: none;
 }
 
 .notification-dropdown-list {

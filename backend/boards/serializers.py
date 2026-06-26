@@ -456,6 +456,9 @@ class NotificationSerializer(serializers.ModelSerializer):
         ]
 
     def get_target_route(self, obj):
+        if obj.notification_type == "report_received":
+            return "/admin/reports"
+
         if obj.notification_type == "inquiry_answered":
             return "/inquiries/my"
 

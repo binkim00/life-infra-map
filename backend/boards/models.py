@@ -255,6 +255,7 @@ class Notification(models.Model):
         ("post_commented", "게시글 댓글"),
         ("post_liked", "게시글 좋아요"),
         ("comment_liked", "댓글 좋아요"),
+        ("report_received", "신고 접수"),
         ("report_passed", "신고 패스"),
         ("report_penalty", "신고 조치"),
         ("admin_warning", "관리자 경고"),

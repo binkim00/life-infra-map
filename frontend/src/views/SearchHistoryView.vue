@@ -140,6 +140,7 @@ const rerunSearchLog = (log) => {
     name: 'home',
     query: {
       q: log.query,
+      autoSearch: '1',
     },
   })
 }

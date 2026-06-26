@@ -551,6 +551,11 @@ const visibleCount = ref(DISPLAY_BATCH_SIZE)
 const resultFilterMode = ref('all')
 const sortMode = ref('distance')
 const searchResultStatus = ref('idle')
+const searchLogSaveState = ref({
+  status: 'idle',
+  message: '',
+  statusCode: null,
+})
 const searchErrorMessage = ref('')
 const resultSourceLabel = ref('검색 결과')
 const resultMessageSuffix = ref('')
@@ -604,22 +609,60 @@ const displayUserName = computed(() => {
     '사용자'
 })
 
-const applyRouteSearchQuery = (value) => {
+const normalizeRouteQueryValue = (value) => {
   const nextQuery = Array.isArray(value) ? value[0] : value
-  const normalizedQuery = String(nextQuery || '').trim()
+
+  return String(nextQuery || '').trim()
+}
+
+const isRouteAutoSearchRequested = (value) => {
+  return normalizeRouteQueryValue(value) === '1'
+}
+
+let lastRouteAutoSearchKey = ''
+
+const clearRouteAutoSearchFlag = () => {
+  if (!isRouteAutoSearchRequested(route.query.autoSearch)) return
+
+  const { autoSearch, ...nextQuery } = route.query
+  router.replace({ query: nextQuery }).catch(() => undefined)
+}
+
+const runRouteAutoSearchOnce = async (normalizedQuery) => {
+  const autoSearchKey = normalizedQuery
+  if (!autoSearchKey || lastRouteAutoSearchKey === autoSearchKey) return
+
+  lastRouteAutoSearchKey = autoSearchKey
+  await nextTick()
+
+  if (
+    !isRouteAutoSearchRequested(route.query.autoSearch) ||
+    searchKeyword.value.trim() !== normalizedQuery ||
+    isSearchingMap.value
+  ) {
+    return
+  }
+
+  clearRouteAutoSearchFlag()
+  await handleSearch()
+}
+
+const applyRouteSearchQuery = (value, autoSearch = '') => {
+  const normalizedQuery = normalizeRouteQueryValue(value)
 
   if (!normalizedQuery) return
 
   searchKeyword.value = normalizedQuery
   mapSearchKeyword.value = normalizedQuery
   activeTab.value = 'search'
-}
 
-watch(
-  () => route.query.q,
-  applyRouteSearchQuery,
-  { immediate: true },
-)
+  if (!isRouteAutoSearchRequested(autoSearch)) {
+    lastRouteAutoSearchKey = ''
+    return
+  }
+
+  void runRouteAutoSearchOnce(normalizedQuery)
+}
 
 const NO_RESULT_MESSAGE_PATTERNS = [
   '검색 결과가 없습니다',
@@ -2082,6 +2125,14 @@ const handleSearch = async () => {
     handleKakaoMapLoadError(error)
   }
 }
+
+watch(
+  () => [route.query.q, route.query.autoSearch],
+  ([query, autoSearch]) => {
+    applyRouteSearchQuery(query, autoSearch)
+  },
+  { immediate: true },
+)
 
 const makeCurrentLocationMarker = ({ lat, lng }) => {
   return {
@@ -8523,6 +8574,18 @@ const getSearchLogAuthToken = () => {
   }
 }
 
+const setSearchLogSaveState = ({
+  status = 'idle',
+  message = '',
+  statusCode = null,
+} = {}) => {
+  searchLogSaveState.value = {
+    status,
+    message,
+    statusCode,
+  }
+}
+
 const getFirstSearchLogList = (...values) => {
   for (const value of values) {
     const list = toDisplayList(value)
@@ -8738,18 +8801,59 @@ const buildSearchLogPayload = ({
 }
 
 const saveSearchLogSilently = async (payload) => {
-  if (!getSearchLogAuthToken() || !payload?.query) return
+  if (!payload?.query) {
+    setSearchLogSaveState({
+      status: 'skipped',
+      message: '검색어가 없어 검색 기록 저장을 건너뛰었습니다.',
+    })
+    return { status: 'skipped', reason: 'missing_query' }
+  }
 
-  try {
-    await saveSearchLog(payload)
-  } catch (error) {
-    if (import.meta.env.DEV) {
-      console.debug('[SearchLog] save failed', {
-        status: error?.response?.status || 'request_failed',
-        responseData: error?.response?.data || null,
+  if (!getSearchLogAuthToken()) {
+    if (authStore.isLoggedIn) {
+      const message = '로그인 상태지만 인증 토큰이 없어 검색 기록 저장을 건너뛰었습니다.'
+      setSearchLogSaveState({
+        status: 'failed',
+        message,
+      })
+      console.warn('[SearchLog] save skipped', {
+        reason: 'missing_auth_token',
         payload,
       })
+      return { status: 'failed', reason: 'missing_auth_token' }
     }
+
+    setSearchLogSaveState({
+      status: 'skipped',
+      message: '비로그인 검색이라 검색 기록 저장을 건너뛰었습니다.',
+    })
+    return { status: 'skipped', reason: 'anonymous_user' }
+  }
+
+  try {
+    const data = await saveSearchLog(payload)
+    setSearchLogSaveState({
+      status: 'saved',
+      message: '검색 기록을 저장했습니다.',
+    })
+    return { status: 'saved', data }
+  } catch (error) {
+    const statusCode = error?.response?.status || null
+    const message = statusCode === 401
+      ? '인증이 만료되어 검색 기록 저장에 실패했습니다.'
+      : '검색은 완료됐지만 검색 기록 저장에 실패했습니다.'
+
+    setSearchLogSaveState({
+      status: 'failed',
+      message,
+      statusCode,
+    })
+    console.warn('[SearchLog] save failed', {
+      status: statusCode || 'request_failed',
+      responseData: error?.response?.data || null,
+      payload,
+    })
+    return { status: 'failed', statusCode, error }
   }
 }
 

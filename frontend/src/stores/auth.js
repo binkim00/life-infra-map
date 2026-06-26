@@ -1,12 +1,49 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
-import api from '@/api/axios'
+import api, { setUnauthorizedHandler } from '@/api/axios'
+
+const readStoredToken = () => {
+  try {
+    return localStorage.getItem('authToken')
+  } catch (error) {
+    return null
+  }
+}
+
+const readStoredUser = () => {
+  try {
+    return JSON.parse(localStorage.getItem('authUser') || 'null')
+  } catch (error) {
+    return null
+  }
+}
+
+const removeStoredAuth = () => {
+  try {
+    localStorage.removeItem('authToken')
+    localStorage.removeItem('authUser')
+  } catch (error) {
+    // localStorage can be unavailable in restricted browser contexts.
+  }
+}
 
 export const useAuthStore = defineStore('auth', () => {
-  const token = ref(localStorage.getItem('authToken'))
-  const user = ref(JSON.parse(localStorage.getItem('authUser') || 'null'))
+  const token = ref(readStoredToken())
+  const user = ref(readStoredUser())
 
   const isLoggedIn = ref(!!token.value)
+
+  const clearAuthState = () => {
+    token.value = null
+    user.value = null
+    isLoggedIn.value = false
+
+    removeStoredAuth()
+  }
+
+  setUnauthorizedHandler(() => {
+    clearAuthState()
+  })
 
   const signup = async (payload) => {
     const config = payload instanceof FormData ? {
@@ -49,12 +86,7 @@ export const useAuthStore = defineStore('auth', () => {
       console.error(error)
     }
 
-    token.value = null
-    user.value = null
-    isLoggedIn.value = false
-
-    localStorage.removeItem('authToken')
-    localStorage.removeItem('authUser')
+    clearAuthState()
   }
 
   const fetchMe = async () => {
@@ -78,5 +110,6 @@ export const useAuthStore = defineStore('auth', () => {
     login,
     logout,
     fetchMe,
+    clearAuthState,
   }
 })

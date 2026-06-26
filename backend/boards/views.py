@@ -150,6 +150,28 @@ def notify_if_not_self(
     )
 
 
+def notify_staff_report_received(report):
+    target_label = "게시글" if report.post_id else "댓글"
+    target_summary = report.post.title if report.post_id else truncate_notification_content(report.comment.content)
+    reporter_name = get_display_name(report.reporter)
+    staff_users = User.objects.filter(is_staff=True, is_active=True).exclude(id=report.reporter_id)
+
+    for staff_user in staff_users:
+        create_notification(
+            recipient=staff_user,
+            sender=report.reporter,
+            notification_type="report_received",
+            title="새 신고가 접수되었습니다.",
+            message=(
+                f"{reporter_name}님이 {target_label}을 신고했습니다.\n"
+                f"대상: {target_summary}\n"
+                f"사유: {truncate_notification_content(report.reason, 100)}"
+            ),
+            target_post=report.post or (report.comment.post if report.comment_id else None),
+            target_comment=report.comment,
+        )
+
+
 def get_penalty_end_at(penalty_type):
     now = timezone.now()
 
@@ -596,6 +618,7 @@ def report_post(request, post_id):
             reporter=request.user,
             post=post,
         )
+        notify_staff_report_received(report)
 
         return Response(
             ReportListSerializer(report).data,
@@ -633,6 +656,7 @@ def report_comment(request, comment_id):
             reporter=request.user,
             comment=comment,
         )
+        notify_staff_report_received(report)
 
         return Response(
             ReportListSerializer(report).data,
