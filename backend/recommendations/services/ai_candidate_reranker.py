@@ -4,10 +4,17 @@ import re
 
 from django.conf import settings
 
-from recommendations.services.ai_situation_parser import _call_gms_chat_json
+from recommendations.services.ai_situation_parser import _call_ai_chat_json as _shared_call_ai_chat_json
+from recommendations.services.ai_json_client import get_ai_json_unavailable_reason
 
 
 logger = logging.getLogger(__name__)
+
+_call_gms_chat_json = _shared_call_ai_chat_json
+
+
+def _call_ai_chat_json(*args, **kwargs):
+    return _call_gms_chat_json(*args, **kwargs)
 
 
 EVIDENCE_LEVEL_RANK = {
@@ -57,6 +64,51 @@ Rules:
 - reason must be natural Korean for end users, one short sentence.
 - Do not mention internal field names such as frame, evidence_level, semantic_score, candidate_id, or retrieval_query in reason.
 """.strip()
+
+
+STRING_ARRAY_SCHEMA = {
+    "type": "array",
+    "items": {"type": "string"},
+}
+
+AI_CANDIDATE_RERANKER_RESPONSE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "candidates": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "candidate_id": {"type": "string"},
+                    "decision": {
+                        "type": "string",
+                        "enum": ["include", "exclude", "needs_verification"],
+                    },
+                    "semantic_score": {"type": "number"},
+                    "evidence_level": {
+                        "type": "string",
+                        "enum": ["strong", "medium", "weak"],
+                    },
+                    "matched_fields": STRING_ARRAY_SCHEMA,
+                    "unmet_constraints": STRING_ARRAY_SCHEMA,
+                    "reason": {"type": "string"},
+                },
+                "required": [
+                    "candidate_id",
+                    "decision",
+                    "semantic_score",
+                    "evidence_level",
+                    "matched_fields",
+                    "unmet_constraints",
+                    "reason",
+                ],
+                "additionalProperties": False,
+            },
+        },
+    },
+    "required": ["candidates"],
+    "additionalProperties": False,
+}
 
 
 def _clean_text(value, max_length=500):
@@ -271,10 +323,9 @@ def _safe_semantic_reason(candidate, decision, *, needs_verification=False):
 def _is_ai_enabled():
     if getattr(settings, "CONVERSATIONAL_SEARCH_AI_ENABLED", False) is not True:
         return False, "conversational_search_ai_disabled"
-    if not getattr(settings, "GMS_API_KEY", ""):
-        return False, "missing_gms_api_key"
-    if not (getattr(settings, "GMS_API_URL", "") or getattr(settings, "GMS_API_BASE_URL", "")):
-        return False, "missing_gms_api_url"
+    reason = get_ai_json_unavailable_reason()
+    if reason:
+        return False, reason
     return True, ""
 
 
@@ -363,12 +414,14 @@ def semantic_rerank_candidates(frame, candidates, *, ranking_policy="evidence_fi
             "ranking_policy": ranking_policy or "evidence_first",
             "candidates": [_candidate_payload(candidate) for candidate in candidate_batch],
         }
-        raw_response = _call_gms_chat_json(
+        raw_response = _call_ai_chat_json(
             query=json.dumps(batch_payload, ensure_ascii=False),
             system_prompt=AI_CANDIDATE_RERANKER_PROMPT,
             max_completion_tokens=token_budget,
             model=getattr(settings, "AI_RERANK_MODEL", "gpt-5-nano"),
             timeout=getattr(settings, "AI_RERANK_TIMEOUT", getattr(settings, "AI_REQUEST_TIMEOUT", 20)),
+            response_schema=AI_CANDIDATE_RERANKER_RESPONSE_SCHEMA,
+            schema_name="ai_candidate_rerank",
         )
         return batch_ids, _normalize_reranker_rows(raw_response, batch_ids)
 

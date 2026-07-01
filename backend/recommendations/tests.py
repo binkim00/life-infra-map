@@ -54,7 +54,7 @@ class RecommendationSearchTests(TestCase):
         self.place = Place.objects.create(
             name="테스트 작업 카페",
             category="cafe",
-            address="부산 테스트로 1",
+            address="부산 중앙로 1",
             lat=35.1556,
             lng=129.0641,
             source="test",
@@ -65,7 +65,7 @@ class RecommendationSearchTests(TestCase):
         self.fallback_place = Place.objects.create(
             name="태그 없는 테스트 카페",
             category="cafe",
-            address="부산 테스트로 2",
+            address="부산 중앙로 2",
             lat=35.1557,
             lng=129.0642,
             source="test",
@@ -139,7 +139,7 @@ class RecommendationSearchTests(TestCase):
         return Place.objects.create(
             name=name,
             category=category,
-            address="부산 테스트로 10",
+            address="부산 중앙로 10",
             lat=lat,
             lng=lng,
             source="walk-test",
@@ -4051,8 +4051,8 @@ class RecommendationSearchTests(TestCase):
 
     def test_ai_search_ai_failure_fallback_does_not_collect_broad_candidates(self):
         fallback_frame = {
-            "decision_action": "search",
-            "user_goal": "legacy fallback frame",
+            "decision_action": "ai_unavailable",
+            "user_goal": "AI planner unavailable",
             "anchor_location": "사상역",
             "location_mode": "explicit",
             "situation": "food",
@@ -4067,31 +4067,26 @@ class RecommendationSearchTests(TestCase):
             "ranking_policy": "evidence_first",
             "confidence": 0.3,
         }
-        fallback_plan = {
-            "action": "search",
-            "decision_action": "search",
-            "parser_fallback": True,
-            "plan_source": "legacy_fallback",
+        failure_plan = {
+            "action": "ai_unavailable",
+            "decision_action": "ai_unavailable",
             "ai_fallback_reason": "ai_call_failed:ConnectionError",
-            "search_plan": {
-                "scenario": "food",
-                "execution_mode": "frame",
-                "parser_fallback": True,
-                "plan_source": "legacy_fallback",
-                "ai_fallback_reason": "ai_call_failed:ConnectionError",
-                "locationQuery": "사상역",
-                "place_intent_frame": fallback_frame,
-            },
+            "frame": fallback_frame,
+            "clarification": {},
+            "confidence": 0,
+            "ai_retry_count": 0,
         }
 
-        with patch("recommendations.views.parse_situation", return_value={
-            "scenario": "custom",
-            "situation_summary": "사상역 근처 쌀국수 맛집",
-            "is_searchable": True,
-            "blocked": False,
-        }), patch("recommendations.views.build_conversational_search_plan", return_value=fallback_plan), patch(
-            "recommendations.views.search_db_recommendations"
-        ) as mock_db_search, patch("recommendations.views.search_places_by_keyword") as mock_kakao_search:
+        with patch(
+            "recommendations.services.ai_search_orchestrator.build_ai_intent_plan",
+            return_value=failure_plan,
+        ), patch(
+            "recommendations.services.ai_search_orchestrator.collect_db_candidates"
+        ) as mock_db_search, patch(
+            "recommendations.services.ai_search_orchestrator.collect_kakao_candidates"
+        ) as mock_kakao_search, patch(
+            "recommendations.services.ai_search_orchestrator.semantic_rerank_candidates"
+        ) as mock_rerank:
             response = self.client.post(
                 "/api/recommendations/ai-search/",
                 data=json.dumps({
@@ -4120,6 +4115,7 @@ class RecommendationSearchTests(TestCase):
         self.assertEqual(data["debug_pipeline"]["query_generation"]["primary_queries"], [])
         mock_db_search.assert_not_called()
         mock_kakao_search.assert_not_called()
+        mock_rerank.assert_not_called()
 
     def test_query_generation_blocks_fallback_sources_and_raw_query_repeat(self):
         from recommendations.views import _query_generation_from_frame

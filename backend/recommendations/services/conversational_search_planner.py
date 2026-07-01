@@ -8,11 +8,26 @@ from recommendations.services.ai_situation_parser import (
     ALLOWED_CATEGORIES,
     ALLOWED_SCENARIOS,
     ALLOWED_TAGS,
-    _call_gms_chat_json,
+    _call_ai_chat_json as _shared_call_ai_chat_json,
+)
+from recommendations.services.ai_json_client import (
+    get_ai_json_unavailable_reason,
+    get_ai_provider_name,
 )
 
 
 logger = logging.getLogger(__name__)
+
+_call_gms_chat_json = _shared_call_ai_chat_json
+
+
+def _call_ai_chat_json(*args, **kwargs):
+    return _call_gms_chat_json(*args, **kwargs)
+
+
+def _ai_parser_provider():
+    return get_ai_provider_name()
+
 
 CLARIFICATION_MESSAGE = "어느 지역이나 기준 위치에서 찾을지 알려주시면 더 정확히 찾아드릴게요."
 PURPOSE_CLARIFICATION_MESSAGE = (
@@ -1296,6 +1311,7 @@ def _build_clarification_followup_search_plan(query, previous_context, lat=None,
         return plan
 
     combined_query = " ".join([original_query, answer]).strip() or query
+    ai_merge_error_reason = ""
     if _can_use_ai_intent_interpreter():
         ai_fallback_plan = _build_rule_plan(
             combined_query,
@@ -1316,31 +1332,28 @@ def _build_clarification_followup_search_plan(query, previous_context, lat=None,
                 previous_context=previous_context,
             )
             if normalized_ai_plan:
-                normalized_ai_plan["fallback_reason"] = "clarification_follow_up_ai_merge"
-                normalized_ai_plan["plan_source"] = normalized_ai_plan.get("plan_source") or "ai"
-                normalized_ai_plan["execution_mode"] = normalized_ai_plan.get("execution_mode") or "frame"
-                search_plan = normalized_ai_plan.get("search_plan")
-                if isinstance(search_plan, dict):
-                    search_plan["plan_source"] = search_plan.get("plan_source") or normalized_ai_plan["plan_source"]
-                    search_plan["execution_mode"] = search_plan.get("execution_mode") or normalized_ai_plan["execution_mode"]
-                normalized_ai_plan.setdefault("ai_debug", {})
-                normalized_ai_plan["ai_debug"]["clarification_follow_up_ai_merge"] = {
-                    "status": "used",
-                    "original_query": original_query,
-                    "answer": answer,
-                }
-                return normalized_ai_plan
+                normalized_action = (
+                    normalized_ai_plan.get("decision_action")
+                    or normalized_ai_plan.get("action")
+                )
+                if normalized_action in {"search", "blocked", "out_of_scope"}:
+                    normalized_ai_plan["fallback_reason"] = "clarification_follow_up_ai_merge"
+                    normalized_ai_plan["plan_source"] = normalized_ai_plan.get("plan_source") or "ai"
+                    normalized_ai_plan["execution_mode"] = normalized_ai_plan.get("execution_mode") or "frame"
+                    search_plan = normalized_ai_plan.get("search_plan")
+                    if isinstance(search_plan, dict):
+                        search_plan["plan_source"] = search_plan.get("plan_source") or normalized_ai_plan["plan_source"]
+                        search_plan["execution_mode"] = search_plan.get("execution_mode") or normalized_ai_plan["execution_mode"]
+                    normalized_ai_plan.setdefault("ai_debug", {})
+                    normalized_ai_plan["ai_debug"]["clarification_follow_up_ai_merge"] = {
+                        "status": "used",
+                        "original_query": original_query,
+                        "answer": answer,
+                    }
+                    return normalized_ai_plan
+                ai_merge_error_reason = "clarification_follow_up_ai_asked_again"
 
-        plan = _ai_frame_post_validation_clarification_plan(
-            query=combined_query,
-            raw_plan={"confidence": previous_context.get("confidence", 0), "ai_fallback_reason": ai_error_reason},
-            search_plan=previous_search_plan,
-            frame=pending_frame,
-            reasons=["clarification_follow_up_ai_merge_failed"],
-        )
-        plan["fallback_reason"] = "clarification_follow_up_ai_merge_failed"
-        plan["ai_fallback_reason"] = ai_error_reason
-        return plan
+        ai_merge_error_reason = ai_error_reason or "clarification_follow_up_ai_merge_failed"
 
     existing_frame = (
         _normalize_place_intent_frame(pending_frame, user_query=original_query or query)
@@ -1537,6 +1550,7 @@ def _build_clarification_followup_search_plan(query, previous_context, lat=None,
         "parser_fallback": True,
         "plan_source": "clarification_follow_up",
         "execution_mode": "frame",
+        "ai_fallback_reason": ai_merge_error_reason,
         "clarification_follow_up": {
             "original_query": original_query,
             "answer": answer,
@@ -1858,20 +1872,7 @@ def _get_ai_intent_unavailable_reason():
     if getattr(settings, "CONVERSATIONAL_SEARCH_AI_ENABLED", False) is not True:
         return "conversational_search_ai_disabled"
 
-    provider = getattr(settings, "AI_PROVIDER", "gms").lower()
-    if provider != "gms":
-        return f"unsupported_ai_provider:{provider}"
-
-    if not getattr(settings, "GMS_API_KEY", ""):
-        return "missing_gms_api_key"
-
-    if not (
-        getattr(settings, "GMS_API_URL", "")
-        or getattr(settings, "GMS_API_BASE_URL", "")
-    ):
-        return "missing_gms_api_url"
-
-    return ""
+    return get_ai_json_unavailable_reason()
 
 
 def _mark_legacy_fallback(plan, ai_reason=""):
@@ -1911,7 +1912,7 @@ def _should_use_ai_intent_fallback(query, rule_plan, lat=None, lng=None, map_cen
     if getattr(settings, "CONVERSATIONAL_SEARCH_AI_ENABLED", False) is not True:
         return False
 
-    if getattr(settings, "AI_PROVIDER", "gms").lower() != "gms":
+    if get_ai_json_unavailable_reason():
         return False
 
     action = rule_plan.get("action")
@@ -2011,18 +2012,9 @@ def _build_ai_plan(query, fallback_plan):
     if getattr(settings, "CONVERSATIONAL_SEARCH_AI_ENABLED", False) is not True:
         return None, "conversational_search_ai_disabled"
 
-    provider = getattr(settings, "AI_PROVIDER", "gms").lower()
-    if provider != "gms":
-        return None, f"unsupported_ai_provider:{provider}"
-
-    if not getattr(settings, "GMS_API_KEY", ""):
-        return None, "missing_gms_api_key"
-
-    if not (
-        getattr(settings, "GMS_API_URL", "")
-        or getattr(settings, "GMS_API_BASE_URL", "")
-    ):
-        return None, "missing_gms_api_url"
+    unavailable_reason = get_ai_json_unavailable_reason()
+    if unavailable_reason:
+        return None, unavailable_reason
 
     try:
         max_attempts = int(getattr(settings, "CONVERSATIONAL_SEARCH_AI_MAX_ATTEMPTS", 2) or 2)
@@ -2032,7 +2024,7 @@ def _build_ai_plan(query, fallback_plan):
     last_error_reason = ""
     for attempt_index in range(max_attempts):
         try:
-            plan = _call_gms_chat_json(
+            plan = _call_ai_chat_json(
                 query=json.dumps(
                     {
                         "query": query,
@@ -2119,7 +2111,7 @@ def _repair_ai_frame_location(query, frame, search_plan=None):
         return "", debug
 
     try:
-        response = _call_gms_chat_json(
+        response = _call_ai_chat_json(
             query=json.dumps(
                 {
                     "query": query,
@@ -2349,7 +2341,7 @@ def _normalize_ai_plan(raw_plan, query, fallback_plan, lat=None, lng=None, map_c
         plan["message"] = _clean_text(raw_plan.get("message")) or plan["message"]
         plan["blocked_reason"] = _clean_text(raw_plan.get("blocked_reason")) or plan["blocked_reason"]
         plan["confidence"] = _normalize_confidence(raw_plan.get("confidence"), plan["confidence"])
-        plan["parser_provider"] = "gms"
+        plan["parser_provider"] = _ai_parser_provider()
         plan["parser_fallback"] = False
         plan["plan_source"] = "ai"
         plan["execution_mode"] = "decision_gate"
@@ -2360,7 +2352,7 @@ def _normalize_ai_plan(raw_plan, query, fallback_plan, lat=None, lng=None, map_c
         plan["message"] = _clean_text(raw_plan.get("message")) or plan["message"]
         plan["out_of_scope_reason"] = _clean_text(raw_plan.get("out_of_scope_reason")) or plan["out_of_scope_reason"]
         plan["confidence"] = _normalize_confidence(raw_plan.get("confidence"), plan["confidence"])
-        plan["parser_provider"] = "gms"
+        plan["parser_provider"] = _ai_parser_provider()
         plan["parser_fallback"] = False
         plan["plan_source"] = "ai"
         plan["execution_mode"] = "decision_gate"
@@ -2688,7 +2680,7 @@ def _normalize_ai_plan(raw_plan, query, fallback_plan, lat=None, lng=None, map_c
         "out_of_scope_reason": "",
         "confidence": _normalize_confidence(raw_plan.get("confidence"), fallback_plan["confidence"]),
         "fallback_reason": "ai_planner",
-        "parser_provider": "gms",
+        "parser_provider": _ai_parser_provider(),
         "parser_fallback": False,
         "ai_retry_count": int(raw_plan.get("ai_retry_count") or 0),
         "execution_mode": (
@@ -3533,7 +3525,7 @@ def _ai_frame_post_validation_clarification_plan(query, raw_plan, search_plan, f
         target_query=display_label,
         fallback_location="current_location",
     )
-    plan["parser_provider"] = "gms"
+    plan["parser_provider"] = _ai_parser_provider()
     plan["parser_fallback"] = False
     plan["plan_source"] = "ai"
     plan["execution_mode"] = "decision_gate"
@@ -3791,6 +3783,8 @@ def _classify_intent_group(query, target_query="", scenario=""):
         return "wifi_place"
     if _has_weather_shelter_intent(text):
         return "weather_shelter"
+    if _is_plain_rest_intent(text, "", "waiting_place"):
+        return "general_place_search"
     if _has_entertainment_place_intent(text):
         return "entertainment_place"
     if _has_shopping_place_intent(text):

@@ -87,6 +87,8 @@ Thumbs.db
 .ruff_cache/
 htmlcov/
 
+backend/.installers/
+
 
 # =========================
 # Static files

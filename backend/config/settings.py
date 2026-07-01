@@ -41,15 +41,17 @@ def _env_int(name, default, min_value=None, max_value=None):
 
 
 KAKAO_REST_API_KEY = os.getenv("KAKAO_REST_API_KEY")
-AI_PROVIDER = os.getenv("AI_PROVIDER", "gms").strip().lower()
+AI_PROVIDER = os.getenv("AI_PROVIDER", "openai").strip().lower()
 AI_WEB_SEARCH_ENABLED = _env_bool("AI_WEB_SEARCH_ENABLED", False)
-AI_WEB_SEARCH_PROVIDER = os.getenv("AI_WEB_SEARCH_PROVIDER", "gms").strip().lower()
+AI_WEB_SEARCH_PROVIDER = os.getenv("AI_WEB_SEARCH_PROVIDER", "naver_search").strip().lower()
+AI_WEB_SEARCH_SUMMARY_PROVIDER = os.getenv("AI_WEB_SEARCH_SUMMARY_PROVIDER", "").strip().lower()
 AI_WEB_SEARCH_GROUNDING_SUPPORTED = _env_bool("AI_WEB_SEARCH_GROUNDING_SUPPORTED", False)
 AI_INTENT_MODEL = os.getenv("AI_INTENT_MODEL", "gpt-5-mini")
 AI_QUERY_REPAIR_MODEL = os.getenv("AI_QUERY_REPAIR_MODEL", "gpt-5-nano")
 AI_RERANK_MODEL = os.getenv("AI_RERANK_MODEL", "gpt-5-nano")
 AI_WEB_SEARCH_MODEL = os.getenv("AI_WEB_SEARCH_MODEL", "gpt-5-nano")
 AI_WEB_SEARCH_REASONING_EFFORT = os.getenv("AI_WEB_SEARCH_REASONING_EFFORT", "").strip().lower()
+AI_REASONING_EFFORT = os.getenv("AI_REASONING_EFFORT", "").strip().lower()
 AI_WEB_SEARCH_MAX_CANDIDATES = _env_int("AI_WEB_SEARCH_MAX_CANDIDATES", 1, 1, 1)
 AI_WEB_SEARCH_MAX_OUTPUT_TOKENS = _env_int("AI_WEB_SEARCH_MAX_OUTPUT_TOKENS", 800, 200, 800)
 AI_REASON_MODEL = os.getenv("AI_REASON_MODEL", "gpt-5-nano")
@@ -62,15 +64,22 @@ GMS_OPENAI_RESPONSES_PATH = os.getenv(
     "api.openai.com/v1/responses",
 )
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+OPENAI_API_BASE_URL = os.getenv("OPENAI_API_BASE_URL", "https://api.openai.com/v1")
 IS_TESTING = "test" in sys.argv
-CONVERSATIONAL_SEARCH_AI_ENABLED = _env_bool(
-    "CONVERSATIONAL_SEARCH_AI_ENABLED",
+AI_PROVIDER_CONFIGURED = (
     (
-        not IS_TESTING
-        and AI_PROVIDER == "gms"
+        AI_PROVIDER == "gms"
         and bool(GMS_API_KEY)
         and bool(GMS_API_URL or GMS_API_BASE_URL)
-    ),
+    )
+    or (
+        AI_PROVIDER == "openai"
+        and bool(OPENAI_API_KEY)
+    )
+)
+CONVERSATIONAL_SEARCH_AI_ENABLED = _env_bool(
+    "CONVERSATIONAL_SEARCH_AI_ENABLED",
+    (not IS_TESTING and AI_PROVIDER_CONFIGURED),
 )
 AI_SEARCH_INTENT_MAX_ATTEMPTS = _env_int("AI_SEARCH_INTENT_MAX_ATTEMPTS", 1, 1, 2)
 AI_SEARCH_PRIMARY_QUERY_LIMIT = _env_int("AI_SEARCH_PRIMARY_QUERY_LIMIT", 4, 1, 5)
@@ -97,6 +106,10 @@ AI_WEB_SEARCH_AVAILABLE = (
             AI_WEB_SEARCH_PROVIDER == "gms"
             and bool(GMS_API_KEY)
             and bool(GMS_API_URL or GMS_API_BASE_URL)
+        )
+        or (
+            AI_WEB_SEARCH_PROVIDER == "openai"
+            and bool(OPENAI_API_KEY)
         )
         or AI_WEB_SEARCH_PROVIDER == "naver_search"
     )

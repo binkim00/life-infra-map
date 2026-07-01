@@ -673,10 +673,19 @@ def _search_radius_for_frame(request_radius, frame, raw_query):
 
 
 def _policy_enabled(frame):
-    return any(
+    if any(
         code in POLICY_AWARE_CATEGORY_CODES
         for code in _frame_category_codes(frame)
-    )
+    ):
+        return True
+    policy_text = _compact(" ".join([
+        *_frame_terms(frame, "target_objects", "targetObjects"),
+        *_frame_terms(frame, "result_match_terms", "resultMatchTerms"),
+        *_frame_terms(frame, "candidate_place_types", "candidatePlaceTypes"),
+        *_frame_terms(frame, "constraints"),
+        *_frame_terms(frame, "exclusions", "excluded_place_natures", "avoid"),
+    ]))
+    return bool("흡연" in policy_text or "담배" in policy_text)
 
 
 def _contains_policy_term(text, policy_name):
@@ -718,11 +727,7 @@ def _frame_policy_requirements(frame):
     if "outdoor" in excluded and "indoor" not in desired:
         desired.append("indoor")
 
-    desired = [
-        policy_name
-        for policy_name in dict.fromkeys(desired)
-        if policy_name not in excluded
-    ]
+    desired = list(dict.fromkeys(desired))
     excluded = list(dict.fromkeys(excluded))
 
     return {
@@ -1157,10 +1162,30 @@ def _db_evidence_terms(frame):
     target_terms = _select_target_db_terms(frame)
     candidate_terms = _select_candidate_db_terms(frame, target_terms)
     constraint_terms = _specific_evidence_terms(_evidence_terms(frame)["constraints"], frame=frame)
-    search_terms = _append_non_redundant_terms(
-        target_terms,
-        candidate_terms,
-    ) or candidate_terms or constraint_terms
+    explicit_target_compacts = {
+        _compact(term)
+        for term in _specific_evidence_terms(
+            _frame_terms(frame, "target_objects", "targetObjects"),
+            frame=frame,
+            max_items=30,
+        )
+        if _compact(term)
+    }
+    explicit_candidate_terms = [
+        term
+        for term in candidate_terms
+        if _compact(term) in explicit_target_compacts
+    ]
+    if any(
+        _compact(term) in {"화장실", "공중화장실", "개방화장실"}
+        for term in target_terms
+    ):
+        explicit_candidate_terms = []
+    search_terms = (
+        _append_non_redundant_terms(target_terms, explicit_candidate_terms)
+        or candidate_terms
+        or constraint_terms
+    )
     return {
         "target": target_terms,
         "candidate": candidate_terms,
@@ -1593,14 +1618,9 @@ def _semantic_category_review(candidate, frame):
 
     smoking_request = "흡연" in frame_text or "담배" in frame_text
     if smoking_request:
-        smoking_policy_text = _compact(" ".join([
-            *_frame_terms(frame, "target_objects", "targetObjects"),
-            *_frame_terms(frame, "result_match_terms", "resultMatchTerms"),
-            *_frame_terms(frame, "constraints"),
-            *_frame_terms(frame, "exclusions", "excluded_place_natures", "avoid"),
-        ]))
-        wants_outdoor = any(term in smoking_policy_text for term in ["실외", "외부", "밖", "야외", "옥외", "실내제외"])
-        wants_indoor = any(term in smoking_policy_text for term in ["실내", "내부", "건물내", "실외제외"])
+        policy_requirements = _frame_policy_requirements(frame)
+        wants_outdoor = "outdoor" in policy_requirements.get("desired", [])
+        wants_indoor = "indoor" in policy_requirements.get("desired", [])
         outdoor_positive = ["실외", "외부", "야외", "옥외", "흡연부스", "개방형", "도로변", "보도"]
         indoor_positive = ["실내", "내부", "건물내", "건물안", "실내흡연실"]
         likely_indoor_venue = [
@@ -1742,13 +1762,6 @@ def _is_under_specified_place_request(raw_query, frame):
     if any(_compact(term) and _compact(term) in compact_query for term in specific_terms):
         return False
     return True
-
-
-def _contains_any(text, terms):
-    compact_text = _compact(text)
-    if not compact_text:
-        return False
-    return any(_compact(term) and _compact(term) in compact_text for term in terms)
 
 
 def _term_matches_text(term, text):
@@ -2253,12 +2266,12 @@ def _external_pre_ai_evidence(candidate, frame):
             matched.append({"type": "target_direct", "value": term, "source_strength": "external"})
         if matched:
             return "strong", matched
-        for term in _matched_terms(text, candidate_terms):
-            matched.append({"type": "candidate_type", "value": term, "source_strength": "external"})
-        if matched:
-            return "medium", matched
         for term in _matched_terms(text, raw_target_terms):
             matched.append({"type": "target_context", "value": term, "source_strength": "external"})
+        if matched:
+            return "medium", matched
+        for term in _matched_terms(text, candidate_terms):
+            matched.append({"type": "candidate_type", "value": term, "source_strength": "external"})
         if matched:
             return "medium", matched
     for term in _matched_terms(retrieval_query, target_terms):
@@ -2531,24 +2544,6 @@ def _dedupe_candidates(candidates):
     return deduped
 
 
-def _strong_medium_count(candidates):
-    return sum(
-        1
-        for candidate in candidates or []
-        if candidate.get("pre_ai_evidence_level") in {"strong", "medium"}
-    )
-
-
-def _needs_candidate_recall_boost(candidates, *, limit=15):
-    candidates = candidates or []
-    desired_total = min(max(_as_int(limit, 15), 8), 15)
-    desired_strong_medium = min(max(desired_total // 2, 4), 8)
-    return (
-        len(candidates) < desired_total
-        or _strong_medium_count(candidates) < desired_strong_medium
-    )
-
-
 def _query_needs_repair(queries):
     for query in queries or []:
         text = _clean_text(query, 160)
@@ -2733,7 +2728,7 @@ def _top_up_ranked_candidates(ranked_candidates, candidate_pool, excluded_candid
             continue
         if _blocking_unmet_constraints(candidate):
             continue
-        if candidate_id in excluded_ids:
+        if candidate_id in excluded_ids and not _can_top_up_excluded_candidate(candidate):
             continue
         level = _clean_text(candidate.get("pre_ai_evidence_level") or candidate.get("evidence_level"))
         if level not in {"strong", "medium"}:
@@ -3301,10 +3296,17 @@ def run_ai_search(request_data, *, user=None):
         "web": 0,
     }
 
+    min_strong_medium_candidates = _as_int(
+        getattr(settings, "AI_SEARCH_MIN_STRONG_MEDIUM_CANDIDATES", 3),
+        3,
+    )
     query_repair_debug = {"status": "skipped"}
     should_repair_queries = (
-        not initial_candidates
-        or _query_needs_repair(primary_queries)
+        min_strong_medium_candidates > 0
+        and (
+            not initial_candidates
+            or _query_needs_repair(primary_queries)
+        )
     )
     if should_repair_queries:
         query_repair_started = time.perf_counter()

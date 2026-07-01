@@ -14,6 +14,20 @@ NAVER_SEARCH_ENDPOINTS = {
 NAVER_SEARCH_CHANNEL_ORDER = ("local", "blog", "webkr")
 NAVER_SEARCH_MAX_CANDIDATES = 5
 NAVER_SEARCH_SUMMARY_MAX_CANDIDATES = 5
+AI_WEB_SEARCH_SUMMARY_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "title": {"type": "string"},
+        "main_text": {"type": "string"},
+        "keywords": {
+            "type": "array",
+            "items": {"type": "string"},
+        },
+        "caution": {"type": "string"},
+    },
+    "required": ["title", "main_text", "keywords", "caution"],
+    "additionalProperties": False,
+}
 LOCATION_SUFFIXES = ("역", "동", "구", "시", "군", "읍", "면", "대", "시장")
 GENERIC_TARGET_TERMS = {
     "맛집",
@@ -502,33 +516,95 @@ def _normalize_summary(raw_summary, query, location_hint, candidates):
     }
 
 
+def _summary_provider():
+    explicit = str(getattr(settings, "AI_WEB_SEARCH_SUMMARY_PROVIDER", "") or "").strip().lower()
+    if explicit:
+        return explicit
+    if (
+        getattr(settings, "IS_TESTING", False)
+        and getattr(settings, "GMS_API_KEY", "")
+        and getattr(settings, "GMS_API_URL", "")
+    ):
+        return "gms"
+    return str(getattr(settings, "AI_PROVIDER", "openai") or "openai").strip().lower()
+
+
+def _openai_responses_url():
+    base_url = str(
+        getattr(settings, "OPENAI_API_BASE_URL", "https://api.openai.com/v1") or ""
+    ).strip().rstrip("/")
+    return f"{base_url}/responses"
+
+
+def _extract_openai_summary(data):
+    if isinstance(data.get("output_parsed"), dict):
+        return data["output_parsed"]
+    if isinstance(data.get("parsed"), dict):
+        return data["parsed"]
+    texts = []
+    for item in data.get("output") or []:
+        if not isinstance(item, dict):
+            continue
+        for content in item.get("content") or []:
+            if not isinstance(content, dict):
+                continue
+            if isinstance(content.get("parsed"), dict):
+                return content["parsed"]
+            if content.get("type") in {"output_text", "text"} and content.get("text"):
+                texts.append(str(content.get("text")))
+    return _extract_json_object("\n".join(texts))
+
+
 def _call_ai_summary(query, location_hint, candidates):
-    api_key = getattr(settings, "GMS_API_KEY", "")
-    api_url = getattr(settings, "GMS_API_URL", "")
+    provider = _summary_provider()
+    if provider == "openai":
+        api_key = getattr(settings, "OPENAI_API_KEY", "")
+        api_url = _openai_responses_url()
+        payload = {
+            "model": getattr(settings, "AI_REASON_MODEL", getattr(settings, "AI_INTENT_MODEL", "gpt-5-nano")),
+            "input": [
+                {"role": "system", "content": _build_summary_system_prompt()},
+                {"role": "user", "content": _build_summary_user_payload(query, location_hint, candidates)},
+            ],
+            "text": {
+                "format": {
+                    "type": "json_schema",
+                    "name": "ai_web_search_summary",
+                    "schema": AI_WEB_SEARCH_SUMMARY_SCHEMA,
+                    "strict": True,
+                },
+            },
+            "max_output_tokens": 700,
+        }
+    elif provider == "gms":
+        api_key = getattr(settings, "GMS_API_KEY", "")
+        api_url = getattr(settings, "GMS_API_URL", "")
+        payload = {
+            "model": getattr(
+                settings,
+                "AI_INTENT_MODEL",
+                getattr(settings, "GMS_MODEL", "gpt-5-nano"),
+            ),
+            "messages": [
+                {
+                    "role": "system",
+                    "content": _build_summary_system_prompt(),
+                },
+                {
+                    "role": "user",
+                    "content": _build_summary_user_payload(query, location_hint, candidates),
+                },
+            ],
+            "response_format": {"type": "json_object"},
+            "reasoning_effort": "minimal",
+            "max_completion_tokens": 700,
+        }
+    else:
+        return None
+
     if not api_key or not api_url:
         return None
 
-    model = getattr(
-        settings,
-        "AI_INTENT_MODEL",
-        getattr(settings, "GMS_MODEL", "gpt-5-nano"),
-    )
-    payload = {
-        "model": model,
-        "messages": [
-            {
-                "role": "system",
-                "content": _build_summary_system_prompt(),
-            },
-            {
-                "role": "user",
-                "content": _build_summary_user_payload(query, location_hint, candidates),
-            },
-        ],
-        "response_format": {"type": "json_object"},
-        "reasoning_effort": "minimal",
-        "max_completion_tokens": 700,
-    }
     response = requests.post(
         api_url,
         headers={
@@ -540,6 +616,9 @@ def _call_ai_summary(query, location_hint, candidates):
     )
     response.raise_for_status()
     data = response.json()
+    if provider == "openai":
+        return _extract_openai_summary(data)
+
     choices = data.get("choices") or []
     if choices:
         message = choices[0].get("message") or {}

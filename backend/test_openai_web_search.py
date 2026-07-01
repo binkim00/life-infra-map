@@ -1,8 +1,8 @@
 """
-Manual, opt-in GMS web_search probe.
+Manual, opt-in OpenAI web_search probe.
 
 This file is intentionally not part of the default Django test suite. It will
-not make a live API call unless RUN_GMS_WEB_SEARCH_LIVE=true is set.
+not make a live API call unless RUN_OPENAI_WEB_SEARCH_LIVE=true is set.
 """
 
 import json
@@ -11,6 +11,9 @@ import re
 import urllib.error
 import urllib.request
 from pathlib import Path
+
+
+BACKEND_DIR = Path(__file__).resolve().parent
 
 
 def load_env_file(path):
@@ -33,28 +36,21 @@ def load_env_file(path):
 
 
 def build_endpoint():
-    base_url = (
-        os.environ.get("GMS_API_BASE_URL")
-        or os.environ.get("GMS_API_URL", "").split("/api.openai.com/", 1)[0]
-        or "https://gms.ssafy.io/gmsapi"
-    ).rstrip("/")
-    path = os.environ.get(
-        "GMS_OPENAI_RESPONSES_PATH",
-        "api.openai.com/v1/responses",
-    ).strip("/")
+    base_url = os.environ.get("OPENAI_API_BASE_URL", "https://api.openai.com/v1").rstrip("/")
+    path = os.environ.get("OPENAI_RESPONSES_PATH", "responses").strip("/")
     return f"{base_url}/{path}"
 
 
 def main():
-    if os.environ.get("RUN_GMS_WEB_SEARCH_LIVE", "").lower() != "true":
-        print("SKIP: set RUN_GMS_WEB_SEARCH_LIVE=true to run the live GMS probe.")
+    if os.environ.get("RUN_OPENAI_WEB_SEARCH_LIVE", "").lower() != "true":
+        print("SKIP: set RUN_OPENAI_WEB_SEARCH_LIVE=true to run the live OpenAI probe.")
         return
 
-    load_env_file("backend/.env")
+    load_env_file(BACKEND_DIR / ".env")
 
-    gms_key = os.environ.get("GMS_API_KEY")
-    if not gms_key:
-        raise RuntimeError("GMS_API_KEY is missing.")
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        raise RuntimeError("OPENAI_API_KEY is missing.")
 
     endpoint = build_endpoint()
     model = os.environ.get("AI_WEB_SEARCH_MODEL", "gpt-5-nano")
@@ -66,10 +62,9 @@ def main():
     payload = {
         "model": model,
         "input": (
-            "부산 서면 근처 브런치 카페 후보 1개만 웹 검색 결과 기반으로 찾아줘. "
-            "JSON만 반환하고 필드는 name, address_hint, category_hint, "
-            "evidence_summary, evidence_sources(title,url)만 사용해. "
-            "출처 URL 없는 후보는 반환하지 마. 좌표와 운영 여부는 만들지 마."
+            "Find exactly one currently operating brunch cafe near Bujeon Station in Busan. "
+            "Return JSON only with name, address_hint, category_hint, evidence_summary, "
+            "and evidence_sources as title/url pairs. Do not invent coordinates or facts."
         ),
         "tools": [{"type": "web_search"}],
         "tool_choice": "auto",
@@ -81,7 +76,7 @@ def main():
         data=json.dumps(payload).encode("utf-8"),
         headers={
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {gms_key}",
+            "Authorization": f"Bearer {api_key}",
         },
         method="POST",
     )
@@ -89,7 +84,7 @@ def main():
     print("endpoint:", endpoint)
     print("model:", model)
     print("max_output_tokens:", max_output_tokens)
-    print("GMS key: not printed")
+    print("OpenAI key: not printed")
 
     try:
         with urllib.request.urlopen(request, timeout=60) as response:

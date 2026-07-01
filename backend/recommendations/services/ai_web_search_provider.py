@@ -129,6 +129,21 @@ def _get_gms_responses_url():
     return f"{base_url}/{responses_path}"
 
 
+def _get_openai_responses_url():
+    base_url = _safe_text(
+        getattr(settings, "OPENAI_API_BASE_URL", "https://api.openai.com/v1"),
+        500,
+    ).rstrip("/")
+    return f"{base_url}/responses"
+
+
+def _get_responses_api_config(provider):
+    provider = _safe_text(provider, 40).lower()
+    if provider == "openai":
+        return getattr(settings, "OPENAI_API_KEY", ""), _get_openai_responses_url()
+    return getattr(settings, "GMS_API_KEY", ""), _get_gms_responses_url()
+
+
 def _log_safe_request(query="", condition=None, manual=False, existing_results_summary=None):
     condition = condition or {}
     summary = existing_results_summary or {}
@@ -184,6 +199,7 @@ def _base_response(enabled=None, executed=False, candidates=None, error="", reas
         "executed": executed,
         "supported": (
             provider == "naver_search"
+            or provider == "openai"
             or bool(getattr(settings, "AI_WEB_SEARCH_GROUNDING_SUPPORTED", False))
         ),
         "provider": provider,
@@ -198,9 +214,12 @@ def _sanitize_error_message(message, max_length=300):
     if not text:
         return ""
 
-    api_key = _safe_text(getattr(settings, "GMS_API_KEY", ""), 500)
-    if api_key:
-        text = text.replace(api_key, "[redacted]")
+    for api_key in (
+        _safe_text(getattr(settings, "GMS_API_KEY", ""), 500),
+        _safe_text(getattr(settings, "OPENAI_API_KEY", ""), 500),
+    ):
+        if api_key:
+            text = text.replace(api_key, "[redacted]")
 
     text = re.sub(r"(?i)authorization\s*:\s*bearer\s+[^\s,]+", "authorization: bearer [redacted]", text)
     text = re.sub(r"(?i)bearer\s+[a-z0-9._\-]+", "bearer [redacted]", text)
@@ -801,7 +820,7 @@ def _extract_response_texts_and_sources(data):
     return texts, _extract_sources_from_value(data)
 
 
-def _parse_gms_response(data):
+def _parse_ai_provider_response(data):
     if not isinstance(data, dict):
         return {}
 
@@ -1068,7 +1087,7 @@ def _build_source_reference_candidates(sources, queries=None):
             "source_title": title,
             "source_query": source_query,
             "candidate_type": "web_source_reference",
-            "evidence_summary": "GMS 웹 검색 결과에서 확인된 참고 링크입니다.",
+            "evidence_summary": "AI 웹 검색 결과에서 확인된 참고 링크입니다.",
         })
 
     return _normalize_candidates(reference_candidates)
@@ -1147,7 +1166,7 @@ def get_ai_web_search_result(
             manual=manual,
         )
 
-    if provider != "gms":
+    if provider not in {"gms", "openai"}:
         return _base_response(
             enabled=False,
             error="unsupported_provider",
@@ -1161,7 +1180,7 @@ def get_ai_web_search_result(
             reason="missing_api_configuration",
         )
 
-    if not getattr(settings, "AI_WEB_SEARCH_GROUNDING_SUPPORTED", False):
+    if provider == "gms" and not getattr(settings, "AI_WEB_SEARCH_GROUNDING_SUPPORTED", False):
         return _base_response(
             enabled=True,
             error="unsupported_web_search",
@@ -1201,8 +1220,7 @@ def get_ai_web_search_result(
         )
         return cached_response
 
-    api_key = getattr(settings, "GMS_API_KEY", "")
-    api_url = _get_gms_responses_url()
+    api_key, api_url = _get_responses_api_config(provider)
     lat = _safe_float(lat)
     lng = _safe_float(lng)
     model = getattr(settings, "AI_WEB_SEARCH_MODEL", "gpt-5-nano")
@@ -1278,7 +1296,7 @@ def get_ai_web_search_result(
             response_texts,
             instruction_texts=[payload["instructions"], payload["input"]],
         )
-        parsed = _parse_gms_response(data)
+        parsed = _parse_ai_provider_response(data)
     except requests.RequestException as exc:
         logger.exception("AI web search provider request failed")
         result = _build_request_failed_response(exc)

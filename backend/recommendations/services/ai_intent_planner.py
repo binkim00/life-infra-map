@@ -5,10 +5,17 @@ import re
 from django.conf import settings
 import requests
 
-from recommendations.services.ai_situation_parser import _call_gms_chat_json
+from recommendations.services.ai_situation_parser import _call_ai_chat_json as _shared_call_ai_chat_json
+from recommendations.services.ai_json_client import get_ai_json_unavailable_reason
 
 
 logger = logging.getLogger(__name__)
+
+_call_gms_chat_json = _shared_call_ai_chat_json
+
+
+def _call_ai_chat_json(*args, **kwargs):
+    return _call_gms_chat_json(*args, **kwargs)
 
 
 ALLOWED_ACTIONS = {"search", "ask_clarification", "out_of_scope", "blocked"}
@@ -111,6 +118,97 @@ Rules:
 - Set preserves_target=false when the query only broadens to a generic category.
 - Each query must be one atomic place-search keyword, not a list or explanatory sentence.
 """.strip()
+
+
+STRING_ARRAY_SCHEMA = {
+    "type": "array",
+    "items": {"type": "string"},
+}
+
+AI_INTENT_PLAN_RESPONSE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "action": {"type": "string", "enum": sorted(ALLOWED_ACTIONS)},
+        "normalized_query": {"type": "string"},
+        "frame": {
+            "type": "object",
+            "properties": {
+                "location_mode": {
+                    "type": "string",
+                    "enum": ["explicit", "current_context", "clarification_required"],
+                },
+                "anchor_location": {"type": "string"},
+                "target_objects": STRING_ARRAY_SCHEMA,
+                "candidate_place_types": STRING_ARRAY_SCHEMA,
+                "result_match_terms": STRING_ARRAY_SCHEMA,
+                "constraints": STRING_ARRAY_SCHEMA,
+                "exclusions": STRING_ARRAY_SCHEMA,
+                "ranking_policy": {"type": "string", "enum": sorted(ALLOWED_RANKING_POLICIES)},
+                "primary_search_queries": STRING_ARRAY_SCHEMA,
+                "secondary_search_queries": STRING_ARRAY_SCHEMA,
+            },
+            "required": [
+                "location_mode",
+                "anchor_location",
+                "target_objects",
+                "candidate_place_types",
+                "result_match_terms",
+                "constraints",
+                "exclusions",
+                "ranking_policy",
+                "primary_search_queries",
+                "secondary_search_queries",
+            ],
+            "additionalProperties": False,
+        },
+        "clarification": {
+            "type": "object",
+            "properties": {
+                "question": {"type": "string"},
+                "options": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "label": {"type": "string"},
+                            "value": {"type": "string"},
+                        },
+                        "required": ["label", "value"],
+                        "additionalProperties": False,
+                    },
+                },
+                "missing_fields": STRING_ARRAY_SCHEMA,
+                "expected_patch_fields": STRING_ARRAY_SCHEMA,
+            },
+            "required": ["question", "options", "missing_fields", "expected_patch_fields"],
+            "additionalProperties": False,
+        },
+        "confidence": {"type": "number"},
+    },
+    "required": ["action", "normalized_query", "frame", "clarification", "confidence"],
+    "additionalProperties": False,
+}
+
+AI_QUERY_REPAIR_RESPONSE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "queries": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"},
+                    "relationship": {"type": "string"},
+                    "preserves_target": {"type": "boolean"},
+                },
+                "required": ["query", "relationship", "preserves_target"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    "required": ["queries"],
+    "additionalProperties": False,
+}
 
 
 QUERY_LIST_SEPARATOR_RE = re.compile(r"[,/;|]|(?:\s+or\s+)|(?:\s+and\s+)", re.IGNORECASE)
@@ -1219,21 +1317,22 @@ def _planner_payload(query, lat=None, lng=None, map_center=None, previous_contex
 def _is_ai_enabled():
     if getattr(settings, "CONVERSATIONAL_SEARCH_AI_ENABLED", False) is not True:
         return False, "conversational_search_ai_disabled"
-    if not getattr(settings, "GMS_API_KEY", ""):
-        return False, "missing_gms_api_key"
-    if not (getattr(settings, "GMS_API_URL", "") or getattr(settings, "GMS_API_BASE_URL", "")):
-        return False, "missing_gms_api_url"
+    reason = get_ai_json_unavailable_reason()
+    if reason:
+        return False, reason
     return True, ""
 
 
 def _call_planner(payload, *, repair=False, max_completion_tokens=900):
     prompt = AI_INTENT_REPAIR_SYSTEM_PROMPT if repair else AI_INTENT_SYSTEM_PROMPT
-    return _call_gms_chat_json(
+    return _call_ai_chat_json(
         query=json.dumps(payload, ensure_ascii=False),
         system_prompt=prompt,
         max_completion_tokens=max_completion_tokens,
         model=getattr(settings, "AI_INTENT_MODEL", getattr(settings, "GMS_MODEL", "gpt-5-mini")),
         timeout=getattr(settings, "AI_INTENT_TIMEOUT", getattr(settings, "AI_REQUEST_TIMEOUT", 20)),
+        response_schema=AI_INTENT_PLAN_RESPONSE_SCHEMA,
+        schema_name="ai_intent_plan",
     )
 
 
@@ -1493,12 +1592,14 @@ def repair_search_queries(query, frame, *, candidate_counts=None):
         "candidate_counts": candidate_counts or {},
     }
     try:
-        raw = _call_gms_chat_json(
+        raw = _call_ai_chat_json(
             query=json.dumps(payload, ensure_ascii=False),
             system_prompt=AI_QUERY_REPAIR_SYSTEM_PROMPT,
             max_completion_tokens=220,
             model=getattr(settings, "AI_QUERY_REPAIR_MODEL", "gpt-5-nano"),
             timeout=getattr(settings, "AI_QUERY_REPAIR_TIMEOUT", getattr(settings, "AI_REQUEST_TIMEOUT", 20)),
+            response_schema=AI_QUERY_REPAIR_RESPONSE_SCHEMA,
+            schema_name="ai_query_repair",
         )
     except Exception as exc:
         logger.info("AI query repair failed.", exc_info=True)

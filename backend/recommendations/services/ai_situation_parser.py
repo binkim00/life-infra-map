@@ -5,6 +5,7 @@ import re
 import requests
 from django.conf import settings
 
+from recommendations.services.ai_json_client import call_ai_json
 from recommendations.services.recommendation_condition import (
     SCENARIO_CONFIGS,
     build_recommendation_condition,
@@ -629,63 +630,28 @@ def _has_gms_config():
     return bool(getattr(settings, "GMS_API_KEY", "") and getattr(settings, "GMS_API_URL", ""))
 
 
-def _call_gms_chat_json(query, system_prompt, max_completion_tokens, *, model=None, timeout=None):
-    api_key = getattr(settings, "GMS_API_KEY", "")
-    api_url = getattr(settings, "GMS_API_URL", "")
-    model = model or getattr(settings, "AI_INTENT_MODEL", getattr(settings, "GMS_MODEL", "gpt-5-nano"))
-
-    if not _has_gms_config():
-        return None
-
-    payload = {
-        "model": model,
-        "messages": [
-            {
-                "role": "system",
-                "content": system_prompt,
-            },
-            {
-                "role": "user",
-                "content": query,
-            },
-        ],
-        "response_format": {"type": "json_object"},
-        "reasoning_effort": "minimal",
-        "max_completion_tokens": max_completion_tokens,
-    }
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
-
-    response = requests.post(
-        api_url,
-        headers=headers,
-        json=payload,
-        timeout=timeout or getattr(settings, "AI_REQUEST_TIMEOUT", 4),
+def _call_ai_chat_json(
+    query,
+    system_prompt,
+    max_completion_tokens,
+    *,
+    model=None,
+    timeout=None,
+    response_schema=None,
+    schema_name="ai_response",
+):
+    return call_ai_json(
+        query,
+        system_prompt,
+        max_completion_tokens,
+        model=model,
+        timeout=timeout,
+        response_schema=response_schema,
+        schema_name=schema_name,
     )
-    response.raise_for_status()
-    data = response.json()
 
-    choices = data.get("choices") or []
-    if choices:
-        message = choices[0].get("message") or {}
-        content = message.get("content")
-        if content:
-            return _extract_json_object(content)
 
-    structured = (
-        data.get("parsed")
-        or data.get("result")
-        or data.get("output")
-    )
-    if structured:
-        return structured
-
-    if any(key in data for key in ("is_searchable", "searchable", "scenario")):
-        return data
-
-    return None
+_call_gms_chat_json = _call_ai_chat_json
 
 
 def _normalize_safety_decision(raw_decision):
@@ -760,10 +726,42 @@ def _call_gms_parser(query):
 
 
 def _call_openai_parser(query):
-    # TODO: OPENAI_API_KEY is loaded in settings for a future provider.
-    # This project currently prefers provider="gms", and OpenAI calls are not
-    # enabled in this task so tests never hit an external OpenAI API.
-    return None
+    if not getattr(settings, "OPENAI_API_KEY", ""):
+        return None
+
+    try:
+        raw_decision = call_ai_json(
+            query,
+            _build_safety_system_prompt(),
+            max_completion_tokens=500,
+            provider="openai",
+            model=getattr(settings, "AI_INTENT_MODEL", "gpt-5-mini"),
+            timeout=getattr(settings, "AI_INTENT_TIMEOUT", getattr(settings, "AI_REQUEST_TIMEOUT", 20)),
+        )
+        safety_decision = _normalize_safety_decision(raw_decision)
+    except Exception as exc:
+        logger.info("OpenAI safety classifier failed; blocking search: %s", exc)
+        return {
+            "is_searchable": False,
+            "block_reason": "safety_check_unavailable",
+            "safety_reason": "AI safety classifier request failed.",
+            "user_message": SAFETY_CHECK_UNAVAILABLE_MESSAGE,
+        }
+
+    if safety_decision and safety_decision.get("is_searchable") is False:
+        return safety_decision
+
+    raw_parse = call_ai_json(
+        query,
+        _build_parser_system_prompt(),
+        max_completion_tokens=500,
+        provider="openai",
+        model=getattr(settings, "AI_INTENT_MODEL", "gpt-5-mini"),
+        timeout=getattr(settings, "AI_INTENT_TIMEOUT", getattr(settings, "AI_REQUEST_TIMEOUT", 20)),
+    )
+    if isinstance(raw_parse, dict):
+        raw_parse.setdefault("is_searchable", True)
+    return raw_parse
 
 
 def _normalize_categories(categories, fallback_categories):
@@ -851,7 +849,7 @@ def _normalize_ai_parse(raw_parse, fallback_parse):
 
 
 def _call_ai_parser(query):
-    provider = getattr(settings, "AI_PROVIDER", "gms").lower()
+    provider = getattr(settings, "AI_PROVIDER", "openai").lower()
 
     if provider == "gms":
         return "gms", _call_gms_parser(query)
