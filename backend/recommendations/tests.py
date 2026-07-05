@@ -20,6 +20,7 @@ from recommendations.models import (
     PlaceTag,
     Tag,
     UserPreference,
+    UserSavedPlace,
     UserSearchLog,
 )
 from recommendations.services.ai_situation_parser import parse_situation
@@ -5757,6 +5758,142 @@ class RecommendationSearchTests(TestCase):
         self.assertLess(data["results"][0]["distance_m"], data["results"][1]["distance_m"])
         self.assertEqual(data["results"][1]["id"], far_toilet.id)
 
+    def test_authenticated_user_can_save_db_place(self):
+        response = self.client.post(
+            "/api/recommendations/saved-places/",
+            data=json.dumps({
+                "place_id": self.place.id,
+                "memo": "콘센트 자리 확인",
+            }, ensure_ascii=False),
+            content_type="application/json",
+            **self._auth_headers(),
+        )
+
+        self.assertEqual(response.status_code, 201)
+        data = response.json()
+        self.assertEqual(data["message"], "saved place created")
+        self.assertEqual(UserSavedPlace.objects.count(), 1)
+
+        saved_place = UserSavedPlace.objects.get()
+        self.assertEqual(saved_place.user, self.user)
+        self.assertEqual(saved_place.place, self.place)
+        self.assertEqual(saved_place.place_key, f"place:{self.place.id}")
+        self.assertEqual(saved_place.name, self.place.name)
+        self.assertEqual(saved_place.category, self.place.category)
+        self.assertEqual(saved_place.memo, "콘센트 자리 확인")
+
+        update_response = self.client.post(
+            "/api/recommendations/saved-places/",
+            data=json.dumps({
+                "place_id": self.place.id,
+                "memo": "창가 자리 확인",
+            }, ensure_ascii=False),
+            content_type="application/json",
+            **self._auth_headers(),
+        )
+
+        self.assertEqual(update_response.status_code, 200)
+        self.assertEqual(UserSavedPlace.objects.count(), 1)
+        saved_place.refresh_from_db()
+        self.assertEqual(saved_place.memo, "창가 자리 확인")
+
+    def test_authenticated_user_can_save_external_kakao_place(self):
+        response = self.client.post(
+            "/api/recommendations/saved-places/",
+            data=json.dumps({
+                "source": "kakao",
+                "external_id": "12345",
+                "name": "카카오 테스트 장소",
+                "category": "카페",
+                "address": "부산 테스트로 1",
+                "lat": "35.1234567",
+                "lng": "129.1234567",
+                "detail_url": "https://place.map.kakao.com/12345",
+                "kakao_place_url": "https://place.map.kakao.com/12345",
+                "phone": "051-000-0000",
+            }, ensure_ascii=False),
+            content_type="application/json",
+            **self._auth_headers(),
+        )
+
+        self.assertEqual(response.status_code, 201)
+        saved_place = UserSavedPlace.objects.get()
+        self.assertIsNone(saved_place.place)
+        self.assertEqual(saved_place.place_key, "kakao:12345")
+        self.assertEqual(saved_place.name, "카카오 테스트 장소")
+        self.assertEqual(str(saved_place.lat), "35.123457")
+        self.assertEqual(str(saved_place.lng), "129.123457")
+
+    def test_user_can_list_update_and_delete_own_saved_places(self):
+        other_user = get_user_model().objects.create_user(
+            username="other-saver",
+            password="pass",
+        )
+        own_saved_place = UserSavedPlace.objects.create(
+            user=self.user,
+            place=self.place,
+            place_key=f"place:{self.place.id}",
+            source="local_db",
+            name=self.place.name,
+            category=self.place.category,
+            address=self.place.address,
+            lat=self.place.lat,
+            lng=self.place.lng,
+        )
+        UserSavedPlace.objects.create(
+            user=other_user,
+            place_key="kakao:other",
+            source="kakao",
+            external_id="other",
+            name="다른 사용자 저장 장소",
+        )
+
+        list_response = self.client.get(
+            "/api/recommendations/saved-places/",
+            **self._auth_headers(),
+        )
+
+        self.assertEqual(list_response.status_code, 200)
+        data = list_response.json()
+        self.assertEqual(data["count"], 1)
+        self.assertEqual(data["results"][0]["id"], own_saved_place.id)
+        self.assertEqual(data["results"][0]["place_key"], f"place:{self.place.id}")
+
+        patch_response = self.client.patch(
+            f"/api/recommendations/saved-places/{own_saved_place.id}/",
+            data=json.dumps({
+                "memo": "다시 갈 곳",
+            }, ensure_ascii=False),
+            content_type="application/json",
+            **self._auth_headers(),
+        )
+
+        self.assertEqual(patch_response.status_code, 200)
+        own_saved_place.refresh_from_db()
+        self.assertEqual(own_saved_place.memo, "다시 갈 곳")
+
+        delete_response = self.client.delete(
+            f"/api/recommendations/saved-places/{own_saved_place.id}/",
+            **self._auth_headers(),
+        )
+
+        self.assertEqual(delete_response.status_code, 204)
+        self.assertFalse(UserSavedPlace.objects.filter(id=own_saved_place.id).exists())
+        self.assertEqual(UserSavedPlace.objects.count(), 1)
+
+    def test_saved_place_requires_authenticated_user(self):
+        response = self.client.post(
+            "/api/recommendations/saved-places/",
+            data=json.dumps({
+                "place_id": self.place.id,
+            }, ensure_ascii=False),
+            content_type="application/json",
+            HTTP_HOST="localhost",
+        )
+
+        self.assertIn(response.status_code, [401, 403])
+        self.assertEqual(UserSavedPlace.objects.count(), 0)
+
     def test_authenticated_user_can_save_search_log(self):
         response = self.client.post(
             "/api/recommendations/search-logs/",
@@ -7201,6 +7338,56 @@ class RecommendationSearchTests(TestCase):
         self.assertIn("db", sources)
         self.assertIn("kakao", sources)
         self.assertEqual(data["candidate_counts"]["kakao"], 1)
+        kakao_result = next(item for item in data["results"] if item["result_source"] == "kakao")
+        self.assertEqual(kakao_result["place_url"], "https://place.map.kakao.com/987654321")
+        self.assertEqual(kakao_result["kakao_place_url"], "https://place.map.kakao.com/987654321")
+        self.assertEqual(kakao_result["source_label"], "카카오 장소")
+
+    @patch("recommendations.views.search_places_by_keyword")
+    def test_general_map_search_removes_kakao_duplicate_when_db_has_external_id(self, mock_kakao):
+        kakao_synced_place = Place.objects.create(
+            name="DB에 저장된 카카오 카페",
+            category="cafe",
+            address="부산 테스트구 중복로 1",
+            lat=35.1558,
+            lng=129.0643,
+            source="kakao_local",
+            external_id="987654321",
+            source_name="카카오",
+            raw={"place_url": "https://place.map.kakao.com/987654321"},
+        )
+        mock_kakao.return_value = {
+            "documents": [
+                {
+                    "id": "987654321",
+                    "place_name": "DB에 저장된 카카오 카페",
+                    "category_name": "음식점 > 카페",
+                    "road_address_name": "부산 테스트구 중복로 1",
+                    "address_name": "부산 테스트동",
+                    "x": "129.064300",
+                    "y": "35.155800",
+                    "place_url": "https://place.map.kakao.com/987654321",
+                }
+            ]
+        }
+
+        response = self.client.get(
+            "/api/recommendations/map-search/",
+            {"q": "카페", "source": "all", "lat": 35.1556, "lng": 129.0641, "limit": 10},
+            HTTP_HOST="localhost",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        duplicate_results = [
+            item for item in data["results"]
+            if str(item.get("external_id")) == "987654321"
+        ]
+        self.assertEqual(len(duplicate_results), 1)
+        self.assertEqual(duplicate_results[0]["result_source"], "db")
+        self.assertEqual(duplicate_results[0]["id"], kakao_synced_place.id)
+        self.assertEqual(data["candidate_counts"]["kakao"], 0)
+        self.assertEqual(duplicate_results[0]["place_url"], "https://place.map.kakao.com/987654321")
 
     @patch("recommendations.views.search_places_by_keyword", return_value={"documents": []})
     def test_general_map_search_without_radius_does_not_apply_default_radius(self, mock_kakao):
@@ -10887,6 +11074,8 @@ class RecommendationSearchTests(TestCase):
             ("비 오는데 잠깐 피할 곳", ["실내 쉬어갈 곳"], ["카페", "공공도서관"]),
             ("사상 무료 와이파이 되는 곳", ["와이파이 가능한 방문 장소"], ["카페", "공공도서관"]),
             ("머리 아픈데 근처 약국", ["약국"], ["약국", "야간 약국"]),
+            ("떡볶이 먹고 싶어", ["떡볶이/분식"], ["떡볶이", "분식집"]),
+            ("운동화 살 곳", ["신발/운동화"], ["운동화 매장", "신발 매장"]),
             ("서면에서 친구 기다리는데 너무 시끄럽지 않고 잠깐 앉아서 시간 보낼 곳", ["잠깐 앉아 쉴 곳"], ["조용한 카페", "북카페"]),
             ("하단역 근처에서 밥은 먹었고 커피 말고 산책하면서 머리 식힐 곳", ["산책할 곳"], ["공원", "산책로"]),
         ]
@@ -10902,6 +11091,39 @@ class RecommendationSearchTests(TestCase):
                 for search_query in expected_queries:
                     self.assertIn(search_query, frame["primary_search_queries"])
                 self.assertEqual(plan["ai_debug"]["planner"]["status"], "local_rule")
+
+    @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=False)
+    def test_ai_intent_planner_adds_policy_fields_without_ai_tokens(self):
+        from recommendations.services.ai_intent_planner import build_ai_intent_plan, to_search_plan
+
+        plan = build_ai_intent_plan("비 오는데 콘센트 있는 조용한 카페", lat=35.1556, lng=129.0641)
+        frame = plan["frame"]
+        search_plan = to_search_plan(plan, raw_query="비 오는데 콘센트 있는 조용한 카페")
+
+        self.assertEqual(plan["action"], "search")
+        self.assertEqual(frame["result_policy"]["ranking_policy"], "evidence_first")
+        self.assertTrue(frame["result_policy"]["fallback_enabled"])
+        self.assertIn("structured_conditions", frame)
+        self.assertIn("fallback_targets", frame)
+        self.assertIn("result_policy", frame)
+        condition_labels = [item["label"] for item in frame["structured_conditions"]]
+        self.assertIn("실내/날씨 회피", condition_labels)
+        self.assertIn("작업/충전 가능", condition_labels)
+        self.assertTrue(frame["fallback_targets"])
+        self.assertEqual(search_plan["structured_conditions"], frame["structured_conditions"])
+        self.assertEqual(search_plan["fallbackTargets"], frame["fallback_targets"])
+        self.assertEqual(search_plan["resultPolicy"], frame["result_policy"])
+
+    @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=False)
+    def test_ai_intent_planner_asks_when_conditions_conflict(self):
+        from recommendations.services.ai_intent_planner import build_ai_intent_plan
+
+        plan = build_ai_intent_plan("실내이면서 야외에서 쉴 곳", lat=35.1556, lng=129.0641)
+
+        self.assertEqual(plan["action"], "ask_clarification")
+        self.assertFalse(plan["can_search_now"])
+        self.assertIn("실내", plan["clarification"]["question"])
+        self.assertTrue(plan["frame"]["result_policy"]["needs_clarification_on_conflict"])
 
     @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=False)
     def test_ai_intent_planner_local_rules_ask_for_broad_activity_clarification(self):

@@ -781,16 +781,6 @@ def _match_strength_from_evidence_tier(tier):
     return "none"
 
 
-def _frame_relevance_terms(frame):
-    return list(dict.fromkeys(
-        _as_text_list(frame.get("target_objects"))
-        + _as_text_list(frame.get("targetObjects"))
-        + _as_text_list(frame.get("result_match_terms"))
-        + _as_text_list(frame.get("constraints"))
-        + _as_text_list(frame.get("candidate_place_types"))
-    ))
-
-
 def _frame_target_terms(frame):
     return list(dict.fromkeys(
         _as_text_list(frame.get("target_objects"))
@@ -806,23 +796,6 @@ def _frame_candidate_terms(frame):
 
 def _frame_ranking_policy(frame):
     return str(frame.get("ranking_policy") or frame.get("rankingPolicy") or "").strip()
-
-
-def _place_evidence_text(place, tag_data, include_raw=True):
-    values = [
-        place.name,
-        place.category,
-        get_category_display_name(place.category),
-        place.address,
-        place.detail_location,
-        place.source_name,
-        " ".join(tag_data["verified_tags"]),
-        " ".join(tag_data["suggested_tags"]),
-        " ".join(tag_data["warning_tags"]),
-    ]
-    if include_raw:
-        values.append(_raw_search_text(place.raw))
-    return " ".join(str(value or "") for value in values)
 
 
 def _frame_requests_general_rest(frame):

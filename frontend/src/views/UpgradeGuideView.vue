@@ -9,8 +9,8 @@ import masterIcon from '@/assets/tiers/master.png'
 import challengerIcon from '@/assets/tiers/challenger.png'
 
 const contributionRules = [
-  { label: '일일 게시글 작성', contribution: '5개당 기여도 +1', description: '같은 날짜에 작성한 게시글 5개마다 반영됩니다.' },
-  { label: '일일 댓글 작성', contribution: '10개당 기여도 +1', description: '같은 날짜에 작성한 댓글 10개마다 반영됩니다.' },
+  { label: '일일 게시글 작성', contribution: '1~5개당 기여도 +1', description: '같은 날짜에 작성한 게시글은 5개 단위 묶음으로 반영됩니다.' },
+  { label: '일일 댓글 작성', contribution: '1~10개당 기여도 +1', description: '같은 날짜에 작성한 댓글은 10개 단위 묶음으로 반영됩니다.' },
   { label: '게시글/댓글 일일 제한', contribution: '하루 최대 +5', description: '게시글과 댓글로 얻는 기여도는 하루 합산 최대 5점까지 반영됩니다.' },
   { label: '태그 제보 승인', contribution: '기여도 +10', description: '관리자가 장소 태그 제보를 승인하면 반영됩니다.' },
   { label: '오류 제보 승인', contribution: '기여도 +5', description: '잘못된 장소 정보 제보가 승인되면 반영됩니다.' },

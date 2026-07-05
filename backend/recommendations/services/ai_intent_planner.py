@@ -319,6 +319,191 @@ def _local_rule_exclusions(raw_query):
     return _dedupe(exclusions)
 
 
+def _structured_condition(label, condition_type, *, required=True, source="rule"):
+    return {
+        "label": label,
+        "type": condition_type,
+        "required": required,
+        "source": source,
+    }
+
+
+def _derive_structured_conditions(raw_query, frame):
+    text = " ".join([
+        _clean_text(raw_query, 500),
+        " ".join(_as_list(frame.get("constraints"), max_items=20)),
+        " ".join(_as_list(frame.get("exclusions"), max_items=20)),
+    ])
+    conditions = []
+
+    def add(label, condition_type, *, required=True):
+        conditions.append(_structured_condition(label, condition_type, required=required))
+
+    if _has_any(text, ["급해", "급한", "바로", "제일 가까운", "가까운 곳", "근처"]):
+        add("가까운 곳", "distance")
+    if _has_any(text, ["실내", "비 피", "비피", "비 오", "비오", "비 와", "비와", "더위", "추위", "춥", "덥"]):
+        add("실내/날씨 회피", "environment")
+    if _has_any(text, ["야외", "실외", "바깥", "밖", "산책", "걷기"]):
+        add("야외/걷기", "environment", required=False)
+    if _has_any(text, ["조용", "시끄럽지", "붐비지", "한적"]):
+        add("조용함", "ambience")
+    if _has_any(text, ["콘센트", "충전", "노트북", "작업", "공부", "와이파이", "wifi"]):
+        add("작업/충전 가능", "facility")
+    if _has_any(text, ["무료", "돈 안", "저렴", "싼", "가성비"]):
+        add("비용 민감", "cost")
+    if _has_any(text, ["야간", "밤", "새벽", "24시", "지금 열"]):
+        add("운영시간 확인 필요", "time")
+    if _has_any(text, ["혼자", "혼밥", "1인", "혼자서"]):
+        add("혼자 이용", "party")
+    if _has_any(text, ["단체", "회식", "모임", "여럿"]):
+        add("단체 이용", "party")
+
+    return _dedupe_condition_dicts(conditions)
+
+
+def _dedupe_condition_dicts(items):
+    result = []
+    seen = set()
+    for item in items or []:
+        label = _clean_text(item.get("label"), 80) if isinstance(item, dict) else ""
+        key = _compact(label)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        result.append({
+            "label": label,
+            "type": _clean_text(item.get("type") if isinstance(item, dict) else "", 40) or "condition",
+            "required": bool(item.get("required", True)) if isinstance(item, dict) else True,
+            "source": _clean_text(item.get("source") if isinstance(item, dict) else "", 40) or "rule",
+        })
+    return result
+
+
+def _derive_policy_conflicts(raw_query, frame, structured_conditions):
+    text = " ".join([
+        _clean_text(raw_query, 500),
+        " ".join(_as_list(frame.get("constraints"), max_items=20)),
+        " ".join(_as_list(frame.get("exclusions"), max_items=20)),
+    ])
+    compact = _compact(text)
+    conflicts = []
+
+    indoor = _has_any(text, ["실내", "건물 안", "내부"])
+    outdoor = _has_any(text, ["야외", "실외", "밖", "바깥"])
+    has_negation = any(marker in compact for marker in ["말고", "제외", "빼", "아닌"])
+    if indoor and outdoor and not has_negation:
+        conflicts.append({
+            "type": "environment",
+            "message": "실내와 야외 조건이 함께 있어 우선순위 확인이 필요합니다.",
+        })
+
+    cafe_target = any(_has_any(value, ["카페", "커피"]) for value in frame.get("candidate_place_types", []))
+    cafe_excluded = any(_has_any(value, ["카페 제외", "커피 제외"]) for value in frame.get("exclusions", []))
+    if cafe_target and cafe_excluded:
+        conflicts.append({
+            "type": "target_exclusion",
+            "message": "카페를 찾으면서 카페 제외 조건이 함께 있습니다.",
+        })
+
+    return conflicts
+
+
+def _derive_fallback_targets(frame, structured_conditions):
+    category_codes = set(_as_list(frame.get("candidate_category_codes"), max_items=20))
+    place_types = _as_list(frame.get("candidate_place_types"), max_items=20)
+    targets = _as_list(frame.get("target_objects"), max_items=12)
+    condition_types = {item.get("type") for item in structured_conditions or [] if isinstance(item, dict)}
+    fallback_targets = []
+
+    def add(label, queries, reason):
+        fallback_targets.append({
+            "label": label,
+            "queries": _dedupe(queries)[:4],
+            "reason": reason,
+        })
+
+    if "restaurant" in category_codes or any(_has_any(value, ["식당", "음식", "맛집"]) for value in [*place_types, *targets]):
+        add("넓은 음식점 후보", ["식당", "음식점", "맛집"], "메뉴 후보가 부족할 때 같은 식사 목적을 유지합니다.")
+    if "cafe" in category_codes or any(_has_any(value, ["카페", "커피", "음료"]) for value in [*place_types, *targets]):
+        add("카페 후보", ["카페", "커피", "음료 카페"], "카페/음료 목적을 유지합니다.")
+    if "shopping" in category_codes or any(_has_any(value, ["쇼핑", "백화점", "아울렛", "매장"]) for value in [*place_types, *targets]):
+        add("쇼핑 시설 후보", ["쇼핑몰", "백화점", "아울렛", "대형마트"], "상품 구매 목적을 유지합니다.")
+    if "environment" in condition_types and any(_has_any(item.get("label", ""), ["실내", "날씨"]) for item in structured_conditions):
+        add("실내 대체 후보", ["카페", "공공도서관", "쇼핑몰"], "날씨 회피 조건을 우선합니다.")
+    if "facility" in condition_types:
+        add("작업 가능 대체 후보", ["노트북 카페", "콘센트 카페", "공공도서관"], "작업/충전 조건을 우선합니다.")
+
+    return _dedupe_fallback_targets(fallback_targets)
+
+
+def _dedupe_fallback_targets(items):
+    result = []
+    seen = set()
+    for item in items or []:
+        label = _clean_text(item.get("label"), 80) if isinstance(item, dict) else ""
+        key = _compact(label)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        result.append({
+            "label": label,
+            "queries": _dedupe(item.get("queries", []))[:4],
+            "reason": _clean_text(item.get("reason"), 160),
+        })
+    return result[:4]
+
+
+def _derive_result_policy(frame, structured_conditions, fallback_targets, conflicts):
+    ranking_policy = _clean_text(frame.get("ranking_policy")) or "evidence_first"
+    condition_types = {item.get("type") for item in structured_conditions or [] if isinstance(item, dict)}
+    return {
+        "ranking_policy": ranking_policy,
+        "prefer_verified_db_tags": True,
+        "dedupe_by_external_id": True,
+        "allow_kakao_candidates": True,
+        "allow_web_reference": False,
+        "fallback_enabled": bool(fallback_targets),
+        "needs_clarification_on_conflict": bool(conflicts),
+        "strict_distance_sort": ranking_policy in {"urgent_nearest", "distance_first"} or "distance" in condition_types,
+        "strict_evidence_match": ranking_policy == "evidence_first",
+    }
+
+
+def _enrich_frame_policy(frame, raw_query="", action="search"):
+    frame = frame if isinstance(frame, dict) else {}
+    if action != "search":
+        structured_conditions = _derive_structured_conditions(raw_query, frame)
+        conflicts = _derive_policy_conflicts(raw_query, frame, structured_conditions)
+        result_policy = _derive_result_policy(frame, structured_conditions, [], conflicts)
+        return {
+            **frame,
+            "structured_conditions": structured_conditions,
+            "structuredConditions": structured_conditions,
+            "fallback_targets": [],
+            "fallbackTargets": [],
+            "policy_conflicts": conflicts,
+            "policyConflicts": conflicts,
+            "result_policy": result_policy,
+            "resultPolicy": result_policy,
+        }
+
+    structured_conditions = _derive_structured_conditions(raw_query, frame)
+    conflicts = _derive_policy_conflicts(raw_query, frame, structured_conditions)
+    fallback_targets = _derive_fallback_targets(frame, structured_conditions)
+    result_policy = _derive_result_policy(frame, structured_conditions, fallback_targets, conflicts)
+    return {
+        **frame,
+        "structured_conditions": structured_conditions,
+        "structuredConditions": structured_conditions,
+        "fallback_targets": fallback_targets,
+        "fallbackTargets": fallback_targets,
+        "policy_conflicts": conflicts,
+        "policyConflicts": conflicts,
+        "result_policy": result_policy,
+        "resultPolicy": result_policy,
+    }
+
+
 def _local_rule_anchor_location(raw_query):
     text = _clean_text(raw_query, 500)
     if not text:
@@ -437,24 +622,25 @@ def _local_rule_search_plan(
     anchor_location = _local_rule_anchor_location(raw_query)
     location_mode = "explicit" if anchor_location else "current_context"
     combined_exclusions = _dedupe([*(exclusions or []), *_local_rule_exclusions(raw_query)])
+    frame = _enrich_frame_policy({
+        "location_mode": location_mode,
+        "anchor_location": anchor_location,
+        "target_objects": target_objects,
+        "candidate_place_types": candidate_place_types,
+        "result_match_terms": result_match_terms,
+        "constraints": constraints or [],
+        "exclusions": combined_exclusions,
+        "candidate_category_codes": candidate_category_codes or [],
+        "ranking_policy": ranking_policy,
+        "primary_search_queries": primary_search_queries,
+        "secondary_search_queries": [],
+    }, raw_query=raw_query, action="search")
     return {
         "action": "search",
         "decision_action": "search",
         "can_search_now": True,
         "normalized_query": normalized_query,
-        "frame": {
-            "location_mode": location_mode,
-            "anchor_location": anchor_location,
-            "target_objects": target_objects,
-            "candidate_place_types": candidate_place_types,
-            "result_match_terms": result_match_terms,
-            "constraints": constraints or [],
-            "exclusions": combined_exclusions,
-            "candidate_category_codes": candidate_category_codes or [],
-            "ranking_policy": ranking_policy,
-            "primary_search_queries": primary_search_queries,
-            "secondary_search_queries": [],
-        },
+        "frame": frame,
         "clarification": {},
         "confidence": 0.86,
         "ai_retry_count": 0,
@@ -471,24 +657,25 @@ def _local_rule_search_plan(
 
 
 def _local_rule_out_of_scope_plan(raw_query, *, reason="not_place_recommendation"):
+    frame = _enrich_frame_policy({
+        "location_mode": "current_context",
+        "anchor_location": "",
+        "target_objects": [],
+        "candidate_place_types": [],
+        "result_match_terms": [],
+        "constraints": [],
+        "exclusions": [],
+        "candidate_category_codes": [],
+        "ranking_policy": "evidence_first",
+        "primary_search_queries": [],
+        "secondary_search_queries": [],
+    }, raw_query=raw_query, action="out_of_scope")
     return {
         "action": "out_of_scope",
         "decision_action": "out_of_scope",
         "can_search_now": False,
         "normalized_query": _clean_text(raw_query, 500),
-        "frame": {
-            "location_mode": "current_context",
-            "anchor_location": "",
-            "target_objects": [],
-            "candidate_place_types": [],
-            "result_match_terms": [],
-            "constraints": [],
-            "exclusions": [],
-            "candidate_category_codes": [],
-            "ranking_policy": "evidence_first",
-            "primary_search_queries": [],
-            "secondary_search_queries": [],
-        },
+        "frame": frame,
         "clarification": {},
         "confidence": 0.92,
         "ai_retry_count": 0,
@@ -507,24 +694,25 @@ def _local_rule_out_of_scope_plan(raw_query, *, reason="not_place_recommendation
 def _local_rule_clarification_plan(raw_query, *, question, options, missing_fields, expected_patch_fields):
     anchor_location = _local_rule_anchor_location(raw_query)
     location_mode = "explicit" if anchor_location else "current_context"
+    frame = _enrich_frame_policy({
+        "location_mode": location_mode,
+        "anchor_location": anchor_location,
+        "target_objects": [],
+        "candidate_place_types": [],
+        "result_match_terms": [],
+        "constraints": [],
+        "exclusions": [],
+        "candidate_category_codes": [],
+        "ranking_policy": "evidence_first",
+        "primary_search_queries": [],
+        "secondary_search_queries": [],
+    }, raw_query=raw_query, action="ask_clarification")
     return {
         "action": "ask_clarification",
         "decision_action": "ask_clarification",
         "can_search_now": False,
         "normalized_query": _clean_text(raw_query, 500),
-        "frame": {
-            "location_mode": location_mode,
-            "anchor_location": anchor_location,
-            "target_objects": [],
-            "candidate_place_types": [],
-            "result_match_terms": [],
-            "constraints": [],
-            "exclusions": [],
-            "candidate_category_codes": [],
-            "ranking_policy": "evidence_first",
-            "primary_search_queries": [],
-            "secondary_search_queries": [],
-        },
+        "frame": frame,
         "clarification": {
             "question": question,
             "options": options,
@@ -549,6 +737,24 @@ def _local_rule_plan_for_known_intent(raw_query):
     text = _clean_text(raw_query, 500)
     if not text:
         return None
+    compact_text = _compact(text)
+
+    if (
+        _has_any(text, ["실내"])
+        and _has_any(text, ["야외", "실외", "밖", "바깥"])
+        and not any(marker in compact_text for marker in ["말고", "제외", "빼", "아닌"])
+    ):
+        return _local_rule_clarification_plan(
+            text,
+            question="실내와 야외 조건이 함께 보여요. 어느 쪽을 우선할까요?",
+            options=[
+                {"label": "실내 우선", "value": "실내"},
+                {"label": "야외 우선", "value": "야외"},
+                {"label": "둘 다 괜찮음", "value": "둘 다"},
+            ],
+            missing_fields=["condition_priority"],
+            expected_patch_fields=["constraints", "exclusions", "ranking_policy"],
+        )
 
     if _has_any(text, [
         "\uc57d\uad6d",
@@ -847,6 +1053,51 @@ def _local_rule_plan_for_known_intent(raw_query):
             candidate_category_codes=["restaurant"],
         )
 
+    product_purchase_request = _has_any(text, ["살 곳", "사는 곳", "파는 곳", "구매", "사고 싶", "사야", "판매점", "매장"])
+    product_request_excluded = _has_any(text, [
+        "밥",
+        "식사",
+        "맛집",
+        "먹",
+        "마실",
+        "음료",
+        "커피",
+        "물 마",
+        "생수",
+        "약",
+        "진통제",
+    ])
+    if product_purchase_request and not product_request_excluded:
+        product_profiles = [
+            (["운동화", "신발", "구두", "스니커즈"], "신발/운동화", ["운동화 매장", "신발 매장", "스포츠용품점", "백화점"]),
+            (["노트북", "핸드폰", "휴대폰", "아이폰", "전자제품", "충전기", "케이블"], "전자제품", ["전자제품 매장", "노트북 매장", "휴대폰 매장", "대형마트"]),
+            (["옷", "의류", "자켓", "바지", "원피스"], "의류", ["의류 매장", "쇼핑몰", "백화점", "아울렛"]),
+            (["책", "문구", "노트", "필기구"], "서점/문구", ["서점", "문구점", "대형서점", "쇼핑몰"]),
+            (["선물", "기념품"], "선물/기념품", ["기념품 매장", "소품샵", "쇼핑몰", "백화점"]),
+        ]
+        target_label = "상품 구매"
+        queries = ["쇼핑몰", "백화점", "대형마트", "전문 매장"]
+        place_types = ["쇼핑몰", "백화점", "아울렛", "대형마트", "전문 매장"]
+        for terms, label, profile_queries in product_profiles:
+            if _has_any(text, terms):
+                target_label = label
+                queries = profile_queries
+                place_types = [*profile_queries, "쇼핑몰", "백화점"]
+                break
+
+        return _local_rule_search_plan(
+            text,
+            normalized_query=f"{target_label} 살 곳",
+            target_objects=[target_label],
+            candidate_place_types=place_types,
+            result_match_terms=[target_label, "매장", "쇼핑", "구매", "판매점"],
+            primary_search_queries=queries,
+            constraints=["구매 가능"],
+            exclusions=["온라인 쇼핑 정보 제외"],
+            candidate_category_codes=["shopping"],
+            ranking_policy="evidence_first",
+        )
+
     if _has_any(text, ["쇼핑몰", "쇼핑할", "쇼핑 할", "쇼핑", "백화점", "아울렛", "복합쇼핑", "쇼핑센터", "상업시설"]):
         return _local_rule_search_plan(
             text,
@@ -893,6 +1144,31 @@ def _local_rule_plan_for_known_intent(raw_query):
             constraints=["식사 가능"],
             candidate_category_codes=["restaurant"],
         )
+
+    menu_profiles = [
+        (["떡볶이", "분식"], "떡볶이/분식", ["떡볶이", "분식집", "김밥"]),
+        (["김밥"], "김밥", ["김밥", "분식집"]),
+        (["라멘", "라면"], "라멘", ["라멘", "일본 라멘", "일식 라멘"]),
+        (["햄버거", "버거"], "햄버거", ["햄버거", "버거"]),
+        (["피자"], "피자", ["피자"]),
+        (["치킨"], "치킨", ["치킨"]),
+        (["국밥", "돼지국밥"], "국밥", ["국밥", "돼지국밥"]),
+        (["냉면", "밀면"], "냉면/밀면", ["냉면", "밀면"]),
+        (["초밥", "스시"], "초밥", ["초밥", "스시"]),
+    ]
+    if _has_any(text, ["먹고 싶", "먹을 곳", "맛집", "밥집", "식당", "음식점"]):
+        for terms, label, queries in menu_profiles:
+            if _has_any(text, terms):
+                return _local_rule_search_plan(
+                    text,
+                    normalized_query=f"{label} 맛집",
+                    target_objects=[label],
+                    candidate_place_types=[f"{label} 전문점", "식당", "음식점"],
+                    result_match_terms=[label, *terms, "식당", "음식점"],
+                    primary_search_queries=queries,
+                    constraints=["식사 가능"],
+                    candidate_category_codes=["restaurant"],
+                )
 
     if _has_any(text, ["전시", "전시회", "전시관", "전시장", "박물관", "미술관", "갤러리"]):
         return _local_rule_search_plan(
@@ -1033,7 +1309,6 @@ def _local_rule_plan_for_known_intent(raw_query):
             candidate_category_codes=["restaurant"],
         )
 
-    compact_text = _compact(text)
     study_cafe_excluded = "스터디카페" in compact_text and any(
         marker in compact_text for marker in ["말고", "빼", "제외", "빼고"]
     )
@@ -1282,7 +1557,7 @@ def _canonicalize(raw_plan, raw_query="", lat=None, lng=None, map_center=None):
     plan = {
         "action": action,
         "normalized_query": _clean_text(raw_plan.get("normalized_query") or raw_plan.get("normalizedQuery") or raw_query),
-        "frame": frame,
+        "frame": _enrich_frame_policy(frame, raw_query=raw_query, action=action),
         "clarification": clarification,
         "confidence": _to_float(raw_plan.get("confidence"), 0.0),
     }
@@ -1569,6 +1844,14 @@ def to_search_plan(intent_plan, raw_query=""):
         "result_match_terms": sourced_frame.get("result_match_terms", []),
         "constraints": sourced_frame.get("constraints", []),
         "exclusions": sourced_frame.get("exclusions", []),
+        "structured_conditions": frame.get("structured_conditions", []),
+        "structuredConditions": frame.get("structured_conditions", []),
+        "fallback_targets": frame.get("fallback_targets", []),
+        "fallbackTargets": frame.get("fallback_targets", []),
+        "policy_conflicts": frame.get("policy_conflicts", []),
+        "policyConflicts": frame.get("policy_conflicts", []),
+        "result_policy": frame.get("result_policy", {}),
+        "resultPolicy": frame.get("result_policy", {}),
         "search_queries": sourced_frame.get("search_queries", []),
         "searchQueries": sourced_frame.get("searchQueries", []),
         "primary_search_queries": sourced_frame.get("primary_search_queries", []),

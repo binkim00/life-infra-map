@@ -6,8 +6,6 @@ import { getTierIcon, getTierLabel } from '@/utils/tierIcons'
 import { useAuthStore } from '@/stores/auth'
 import { useSettingsStore } from '@/stores/settings'
 
-const isSidebarCollapsed = ref(false)
-
 const authStore = useAuthStore()
 const settingsStore = useSettingsStore()
 const route = useRoute()
@@ -69,10 +67,6 @@ const currentUserTierIcon = computed(() => {
 
 const currentUserTierLabel = computed(() => {
   return authStore.user?.tier_label || getTierLabel(authStore.user?.tier)
-})
-
-const currentUserContribution = computed(() => {
-  return authStore.user?.contribution ?? authStore.user?.score ?? 0
 })
 
 const mascotTierValues = new Set([
@@ -431,13 +425,6 @@ const toggleAccountMenu = () => {
   isAccountMenuOpen.value = willOpen
   isNotificationMenuOpen.value = false
   isSidebarAccountMenuOpen.value = false
-}
-
-const toggleSidebarAccountMenu = () => {
-  const willOpen = !isSidebarAccountMenuOpen.value
-  isSidebarAccountMenuOpen.value = willOpen
-  isNotificationMenuOpen.value = false
-  isAccountMenuOpen.value = false
 }
 
 const handleDocumentClick = (event) => {

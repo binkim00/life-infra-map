@@ -4,13 +4,22 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 from rest_framework import serializers
 
-from .models import Place, PlaceReport, PlaceReportImage, UserPreference, UserSearchLog
+from .models import (
+    Place,
+    PlaceReport,
+    PlaceReportImage,
+    UserPreference,
+    UserSavedPlace,
+    UserSearchLog,
+)
 from .services.user_preferences import normalize_preference_label, unique_valid_labels
 
 
 ALLOWED_REPORT_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 MAX_REPORT_IMAGE_SIZE = 5 * 1024 * 1024
 MAX_REPORT_IMAGE_COUNT = 3
+SAVED_PLACE_SOURCE_VALUES = {"local_db", "kakao", "web", "other"}
+SAVED_PLACE_COORDINATE_QUANTIZER = Decimal("0.000001")
 
 
 def parse_label_list(value):
@@ -267,6 +276,197 @@ class UserPreferenceSerializer(serializers.ModelSerializer):
             "source",
             "last_seen_at",
         ]
+
+
+class UserSavedPlaceSerializer(serializers.ModelSerializer):
+    place = serializers.IntegerField(source="place_id", read_only=True)
+    place_id = serializers.PrimaryKeyRelatedField(
+        queryset=Place.objects.all(),
+        source="place",
+        write_only=True,
+        required=False,
+        allow_null=True,
+    )
+    source_label = serializers.CharField(source="get_source_display", read_only=True)
+
+    class Meta:
+        model = UserSavedPlace
+        fields = [
+            "id",
+            "place",
+            "place_id",
+            "place_key",
+            "source",
+            "source_label",
+            "external_id",
+            "name",
+            "category",
+            "address",
+            "lat",
+            "lng",
+            "detail_url",
+            "kakao_place_url",
+            "phone",
+            "memo",
+            "raw",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "place", "place_key", "source_label", "created_at", "updated_at"]
+        extra_kwargs = {
+            "source": {"required": False},
+            "external_id": {"required": False, "allow_blank": True},
+            "name": {"required": False, "allow_blank": True},
+            "category": {"required": False, "allow_blank": True},
+            "address": {"required": False, "allow_blank": True},
+            "lat": {"required": False, "allow_null": True},
+            "lng": {"required": False, "allow_null": True},
+            "detail_url": {"required": False, "allow_blank": True},
+            "kakao_place_url": {"required": False, "allow_blank": True},
+            "phone": {"required": False, "allow_blank": True},
+            "memo": {"required": False, "allow_blank": True},
+            "raw": {"required": False},
+        }
+
+    def sanitize_text_value(self, value, max_length):
+        if value is None:
+            return ""
+        return str(value).strip()[:max_length]
+
+    def sanitize_coordinate_value(self, value, field_name):
+        if value in (None, ""):
+            return None
+
+        try:
+            decimal_value = Decimal(str(value).strip())
+        except (InvalidOperation, ValueError):
+            raise serializers.ValidationError("좌표를 숫자로 보내 주세요.")
+
+        if not decimal_value.is_finite():
+            raise serializers.ValidationError("좌표를 숫자로 보내 주세요.")
+
+        minimum_value, maximum_value = (
+            (Decimal("-90"), Decimal("90"))
+            if field_name == "lat"
+            else (Decimal("-180"), Decimal("180"))
+        )
+        if decimal_value < minimum_value or decimal_value > maximum_value:
+            raise serializers.ValidationError("좌표 범위를 확인해 주세요.")
+
+        return decimal_value.quantize(
+            SAVED_PLACE_COORDINATE_QUANTIZER,
+            rounding=ROUND_HALF_UP,
+        )
+
+    def to_internal_value(self, data):
+        mutable_data = data.copy() if hasattr(data, "copy") else dict(data)
+        camel_case_map = {
+            "placeId": "place_id",
+            "externalId": "external_id",
+            "detailUrl": "detail_url",
+            "kakaoPlaceUrl": "kakao_place_url",
+        }
+        for source_key, target_key in camel_case_map.items():
+            if source_key in mutable_data and target_key not in mutable_data:
+                mutable_data[target_key] = mutable_data[source_key]
+
+        for coordinate_field in ["lat", "lng"]:
+            if coordinate_field in mutable_data and mutable_data[coordinate_field] not in (None, ""):
+                mutable_data[coordinate_field] = self.sanitize_coordinate_value(
+                    mutable_data[coordinate_field],
+                    coordinate_field,
+                )
+
+        return super().to_internal_value(mutable_data)
+
+    def validate_source(self, value):
+        value = self.sanitize_text_value(value, 30) or "other"
+        return value if value in SAVED_PLACE_SOURCE_VALUES else "other"
+
+    def validate_raw(self, value):
+        return value if isinstance(value, dict) else {}
+
+    def validate(self, attrs):
+        instance = self.instance
+        place = attrs.get("place") or getattr(instance, "place", None)
+
+        if place:
+            attrs.setdefault("source", "local_db")
+            attrs["external_id"] = attrs.get("external_id") or place.external_id
+            attrs["name"] = attrs.get("name") or place.name
+            attrs["category"] = attrs.get("category") or place.category
+            attrs["address"] = attrs.get("address") or place.address
+            attrs["lat"] = attrs.get("lat") or self.sanitize_coordinate_value(place.lat, "lat")
+            attrs["lng"] = attrs.get("lng") or self.sanitize_coordinate_value(place.lng, "lng")
+            attrs["place_key"] = f"place:{place.id}"
+        else:
+            attrs["source"] = attrs.get("source") or getattr(instance, "source", "other")
+            attrs["external_id"] = self.sanitize_text_value(
+                attrs.get("external_id") or getattr(instance, "external_id", ""),
+                100,
+            )
+            attrs["name"] = self.sanitize_text_value(
+                attrs.get("name") or getattr(instance, "name", ""),
+                200,
+            )
+            if not attrs["name"]:
+                raise serializers.ValidationError({
+                    "name": "저장할 장소명을 확인해 주세요.",
+                })
+
+            lat = attrs.get("lat", getattr(instance, "lat", None))
+            lng = attrs.get("lng", getattr(instance, "lng", None))
+            attrs["lat"] = self.sanitize_coordinate_value(lat, "lat") if lat not in (None, "") else None
+            attrs["lng"] = self.sanitize_coordinate_value(lng, "lng") if lng not in (None, "") else None
+
+            if attrs["external_id"]:
+                attrs["place_key"] = f"{attrs['source']}:{attrs['external_id']}"
+            else:
+                attrs["place_key"] = (
+                    f"snapshot:{attrs['source']}:{attrs['name']}:"
+                    f"{attrs['lat'] or ''}:{attrs['lng'] or ''}"
+                )
+
+        attrs["category"] = self.sanitize_text_value(attrs.get("category"), 100)
+        attrs["address"] = self.sanitize_text_value(attrs.get("address"), 255)
+        attrs["detail_url"] = self.sanitize_text_value(attrs.get("detail_url"), 500)
+        attrs["kakao_place_url"] = self.sanitize_text_value(attrs.get("kakao_place_url"), 500)
+        attrs["phone"] = self.sanitize_text_value(attrs.get("phone"), 50)
+        attrs["memo"] = self.sanitize_text_value(attrs.get("memo"), 2000)
+
+        return attrs
+
+    def create(self, validated_data):
+        request = self.context.get("request")
+        place_key = validated_data.pop("place_key")
+        saved_place, created = UserSavedPlace.objects.update_or_create(
+            user=request.user,
+            place_key=place_key,
+            defaults=validated_data,
+        )
+        self.created = created
+        return saved_place
+
+    def update(self, instance, validated_data):
+        validated_data.pop("place_key", None)
+        validated_data.pop("place", None)
+        for field_name in [
+            "memo",
+            "name",
+            "category",
+            "address",
+            "lat",
+            "lng",
+            "detail_url",
+            "kakao_place_url",
+            "phone",
+            "raw",
+        ]:
+            if field_name in validated_data:
+                setattr(instance, field_name, validated_data[field_name])
+
+        instance.save()
+        return instance
 
 
 class PlaceReportImageSerializer(serializers.ModelSerializer):

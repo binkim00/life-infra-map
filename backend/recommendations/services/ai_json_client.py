@@ -51,20 +51,6 @@ def get_ai_provider_name(provider=None):
     return _provider(provider) or "unknown"
 
 
-def _gms_configured():
-    return bool(
-        getattr(settings, "GMS_API_KEY", "")
-        and (
-            getattr(settings, "GMS_API_URL", "")
-            or getattr(settings, "GMS_API_BASE_URL", "")
-        )
-    )
-
-
-def _openai_configured():
-    return bool(getattr(settings, "OPENAI_API_KEY", ""))
-
-
 def get_ai_json_unavailable_reason(provider=None):
     selected = _provider(provider)
     if selected == "gms":
@@ -83,10 +69,6 @@ def get_ai_json_unavailable_reason(provider=None):
         return ""
 
     return f"unsupported_ai_provider:{selected or 'unknown'}"
-
-
-def has_ai_json_config(provider=None):
-    return get_ai_json_unavailable_reason(provider=provider) == ""
 
 
 def _gms_chat_completions_url():

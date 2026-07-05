@@ -14,13 +14,14 @@ from accounts.tier_notifications import (
     get_current_user_tier,
     notify_tier_upgrade_if_needed,
 )
-from .models import Place, PlaceReport, PlaceTag, Tag, UserPreference, UserSearchLog
+from .models import Place, PlaceReport, PlaceTag, Tag, UserPreference, UserSavedPlace, UserSearchLog
 from .serializers import (
     PlaceReportAdminReviewSerializer,
     PlaceReportCreateSerializer,
     PlaceReportDetailSerializer,
     PlaceReportListSerializer,
     UserPreferenceSerializer,
+    UserSavedPlaceSerializer,
     UserSearchLogListSerializer,
     UserSearchLogSerializer,
 )
@@ -315,6 +316,94 @@ def rebuild_preferences(request):
     return Response({
         "message": "preferences rebuilt",
         "count": rebuilt_count,
+    })
+
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+def saved_places(request):
+    if request.method == "GET":
+        saved_place_queryset = (
+            UserSavedPlace.objects
+            .filter(user=request.user)
+            .select_related("place")
+            .order_by("-updated_at", "-created_at")
+        )
+
+        keyword = request.GET.get("q", "").strip()
+        source = request.GET.get("source", "").strip()
+
+        if keyword:
+            saved_place_queryset = saved_place_queryset.filter(
+                Q(name__icontains=keyword)
+                | Q(category__icontains=keyword)
+                | Q(address__icontains=keyword)
+                | Q(memo__icontains=keyword)
+            )
+
+        if source:
+            saved_place_queryset = saved_place_queryset.filter(source=source)
+
+        if "limit" in request.GET and "page" not in request.GET and "page_size" not in request.GET:
+            limit = parse_positive_int(request.GET.get("limit"), 20)
+            limit = min(limit, 100)
+            serializer = UserSavedPlaceSerializer(saved_place_queryset[:limit], many=True)
+            return Response({
+                "results": serializer.data,
+            })
+
+        return paginated_response(
+            saved_place_queryset,
+            UserSavedPlaceSerializer,
+            request,
+            default_page_size=10,
+            max_page_size=50,
+        )
+
+    serializer = UserSavedPlaceSerializer(
+        data=request.data,
+        context={"request": request},
+    )
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    saved_place = serializer.save()
+    response_serializer = UserSavedPlaceSerializer(saved_place)
+    return Response(
+        {
+            "message": "saved place created" if getattr(serializer, "created", False) else "saved place updated",
+            "saved_place": response_serializer.data,
+        },
+        status=status.HTTP_201_CREATED if getattr(serializer, "created", False) else status.HTTP_200_OK,
+    )
+
+
+@api_view(["PATCH", "DELETE"])
+@permission_classes([IsAuthenticated])
+def saved_place_detail(request, saved_place_id):
+    saved_place = get_object_or_404(
+        UserSavedPlace,
+        id=saved_place_id,
+        user=request.user,
+    )
+
+    if request.method == "DELETE":
+        saved_place.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    serializer = UserSavedPlaceSerializer(
+        saved_place,
+        data=request.data,
+        partial=True,
+        context={"request": request},
+    )
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    saved_place = serializer.save()
+    return Response({
+        "message": "saved place updated",
+        "saved_place": UserSavedPlaceSerializer(saved_place).data,
     })
 
 

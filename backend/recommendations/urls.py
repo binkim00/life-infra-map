@@ -15,6 +15,8 @@ urlpatterns = [
     path("preferences/", views.user_preferences),
     path("preferences/rebuild/", views.rebuild_preferences),
     path("preferences/<int:preference_id>/", views.user_preference_detail),
+    path("saved-places/", views.saved_places),
+    path("saved-places/<int:saved_place_id>/", views.saved_place_detail),
     path("place-reports/", views.place_reports),
     path("admin/place-reports/", views.admin_place_reports),
     path("admin/place-reports/<int:report_id>/", views.admin_place_report_detail),

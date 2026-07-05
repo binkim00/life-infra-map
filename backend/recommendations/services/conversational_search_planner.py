@@ -1161,43 +1161,6 @@ def _is_clarification_followup_context(previous_context):
     )
 
 
-def _rule_plan_has_searchable_evidence(rule_plan, lat=None, lng=None, map_center=None):
-    if not isinstance(rule_plan, dict) or rule_plan.get("action") != "search":
-        return False
-
-    execution_policy = rule_plan.get("execution_policy")
-    if isinstance(execution_policy, dict) and execution_policy.get("run_search") is False:
-        return False
-
-    search_plan = rule_plan.get("search_plan")
-    if not isinstance(search_plan, dict):
-        return False
-    intent_group = _clean_text(search_plan.get("intent_group") or search_plan.get("intentGroup"))
-    if not intent_group or intent_group == "general_place_search":
-        return False
-
-    target_terms = _sanitize_frame_list([
-        search_plan.get("targetQuery"),
-        search_plan.get("target_query"),
-        *(_normalize_text_list(search_plan.get("menu_keywords") or [])),
-        *(_normalize_text_list(search_plan.get("place_type_keywords") or [])),
-        *(_normalize_text_list(search_plan.get("kakaoKeywordCandidates") or [])),
-    ])
-    has_target_evidence = bool(target_terms and not _all_terms_are_broad(target_terms))
-    location = rule_plan.get("location") if isinstance(rule_plan.get("location"), dict) else {}
-    has_location_context = bool(
-        location.get("is_explicit")
-        or _has_coordinate_context(lat, lng, map_center)
-    )
-    return has_target_evidence and has_location_context
-
-
-def _get_context_location_value(context, *keys):
-    if not isinstance(context, dict):
-        return ""
-    return _clean_text(_first_text(*(context.get(key) for key in keys)))
-
-
 def _get_context_float(context, *keys):
     if not isinstance(context, dict):
         return None
@@ -1906,39 +1869,6 @@ def _is_ai_frame_execution_plan(plan):
     search_plan = plan.get("search_plan") if isinstance(plan.get("search_plan"), dict) else {}
     frame = search_plan.get("place_intent_frame") if isinstance(search_plan.get("place_intent_frame"), dict) else {}
     return _is_valid_place_intent_frame(frame)
-
-
-def _should_use_ai_intent_fallback(query, rule_plan, lat=None, lng=None, map_center=None, previous_context=None):
-    if getattr(settings, "CONVERSATIONAL_SEARCH_AI_ENABLED", False) is not True:
-        return False
-
-    if get_ai_json_unavailable_reason():
-        return False
-
-    action = rule_plan.get("action")
-    search_plan = rule_plan.get("search_plan") if isinstance(rule_plan.get("search_plan"), dict) else {}
-    scenario = search_plan.get("scenario")
-
-    if action in {"blocked", "out_of_scope", "refine_previous_search"}:
-        return False
-
-    if action == "ask_clarification" and rule_plan.get("fallback_reason") in {
-        "missing_purpose",
-        "refinement_without_context",
-        "ambiguous_reference_without_context",
-    }:
-        return False
-
-    if scenario == "smoking_area":
-        return False
-
-    if _has_any(query, AI_INTENT_FALLBACK_HINTS):
-        return True
-
-    if action == "search" and not _has_any(query, SEARCH_COMMAND_HINTS):
-        return True
-
-    return False
 
 
 def _categories_for_scenario(scenario):
@@ -3479,10 +3409,6 @@ def _get_ai_frame_post_validation_reasons(frame, query):
     return _unique(reasons)
 
 
-def get_ai_frame_post_validation_reasons(frame, query):
-    return _get_ai_frame_post_validation_reasons(frame, query)
-
-
 def _ai_frame_post_validation_clarification_plan(query, raw_plan, search_plan, frame, reasons):
     question = _contextual_ai_clarification_question(query, frame)
     options = _contextual_ai_clarification_options(frame)
@@ -3632,13 +3558,6 @@ def _repair_ai_place_intent_frame(search_plan, raw_plan, user_query, fallback_se
         "confidence": _normalize_frame_confidence(raw_plan.get("confidence"), 0.6),
     }
     return _normalize_place_intent_frame(frame, user_query=user_query)
-
-
-def _frame_location(search_plan):
-    frame = search_plan.get("place_intent_frame")
-    if not isinstance(frame, dict):
-        return ""
-    return _clean_text(frame.get("anchor_location"))
 
 
 def _enrich_plan_with_intent_group(plan):

@@ -199,6 +199,42 @@ export const rebuildUserPreferences = async () => {
   return response.data
 }
 
+export const fetchUserSavedPlaces = async ({
+  q = '',
+  source = '',
+  page = 1,
+  pageSize = 10,
+  limit = null,
+} = {}) => {
+  const response = await api.get('/recommendations/saved-places/', {
+    params: {
+      ...(limit ? { limit } : { page, page_size: pageSize }),
+      ...(q ? { q } : {}),
+      ...(source ? { source } : {}),
+    },
+  })
+
+  return response.data
+}
+
+export const saveUserSavedPlace = async (payload) => {
+  const response = await api.post('/recommendations/saved-places/', payload)
+
+  return response.data
+}
+
+export const updateUserSavedPlace = async (savedPlaceId, payload) => {
+  const response = await api.patch(`/recommendations/saved-places/${savedPlaceId}/`, payload)
+
+  return response.data
+}
+
+export const deleteUserSavedPlace = async (savedPlaceId) => {
+  const response = await api.delete(`/recommendations/saved-places/${savedPlaceId}/`)
+
+  return response.data
+}
+
 export const createPlaceReport = async (formData) => {
   const response = await api.post('/recommendations/place-reports/', formData, {
     headers: {

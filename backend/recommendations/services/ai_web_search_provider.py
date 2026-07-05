@@ -436,37 +436,6 @@ def should_execute_ai_web_search(query, condition=None, existing_results_summary
     )
 
 
-def summarize_existing_results(results, kakao_fallback_count=0):
-    results = results or []
-    weak_match_count = 0
-
-    for result in results:
-        matched_tags = result.get("matched_tags") or result.get("matched_tag_labels") or []
-        match_level = result.get("match_level") or ""
-        source_type = result.get("source_type") or ""
-
-        if (
-            not matched_tags
-            or match_level == "category_distance_fallback"
-            or source_type == "db_category_fallback"
-        ):
-            weak_match_count += 1
-
-    db_count = len(results)
-    relevant_count = sum(
-        1
-        for result in results
-        if int(result.get("relevance_score") or 0) > 0 or result.get("matched_evidence")
-    )
-    return {
-        "db_count": db_count,
-        "relevant_result_count": relevant_count or db_count,
-        "kakao_fallback_count": int(kakao_fallback_count or 0),
-        "total_count": db_count + int(kakao_fallback_count or 0),
-        "weak_match_count": weak_match_count,
-    }
-
-
 def _build_system_prompt():
     return (
         "Use web_search. Find at most one real local place for the user request. "

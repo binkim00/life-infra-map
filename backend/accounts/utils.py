@@ -3,13 +3,13 @@ from django.db.models.functions import TruncDate
 
 
 TIER_RULES = [
-    (13, "challenger", "챌린저"),
-    (12, "master", "마스터"),
-    (11, "diamond", "다이아"),
-    (10, "platinum", "플래티넘"),
-    (9, "gold", "골드"),
-    (8, "silver", "실버"),
-    (7, "bronze", "브론즈"),
+    (1000, "challenger", "챌린저"),
+    (700, "master", "마스터"),
+    (500, "diamond", "다이아"),
+    (300, "platinum", "플래티넘"),
+    (200, "gold", "골드"),
+    (100, "silver", "실버"),
+    (50, "bronze", "브론즈"),
     (0, "iron", "아이언"),
 ]
 
@@ -24,9 +24,9 @@ TIER_COLORS = {
     "challenger": "#ef4444",
 }
 
-POSTS_PER_CONTRIBUTION_POINT = 1
-COMMENTS_PER_CONTRIBUTION_POINT = 1
-DAILY_ACTIVITY_CONTRIBUTION_LIMIT = 100
+POSTS_PER_CONTRIBUTION_POINT = 5
+COMMENTS_PER_CONTRIBUTION_POINT = 10
+DAILY_ACTIVITY_CONTRIBUTION_LIMIT = 5
 STAFF_DEMO_BASE_CONTRIBUTION = 6
 REPORT_CONTRIBUTION_REWARDS = {
     "tag_suggestion": 10,
@@ -36,11 +36,18 @@ REPORT_CONTRIBUTION_REWARDS = {
 }
 
 
+def calculate_activity_group_count(count, group_size):
+    if count <= 0:
+        return 0
+
+    return (count + group_size - 1) // group_size
+
+
 def calculate_daily_activity_contribution(post_count=0, comment_count=0):
     return min(
         DAILY_ACTIVITY_CONTRIBUTION_LIMIT,
-        (post_count // POSTS_PER_CONTRIBUTION_POINT)
-        + (comment_count // COMMENTS_PER_CONTRIBUTION_POINT),
+        calculate_activity_group_count(post_count, POSTS_PER_CONTRIBUTION_POINT)
+        + calculate_activity_group_count(comment_count, COMMENTS_PER_CONTRIBUTION_POINT),
     )
 
 
@@ -52,11 +59,6 @@ def calculate_user_contribution(post_count=0, comment_count=0, approved_report_c
     )
 
     return calculate_daily_activity_contribution(post_count, comment_count) + report_contribution
-
-
-def calculate_user_score(post_count, comment_count):
-    # 호환용 함수입니다. 새 UI에서는 contribution 값을 우선 사용합니다.
-    return calculate_user_contribution(post_count, comment_count)
 
 
 def get_tier_by_score(score):
@@ -139,10 +141,6 @@ def get_user_contribution(user):
     staff_demo_contribution = STAFF_DEMO_BASE_CONTRIBUTION if user.is_staff else 0
 
     return activity_contribution + report_contribution + staff_demo_contribution
-
-
-def get_user_score(user):
-    return get_user_contribution(user)
 
 
 def get_user_tier_info(user):

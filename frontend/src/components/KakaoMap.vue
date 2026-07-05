@@ -231,16 +231,6 @@ const createNumberMarkerImage = (label, markerColor = '', overlapCount = 0) => {
   return new window.kakao.maps.MarkerImage(imageSrc, imageSize, imageOption)
 }
 
-const createTransparentMarkerImage = () => {
-  const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"></svg>'
-
-  return new window.kakao.maps.MarkerImage(
-    `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`,
-    new window.kakao.maps.Size(1, 1),
-    { offset: new window.kakao.maps.Point(0, 0) },
-  )
-}
-
 const createInfoWindow = (place) => {
   const distanceText = place.distance ? `${place.distance}m` : ''
   const categoryText = place.category || ''

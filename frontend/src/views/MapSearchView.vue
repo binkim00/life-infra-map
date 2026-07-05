@@ -1,10 +1,18 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import KakaoMap from '@/components/KakaoMap.vue'
 import { searchMapPlaces } from '@/api/recommendation'
+import { useSavedPlaceActions } from '@/composables/useSavedPlaceActions'
 
 const router = useRouter()
+const {
+  savingPlaceId,
+  saveMessage,
+  isPlaceSaved,
+  loadSavedPlaceKeys,
+  savePlace: handleSavePlace,
+} = useSavedPlaceActions()
 
 const DEFAULT_CENTER = {
   lat: 35.1796,
@@ -221,6 +229,10 @@ const goToPlaceReport = (place) => {
     query: queryParams,
   })
 }
+
+onMounted(() => {
+  loadSavedPlaceKeys()
+})
 </script>
 
 <template>
@@ -379,6 +391,14 @@ const goToPlaceReport = (place) => {
         </dl>
 
         <div class="map-detail-actions">
+          <button
+            type="button"
+            class="save"
+            :disabled="savingPlaceId === selectedPlace.id || isPlaceSaved(selectedPlace)"
+            @click="handleSavePlace(selectedPlace)"
+          >
+            {{ isPlaceSaved(selectedPlace) ? '저장됨' : (savingPlaceId === selectedPlace.id ? '저장 중' : '장소 저장') }}
+          </button>
           <button type="button" @click="goToPlaceReport(selectedPlace)">
             정보 제보
           </button>
@@ -400,6 +420,7 @@ const goToPlaceReport = (place) => {
             길찾기
           </a>
         </div>
+        <p v-if="saveMessage" class="map-save-message">{{ saveMessage }}</p>
       </aside>
     </section>
   </main>
@@ -752,7 +773,7 @@ const goToPlaceReport = (place) => {
 
 .map-detail-actions {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 10px;
   margin-top: 20px;
 }
@@ -769,6 +790,24 @@ const goToPlaceReport = (place) => {
 .map-detail-actions .primary {
   background: #ffe500;
   color: #222;
+}
+
+.map-detail-actions .save {
+  background: #0f766e;
+  color: #ffffff;
+}
+
+.map-detail-actions .save:disabled {
+  cursor: default;
+  background: #d1fae5;
+  color: #047857;
+}
+
+.map-save-message {
+  margin: 10px 0 0;
+  color: #047857;
+  font-size: 13px;
+  font-weight: 800;
 }
 
 @media (max-width: 1180px) {

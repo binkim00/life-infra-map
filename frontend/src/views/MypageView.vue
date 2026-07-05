@@ -4,9 +4,13 @@ import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { getMypage, updateNickname, updateProfileImage } from '@/api/boards'
 import {
   deleteSearchLog,
+  deleteUserSavedPlace,
   fetchSearchLogs,
+  fetchUserSavedPlaces,
   fetchUserPreferences,
+  updateUserSavedPlace,
 } from '@/api/recommendation'
+import SavedPlacesPanel from '@/components/SavedPlacesPanel.vue'
 import { useAuthStore } from '@/stores/auth'
 import { getTierIcon } from '@/utils/tierIcons'
 
@@ -33,8 +37,15 @@ const searchLogMessage = ref('')
 const userPreferences = ref([])
 const isLoadingPreferences = ref(false)
 const preferenceMessage = ref('')
+const savedPlaces = ref([])
+const savedPlaceCount = ref(0)
+const isLoadingSavedPlaces = ref(false)
+const savedPlaceMessage = ref('')
+const editingSavedPlaceId = ref(null)
+const savedPlaceMemoInput = ref('')
+const updatingSavedPlaceId = ref(null)
 
-const sectionValues = ['profile', 'posts', 'comments', 'liked']
+const sectionValues = ['profile', 'saved', 'posts', 'comments', 'liked']
 
 const normalizeLabelValue = (item) => {
   if (typeof item === 'string') return item.trim()
@@ -122,6 +133,7 @@ const fetchMypage = async () => {
     profileImagePreviewUrl.value = response.data.user.profile_image_url || ''
     fetchRecentSearchLogs()
     fetchPreferences()
+    fetchSavedPlaces()
   } catch (error) {
     console.error(error)
     errorMessage.value = '마이페이지 정보를 불러오지 못했습니다.'
@@ -164,6 +176,83 @@ const fetchPreferences = async () => {
     }
   } finally {
     isLoadingPreferences.value = false
+  }
+}
+
+const fetchSavedPlaces = async () => {
+  if (!authStore.isLoggedIn) {
+    savedPlaces.value = []
+    savedPlaceMessage.value = '로그인 후 저장한 장소를 확인할 수 있습니다.'
+    return
+  }
+
+  try {
+    isLoadingSavedPlaces.value = true
+    savedPlaceMessage.value = ''
+    const response = await fetchUserSavedPlaces({ page: 1, pageSize: 10 })
+    savedPlaces.value = response.results || []
+    savedPlaceCount.value = response.count ?? savedPlaces.value.length
+
+    if (!savedPlaces.value.length) {
+      savedPlaceMessage.value = '아직 저장한 장소가 없습니다.'
+    }
+  } catch (error) {
+    savedPlaces.value = []
+    savedPlaceCount.value = 0
+    savedPlaceMessage.value = [401, 403].includes(error.response?.status)
+      ? '로그인 후 저장한 장소를 확인할 수 있습니다.'
+      : '저장한 장소를 불러오지 못했습니다.'
+  } finally {
+    isLoadingSavedPlaces.value = false
+  }
+}
+
+const startSavedPlaceMemoEdit = (place) => {
+  editingSavedPlaceId.value = place.id
+  savedPlaceMemoInput.value = place.memo || ''
+}
+
+const cancelSavedPlaceMemoEdit = () => {
+  editingSavedPlaceId.value = null
+  savedPlaceMemoInput.value = ''
+}
+
+const handleUpdateSavedPlaceMemo = async (place) => {
+  if (!place?.id) return
+
+  try {
+    updatingSavedPlaceId.value = place.id
+    const response = await updateUserSavedPlace(place.id, {
+      memo: savedPlaceMemoInput.value,
+    })
+    const updatedPlace = response.saved_place || {}
+    savedPlaces.value = savedPlaces.value.map((item) => {
+      return item.id === place.id ? { ...item, ...updatedPlace } : item
+    })
+    savedPlaceMessage.value = '메모를 저장했습니다.'
+    cancelSavedPlaceMemoEdit()
+  } catch (error) {
+    savedPlaceMessage.value =
+      error.response?.data?.detail || '메모를 저장하지 못했습니다.'
+  } finally {
+    updatingSavedPlaceId.value = null
+  }
+}
+
+const handleDeleteSavedPlace = async (place) => {
+  if (!place?.id) return
+
+  try {
+    updatingSavedPlaceId.value = place.id
+    await deleteUserSavedPlace(place.id)
+    savedPlaces.value = savedPlaces.value.filter((item) => item.id !== place.id)
+    savedPlaceCount.value = Math.max(0, savedPlaceCount.value - 1)
+    savedPlaceMessage.value = '저장한 장소를 삭제했습니다.'
+  } catch (error) {
+    savedPlaceMessage.value =
+      error.response?.data?.detail || '저장한 장소를 삭제하지 못했습니다.'
+  } finally {
+    updatingSavedPlaceId.value = null
   }
 }
 
@@ -572,6 +661,10 @@ onMounted(() => {
           </div>
 
           <div class="summary-grid">
+            <RouterLink :to="{ path: '/mypage', query: { section: 'saved' } }" class="summary-card">
+              <strong>{{ savedPlaceCount }}</strong>
+              <span>저장장소</span>
+            </RouterLink>
             <RouterLink :to="{ path: '/mypage', query: { section: 'posts' } }" class="summary-card">
               <strong>{{ data.posts.length }}</strong>
               <span>작성글</span>
@@ -690,6 +783,21 @@ onMounted(() => {
             </div>
           </section>
         </section>
+
+        <SavedPlacesPanel
+          v-else-if="selectedSection === 'saved'"
+          :places="savedPlaces"
+          :is-loading="isLoadingSavedPlaces"
+          :message="savedPlaceMessage"
+          :editing-place-id="editingSavedPlaceId"
+          v-model:memo-input="savedPlaceMemoInput"
+          :updating-place-id="updatingSavedPlaceId"
+          @refresh="fetchSavedPlaces"
+          @start-memo-edit="startSavedPlaceMemoEdit"
+          @cancel-memo-edit="cancelSavedPlaceMemoEdit"
+          @save-memo="handleUpdateSavedPlaceMemo"
+          @delete-place="handleDeleteSavedPlace"
+        />
 
         <section v-else-if="selectedSection === 'posts'" class="panel">
           <h2>내가 쓴 글</h2>

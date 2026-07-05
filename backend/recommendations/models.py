@@ -234,6 +234,62 @@ class UserPreference(models.Model):
         return f"{self.user} - {self.preference_type}:{self.label}"
 
 
+class UserSavedPlace(models.Model):
+    SOURCE_CHOICES = [
+        ("local_db", "저장 장소"),
+        ("kakao", "카카오 장소"),
+        ("web", "웹 참고"),
+        ("other", "기타"),
+    ]
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="saved_places",
+    )
+    place = models.ForeignKey(
+        "Place",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="saved_by_users",
+    )
+
+    place_key = models.CharField(max_length=255)
+    source = models.CharField(max_length=30, choices=SOURCE_CHOICES, default="local_db")
+    external_id = models.CharField(max_length=100, blank=True)
+
+    name = models.CharField(max_length=200)
+    category = models.CharField(max_length=100, blank=True)
+    address = models.CharField(max_length=255, blank=True)
+    lat = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    lng = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+
+    detail_url = models.URLField(max_length=500, blank=True)
+    kakao_place_url = models.URLField(max_length=500, blank=True)
+    phone = models.CharField(max_length=50, blank=True)
+    memo = models.TextField(blank=True)
+    raw = models.JSONField(default=dict, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "place_key"],
+                name="unique_user_saved_place_key",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["user", "-updated_at"]),
+            models.Index(fields=["user", "source"]),
+        ]
+
+    def __str__(self):
+        return f"{self.user} - {self.name}"
+
+
 class PlaceReport(models.Model):
     REPORT_TYPE_CHOICES = [
         ("new_place", "장소 추가 제보"),
