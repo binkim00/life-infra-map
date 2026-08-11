@@ -32,6 +32,8 @@ class Place(models.Model):
     class Meta:
         indexes = [
             models.Index(fields=["category", "lat", "lng"]),
+            # 지도 검색은 카테고리 없이 좌표 범위만으로 후보를 좁히는 경우가 많습니다.
+            models.Index(fields=["lat", "lng"]),
         ]
         constraints = [
             models.UniqueConstraint(

@@ -45,8 +45,10 @@ const selectedPlace = ref(null)
 const mapCenter = ref({ ...DEFAULT_CENTER })
 const fitBoundsKey = ref(0)
 const isLoading = ref(false)
-const message = ref('장소명, 주소, 태그를 그대로 검색할 수 있어요.')
+const message = ref('장소명, 주소, 태그를 그대로 검색할 수 있어요. 여러 단어를 함께 써도 됩니다.')
 const counts = ref({ db: 0, kakao: 0, db_total: 0 })
+const droppedTokens = ref([])
+const excludedTokens = ref([])
 
 const normalizedQuery = computed(() => query.value.trim())
 const hasResults = computed(() => places.value.length > 0)
@@ -146,6 +148,7 @@ const normalizePlace = (place, index) => {
       : '',
     dataQualityStatus: place.data_quality_status || '',
     dataQualityScore: place.data_quality_score ?? null,
+    duplicateCount: Number(place.duplicate_count) || 1,
   }
 }
 
@@ -164,6 +167,8 @@ const runSearch = async () => {
     })
 
     counts.value = data.candidate_counts || { db: 0, kakao: 0, db_total: 0 }
+    droppedTokens.value = toArray(data.query_info?.dropped_tokens)
+    excludedTokens.value = toArray(data.query_info?.exclude_tokens)
     places.value = toArray(data.results)
       .filter((place) => toNumber(place.lat) !== null && toNumber(place.lng) !== null)
       .map(normalizePlace)
@@ -174,7 +179,7 @@ const runSearch = async () => {
     } else if (!normalizedQuery.value) {
       message.value = '검색어를 입력하거나 지도 중심 기준으로 저장 장소를 둘러보세요.'
     } else {
-      message.value = '조건에 맞는 장소를 찾지 못했어요.'
+      message.value = '조건에 맞는 장소를 찾지 못했어요. 검색어를 줄이거나 지도를 옮겨 다시 검색해 보세요.'
     }
 
     if (data.kakao_error) {
@@ -184,6 +189,8 @@ const runSearch = async () => {
     console.error(error)
     places.value = []
     counts.value = { db: 0, kakao: 0, db_total: 0 }
+    droppedTokens.value = []
+    excludedTokens.value = []
     message.value = '지도 검색을 불러오지 못했습니다.'
   } finally {
     isLoading.value = false
@@ -251,7 +258,7 @@ onMounted(() => {
             <input
               v-model="query"
               type="search"
-              placeholder="예: 카페, 화장실, 조용함, 부산시청"
+              placeholder="예: 서면 조용한 카페, 주차장 말고 화장실, 부산시청"
             />
           </label>
 
@@ -279,6 +286,12 @@ onMounted(() => {
           <strong>{{ message }}</strong>
           <span v-if="hasResults">
             저장 장소 {{ counts.db || 0 }}곳 · 카카오 {{ counts.kakao || 0 }}곳
+          </span>
+          <span v-if="excludedTokens.length" class="query-note">
+            제외한 조건: {{ excludedTokens.join(', ') }}
+          </span>
+          <span v-if="droppedTokens.length" class="query-note">
+            저장된 장소에 없는 표현이라 빼고 검색했어요: {{ droppedTokens.join(', ') }}
           </span>
         </div>
 
@@ -308,6 +321,9 @@ onMounted(() => {
                 <span class="result-meta">
                   <small v-if="place.category">{{ place.category }}</small>
                   <small v-if="formatDistance(place.distance)">{{ formatDistance(place.distance) }}</small>
+                  <small v-if="place.duplicateCount > 1">
+                    같은 이름 {{ place.duplicateCount }}곳
+                  </small>
                 </span>
                 <span v-if="getAddress(place)" class="result-address">
                   {{ getAddress(place) }}
@@ -483,6 +499,12 @@ onMounted(() => {
   margin-top: 8px;
   color: #64748b;
   font-size: 14px;
+}
+
+.map-search-status .query-note {
+  color: #b45309;
+  font-size: 13px;
+  line-height: 1.45;
 }
 
 .map-search-form {

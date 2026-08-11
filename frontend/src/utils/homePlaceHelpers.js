@@ -237,10 +237,6 @@ export const getPlaceNameSimilarity = (firstName, secondName) => {
   return (2 * intersection) / (firstBigrams.length + secondBigrams.length)
 }
 
-export const isSimilarPlaceName = (firstName, secondName) => {
-  return getPlaceNameSimilarity(firstName, secondName) >= 0.72
-}
-
 export const getDistanceMetersBetweenPlaces = (firstPlace, secondPlace) => {
   const lat1 = Number(firstPlace.lat)
   const lng1 = Number(firstPlace.lng)
@@ -351,10 +347,6 @@ export const getDbKakaoMergeDecision = (kakaoPlace, dbPlace) => {
     distanceMeters,
     addressMatched,
   }
-}
-
-export const isDuplicateDbPlace = (kakaoPlace, dbPlace) => {
-  return getDbKakaoMergeDecision(kakaoPlace, dbPlace).matched
 }
 
 export const getBestKakaoMergeCandidate = (kakaoResults, dbPlace) => {
@@ -483,22 +475,6 @@ export const dedupeSearchResults = (kakaoResults, dbPlaces) => {
   })
 
   return [...mergedKakaoResults, ...additionalDbPlaces]
-}
-
-export const mergeKakaoFallbackIntoDbResults = (dbResults = [], kakaoFallbackResults = []) => {
-  const finalResults = [...dbResults]
-
-  kakaoFallbackResults.forEach((kakaoPlace) => {
-    const duplicateExists = finalResults.some((dbPlace) => {
-      return isDuplicateDbPlace(kakaoPlace, dbPlace)
-    })
-
-    if (!duplicateExists) {
-      finalResults.push(kakaoPlace)
-    }
-  })
-
-  return finalResults
 }
 
 export const SOURCE_LABEL_TEXT = {
@@ -977,10 +953,6 @@ export const evaluateKakaoDetailCandidate = (place, candidate, query = '') => {
     passed: rejectReasons.length === 0,
     rejectReasons,
   }
-}
-
-export const isReliableKakaoDetailMatch = (dbPlace, kakaoCandidate) => {
-  return evaluateKakaoDetailCandidate(dbPlace, kakaoCandidate).passed
 }
 
 export const getBestKakaoDetailCandidate = (place, candidates = [], query = '') => {
@@ -1565,7 +1537,6 @@ export const normalizeLocationText = (text = '') => {
   return String(text).toLowerCase().replace(/\s+/g, '')
 }
 
-const toArray = (value) => Array.isArray(value) ? value : []
 
 export const getRecommendationMissingLabels = (place) => {
   return toDisplayList(place?.missingTagLabels || place?.missing_tag_labels)
@@ -1594,14 +1565,6 @@ export const getRecommendationFallbackText = (place) => {
   return getTextValue(place?.recommendationFallbackLabel || place?.fallback_label)
 }
 
-export const getRecommendationFallbackDescription = (place) => {
-  return getTextValue(place?.recommendationFallbackDescription || place?.fallback_description)
-}
-
-export const getRecommendationCaution = (place) => {
-  return getTextValue(place?.recommendationCaution || place?.caution_message || place?.caution)
-}
-
 export const getDistanceValue = (place) => {
   const distance = Number(place.distance)
 
@@ -1620,10 +1583,6 @@ export const getDistanceText = (place) => {
   }
 
   return `${Math.round(distance)}m`
-}
-
-export const getPlaceListTags = (place) => {
-  return getSortedTags(place.tags || []).slice(0, 3)
 }
 
 export const isRecommendationPlace = (place) => {
@@ -1712,12 +1671,6 @@ export const matchesResultFilter = (place, filterMode = 'all') => {
   return true
 }
 
-export const getMatchedTagText = (place) => {
-  return (place?.matchedTags || [])
-    .filter(Boolean)
-    .join(', ')
-}
-
 export const shouldRewriteRecommendationReason = (reason = '') => {
   const text = getTextValue(reason)
   if (!text) return true
@@ -1730,12 +1683,6 @@ export const shouldRewriteRecommendationReason = (reason = '') => {
     text.includes('카카오 검색 근거 후보') ||
     text.includes('웹 검색 근거 후보')
   )
-}
-
-export const getCandidateDescription = (place) => {
-  return place?.externalCandidateMessage
-    ? `카카오 지도 검색 결과입니다. ${place.externalCandidateMessage}`
-    : '카카오 지도 검색 결과입니다. 세부 태그 데이터는 아직 없습니다.'
 }
 
 export const getRecommendationConfidence = (place) => {
@@ -1809,52 +1756,6 @@ export const getRecommendScore = (place) => {
   )
 
   return Number.isFinite(score) ? score : 0
-}
-
-export const getStableDisplayOffset = (place = {}) => {
-  const text = `${place.id || ''}:${place.name || ''}`
-  let hash = 0
-
-  for (let index = 0; index < text.length; index += 1) {
-    hash = (hash * 31 + text.charCodeAt(index)) % 997
-  }
-
-  return (hash % 7) - 3
-}
-
-export const getDisplayRecommendScore = (place = {}) => {
-  const clampScore = (value) => Math.min(98, Math.max(12, Math.round(value)))
-  const rawScore = Number(place.semanticScore || place.semantic_score || 0) || getRecommendScore(place)
-  const evidenceLevel = getTextValue(place.evidenceLevel || place.evidence_level || place.frameMatchStrength || place.frame_match_strength).toLowerCase()
-  const confidence = getRecommendationConfidence(place)
-  const distance = getDistanceValue(place)
-  const backendRank = Number(place.backendRank || place.backend_rank || place.unifiedRank || place.unified_rank || 0)
-  const matchedEvidenceCount = toArray(place.matchedEvidence || place.matched_evidence).length
-  const sourceAdjustment = isDbRecommendationResult(place)
-    ? 4
-    : (isKakaoCandidateResult(place) ? -1 : (isWebEvidenceCandidateResult(place) ? -4 : 0))
-  const evidenceAdjustment = evidenceLevel === 'strong'
-    ? 7
-    : (evidenceLevel === 'medium' ? 1 : (evidenceLevel === 'weak' ? -10 : 0))
-  const confidenceAdjustment = confidence === 'high'
-    ? 4
-    : (confidence === 'low' ? -8 : 0)
-  const distanceAdjustment = distance === null
-    ? 0
-    : (distance <= 300 ? 6 : (distance <= 900 ? 4 : (distance <= 2000 ? 1 : (distance >= 5000 ? -7 : -2))))
-  const rankAdjustment = backendRank > 0 ? Math.max(-6, 7 - backendRank) : 0
-  const evidenceCountAdjustment = Math.min(4, matchedEvidenceCount)
-
-  return clampScore(
-    rawScore +
-    sourceAdjustment +
-    evidenceAdjustment +
-    confidenceAdjustment +
-    distanceAdjustment +
-    rankAdjustment +
-    evidenceCountAdjustment +
-    getStableDisplayOffset(place),
-  )
 }
 
 export const getPlaceFrameMatchStrength = (place = {}) => {
@@ -2018,41 +1919,6 @@ export const getKakaoFallbackCandidateScore = ({
   )
 }
 
-export const isKakaoFallbackLikelySparseQuery = ({
-  query = '',
-  recommendationIntent = '',
-  categoryHint = '',
-  data = {},
-} = {}) => {
-  const condition = getRecommendationConditionData(data)
-
-  if (['restaurant', 'work_cafe'].includes(recommendationIntent)) {
-    return true
-  }
-
-  if (['restaurant', 'cafe'].includes(categoryHint)) {
-    return true
-  }
-
-  const text = normalizeLocationText([
-    query,
-    data?.scenario,
-    condition?.intent,
-    ...toDisplayList(condition?.keywords),
-    ...toDisplayList(condition?.preferred_tag_labels),
-  ].filter(Boolean).join(' '))
-
-  return KAKAO_FALLBACK_KEYWORD_RULES.slice(0, 2).some((rule) => {
-    return rule.keywords.some((keyword) => text.includes(normalizeLocationText(keyword)))
-  })
-}
-
-export const getKakaoFallbackCategoryKeywords = (categories = []) => {
-  return categories
-    .map((category) => CATEGORY_KAKAO_KEYWORDS[category])
-    .filter(Boolean)
-}
-
 export const getRecommendationConditionData = (data = {}) => {
   return {
     ...(data?.ai_parse || {}),
@@ -2132,41 +1998,6 @@ export const getPrimaryMenuKeywords = (menuKeywords = []) => {
   })
 }
 
-export const buildFoodMenuFallbackQueries = ({ query = '', data = {} } = {}) => {
-  const condition = getRecommendationConditionData(data)
-  const menuKeywords = getPrimaryMenuKeywords([
-    ...toDisplayList(condition?.menu_keywords),
-    ...extractFoodMenuKeywords(query),
-  ].filter((keyword, index, keywords) => keyword && keywords.indexOf(keyword) === index))
-
-  if (!menuKeywords.length) {
-    return []
-  }
-
-  const placeTypeKeywords = inferFoodPlaceTypeKeywords({
-    query,
-    menuKeywords,
-    conditionPlaceTypes: condition?.place_type_keywords,
-  })
-  const purposeKeywords = toDisplayList(condition?.purpose_keywords)
-  const hasMatjipIntent = normalizeLocationText([query, ...purposeKeywords].join(' ')).includes(normalizeLocationText('맛집'))
-  const queries = []
-
-  menuKeywords.forEach((menu) => {
-    if (hasMatjipIntent) queries.push(`${menu} 맛집`)
-    queries.push(menu)
-
-    if (placeTypeKeywords.some((keyword) => ['베이커리', '빵집', '카페'].includes(keyword))) {
-      queries.push(`${menu} 카페`)
-    } else {
-      queries.push(`${menu} 식당`)
-    }
-  })
-
-  queries.push(...placeTypeKeywords)
-  return [...new Set(queries.filter(Boolean))]
-}
-
 export const getMenuSearchProfile = ({ query = '', data = {} } = {}) => {
   const condition = getRecommendationConditionData(data)
   const menuKeywords = getPrimaryMenuKeywords([
@@ -2221,33 +2052,6 @@ export const getDirectMenuDbMatchCount = (dbResults = [], menuProfile = {}) => {
   return dbResults.filter((place) => isDirectMenuDbMatch(place, menuProfile)).length
 }
 
-export const isWalkHealingSearchIntent = ({
-  query = '',
-  data = {},
-  parsedIntent = null,
-  categoryHint = '',
-} = {}) => {
-  const condition = getRecommendationConditionData(data)
-  const text = normalizeLocationText([
-    query,
-    data?.scenario,
-    parsedIntent?.recommendationIntent,
-    parsedIntent?.scenario,
-    categoryHint,
-    condition?.scenario,
-    condition?.intent,
-    ...toDisplayList(condition?.categories),
-    ...toDisplayList(parsedIntent?.categories),
-  ].filter(Boolean).join(' '))
-
-  return (
-    text.includes('walk_healing') ||
-    text.includes(normalizeLocationText('산책')) ||
-    text.includes(normalizeLocationText('힐링')) ||
-    text.includes(normalizeLocationText('공원'))
-  )
-}
-
 export const hasExplicitWalkCafeIntent = (query = '', parsedIntent = null) => {
   const text = normalizeLocationText([
     query,
@@ -2262,111 +2066,3 @@ export const hasExplicitWalkCafeIntent = (query = '', parsedIntent = null) => {
   })
 }
 
-export const buildWalkHealingLocationQueries = (locationQuery = '') => {
-  const locationText = getPlannerText(locationQuery)
-  if (!locationText) return []
-
-  return WALK_HEALING_LOCATION_QUERY_KEYWORDS.map((keyword) => {
-    return `${locationText} ${keyword}`.trim()
-  })
-}
-
-export const buildWalkHealingFallbackStages = ({
-  locationQuery = '',
-  includeCafe = false,
-  searchPlan = null,
-} = {}) => {
-  const frameQueries = buildFrameBasedKakaoKeywords(searchPlan || {}, {
-    includeWebQueries: true,
-  })
-  const baseQueries = [
-    ...frameQueries,
-    ...WALK_HEALING_FALLBACK_QUERIES,
-    ...(includeCafe ? ['산책 카페', '공원 카페', '카페'] : []),
-  ]
-  const locationQueries = buildWalkHealingLocationQueries(locationQuery)
-  const stages = []
-
-  WALK_HEALING_FALLBACK_RADII.forEach((radius) => {
-    stages.push({
-      name: `walk_base_${radius}`,
-      radius,
-      queries: baseQueries,
-    })
-
-    if (locationQueries.length) {
-      stages.push({
-        name: `walk_location_${radius}`,
-        radius,
-        queries: locationQueries,
-      })
-    }
-  })
-
-  return stages.map((stage) => ({
-    ...stage,
-    queries: filterKeywordsByExclusions(stage.queries, searchPlan || {}),
-  })).filter((stage) => stage.queries.length)
-}
-
-export const getKakaoFallbackAllowedKeywords = ({
-  recommendationIntent = '',
-  categoryHint = '',
-  query = '',
-  searchPlan = null,
-} = {}) => {
-  if (isFrameDrivenSearch(searchPlan || {})) {
-    return [
-      ...getFrameTargetObjects(searchPlan || {}),
-      ...getFrameResultMatchTerms(searchPlan || {}),
-      ...getFrameCandidatePlaceTypes(searchPlan || {}),
-      ...getFrameCandidateCategoryCodes(searchPlan || {}),
-    ].filter((keyword, index, keywords) => {
-      return keyword && keywords.indexOf(keyword) === index
-    })
-  }
-
-  const text = normalizeLocationText(`${recommendationIntent} ${categoryHint} ${query}`)
-  const foodMenuKeywords = buildFoodMenuFallbackQueries({ query })
-
-  if (recommendationIntent === 'restaurant' || categoryHint === 'restaurant') {
-    return [
-      '음식',
-      '식당',
-      '밥집',
-      '맛집',
-      '한식',
-      '중식',
-      '일식',
-      '양식',
-      '분식',
-      '레스토랑',
-      '브런치',
-      '카페',
-      '커피',
-      '디저트',
-      '베이커리',
-      '빵집',
-      '빵',
-      ...foodMenuKeywords,
-    ]
-  }
-
-  if (recommendationIntent === 'work_cafe' || categoryHint === 'cafe' || text.includes('카페')) {
-    return ['카페', '커피', '디저트', '베이커리', '빵집', '빵', '스터디카페', ...foodMenuKeywords]
-  }
-
-  if (recommendationIntent === 'waiting_place') {
-    return ['쉼터', '휴게', '도서관', '공원', '문화시설', '관광', '대합실', '터미널', '역사']
-  }
-
-  if (recommendationIntent === 'walk_healing') {
-    return WALK_HEALING_ALLOWED_KEYWORDS
-  }
-
-  if (recommendationIntent === 'smoking_area' || categoryHint === 'smoking_area') {
-    return ['흡연']
-  }
-
-  return []
-}

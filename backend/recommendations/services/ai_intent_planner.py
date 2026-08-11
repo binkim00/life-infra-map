@@ -27,7 +27,6 @@ ALLOWED_RANKING_POLICIES = {
 }
 
 TRUSTED_FRAME_SOURCE = "ai_extracted"
-CLARIFICATION_PATCH_SOURCE = "clarification_patch"
 
 AI_INTENT_SYSTEM_PROMPT = """
 You are the AI Intent Planner for a Korean situation-based place recommendation service.

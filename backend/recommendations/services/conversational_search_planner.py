@@ -490,19 +490,6 @@ SITUATION_ALIASES = {
 
 REST_FRAME_PLACE_TYPES = ["쉼터", "카페", "백화점 휴게공간", "공원", "도서관"]
 REST_FRAME_CONSTRAINTS = ["가까운 곳", "잠깐 쉬기 좋음"]
-PLACE_INTENT_FRAME_LIST_FIELDS = {
-    "target_objects",
-    "candidate_place_types",
-    "candidate_category_codes",
-    "result_match_terms",
-    "search_queries",
-    "constraints",
-    "exclusions",
-    "preferred_place_natures",
-    "excluded_place_natures",
-    "missing_info",
-    "ambiguity",
-}
 
 CONDITION_RULES = [
     ("혼자", "혼자 이용하기 좋음", "혼자이용좋음"),
@@ -542,18 +529,6 @@ AMBIGUOUS_REFERENCE_KEYWORDS = [
     "방금",
     "그중",
     "저기",
-]
-
-REFINEMENT_KEYWORDS = [
-    "대신",
-    "더",
-    "다른",
-    "가까운",
-    "가까이",
-    "만",
-    "빼",
-    "제외",
-    "보여줘",
 ]
 
 REFINEMENT_CONTEXT_PHRASES = [
@@ -696,29 +671,6 @@ PLACE_RECOMMENDATION_HINTS = [
     "밥",
     "먹",
     "역",
-]
-
-AI_INTENT_FALLBACK_HINTS = [
-    "눈치",
-    "바람쐬",
-    "바람 쐬",
-    "펴도",
-    "많은 데 말고",
-    "많은데 말고",
-    "카페 느낌",
-    "밖 말고",
-    "앉아있",
-    "있고 싶은데",
-    "카페 말고",
-    "실외 말고",
-    "붐비지",
-]
-
-SEARCH_COMMAND_HINTS = [
-    "추천",
-    "찾아",
-    "알려",
-    "어디",
 ]
 
 

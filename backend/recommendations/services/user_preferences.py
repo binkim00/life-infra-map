@@ -37,16 +37,6 @@ PREFERENCE_WEIGHTS = {
     "keyword": 0.5,
 }
 
-PREFERENCE_TYPE_LABELS = {
-    "tag": "조건",
-    "condition": "조건",
-    "menu": "메뉴",
-    "place_type": "장소 유형",
-    "category": "카테고리",
-    "scenario": "상황",
-    "keyword": "키워드",
-}
-
 
 def normalize_preference_label(value):
     if isinstance(value, str):

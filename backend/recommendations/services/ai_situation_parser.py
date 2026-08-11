@@ -147,7 +147,6 @@ FOOD_INTENT_KEYWORDS = [
 ]
 BAKERY_MENU_KEYWORDS = ["빵", "소금빵", "디저트", "베이커리", "빵집"]
 CAFE_MENU_KEYWORDS = ["카페", "커피", "디저트", "브런치", "소금빵", "빵"]
-RESTAURANT_MENU_KEYWORDS = ["밥", "식사", "혼밥", "파스타", "쌀국수", "돈까스", "돈가스"]
 KNOWN_MENU_KEYWORDS = [
     "소금빵",
     "디저트",

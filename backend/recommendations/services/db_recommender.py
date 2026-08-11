@@ -24,8 +24,6 @@ from recommendations.services.user_preferences import (
 )
 
 
-DEFAULT_CAUTION = "태그 정보는 후보 정보일 수 있으며 실제 이용 가능 여부는 확인이 필요합니다."
-
 WAITING_PLACE_EXCLUDE_KEYWORDS = [
     "행정복지센터",
     "주민센터",

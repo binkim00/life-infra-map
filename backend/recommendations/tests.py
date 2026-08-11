@@ -7390,6 +7390,293 @@ class RecommendationSearchTests(TestCase):
         self.assertEqual(duplicate_results[0]["place_url"], "https://place.map.kakao.com/987654321")
 
     @patch("recommendations.views.search_places_by_keyword", return_value={"documents": []})
+    def test_general_map_search_matches_all_tokens_in_multi_word_query(self, mock_kakao):
+        matching_place = self._create_place(
+            "서면 스터디카페",
+            "cafe",
+            "multi-token-match",
+            lat=35.1557,
+            lng=129.0642,
+        )
+        self._add_tag(matching_place, "조용한")
+        other_area_place = self._create_place(
+            "해운대 감성카페",
+            "cafe",
+            "multi-token-other-area",
+            lat=35.1558,
+            lng=129.0643,
+        )
+        self._add_tag(other_area_place, "조용한")
+
+        response = self.client.get(
+            "/api/recommendations/map-search/",
+            {"q": "서면 조용한 카페", "source": "db", "lat": 35.1556, "lng": 129.0641, "limit": 10},
+            HTTP_HOST="localhost",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        result_names = [item["name"] for item in data["results"]]
+        # 모든 토큰이 맞은 장소만 남고, `서면`이 없는 장소는 빠져야 합니다.
+        self.assertIn(matching_place.name, result_names)
+        self.assertNotIn(other_area_place.name, result_names)
+        self.assertNotIn(self.place.name, result_names)
+        self.assertEqual(data["query_info"]["include_tokens"], ["서면", "조용한", "카페"])
+
+    @patch("recommendations.views.search_places_by_keyword", return_value={"documents": []})
+    def test_general_map_search_treats_trailing_negation_as_exclusion(self, mock_kakao):
+        toilet_place = self._create_place(
+            "테스트 공중화장실",
+            "toilet",
+            "negation-toilet",
+            lat=35.1557,
+            lng=129.0642,
+        )
+        parking_place = self._create_place(
+            "테스트 공영주차장",
+            "parking",
+            "negation-parking",
+            lat=35.1558,
+            lng=129.0643,
+        )
+
+        response = self.client.get(
+            "/api/recommendations/map-search/",
+            {"q": "주차장 말고 화장실", "source": "db", "lat": 35.1556, "lng": 129.0641, "limit": 20},
+            HTTP_HOST="localhost",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        result_names = [item["name"] for item in data["results"]]
+        self.assertIn(toilet_place.name, result_names)
+        self.assertNotIn(parking_place.name, result_names)
+        self.assertEqual(data["query_info"]["exclude_tokens"], ["주차장"])
+        self.assertEqual(data["query_info"]["include_tokens"], ["화장실"])
+
+    @patch("recommendations.views.search_places_by_keyword", return_value={"documents": []})
+    def test_general_map_search_ignores_stopwords_in_query(self, mock_kakao):
+        toilet_place = self._create_place(
+            "테스트 공중화장실",
+            "toilet",
+            "stopword-toilet",
+            lat=35.1557,
+            lng=129.0642,
+        )
+
+        response = self.client.get(
+            "/api/recommendations/map-search/",
+            {"q": "근처 화장실", "source": "db", "lat": 35.1556, "lng": 129.0641, "limit": 10},
+            HTTP_HOST="localhost",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn(toilet_place.name, [item["name"] for item in data["results"]])
+        self.assertEqual(data["query_info"]["include_tokens"], ["화장실"])
+
+    @patch("recommendations.views.search_places_by_keyword", return_value={"documents": []})
+    def test_general_map_search_drops_unmatched_token_when_no_result(self, mock_kakao):
+        park_place = self._create_place(
+            "테스트 어린이공원",
+            "city_park",
+            "relax-park",
+            lat=35.1557,
+            lng=129.0642,
+        )
+        self._add_tag(park_place, "아이와가기좋음")
+
+        response = self.client.get(
+            "/api/recommendations/map-search/",
+            {"q": "아이와 갈만한 공원", "source": "db", "lat": 35.1556, "lng": 129.0641, "limit": 10},
+            HTTP_HOST="localhost",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn(park_place.name, [item["name"] for item in data["results"]])
+        self.assertEqual(data["query_info"]["dropped_tokens"], ["갈만한"])
+
+    @patch("recommendations.views.search_places_by_keyword", return_value={"documents": []})
+    def test_general_map_search_collapses_same_name_places_at_same_spot(self, mock_kakao):
+        for index in range(4):
+            self._create_place(
+                "테스트 해수욕장 와이파이",
+                "freewifi",
+                f"duplicate-wifi-{index}",
+                lat=35.1557,
+                lng=129.0642,
+            )
+
+        response = self.client.get(
+            "/api/recommendations/map-search/",
+            {"q": "테스트 해수욕장 와이파이", "source": "db", "lat": 35.1556, "lng": 129.0641, "limit": 10},
+            HTTP_HOST="localhost",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        results = response.json()["results"]
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["duplicate_count"], 4)
+
+    @patch("recommendations.views.search_places_by_keyword", return_value={"documents": []})
+    def test_general_map_search_ranks_exact_name_match_above_nearer_partial_match(self, mock_kakao):
+        exact_place = self._create_place(
+            "부산시청",
+            "shelter",
+            "rank-exact",
+            lat=35.1800,
+            lng=129.0900,
+        )
+        nearer_partial_place = self._create_place(
+            "부산시청 앞 공영주차장",
+            "parking",
+            "rank-partial",
+            lat=35.1557,
+            lng=129.0642,
+        )
+
+        response = self.client.get(
+            "/api/recommendations/map-search/",
+            {"q": "부산시청", "source": "db", "lat": 35.1556, "lng": 129.0641, "limit": 10},
+            HTTP_HOST="localhost",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        result_names = [item["name"] for item in response.json()["results"]]
+        # 더 가깝더라도 부분 일치보다 이름이 정확히 맞는 장소가 먼저 나와야 합니다.
+        self.assertEqual(result_names[0], exact_place.name)
+        self.assertIn(nearer_partial_place.name, result_names)
+
+    @patch("recommendations.views.search_places_by_keyword", return_value={"documents": []})
+    def test_general_map_search_ranks_tagged_place_above_incidental_name_match(self, mock_kakao):
+        tagged_place = self._create_place(
+            "중앙 지하상가 화장실",
+            "toilet",
+            "attr-tagged",
+            lat=35.1557,
+            lng=129.0642,
+        )
+        self._add_tag(tagged_place, "장애인화장실있음")
+        name_only_place = self._create_place(
+            "장애인보호작업장",
+            "toilet",
+            "attr-name-only",
+            lat=35.1558,
+            lng=129.0643,
+        )
+
+        response = self.client.get(
+            "/api/recommendations/map-search/",
+            {"q": "장애인 화장실", "source": "db", "lat": 35.1556, "lng": 129.0641, "limit": 10},
+            HTTP_HOST="localhost",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        result_names = [item["name"] for item in response.json()["results"]]
+        # 속성 검색이므로 상호명에 `장애인`이 들어간 장소보다 태그가 붙은 장소가 우선입니다.
+        self.assertLess(
+            result_names.index(tagged_place.name),
+            result_names.index(name_only_place.name),
+        )
+
+    @patch("recommendations.views.search_places_by_keyword", return_value={"documents": []})
+    def test_general_map_search_prefers_nearest_for_plain_category_query(self, mock_kakao):
+        near_place = self._create_place(
+            "가까운 지하상가",
+            "toilet",
+            "category-near",
+            lat=35.1557,
+            lng=129.0642,
+        )
+        far_named_place = self._create_place(
+            "먼 공중화장실",
+            "toilet",
+            "category-far-named",
+            lat=35.1900,
+            lng=129.1000,
+        )
+
+        response = self.client.get(
+            "/api/recommendations/map-search/",
+            {"q": "화장실", "source": "db", "lat": 35.1556, "lng": 129.0641, "limit": 10},
+            HTTP_HOST="localhost",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        result_names = [item["name"] for item in response.json()["results"]]
+        # 업종만 입력한 검색에서는 이름에 `화장실`이 들어갔다고 먼 곳이 앞서면 안 됩니다.
+        self.assertLess(
+            result_names.index(near_place.name),
+            result_names.index(far_named_place.name),
+        )
+
+    @patch("recommendations.views.search_places_by_keyword", return_value={"documents": []})
+    def test_general_map_search_does_not_match_internal_source_fields(self, mock_kakao):
+        internal_only_place = Place.objects.create(
+            name="내부 필드 테스트 장소",
+            category="toilet",
+            address="부산 테스트구 내부로 1",
+            lat=35.1557,
+            lng=129.0642,
+            source="ptstandard",
+            external_id="zqinternalfieldone",
+            source_name="공공데이터포털",
+        )
+
+        # `source`, `external_id`는 내부 식별자이므로 검색 대상이 아니어야 합니다.
+        for internal_value in ["ptstandard", "zqinternalfieldone"]:
+            response = self.client.get(
+                "/api/recommendations/map-search/",
+                {"q": internal_value, "source": "db", "lat": 35.1556, "lng": 129.0641, "limit": 10},
+                HTTP_HOST="localhost",
+            )
+
+            self.assertEqual(response.status_code, 200)
+            self.assertNotIn(
+                internal_only_place.name,
+                [item["name"] for item in response.json()["results"]],
+                msg=f"내부 필드 값 {internal_value!r}이 검색에 걸렸습니다.",
+            )
+
+    @patch("recommendations.views.search_places_by_keyword", return_value={"documents": []})
+    def test_general_map_search_matches_cafe_and_shelter_category_aliases(self, mock_kakao):
+        cafe_place = self._create_place(
+            "이름에없는가게",
+            "cafe",
+            "alias-cafe",
+            lat=35.1557,
+            lng=129.0642,
+        )
+        shelter_place = self._create_place(
+            "다른이름의장소",
+            "shelter",
+            "alias-shelter",
+            lat=35.1558,
+            lng=129.0643,
+        )
+
+        cafe_response = self.client.get(
+            "/api/recommendations/map-search/",
+            {"q": "카페", "source": "db", "lat": 35.1556, "lng": 129.0641, "limit": 20},
+            HTTP_HOST="localhost",
+        )
+        shelter_response = self.client.get(
+            "/api/recommendations/map-search/",
+            {"q": "쉼터", "source": "db", "lat": 35.1556, "lng": 129.0641, "limit": 20},
+            HTTP_HOST="localhost",
+        )
+
+        self.assertIn(
+            cafe_place.name,
+            [item["name"] for item in cafe_response.json()["results"]],
+        )
+        self.assertIn(
+            shelter_place.name,
+            [item["name"] for item in shelter_response.json()["results"]],
+        )
+
+    @patch("recommendations.views.search_places_by_keyword", return_value={"documents": []})
     def test_general_map_search_without_radius_does_not_apply_default_radius(self, mock_kakao):
         far_place = Place.objects.create(
             name="멀리 있는 테스트 카페",

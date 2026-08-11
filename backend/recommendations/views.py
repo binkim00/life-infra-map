@@ -26,6 +26,10 @@ from .serializers import (
     UserSearchLogSerializer,
 )
 from .services.kakao_local import search_places_by_keyword
+from .services.map_search import (
+    load_places_by_ids,
+    search_saved_places,
+)
 from .services.place_mapper import (
     get_saved_tag_data,
     map_kakao_place_to_recommendation,
@@ -64,16 +68,6 @@ SCENARIO_KEYWORDS = {
     "waiting_place": "카페",
     "walk_healing": "공원",
     "smoking_area": "흡연구역",
-}
-
-PLACE_CATEGORY_ALIASES = {
-    "toilet": ["toilet", "화장실", "공중화장실", "공용화장실"],
-    "freewifi": ["freewifi", "wifi", "wi-fi", "와이파이", "무료와이파이", "무선인터넷"],
-    "smoking_area": ["smoking", "smoking_area", "흡연", "흡연구역", "흡연실"],
-    "beach": ["beach", "해수욕장", "해변", "바다"],
-    "parking": ["parking", "주차", "주차장"],
-    "city_park": ["city_park", "citypark", "공원", "도시공원"],
-    "tourism": ["tourism", "관광", "관광지", "여행", "명소"],
 }
 
 DB_MARKER_ALLOWED_CATEGORIES = [
@@ -685,17 +679,6 @@ def admin_place_report_reject(request, report_id):
     return review_place_report(request, report_id, "rejected")
 
 
-def get_matching_categories(keyword):
-    normalized_keyword = keyword.lower().replace(" ", "")
-    matched_categories = []
-
-    for category, aliases in PLACE_CATEGORY_ALIASES.items():
-        if any(alias.lower().replace(" ", "") in normalized_keyword for alias in aliases):
-            matched_categories.append(category)
-
-    return matched_categories
-
-
 def serialize_place(place, distance=None):
     kakao_place_url = get_kakao_place_url(place)
     data = {
@@ -758,66 +741,28 @@ def parse_limited_int(value, *, default=30, minimum=1, maximum=100):
     return min(max(parsed, minimum), maximum)
 
 
-def build_place_keyword_filter(keyword):
-    matched_categories = get_matching_categories(keyword)
-    return (
-        Q(name__icontains=keyword)
-        | Q(address__icontains=keyword)
-        | Q(detail_location__icontains=keyword)
-        | Q(category__icontains=keyword)
-        | Q(source__icontains=keyword)
-        | Q(source_name__icontains=keyword)
-        | Q(external_id__icontains=keyword)
-        | Q(place_tags__tag__name__icontains=keyword)
-        | Q(category__in=matched_categories)
+def search_saved_map_places(*, keyword="", lat=None, lng=None, radius=0, limit=30, queryset=None):
+    candidates, total_count, query_info = search_saved_places(
+        keyword=keyword,
+        lat=lat,
+        lng=lng,
+        radius=radius,
+        limit=limit,
+        queryset=queryset,
     )
 
+    places = load_places_by_ids([candidate["id"] for candidate in candidates])
+    candidate_by_id = {candidate["id"]: candidate for candidate in candidates}
 
-def search_saved_map_places(*, keyword="", lat=None, lng=None, radius=0, limit=30):
-    places = Place.objects.all().order_by("-updated_at", "-id")
+    results = []
 
-    if keyword:
-        places = places.filter(build_place_keyword_filter(keyword)).distinct()
+    for place in places:
+        candidate = candidate_by_id[place.id]
+        result = serialize_place(place, distance=candidate["distance"])
+        result["duplicate_count"] = candidate["duplicate_count"]
+        results.append(result)
 
-    distance_by_place_id = {}
-
-    if lat is not None and lng is not None:
-        nearby_place_ids = []
-
-        for place in places.only("id", "lat", "lng").iterator(chunk_size=1000):
-            distance = calculate_distance_m(lat, lng, place.lat, place.lng)
-
-            if radius and distance > radius:
-                continue
-
-            distance_by_place_id[place.id] = distance
-            nearby_place_ids.append(place.id)
-
-        nearby_place_ids.sort(key=lambda place_id: distance_by_place_id[place_id])
-        limited_place_ids = nearby_place_ids[:limit]
-        places_by_id = {
-            place.id: place
-            for place in (
-                Place.objects
-                .filter(id__in=limited_place_ids)
-                .prefetch_related("place_tags__tag")
-            )
-        }
-
-        return [
-            serialize_place(
-                places_by_id[place_id],
-                distance=distance_by_place_id[place_id],
-            )
-            for place_id in limited_place_ids
-            if place_id in places_by_id
-        ], len(nearby_place_ids)
-
-    total_count = places.count()
-    return [
-        serialize_place(place)
-        for place in places.prefetch_related("place_tags__tag")[:limit]
-    ], total_count
+    return results, total_count, query_info
 
 
 def serialize_kakao_map_place(place, *, lat=None, lng=None):
@@ -861,11 +806,12 @@ def map_place_search(request):
 
     db_results = []
     db_total_count = 0
+    query_info = {}
     kakao_results = []
     kakao_error = ""
 
     if source in {"all", "db"}:
-        db_results, db_total_count = search_saved_map_places(
+        db_results, db_total_count, query_info = search_saved_map_places(
             keyword=keyword,
             lat=lat,
             lng=lng,
@@ -896,6 +842,15 @@ def map_place_search(request):
             logger.info("Kakao map search failed.", exc_info=True)
             kakao_error = str(exc)
 
+    # 저장 장소는 관련도 순서를 그대로 유지하고, 카카오 장소만 거리순으로 정렬해 뒤에 붙입니다.
+    # 여기서 전체를 거리순으로 다시 정렬하면 검색어와 정확히 맞는 장소가 밀려납니다.
+    if lat is not None and lng is not None:
+        kakao_results = sorted(kakao_results, key=lambda place: (
+            place.get("distance") is None,
+            place.get("distance") if place.get("distance") is not None else 999999999,
+            str(place.get("name", "")),
+        ))
+
     combined_results = [
         *[
             {
@@ -915,14 +870,6 @@ def map_place_search(request):
         ],
     ]
 
-    if lat is not None and lng is not None:
-        combined_results.sort(key=lambda place: (
-            place.get("distance") is None,
-            place.get("distance") if place.get("distance") is not None else 999999999,
-            0 if place.get("result_source") == "db" else 1,
-            str(place.get("name", "")),
-        ))
-
     return Response({
         "query": keyword,
         "count": len(combined_results),
@@ -939,6 +886,7 @@ def map_place_search(request):
             "radius": radius,
             "limit": limit,
         },
+        "query_info": query_info,
         "kakao_error": kakao_error,
         "results": combined_results,
     })
@@ -972,25 +920,7 @@ def place_list(request):
 
     limit = min(max(limit, 1), 300)
 
-    places = (
-        Place.objects
-        .filter(category__in=DB_MARKER_ALLOWED_CATEGORIES)
-        .order_by("-updated_at", "-id")
-    )
-
-    if keyword:
-        matched_categories = get_matching_categories(keyword)
-        places = places.filter(
-            Q(name__icontains=keyword)
-            | Q(address__icontains=keyword)
-            | Q(detail_location__icontains=keyword)
-            | Q(category__icontains=keyword)
-            | Q(source__icontains=keyword)
-            | Q(source_name__icontains=keyword)
-            | Q(external_id__icontains=keyword)
-            | Q(place_tags__tag__name__icontains=keyword)
-            | Q(category__in=matched_categories)
-        ).distinct()
+    places = Place.objects.filter(category__in=DB_MARKER_ALLOWED_CATEGORIES)
 
     if category:
         places = places.filter(category=category)
@@ -1001,47 +931,14 @@ def place_list(request):
     if status:
         places = places.filter(data_quality_status=status)
 
-    distance_by_place_id = {}
-
-    if lat is not None and lng is not None:
-        nearby_place_ids = []
-
-        for place in places.only("id", "lat", "lng").iterator(chunk_size=1000):
-            distance = calculate_distance_m(lat, lng, place.lat, place.lng)
-
-            if radius and distance > radius:
-                continue
-
-            distance_by_place_id[place.id] = distance
-            nearby_place_ids.append(place.id)
-
-        nearby_place_ids.sort(key=lambda place_id: distance_by_place_id[place_id])
-        total_count = len(nearby_place_ids)
-        limited_place_ids = nearby_place_ids[:limit]
-
-        places_by_id = {
-            place.id: place
-            for place in (
-                Place.objects
-                .filter(id__in=limited_place_ids)
-                .prefetch_related("place_tags__tag")
-            )
-        }
-
-        results = [
-            serialize_place(
-                places_by_id[place_id],
-                distance=distance_by_place_id[place_id],
-            )
-            for place_id in limited_place_ids
-            if place_id in places_by_id
-        ]
-    else:
-        total_count = places.count()
-        results = [
-            serialize_place(place)
-            for place in places.prefetch_related("place_tags__tag")[:limit]
-        ]
+    results, total_count, query_info = search_saved_map_places(
+        keyword=keyword,
+        lat=lat,
+        lng=lng,
+        radius=radius,
+        limit=limit,
+        queryset=places,
+    )
 
     return Response({
         "total_count": total_count,
@@ -1080,6 +977,7 @@ def place_list(request):
             "lng": lng,
             "radius": radius,
         },
+        "query_info": query_info,
         "results": results,
     })
 
@@ -1421,13 +1319,6 @@ TRUSTED_AI_SEARCH_EVIDENCE_SOURCES = {
     "clarification_patch",
     "verified_db_evidence",
     "external_evidence",
-}
-
-BLOCKED_AI_SEARCH_EVIDENCE_SOURCES = {
-    "fallback_placeholder",
-    "legacy_inferred",
-    "raw_query_repeat",
-    "broad_default",
 }
 
 BROAD_DEFAULT_AI_SEARCH_TERMS = {
