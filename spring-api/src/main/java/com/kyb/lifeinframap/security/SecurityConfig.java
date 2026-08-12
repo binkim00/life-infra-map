@@ -38,8 +38,9 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/auth/login").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/accounts/signup").permitAll()
                         .requestMatchers("/api/health").permitAll()
-                        // 이관 중 Django 계산 결과와 대조하기 위해 열어 둡니다. 이관이 끝나면 닫으세요.
-                        .requestMatchers("/api/tiers/**").permitAll()
+                        // `/api/tiers/**` 는 이관 중 Django 계산 결과와 대조하려고 열어 두었다가 닫았습니다.
+                        // 열려 있으면 누구나 남의 등급·기여도를 조회할 수 있고,
+                        // 프론트는 이 엔드포인트를 쓰지 않습니다(등급은 사용자 응답의 `tier` 로 전달됩니다).
                         // 게시글 목록/상세는 로그인 없이도 볼 수 있습니다. Django 가 AllowAny 였습니다.
                         // 인증 정보가 있으면 필터가 채워 주므로 좋아요 표시 같은 개인화도 그대로 동작합니다.
                         .requestMatchers(HttpMethod.GET, "/api/boards/posts", "/api/boards/posts/*").permitAll()

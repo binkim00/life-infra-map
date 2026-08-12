@@ -168,13 +168,14 @@ Java/Spring을 담당하는 팀원과 Python/Django를 담당하는 팀원이 �
 | 영역 | 담당 | 상태 |
 |---|---|---|
 | 인증 (로그인, 토큰 발급) | Spring | 구현됨 (`POST /api/auth/login`) |
-| 계정 (비밀번호 변경, 내 정보, 닉네임, 프로필, 마이페이지, 로그아웃) | Spring | 구현됨 |
-| 회원가입 | Django | 프로필 사진 multipart 업로드 때문에 아직 Django |
-| 게시판 (글·댓글·좋아요·신고) | Spring | 구현됨 (`/api/boards/**`) |
+| 계정 (회원가입, 비밀번호 변경, 내 정보, 닉네임, 프로필, 마이페이지, 로그아웃) | Spring | 구현됨. 회원가입은 파일 업로드가 붙어 이관 완료 |
+| 게시판 (글·댓글·좋아요·신고) | Spring | 구현됨 (`/api/boards/**`). 목록·상세는 비로그인도 조회 가능 |
 | 알림 · 문의 | Spring | 구현됨 (`/api/notifications`, `/api/inquiries`) |
 | 관리자 (사용자·제재·문의·신고) | Spring | 구현됨 (`/api/admin/**`) |
-| 사용자 등급 · 기여도 | Spring | 구현됨 (`/api/tiers`) |
-| 저장 장소 · 장소 제보 | Spring | 구현됨 (`/api/recommendations/saved-places`, `/place-reports`) |
+| 사용자 등급 · 기여도 | Spring | 구현됨 (`/api/tiers`, 인증 필요) |
+| 저장 장소 | Spring | 구현됨 (`/api/recommendations/saved-places`) |
+| 파일 업로드 (프로필·게시글·제보 사진) | Spring | 구현됨. Django 와 같은 버킷·키 규칙 |
+| **장소 제보** | **Django 유지** | 승인이 `Place`/`PlaceTag` 를 직접 만들기 때문입니다. 아래 참고 |
 | AI 자연어 추천 검색 | **Django 유지** | — |
 | 일반 지도 검색 | **Django 유지** | — |
 | 장소/태그 데이터 (`place`, `tag`, `placetag`) | **Django 유지** | — |
@@ -183,7 +184,26 @@ Java/Spring을 담당하는 팀원과 Python/Django를 담당하는 팀원이 �
 
 검색을 Django에 남기는 이유는 AI 검색 오케스트레이터, PostGIS 반경 질의, 데이터 적재 커맨드가 모두 Django에 있고 옮길 이유가 없기 때문입니다.
 
-등급·기여도는 게시판 활동과 승인된 장소 제보를 함께 봐야 계산됩니다. 두 데이터가 모두 Spring 소유라 자기 완결로 계산합니다.
+### 장소 제보를 Django에 남긴 이유
+
+한 번 Spring으로 옮겼다가 되돌렸습니다. 제보 승인이 상태 변경만 하는 것이 아니라 **검색 데이터를 직접 만들기** 때문입니다.
+
+```text
+review_place_report()
+  └─ apply_place_report_approval(report)
+       ├─ create_place_from_report()      → Place 생성
+       └─ attach_report_tags_to_place()   → PlaceTag 부착
+```
+
+장소와 태그는 Django 소유이므로, 이 쓰기를 Spring이 하면 경계가 무너집니다. 그대로 두었으면 **태그 제보를 승인해도 검색에 잡히지 않는** 회귀가 났을 것입니다.
+
+`PlaceReport` 엔티티는 Spring에 남겼습니다. 기여도 계산이 승인 건수를 **읽기만** 하기 때문입니다.
+
+이 문제를 찾아낸 것은 URL을 내렸을 때 깨진 Django 테스트(`test_tag_suggestion_approval_makes_tag_searchable_on_general_map` 등)입니다. 얇은 래퍼만 보고 판단하면 놓치는 종류였습니다.
+
+### 등급·기여도
+
+등급·기여도는 게시판 활동과 승인된 장소 제보를 함께 봐야 계산됩니다. 게시판은 Spring 소유이고 제보는 Django 소유이지만, 기여도는 `PlaceReport` 를 읽기만 하므로 Spring 에서 계산합니다.
 
 프론트엔드는 `src/api/serviceRoutes.js`에서 경로별로 담당 서비스를 판단해 보냅니다. 인증 헤더는 `Bearer` 하나로 통일했고, 두 서비스가 같은 JWT를 검증합니다.
 
@@ -326,9 +346,44 @@ pgAdmin만 `db`인 이유는 컨테이너 네트워크 안에서 바로 가기 �
 
 ### 7.5 Spring 은 `.env` 를 읽지 않는다
 
-`application.yml`의 `${POSTGRES_HOST:127.0.0.1}`은 **OS 환경변수 또는 기본값**을 쓰는 문법이며, Django의 `.env` 파일을 읽지 않습니다. 기본값이 로컬 설정과 같아서 현재는 그대로 동작합니다.
+`application.yml`의 `${POSTGRES_HOST:127.0.0.1}`은 **OS 환경변수 또는 기본값**을 쓰는 문법이며, Django의 `backend/.env` 파일을 읽지 않습니다.
 
-서버로 올릴 때는 환경변수를 따로 주입해야 하고, Django `.env`와 값이 어긋나지 않게 관리해야 합니다. compose로 두 앱을 함께 띄우면 `environment:`에서 한 곳으로 모을 수 있습니다.
+즉 **설정값이 두 곳에서 따로 관리됩니다.**
+
+```text
+Django  backend/.env 를 load_dotenv 로 읽음
+Spring  OS 환경변수를 읽고, 없으면 application.yml 의 기본값을 씀
+```
+
+두 서비스가 같은 DB와 같은 토큰을 쓰므로, 아래 값들은 **양쪽이 반드시 같아야 합니다.** 현재는 `application.yml` 기본값을 `backend/.env` 값과 같게 맞춰 두었기 때문에 환경변수를 설정하지 않아도 로컬에서 동작합니다.
+
+| 용도 | Django (`backend/.env`) | Spring (`application.yml`) | 로컬 기본값 |
+|---|---|---|---|
+| DB 접속 | `POSTGRES_HOST/PORT/DB/USER/PASSWORD` | 같은 이름 | `127.0.0.1:5432` / `life_infra_map` |
+| **토큰 서명** | `JWT_SECRET` | 같은 이름 | `local-dev-secret-key-at-least-32-bytes-long` |
+| 토큰 알고리즘 | `JWT_ALGORITHM` | `JwtService`에 HS256 고정 | `HS256` |
+| 저장소 접속 | `S3_ACCESS_KEY` / `S3_SECRET_KEY` | 같은 이름 | `life_infra_map` / `life_infra_map_secret` |
+| 버킷·엔드포인트 | `S3_BUCKET` / `S3_ENDPOINT_URL` / `S3_REGION` | 같은 이름 | `life-infra-map-media` / `http://127.0.0.1:9000` |
+| **파일 공개 주소** | `S3_PUBLIC_DOMAIN` (스킴 없음) | `MEDIA_BASE_URL` (스킴 포함) | `127.0.0.1:9000/life-infra-map-media` |
+
+마지막 항목은 **변수 이름과 형식이 다릅니다.** Django는 `S3_URL_PROTOCOL`과 `S3_PUBLIC_DOMAIN`을 합쳐 URL을 만들고, Spring은 `MEDIA_BASE_URL` 하나에 스킴까지 포함합니다. 한쪽만 바꾸면 업로드는 성공하는데 이미지 주소가 깨집니다.
+
+### 이 구조에서 실제로 발생했던 문제
+
+`JWT_SECRET`의 `application.yml` 기본값이 Django `.env` 값과 달랐던 적이 있습니다(`change-me-in-env-at-least-32-bytes-long`).
+
+증상이 까다로웠습니다.
+
+```text
+Spring 로그인       성공 (토큰 정상 발급)
+Django API 호출     401 — 서명 검증 실패
+```
+
+로그인이 되기 때문에 인증 설정 문제로 보이지 않고, 환경변수를 export 해 둔 셸에서는 재현되지 않습니다. 지금은 기본값을 맞춰 해결했지만, **새 설정값을 추가할 때마다 위 표에 추가하고 양쪽 기본값을 같게 두는 것**이 같은 문제를 막는 방법입니다.
+
+### 배포 환경
+
+기본값에 의존하지 말고 환경변수로 명시적으로 주입합니다. compose로 두 앱을 함께 띄우면 `environment:`에서 한 곳으로 모을 수 있습니다. 특히 `JWT_SECRET`과 `S3_SECRET_KEY`는 저장소에 있는 로컬 개발용 값을 그대로 쓰면 안 됩니다.
 
 ---
 
@@ -397,7 +452,10 @@ Spring이 발급한 토큰을 Django도 검증합니다. `backend/accounts/authe
 | 알고리즘 | HS256 |
 | 클레임 | `sub`(사용자 id), `username`, `exp`, `iat` |
 | 헤더 | `Authorization: Bearer <token>` |
-| 비밀키 | `JWT_SECRET` — **양쪽이 같은 값이어야 합니다** |
+| 비밀키 | `JWT_SECRET` — **양쪽이 같은 값이어야 합니다** (7.5 참고) |
+| 유효 시간 | `JWT_ACCESS_MINUTES` 기본 120분 |
+
+비밀키가 어긋나면 **로그인은 성공하는데 Django API만 401**이 되므로 원인을 찾기 어렵습니다. `application.yml` 기본값을 `backend/.env`와 같게 맞춰 두었습니다.
 
 기존 DRF `TokenAuthentication`도 함께 남겨 두었습니다. Django 로그인을 쓰는 화면이 아직 있어서 이관이 끝날 때까지 두 방식을 모두 받습니다.
 
@@ -421,14 +479,58 @@ Spring이 발급한 토큰을 Django도 검증합니다. `backend/accounts/authe
 |---|---|
 | Spring이 슈퍼유저로 접속 중 | `life_infra_map` 역할이 superuser입니다. 현재는 `ddl-auto: validate`가 유일한 안전장치이며 설정 한 줄로 뚫립니다. 배포 전에 DDL 권한이 없는 별도 역할(`SELECT/INSERT/UPDATE/DELETE` + 시퀀스 `USAGE`만 부여)로 분리하는 것이 좋습니다. |
 | SQLite 폴백이 사실상 무효 | `DB_ENGINE=sqlite`로 되돌리는 경로는 남아 있지만 Spring은 PostgreSQL만 접속합니다. Spring이 포함된 통합 환경에서는 성립하지 않고, Django 단독 테스트용으로만 의미가 있습니다. |
-| 환경변수 이중 관리 | Django는 `.env`, Spring은 OS 환경변수를 읽습니다. 값이 어긋나면 서로 다른 DB를 보게 됩니다. compose로 통합할 때 한 곳으로 모읍니다. |
-| 프론트 라우팅 | `VITE_API_BASE_URL`이 Django만 가리킵니다. Spring으로 넘길 경로 분기가 필요합니다. |
+| 환경변수 이중 관리 | Django는 `.env`, Spring은 OS 환경변수를 읽습니다. 값이 어긋나면 서로 다른 DB를 보거나 토큰 검증에 실패합니다. 맞춰야 하는 값 목록은 7.5에 있습니다. |
+| **Django 뷰 코드가 아직 남아 있다** | `config/urls.py`에서 URL 등록만 내려 두었고 `accounts/views.py`(181줄)·`boards/views.py`(1,039줄)는 남아 있습니다. 외부에서 닿지 않으므로 되돌릴 때는 `urls.py`만 고치면 됩니다. Spring 테스트 93개가 붙어 **이제 삭제 가능**하며, 판정 근거는 `config/urls.py` 상단 주석에 적어 두었습니다. |
+| multipart 업로드 테스트 없음 | 저장소(MinIO)가 필요해 프로필·게시글 이미지 업로드는 자동 테스트가 없습니다. JSON 키 전달 경로만 확인했습니다. |
 | 연결 수 | `max_connections=100`, Django `CONN_MAX_AGE=60` + HikariCP 기본 10이므로 로컬에서는 여유가 있습니다. |
 | 배포 구성 | 배포·시연용 서버에는 DB와 앱을 함께 두어 네트워크 지연을 없앱니다. 개발용 공유 DB와는 다른 목적입니다. |
 
 ---
 
-## 12. 관련 문서
+## 12. 검증 기록
+
+| 확인 항목 | 결과 |
+|---|---|
+| Django 테스트 | 355개 통과 |
+| **Spring 테스트** | **93개 통과** |
+| **Spring 부팅** | 성공 — `ddl-auto: validate`가 실제 Django 스키마를 통과 |
+| **교차 인증** | Spring이 발급한 JWT를 Django `SharedJWTAuthentication`이 검증 성공. 클레임 `{sub, username, iat, exp}` 확인 |
+| 프론트 라우팅 | `serviceRoutes.js`의 경로 분기, `Bearer` 헤더 전환, Spring 후행 슬래시 제거 동작 |
+
+`ddl-auto: validate` 통과가 특히 중요합니다. Spring 엔티티가 Django 마이그레이션이 만든 스키마와 어긋나면 부팅 자체가 실패하므로, 부팅 성공은 두 서비스의 스키마 인식이 일치한다는 증거입니다.
+
+### Spring 테스트 구성
+
+`@SpringBootTest` + `MockMvc` 로 개발용 Postgres 에 붙고 테스트마다 롤백합니다. 스키마 주인이 Django 라 Hibernate 가 테이블을 만들 수 없으므로(`validate`) 별도 테스트 스키마를 쓰지 않습니다. 실행 전에 `docker compose up -d db` 가 필요합니다.
+
+| 클래스 | 개수 | 범위 |
+|---|---|---|
+| `AuthApiTest` | 21 | 로그인·회원가입·내정보·비밀번호·닉네임·프로필·마이페이지·로그아웃 |
+| `BoardApiTest` | 17 | 글·댓글·반응, 수정·삭제 권한, 비로그인 조회 |
+| `AdminApiTest` | 17 | 관리자 권한 경계, 목록 응답 형태, 등급 조회 인증 |
+| `UserDataApiTest` | 18 | 알림·문의·저장 장소의 사용자별 격리 |
+| `ReportApiTest` | 12 | 신고 규칙(본인·중복), 처리 권한, 관리자 알림 |
+| `ContributionRulesTest` · `DjangoPasswordEncoderTest` | 8 | 기여도 규칙, Django 해시 호환 |
+
+### 테스트로 찾은 결함
+
+이관 검증 중 테스트가 잡아낸 것들입니다. 모두 눈으로는 발견되지 않는 종류였습니다.
+
+| 결함 | 증상 | 조치 |
+|---|---|---|
+| 인증 실패 시 403 (Django 는 401) | 토큰이 만료되면 프론트 인터셉터가 401 에서만 동작하므로, 토큰이 지워지지 않고 로그인 유도도 되지 않음 | `AuthenticationEntryPoint` 추가 |
+| 문의·신고 목록을 페이지네이션으로 감쌈 | `AdminInquiryView`·`ReportListView` 가 `.map()` 을 호출해 `TypeError`, `MyInquiryView` 는 빈 목록 | 배열로 되돌림 |
+| 문의 상세 접근 거부가 404 (Django 는 403) | 프론트가 보여 줄 메시지가 달라짐 | Django 와 같은 403·메시지로 맞춤 |
+| `JWT_SECRET` 기본값 불일치 | 로그인은 되지만 Django API 만 401 | `application.yml` 기본값을 맞춤 |
+| `/api/tiers/**` 전면 공개 | 인증 없이 남의 등급·기여도 조회 가능 | 인증 필요로 변경 |
+
+### 테스트가 없는 부분
+
+프로필 사진과 게시글 이미지의 **multipart 업로드**는 저장소(MinIO)가 필요해 테스트가 없습니다. JSON 으로 키를 넘기는 경로만 확인했습니다. 업로드 동작을 바꿀 때는 수동으로 확인해야 합니다.
+
+---
+
+## 13. 관련 문서
 
 - `docs/02_data/postgres-migration.md` — SQLite에서 PostgreSQL로 옮긴 이유와 결과
 - `docs/02_data/pgadmin-guide.md` — DB 데이터를 브라우저에서 확인하는 방법

@@ -62,8 +62,7 @@ public class InquiryController {
         }
         var result = inquiryRepository.findByAuthorIdOrderByCreatedAtDesc(
                 user.getId(), PageRequest.of(Math.max(page, 1) - 1, clamp(pageSize)));
-        return ResponseEntity.ok(paged(result.getContent(), result.getTotalElements(),
-                Math.max(page, 1), clamp(pageSize), result.getTotalPages()));
+        return ResponseEntity.ok(serializeAll(result.getContent()));
     }
 
     @GetMapping("/inquiries/{inquiryId}")
@@ -78,8 +77,14 @@ public class InquiryController {
             return notFound();
         }
         // 본인 문의이거나 관리자여야 볼 수 있습니다.
+        //
+        // Django `inquiry_detail` 은 여기서 403 과 아래 메시지를 돌려줍니다.
+        // 알림(`notification_read`)은 404 인데 문의는 403 인 것이 Django 의 의도된 차이입니다.
+        // 알림은 조회 자체를 recipient 로 걸러 존재 여부를 알려주지 않고,
+        // 문의는 "남의 문의"라는 것을 알려 줍니다. 프론트가 이 메시지를 그대로 보여 줍니다.
         if (!inquiry.getAuthor().getId().equals(user.getId()) && !user.isStaff()) {
-            return notFound();
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("detail", "본인이 작성한 문의만 확인할 수 있습니다."));
         }
         return ResponseEntity.ok(serialize(inquiry));
     }
@@ -103,8 +108,7 @@ public class InquiryController {
         var result = status == null || status.isBlank()
                 ? inquiryRepository.findAll(pageable)
                 : inquiryRepository.findByStatus(status, pageable);
-        return ResponseEntity.ok(paged(result.getContent(), result.getTotalElements(),
-                Math.max(page, 1), clamp(pageSize), result.getTotalPages()));
+        return ResponseEntity.ok(serializeAll(result.getContent()));
     }
 
     @PatchMapping("/admin/inquiries/{inquiryId}")
@@ -135,18 +139,22 @@ public class InquiryController {
         return ResponseEntity.ok(serialize(inquiry));
     }
 
-    private Map<String, Object> paged(List<Inquiry> items, long total, int page, int pageSize, int totalPages) {
+    /**
+     * 목록은 배열을 그대로 내려줍니다.
+     *
+     * Django `my_inquiry_list` / `admin_inquiry_list` 가 `Response(serializer.data)` 로
+     * 배열을 주고, 프론트도 배열을 전제로 씁니다.
+     * `MyInquiryView` 는 `v-for` 와 `.length` 를, `AdminInquiryView` 는 `response.data.map()` 을 씁니다.
+     *
+     * 페이지네이션 객체(`{count, page, page_size, total_pages, results}`)로 감싸면
+     * 문의 화면과 관리자 문의 화면이 깨집니다. `page`/`page_size` 파라미터는 받되 응답 형태는 바꾸지 않습니다.
+     */
+    private List<Map<String, Object>> serializeAll(List<Inquiry> items) {
         List<Map<String, Object>> results = new ArrayList<>();
         for (Inquiry inquiry : items) {
             results.add(serialize(inquiry));
         }
-        Map<String, Object> body = new LinkedHashMap<>();
-        body.put("count", total);
-        body.put("page", page);
-        body.put("page_size", pageSize);
-        body.put("total_pages", Math.max(totalPages, 1));
-        body.put("results", results);
-        return body;
+        return results;
     }
 
     private Map<String, Object> serialize(Inquiry inquiry) {

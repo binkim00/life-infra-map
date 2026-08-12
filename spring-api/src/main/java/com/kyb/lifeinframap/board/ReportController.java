@@ -129,17 +129,14 @@ public class ReportController {
                 ? reportRepository.findAll(pageable)
                 : reportRepository.findByStatus(status, pageable);
 
+        // 배열을 그대로 내려줍니다. Django `report_list` 가 `Response(serializer.data)` 이고,
+        // 프론트 `ReportListView` 의 `initializeReportState` 가 `reportList.map()` 을 씁니다.
+        // 페이지네이션 객체로 감싸면 신고 관리 화면이 깨집니다.
         List<Map<String, Object>> items = new ArrayList<>();
         for (Report report : result.getContent()) {
             items.add(serialize(report));
         }
-        Map<String, Object> body = new LinkedHashMap<>();
-        body.put("count", result.getTotalElements());
-        body.put("page", safePage);
-        body.put("page_size", safeSize);
-        body.put("total_pages", Math.max(result.getTotalPages(), 1));
-        body.put("results", items);
-        return ResponseEntity.ok(body);
+        return ResponseEntity.ok(items);
     }
 
     @PostMapping("/reports/{reportId}/process")
