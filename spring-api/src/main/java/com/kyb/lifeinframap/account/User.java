@@ -56,6 +56,30 @@ public class User {
     protected User() {
     }
 
+    /**
+     * 새 사용자를 만듭니다.
+     *
+     * Django `create_user` 와 같은 기본값을 씁니다.
+     * 비밀번호는 이미 Django 형식으로 해싱된 값을 받습니다.
+     */
+    public static User create(String username, String email, String encodedPassword) {
+        User user = new User();
+        user.username = username;
+        user.email = email == null ? "" : email;
+        user.password = encodedPassword;
+        user.firstName = "";
+        user.lastName = "";
+        user.superuser = false;
+        user.staff = false;
+        user.active = true;
+        user.dateJoined = OffsetDateTime.now();
+        return user;
+    }
+
+    public void changePassword(String encodedPassword) {
+        this.password = encodedPassword;
+    }
+
     public Integer getId() {
         return id;
     }
