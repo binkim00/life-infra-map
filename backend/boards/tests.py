@@ -1,3 +1,4 @@
+from unittest import skip
 from django.contrib.auth.models import User
 from django.test import TestCase
 from rest_framework.test import APIClient
@@ -28,6 +29,7 @@ class ReportNotificationTests(TestCase):
             content="신고 대상 내용입니다.",
         )
 
+    @skip("Spring 으로 이관됨 - spring-api 의 ReportController 테스트로 옮겨야 합니다.")
     def test_report_post_notifies_staff_users(self):
         self.client.force_authenticate(user=self.reporter)
 

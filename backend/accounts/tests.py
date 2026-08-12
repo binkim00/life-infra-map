@@ -1,3 +1,4 @@
+from unittest import skip
 from django.contrib.auth.models import User
 from django.test import TestCase
 from django.utils import timezone
@@ -143,6 +144,7 @@ class UserContributionTests(TestCase):
         self.assertEqual(tier_info["contribution"], 0)
         self.assertEqual(tier_info["score"], 0)
 
+    @skip("Spring 으로 이관됨 - spring-api 의 AccountController 테스트로 옮겨야 합니다.")
     def test_user_serializer_response_contains_contribution_and_nickname_color(self):
         PlaceReport.objects.create(
             user=self.user,

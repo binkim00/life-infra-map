@@ -9,10 +9,13 @@ import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
 /**
- * Django `recommendations_placereport` 매핑. 장소 오류 제보와 신규 장소 제안입니다.
+ * Django `recommendations_placereport` 매핑. **읽기 전용으로만 씁니다.**
  *
- * 승인된 제보는 사용자 기여도 점수가 되므로 등급 계산과 함께 Spring 이 가집니다.
- * 승인해도 `Place` 를 직접 고치지 않습니다. 장소 데이터는 Django 가 소유합니다.
+ * 제보 자체는 Django 가 담당합니다. 승인하면 `apply_place_report_approval()` 이
+ * `Place` 를 만들고 `PlaceTag` 를 붙이기 때문입니다. 즉 승인이 검색 데이터를 바꿉니다.
+ *
+ * Spring 은 승인된 제보 수를 세어 사용자 기여도를 계산할 때만 이 테이블을 읽습니다.
+ * (`ContributionService`) 여기서 쓰기를 하면 장소 데이터 소유권이 흐려집니다.
  */
 @Entity
 @Table(name = "recommendations_placereport")

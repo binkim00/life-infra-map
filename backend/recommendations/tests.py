@@ -5770,6 +5770,7 @@ class RecommendationSearchTests(TestCase):
         self.assertLess(data["results"][0]["distance_m"], data["results"][1]["distance_m"])
         self.assertEqual(data["results"][1]["id"], far_toilet.id)
 
+    @skip("Spring 으로 이관됨 - spring-api 의 SavedPlaceController 테스트로 옮겨야 합니다.")
     def test_authenticated_user_can_save_db_place(self):
         response = self.client.post(
             "/api/recommendations/saved-places/",
@@ -5809,6 +5810,7 @@ class RecommendationSearchTests(TestCase):
         saved_place.refresh_from_db()
         self.assertEqual(saved_place.memo, "창가 자리 확인")
 
+    @skip("Spring 으로 이관됨 - spring-api 의 SavedPlaceController 테스트로 옮겨야 합니다.")
     def test_authenticated_user_can_save_external_kakao_place(self):
         response = self.client.post(
             "/api/recommendations/saved-places/",
@@ -5836,6 +5838,7 @@ class RecommendationSearchTests(TestCase):
         self.assertEqual(str(saved_place.lat), "35.123457")
         self.assertEqual(str(saved_place.lng), "129.123457")
 
+    @skip("Spring 으로 이관됨 - spring-api 의 SavedPlaceController 테스트로 옮겨야 합니다.")
     def test_user_can_list_update_and_delete_own_saved_places(self):
         other_user = get_user_model().objects.create_user(
             username="other-saver",
@@ -5893,6 +5896,7 @@ class RecommendationSearchTests(TestCase):
         self.assertFalse(UserSavedPlace.objects.filter(id=own_saved_place.id).exists())
         self.assertEqual(UserSavedPlace.objects.count(), 1)
 
+    @skip("Spring 으로 이관됨 - spring-api 의 SavedPlaceController 테스트로 옮겨야 합니다.")
     def test_saved_place_requires_authenticated_user(self):
         response = self.client.post(
             "/api/recommendations/saved-places/",
@@ -11999,7 +12003,8 @@ class SharedJWTAuthenticationTests(TestCase):
 
     def _get(self, token=None):
         headers = {"HTTP_AUTHORIZATION": f"Bearer {token}"} if token else {}
-        return self.client.get("/api/recommendations/saved-places/", **headers)
+        # 저장 장소는 Spring 으로 이관됐으므로, Django 가 계속 담당하는 보호 엔드포인트로 확인합니다.
+        return self.client.get("/api/recommendations/preferences/", **headers)
 
     def test_valid_token_authenticates(self):
         response = self._get(self._token())
@@ -12039,7 +12044,7 @@ class SharedJWTAuthenticationTests(TestCase):
         token = Token.objects.create(user=self.user)
 
         response = self.client.get(
-            "/api/recommendations/saved-places/",
+            "/api/recommendations/preferences/",
             HTTP_AUTHORIZATION=f"Token {token.key}",
         )
 

@@ -16,12 +16,10 @@ const SPRING_PATH_PREFIXES = [
   '/admin/',
   '/tiers',
   '/recommendations/saved-places',
-  '/recommendations/place-reports',
-  '/recommendations/admin/place-reports',
 ]
 
-// 이관이 끝나 Django 로 돌려보낼 경로는 없습니다.
-// 되돌릴 일이 생기면 여기에 경로를 넣으면 그 경로만 Django 로 갑니다.
+// Django 가 계속 담당하는 경로입니다.
+// 장소 제보는 승인이 Place/PlaceTag 를 만들어 검색 데이터를 바꾸므로 Django 소유입니다.
 const DJANGO_OVERRIDE_PREFIXES = []
 
 const normalize = (url = '') => {
