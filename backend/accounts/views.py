@@ -4,6 +4,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
+from .tokens import access_token_seconds, issue_access_token
 from .serializers import (
     LoginSerializer,
     NicknameUpdateSerializer,
@@ -27,6 +28,11 @@ def signup(request):
     return Response(
         {
             "message": "회원가입이 완료되었습니다.",
+            # 로그인은 Spring 이 담당하므로 자격증명 종류를 하나로 맞춥니다.
+            "access_token": issue_access_token(user),
+            "token_type": "Bearer",
+            "expires_in": access_token_seconds(),
+            # 기존 화면 호환을 위해 남겨 둡니다. 이관이 끝나면 지웁니다.
             "token": token.key,
             "user": UserSerializer(user, context={"request": request}).data,
         },
@@ -67,6 +73,9 @@ def login(request):
 
     return Response({
         "message": "로그인되었습니다.",
+        "access_token": issue_access_token(user),
+        "token_type": "Bearer",
+        "expires_in": access_token_seconds(),
         "token": token.key,
         "user": UserSerializer(user, context={"request": request}).data,
     })

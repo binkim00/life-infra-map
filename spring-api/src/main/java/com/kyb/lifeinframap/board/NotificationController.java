@@ -3,10 +3,10 @@ package com.kyb.lifeinframap.board;
 import com.kyb.lifeinframap.account.User;
 import com.kyb.lifeinframap.account.UserRepository;
 import java.util.ArrayList;
+import java.time.OffsetDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -29,37 +29,24 @@ public class NotificationController {
     }
 
     @GetMapping
-    @Transactional(readOnly = true)
-    public ResponseEntity<?> list(
-            @RequestParam(defaultValue = "1") int page,
-            @RequestParam(name = "page_size", defaultValue = "20") int pageSize,
-            Authentication authentication) {
+    @Transactional
+    public ResponseEntity<?> list(Authentication authentication) {
         User user = currentUser(authentication);
         if (user == null) {
             return unauthorized();
         }
-        int safePage = Math.max(page, 1);
-        int safeSize = Math.min(Math.max(pageSize, 1), 100);
-
-        var result = notificationRepository.findByRecipientIdOrderByCreatedAtDesc(
-                user.getId(), PageRequest.of(safePage - 1, safeSize));
+        // Django 는 목록을 볼 때 3일 지난 알림을 정리합니다. 같은 규칙을 씁니다.
+        notificationRepository.deleteOlderThan(user.getId(), OffsetDateTime.now().minusDays(3));
 
         List<Map<String, Object>> items = new ArrayList<>();
-        for (Notification notification : result.getContent()) {
+        for (Notification notification : notificationRepository.findByRecipientIdOrderByCreatedAtDesc(user.getId())) {
             items.add(serialize(notification));
         }
-
-        Map<String, Object> body = new LinkedHashMap<>();
-        body.put("count", result.getTotalElements());
-        body.put("page", safePage);
-        body.put("page_size", safeSize);
-        body.put("total_pages", Math.max(result.getTotalPages(), 1));
-        body.put("unread_count", notificationRepository.countByRecipientIdAndReadFalse(user.getId()));
-        body.put("results", items);
-        return ResponseEntity.ok(body);
+        // 페이지 정보 없이 배열만 돌려줍니다. 프론트가 그대로 배열로 다룹니다.
+        return ResponseEntity.ok(items);
     }
 
-    @PostMapping("/{notificationId}/read")
+    @PatchMapping("/{notificationId}/read")
     @Transactional
     public ResponseEntity<?> read(@PathVariable Long notificationId, Authentication authentication) {
         User user = currentUser(authentication);
@@ -75,15 +62,15 @@ public class NotificationController {
         return ResponseEntity.ok(serialize(notification));
     }
 
-    @PostMapping("/read-all")
+    @PatchMapping("/read-all")
     @Transactional
     public ResponseEntity<?> readAll(Authentication authentication) {
         User user = currentUser(authentication);
         if (user == null) {
             return unauthorized();
         }
-        int updated = notificationRepository.markAllRead(user.getId());
-        return ResponseEntity.ok(Map.of("updated", updated, "unread_count", 0));
+        notificationRepository.markAllRead(user.getId());
+        return ResponseEntity.ok(Map.of("message", "모든 알림을 읽음 처리했습니다."));
     }
 
     private Map<String, Object> serialize(Notification notification) {

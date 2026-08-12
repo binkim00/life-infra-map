@@ -326,6 +326,7 @@ REST_FRAMEWORK = {
 # `spring-api` 의 app.jwt.secret 과 같은 값이어야 서로 발급한 토큰을 검증할 수 있습니다.
 JWT_SECRET = os.getenv("JWT_SECRET", "")
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
+JWT_ACCESS_MINUTES = _env_int("JWT_ACCESS_MINUTES", 120, 5, 1440)
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 

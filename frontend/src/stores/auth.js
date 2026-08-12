@@ -54,24 +54,25 @@ export const useAuthStore = defineStore('auth', () => {
 
     const response = await api.post('/accounts/signup/', payload, config)
 
-    token.value = response.data.token
+    // Spring 은 access_token, 이관 전 Django 는 token 으로 내려줍니다.
+    token.value = response.data.access_token || response.data.token
     user.value = response.data.user
     isLoggedIn.value = true
 
-    localStorage.setItem('authToken', response.data.token)
+    localStorage.setItem('authToken', token.value)
     localStorage.setItem('authUser', JSON.stringify(response.data.user))
 
     return response.data
   }
 
   const login = async (payload) => {
-    const response = await api.post('/accounts/login/', payload)
+    const response = await api.post('/auth/login', payload)
 
-    token.value = response.data.token
+    token.value = response.data.access_token || response.data.token
     user.value = response.data.user
     isLoggedIn.value = true
 
-    localStorage.setItem('authToken', response.data.token)
+    localStorage.setItem('authToken', token.value)
     localStorage.setItem('authUser', JSON.stringify(response.data.user))
 
     return response.data
