@@ -316,9 +316,16 @@ REST_FRAMEWORK = {
         'rest_framework.renderers.BrowsableAPIRenderer',
     ],
     'DEFAULT_AUTHENTICATION_CLASSES': [
+        # Spring 서비스가 발급한 토큰을 먼저 확인하고, 아니면 기존 방식으로 넘어갑니다.
+        'accounts.authentication.SharedJWTAuthentication',
         'rest_framework.authentication.TokenAuthentication',
     ],
 }
+
+# Spring 서비스와 공유하는 토큰 설정입니다.
+# `spring-api` 의 app.jwt.secret 과 같은 값이어야 서로 발급한 토큰을 검증할 수 있습니다.
+JWT_SECRET = os.getenv("JWT_SECRET", "")
+JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 

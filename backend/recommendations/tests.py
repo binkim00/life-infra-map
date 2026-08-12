@@ -6,7 +6,9 @@ import tempfile
 from unittest import skip
 from unittest.mock import Mock, patch
 
+import jwt
 import requests
+from django.contrib.auth import get_user_model
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client, TestCase, override_settings
@@ -11971,3 +11973,74 @@ class AreaGazetteerTests(TestCase):
         self.assertEqual(far["status"], "resolved")
         self.assertEqual(far["source"], "area_gazetteer")
         self.assertEqual((far["lat"], far["lng"]), (near["lat"], near["lng"]))
+
+
+@override_settings(JWT_SECRET="test-secret-key-at-least-32-bytes-long!!", JWT_ALGORITHM="HS256")
+class SharedJWTAuthenticationTests(TestCase):
+    """Spring 이 발급한 토큰을 Django 가 그대로 받는지 확인한다."""
+
+    def setUp(self):
+        self.client = Client()
+        self.user = get_user_model().objects.create_user(
+            username="jwtuser", password="pw-not-used-here", email="jwt@local.dev"
+        )
+        self.secret = "test-secret-key-at-least-32-bytes-long!!"
+
+    def _token(self, **overrides):
+        now = timezone.now()
+        payload = {
+            "sub": str(self.user.id),
+            "username": self.user.username,
+            "iat": now,
+            "exp": now + timedelta(hours=2),
+        }
+        payload.update(overrides)
+        return jwt.encode(payload, self.secret, algorithm="HS256")
+
+    def _get(self, token=None):
+        headers = {"HTTP_AUTHORIZATION": f"Bearer {token}"} if token else {}
+        return self.client.get("/api/recommendations/saved-places/", **headers)
+
+    def test_valid_token_authenticates(self):
+        response = self._get(self._token())
+
+        self.assertEqual(response.status_code, 200)
+
+    def test_missing_token_is_rejected(self):
+        self.assertIn(self._get().status_code, (401, 403))
+
+    def test_expired_token_is_rejected(self):
+        now = timezone.now()
+        expired = self._token(iat=now - timedelta(hours=5), exp=now - timedelta(hours=1))
+
+        self.assertEqual(self._get(expired).status_code, 401)
+
+    def test_token_signed_with_other_secret_is_rejected(self):
+        now = timezone.now()
+        forged = jwt.encode(
+            {"sub": str(self.user.id), "iat": now, "exp": now + timedelta(hours=1)},
+            "완전히-다른-비밀키-32바이트-이상-되도록-길게",
+            algorithm="HS256",
+        )
+
+        self.assertEqual(self._get(forged).status_code, 401)
+
+    def test_token_for_unknown_user_is_rejected(self):
+        self.assertEqual(self._get(self._token(sub="999999")).status_code, 401)
+
+    def test_inactive_user_is_rejected(self):
+        self.user.is_active = False
+        self.user.save(update_fields=["is_active"])
+
+        self.assertEqual(self._get(self._token()).status_code, 401)
+
+    def test_existing_drf_token_still_works(self):
+        # 이관이 끝날 때까지 기존 방식도 함께 받아야 합니다.
+        token = Token.objects.create(user=self.user)
+
+        response = self.client.get(
+            "/api/recommendations/saved-places/",
+            HTTP_AUTHORIZATION=f"Token {token.key}",
+        )
+
+        self.assertEqual(response.status_code, 200)
