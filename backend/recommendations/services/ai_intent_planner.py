@@ -1637,6 +1637,7 @@ def _call_planner(payload, *, repair=False, max_completion_tokens=900):
         timeout=getattr(settings, "AI_INTENT_TIMEOUT", getattr(settings, "AI_REQUEST_TIMEOUT", 20)),
         response_schema=AI_INTENT_PLAN_RESPONSE_SCHEMA,
         schema_name="ai_intent_plan",
+        reasoning_effort=getattr(settings, "AI_INTENT_REASONING_EFFORT", "low"),
     )
 
 
@@ -1646,6 +1647,62 @@ def _is_retryable_ai_error(exc):
     response = getattr(exc, "response", None)
     status_code = getattr(response, "status_code", None)
     return bool(status_code and 500 <= status_code < 600)
+
+
+# 검색어를 좁히기만 하고 장소 데이터에는 거의 없는 표현입니다.
+DEGRADED_STOPWORDS = frozenset({
+    "근처", "주변", "인근", "가까운", "가까이", "가장", "제일", "좋은", "괜찮은",
+    "곳", "장소", "데", "쯤", "어디", "있는", "할", "하기", "갈", "만한", "좀",
+    "지금", "여기", "이곳", "그곳", "추천", "추천해줘", "찾아줘", "알려줘",
+})
+
+
+def _degraded_local_plan(raw_query, *, reason, retry_count=0, call_count=0):
+    """
+    AI 의도 해석이 실패해도 검색을 포기하지 않도록, 질의어를 그대로 쓰는 계획을 만든다.
+
+    지명과 군더더기 표현만 걷어내고 남은 말을 검색어로 삼는다.
+    해석을 지어내지 않으므로 AI가 성공했을 때보다 결과가 거칠지만, 0건보다는 낫다.
+    """
+    text = _clean_text(raw_query, 500)
+    if not text:
+        return None
+
+    anchor = _local_rule_anchor_location(text)
+    if anchor:
+        text = text.replace(anchor, " ", 1)
+
+    tokens = [
+        token
+        for token in re.split(r"\s+", text)
+        if token and _compact(token) not in DEGRADED_STOPWORDS
+    ]
+    target = " ".join(tokens).strip()
+    if not target:
+        return None
+
+    plan = _local_rule_search_plan(
+        raw_query,
+        normalized_query=target,
+        target_objects=[target],
+        candidate_place_types=[target],
+        result_match_terms=[target],
+        primary_search_queries=[target],
+    )
+    plan["confidence"] = 0.4
+    plan["ai_fallback_reason"] = reason
+    plan["ai_retry_count"] = retry_count
+    plan["ai_debug"] = {
+        "planner": {
+            "status": "degraded_local_rule",
+            "reason": reason,
+            "retry_count": retry_count,
+            "call_count": call_count,
+            "validation_errors": [],
+            "degraded_target": target,
+        },
+    }
+    return plan
 
 
 def _unavailable(reason, retry_count=0, validation_errors=None, call_count=0):
@@ -1732,9 +1789,17 @@ def build_ai_intent_plan(query, *, lat=None, lng=None, map_center=None, previous
                 break
 
     if not isinstance(raw_plan, dict):
-        if last_error:
-            return _unavailable(last_error, retry_count=retry_count, call_count=ai_call_count)
-        return _unavailable("empty_ai_response", retry_count=retry_count, call_count=ai_call_count)
+        reason = last_error or "empty_ai_response"
+        # AI 해석에 실패해도 검색어를 그대로 쓰는 계획으로 내려간다.
+        degraded = _degraded_local_plan(
+            raw_query,
+            reason=reason,
+            retry_count=retry_count,
+            call_count=ai_call_count,
+        )
+        if degraded:
+            return degraded
+        return _unavailable(reason, retry_count=retry_count, call_count=ai_call_count)
 
     plan, errors = _canonicalize(raw_plan, raw_query=raw_query, lat=lat, lng=lng, map_center=map_center)
     if not errors:
@@ -1763,8 +1828,17 @@ def build_ai_intent_plan(query, *, lat=None, lng=None, map_center=None, previous
         repaired_raw = _call_planner(repair_payload, repair=True, max_completion_tokens=700)
     except Exception as exc:
         logger.info("AI intent planner repair failed.", exc_info=True)
+        reason = f"ai_schema_repair_failed:{exc.__class__.__name__}"
+        degraded = _degraded_local_plan(
+            raw_query,
+            reason=reason,
+            retry_count=retry_count,
+            call_count=ai_call_count,
+        )
+        if degraded:
+            return degraded
         return _unavailable(
-            f"ai_schema_repair_failed:{exc.__class__.__name__}",
+            reason,
             retry_count=retry_count,
             validation_errors=errors,
             call_count=ai_call_count,
@@ -1778,6 +1852,14 @@ def build_ai_intent_plan(query, *, lat=None, lng=None, map_center=None, previous
         map_center=map_center,
     )
     if repair_errors:
+        degraded = _degraded_local_plan(
+            raw_query,
+            reason="ai_schema_repair_invalid",
+            retry_count=retry_count,
+            call_count=ai_call_count,
+        )
+        if degraded:
+            return degraded
         return _unavailable(
             "ai_schema_repair_invalid",
             retry_count=retry_count,

@@ -329,6 +329,32 @@ REGION_PREFIXES = (
 )
 
 
+# 상호명에 지명이 우연히 들어간 가게를 기준 위치로 삼지 않기 위한 카테고리입니다.
+# `서면` -> `서면손칼국수`(음식점)처럼 이름 일부만 겹치는 상업 시설을 걸러냅니다.
+COMMERCIAL_ANCHOR_CATEGORY_HINTS = (
+    "음식점",
+    "카페",
+    "술집",
+    "숙박",
+    "소매",
+    "마트",
+    "편의점",
+    "의료",
+    "병원",
+    "약국",
+    "미용",
+    "부동산",
+    "학원",
+    "서비스,산업",
+    "학교",
+    "전자제품",
+    "문구",
+    "드럭스토어",
+)
+# 이 점수에 못 미치는 후보는 기준 위치로 쓰지 않습니다.
+# 엉뚱한 곳을 기준으로 검색하느니 위치를 못 찾았다고 알리는 편이 낫습니다.
+MIN_ANCHOR_RESOLUTION_SCORE = 25
+
 LOCATION_ANCHOR_CATEGORY_HINTS = (
     "지하철",
     "전철",
@@ -550,6 +576,15 @@ def _resolve_anchor_location(anchor_location, *, lat=None, lng=None):
                 score += 60
             if category_key and "부동산" in category_key and not transit_match:
                 score -= 25
+            # 이름이 정확히 일치하지 않는데 상업 시설이면 지명이 아니라 상호명 우연 일치로 본다.
+            if (
+                category_key
+                and name_key != anchor_key
+                and not transit_match
+                and not alias_match
+                and any(hint in category_key for hint in COMMERCIAL_ANCHOR_CATEGORY_HINTS)
+            ):
+                score -= 70
             if token_match:
                 score += 20 * len(anchor_tokens)
                 if all(token in address_key for token in anchor_tokens):
@@ -576,7 +611,16 @@ def _resolve_anchor_location(anchor_location, *, lat=None, lng=None):
 
     if resolved_candidates:
         resolved_candidates.sort(key=lambda item: (-item["score"], item["name_length"]))
-        selected = dict(resolved_candidates[0])
+        best = resolved_candidates[0]
+        if best["score"] < MIN_ANCHOR_RESOLUTION_SCORE:
+            return {
+                "status": "failed",
+                "reason": "anchor_match_too_weak",
+                "lat": None,
+                "lng": None,
+                "label": anchor_location,
+            }
+        selected = dict(best)
         selected.pop("score", None)
         selected.pop("name_length", None)
         return selected

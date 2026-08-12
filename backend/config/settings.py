@@ -53,6 +53,8 @@ AI_WEB_SEARCH_MODEL = os.getenv("AI_WEB_SEARCH_MODEL", "gpt-5-nano")
 AI_WEB_SEARCH_REASONING_EFFORT = os.getenv("AI_WEB_SEARCH_REASONING_EFFORT", "").strip().lower()
 AI_REASONING_EFFORT = os.getenv("AI_REASONING_EFFORT", "").strip().lower()
 AI_RERANK_REASONING_EFFORT = os.getenv("AI_RERANK_REASONING_EFFORT", "low").strip().lower()
+# 인텐트 플래너도 reasoning 토큰 때문에 타임아웃이 나므로 effort를 지정한다.
+AI_INTENT_REASONING_EFFORT = os.getenv("AI_INTENT_REASONING_EFFORT", "low").strip().lower()
 AI_WEB_SEARCH_MAX_CANDIDATES = _env_int("AI_WEB_SEARCH_MAX_CANDIDATES", 1, 1, 1)
 AI_WEB_SEARCH_MAX_OUTPUT_TOKENS = _env_int("AI_WEB_SEARCH_MAX_OUTPUT_TOKENS", 800, 200, 800)
 AI_REASON_MODEL = os.getenv("AI_REASON_MODEL", "gpt-5-nano")
