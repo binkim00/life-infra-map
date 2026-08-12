@@ -1,8 +1,10 @@
+import hashlib
 import json
 import logging
 import re
 
 from django.conf import settings
+from django.core.cache import cache
 
 from recommendations.services.ai_situation_parser import _call_ai_chat_json as _shared_call_ai_chat_json
 from recommendations.services.ai_json_client import get_ai_json_unavailable_reason
@@ -26,7 +28,8 @@ EVIDENCE_LEVEL_RANK = {
 AI_CANDIDATE_RERANKER_PROMPT = """
 You are the semantic candidate reranker for a place recommendation service.
 
-Return only one JSON object:
+Return only one JSON object. The "candidates" array must contain exactly one row
+per candidate in the input, in the same order, using this row shape:
 {
   "candidates": [
     {
@@ -42,6 +45,10 @@ Return only one JSON object:
 }
 
 Rules:
+- The input tells you candidate_count. Return exactly that many rows.
+- Never omit a candidate. Judge every candidate, and use exclude for the ones that do not fit.
+- semantic_score is 0-100 and must reflect how well the candidate matches the frame target.
+  Use 70-100 for include, 40-69 for needs_verification, and 0-39 for exclude. Never leave it at 0 for a kept candidate.
 - Use only the candidate facts provided in the input.
 - Do not invent place facts, menus, addresses, facilities, coordinates, or opening hours.
 - Source is not priority. DB, Kakao, and Web are candidate evidence sources.
@@ -109,6 +116,18 @@ AI_CANDIDATE_RERANKER_RESPONSE_SCHEMA = {
     "required": ["candidates"],
     "additionalProperties": False,
 }
+
+
+def _rerank_cache_ttl():
+    return max(0, int(getattr(settings, "AI_RERANK_CACHE_TTL", 900) or 0))
+
+
+def _rerank_cache_key(batch_query, *, model, effort, token_budget):
+    if not _rerank_cache_ttl():
+        return ""
+    fingerprint = f"{model}|{effort}|{token_budget}|{batch_query}"
+    digest = hashlib.sha256(fingerprint.encode("utf-8")).hexdigest()
+    return f"ai_rerank:{digest}"
 
 
 def _clean_text(value, max_length=500):
@@ -187,6 +206,9 @@ def _looks_internal_or_english_reason(value):
         "compatible evidence",
         "within target type",
         "matching with",
+        "프레임",
+        "타깃",
+        "타겟",
     )
     if any(marker in lowered for marker in internal_markers):
         return True
@@ -412,18 +434,38 @@ def semantic_rerank_candidates(frame, candidates, *, ranking_policy="evidence_fi
         batch_payload = {
             "frame": frame if isinstance(frame, dict) else {},
             "ranking_policy": ranking_policy or "evidence_first",
+            "candidate_count": len(candidate_batch),
             "candidates": [_candidate_payload(candidate) for candidate in candidate_batch],
         }
+        batch_query = json.dumps(batch_payload, ensure_ascii=False)
+        model = getattr(settings, "AI_RERANK_MODEL", "gpt-5-nano")
+        effort = getattr(settings, "AI_RERANK_REASONING_EFFORT", "low")
+
+        # 같은 후보 묶음에는 같은 판정이 나오므로 재호출 없이 재사용한다.
+        # 판정 내용은 그대로 쓰고 호출만 건너뛰기 때문에 정확도에는 영향이 없다.
+        cache_key = _rerank_cache_key(batch_query, model=model, effort=effort, token_budget=token_budget)
+        cached = cache.get(cache_key) if cache_key else None
+        if isinstance(cached, dict):
+            return batch_ids, {
+                candidate_id: decision
+                for candidate_id, decision in cached.items()
+                if candidate_id in batch_ids
+            }
+
         raw_response = _call_ai_chat_json(
-            query=json.dumps(batch_payload, ensure_ascii=False),
+            query=batch_query,
             system_prompt=AI_CANDIDATE_RERANKER_PROMPT,
             max_completion_tokens=token_budget,
-            model=getattr(settings, "AI_RERANK_MODEL", "gpt-5-nano"),
+            model=model,
             timeout=getattr(settings, "AI_RERANK_TIMEOUT", getattr(settings, "AI_REQUEST_TIMEOUT", 20)),
             response_schema=AI_CANDIDATE_RERANKER_RESPONSE_SCHEMA,
             schema_name="ai_candidate_rerank",
+            reasoning_effort=effort,
         )
-        return batch_ids, _normalize_reranker_rows(raw_response, batch_ids)
+        decisions = _normalize_reranker_rows(raw_response, batch_ids)
+        if cache_key and decisions:
+            cache.set(cache_key, decisions, _rerank_cache_ttl())
+        return batch_ids, decisions
 
     token_budget = int(getattr(settings, "AI_SEARCH_RERANK_MAX_COMPLETION_TOKENS", 2500) or 2500)
     retry_used = False

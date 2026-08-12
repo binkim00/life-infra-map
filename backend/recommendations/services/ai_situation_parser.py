@@ -638,6 +638,7 @@ def _call_ai_chat_json(
     timeout=None,
     response_schema=None,
     schema_name="ai_response",
+    reasoning_effort=None,
 ):
     return call_ai_json(
         query,
@@ -647,6 +648,7 @@ def _call_ai_chat_json(
         timeout=timeout,
         response_schema=response_schema,
         schema_name=schema_name,
+        reasoning_effort=reasoning_effort,
     )
 
 

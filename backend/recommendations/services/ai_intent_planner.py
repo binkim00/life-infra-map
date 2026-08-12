@@ -57,6 +57,8 @@ Hard rules:
 - If the user has a specific target, keep that target in the queries; do not replace it with a broad category.
 - Do not put latitude/longitude, coordinate strings, "near 35.x,129.x", or radius text inside search queries.
 - Put explicit location names only in anchor_location; current coordinates are supplied separately.
+- Time words and deictic words are not location names. "지금", "이따가", "여기", "근처" mean the user's current position,
+  so use location_mode current_context and leave anchor_location empty for them.
 
 Schema:
 {
@@ -508,6 +510,32 @@ def _local_rule_anchor_location(raw_query):
     if not text:
         return ""
     current_context_markers = {"현재위치", "내위치", "여기", "지금위치", "currentlocation"}
+    # 시간/지시 표현은 지명이 아니라 현재 위치 기준 요청이다. ("지금 화장실 급해")
+    # 정확히 일치할 때만 걸러서 `지금동`, `구서동` 같은 실제 지명은 그대로 둔다.
+    non_location_expressions = {
+        "지금",
+        "이제",
+        "방금",
+        "아까",
+        "이따",
+        "이따가",
+        "나중",
+        "나중에",
+        "당장",
+        "빨리",
+        "급히",
+        "잠깐",
+        "잠시",
+        "오늘",
+        "내일",
+        "모레",
+        "현재",
+        "저기",
+        "거기",
+        "근처",
+        "주변",
+        "인근",
+    }
     location_markers = (
         "근처에서",
         "주변에서",
@@ -597,6 +625,8 @@ def _local_rule_anchor_location(raw_query):
     ]):
         return ""
     if _compact(anchor) in current_context_markers:
+        return ""
+    if _compact(anchor) in non_location_expressions:
         return ""
     if _has_any(anchor, ["쇼핑", "실내", "체험", "놀거리", "액티비티", "카페", "식당", "맛집"]):
         return ""

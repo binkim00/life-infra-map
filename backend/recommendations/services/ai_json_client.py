@@ -201,6 +201,7 @@ def _call_openai_responses_json(
     timeout=None,
     response_schema=None,
     schema_name="ai_response",
+    reasoning_effort=None,
 ):
     api_key = getattr(settings, "OPENAI_API_KEY", "")
     if not api_key:
@@ -219,9 +220,12 @@ def _call_openai_responses_json(
         "max_output_tokens": max_completion_tokens,
     }
 
-    reasoning_effort = _clean_text(getattr(settings, "AI_REASONING_EFFORT", ""), 40).lower()
-    if reasoning_effort:
-        payload["reasoning"] = {"effort": reasoning_effort}
+    effort = _clean_text(
+        reasoning_effort or getattr(settings, "AI_REASONING_EFFORT", ""),
+        40,
+    ).lower()
+    if effort:
+        payload["reasoning"] = {"effort": effort}
 
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -259,6 +263,7 @@ def call_ai_json(
     provider=None,
     response_schema=None,
     schema_name="ai_response",
+    reasoning_effort=None,
 ):
     selected = _provider(provider)
     if selected == "gms":
@@ -280,5 +285,6 @@ def call_ai_json(
             timeout=timeout,
             response_schema=response_schema,
             schema_name=schema_name,
+            reasoning_effort=reasoning_effort,
         )
     raise ValueError(f"Unsupported AI provider: {selected}")

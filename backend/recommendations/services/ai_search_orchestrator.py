@@ -20,6 +20,7 @@ from recommendations.services.ai_web_search_provider import (
     get_ai_web_search_status,
 )
 from recommendations.services.kakao_local import search_places_by_keyword
+from recommendations.services.map_search import get_matching_categories
 from recommendations.services.place_urls import get_kakao_place_url
 from recommendations.services.smoking_area_data import calculate_distance_m
 from recommendations.services.tag_utils import get_category_display_name
@@ -30,6 +31,36 @@ logger = logging.getLogger(__name__)
 
 VERIFIED_TAG_SOURCES = {"checked", "user_verified"}
 SUGGESTED_TAG_SOURCES = {"ai_suggested", "blog_search"}
+# 카테고리와 거리만으로 답이 정해지는 생활 유틸리티 카테고리입니다.
+# 카페/공원/관광지/해수욕장은 `조용한`, `야경 좋은` 같은 주관적 조건이 붙으므로 넣지 않습니다.
+DETERMINISTIC_CATEGORY_CODES = {
+    "toilet",
+    "parking",
+    "freewifi",
+    "shelter",
+    "smoking_area",
+}
+# 후보를 걸러내지 않는 조건입니다. 거리/긴급도는 이미 정렬 정책에 반영되어 있어
+# 후보마다 따로 판단할 내용이 없습니다. 이 목록 밖의 조건이 하나라도 있으면 AI가 판단합니다.
+NON_DISCRIMINATING_CONSTRAINTS = frozenset({
+    "긴급",
+    "급함",
+    "급해",
+    "가까운",
+    "가까운곳",
+    "가장가까운",
+    "제일가까운",
+    "근처",
+    "주변",
+    "인근",
+    "즉시",
+    "지금",
+    "빠르게",
+    "빨리",
+    "도보",
+    "도보거리",
+    "가까움",
+})
 DB_FIRST_CATEGORY_CODES = {"smoking_area"}
 DB_CATEGORY_SEARCH_CODES = {
     "cafe",
@@ -2709,6 +2740,88 @@ def _minimum_result_count(limit):
     return min(max(configured, 1), max(_as_int(limit, 15), 1), 20)
 
 
+def _deterministic_category_codes(frame):
+    """
+    `가까운 화장실`처럼 카테고리와 거리만으로 답이 정해지는 요청이면 그 카테고리 목록을 돌려준다.
+
+    이런 요청에서는 AI 후보 평가가 결과 순서를 바꾸지 않는다.
+    `urgent_nearest`는 평가 후 어차피 거리순으로 재정렬하고, 후보도 이미 카테고리로 걸러져 들어오기 때문이다.
+    조건이 하나라도 붙거나 카테고리로 떨어지지 않는 표현이 섞이면 평소대로 AI가 판단한다.
+    """
+    if not getattr(settings, "AI_SEARCH_ROUTE_CATEGORY_REQUESTS", True):
+        return []
+    if _as_list(frame.get("exclusions")):
+        return []
+    for constraint in _frame_terms(frame, "constraints"):
+        if _compact(constraint) not in NON_DISCRIMINATING_CONSTRAINTS:
+            return []
+
+    terms = _frame_terms(frame, "target_objects", "result_match_terms", "candidate_place_types")
+    if not terms:
+        return []
+
+    matched = set()
+    for term in terms:
+        categories = get_matching_categories(_clean_text(term, 80))
+        if not categories:
+            # 카테고리로 떨어지지 않는 표현이 있으면 의미 판단이 필요한 요청이다.
+            return []
+        matched.update(categories)
+
+    if not matched or not matched.issubset(DETERMINISTIC_CATEGORY_CODES):
+        return []
+    return sorted(matched)
+
+
+def _deterministic_ranked_candidates(evidence_candidates, category_codes, *, limit=15):
+    """
+    AI 호출 없이 후보를 가까운 순으로 정리한다.
+
+    후보 집합은 AI가 평가했을 집합(`evidence_candidates`)을 그대로 쓴다.
+    걸러내는 기준을 새로 만들지 않고 순서만 거리순으로 정한다.
+    """
+    codes = list(category_codes or [])
+    category_label = get_category_display_name(codes[0]) if len(codes) == 1 else ""
+    ranked = []
+    for candidate in evidence_candidates or []:
+        if not _clean_text(candidate.get("id")):
+            continue
+        if _blocking_unmet_constraints(candidate):
+            continue
+        distance = candidate.get("distance")
+        if distance is None:
+            distance = candidate.get("distance_m")
+        place_label = category_label or "장소"
+        if distance is None:
+            reason = f"요청하신 {place_label} 후보예요."
+        else:
+            reason = f"기준 위치에서 약 {int(round(float(distance)))}m 거리의 {place_label}이에요."
+        ranked.append({
+            **candidate,
+            "semantic_reason": reason,
+            "recommendation_reason": reason,
+            "recommend_reason": reason,
+            "evidence_level": "medium",
+            "frame_evidence_tier": "medium",
+            "verification_required": False,
+            "compatibility_gate": "passed",
+            "compatibility_gate_reason": "",
+            "unified_ranker_applied": True,
+            "deterministic_category_match": True,
+        })
+
+    ranked.sort(key=lambda candidate: (
+        candidate.get("distance") if candidate.get("distance") is not None else 999999999,
+        {"strong": 0, "medium": 1, "weak": 2}.get(candidate.get("pre_ai_evidence_level"), 9),
+        str(candidate.get("id")),
+    ))
+    ranked = ranked[:max(_as_int(limit, 15), 1)]
+    return [
+        {**candidate, "backend_rank": index + 1, "unified_rank": index + 1}
+        for index, candidate in enumerate(ranked)
+    ]
+
+
 def _top_up_ranked_candidates(ranked_candidates, candidate_pool, excluded_candidates, *, limit=15):
     desired_count = _minimum_result_count(limit)
     ranked_candidates = list(ranked_candidates or [])
@@ -2863,7 +2976,10 @@ def _debug_pipeline(
     return {
         "used_path": "ai_first_orchestrator",
         "legacy_path_used": False,
-        "ai_call_failed": intent_plan.get("decision_action") == "ai_unavailable",
+        "ai_call_failed": (
+            intent_plan.get("decision_action") == "ai_unavailable"
+            or bool((reranker_debug or {}).get("ranking_fallback_applied"))
+        ),
         "ai_retry_count": intent_plan.get("ai_retry_count", 0),
         "fallback_used": bool(fallback_used),
         "fallback_created_candidates": bool(fallback_created_candidates),
@@ -3387,12 +3503,36 @@ def run_ai_search(request_data, *, user=None):
             or candidate.get("matched_evidence")
         )
     ]
+    # 축약 전 근거 통과 후보. 카테고리 라우팅은 AI 평가와 같은 집합에서 고른다.
+    evidence_candidates = list(all_candidates)
     pre_rerank_limit = _as_int(getattr(settings, "AI_SEARCH_RERANK_MAX_CANDIDATES", 20), 20)
     pre_rerank_limit = min(max(pre_rerank_limit, 5), 30)
     all_candidates = _balanced_rerank_shortlist(all_candidates, pre_rerank_limit)
 
     ranking_policy = frame.get("ranking_policy") or "evidence_first"
-    if all_candidates:
+    # 카테고리 + 거리로 답이 정해지는 요청은 AI 후보 평가를 건너뛴다.
+    # 평가해도 순서가 그대로라서 응답 시간과 토큰만 쓰게 된다.
+    deterministic_codes = _deterministic_category_codes(frame)
+    deterministic_results = (
+        _deterministic_ranked_candidates(evidence_candidates, deterministic_codes, limit=limit)
+        if deterministic_codes
+        else []
+    )
+
+    if deterministic_results:
+        ranked_candidates = deterministic_results
+        reranker_debug = {
+            "status": "skipped",
+            "reason": "deterministic_category_request",
+            "input_count": len(candidate_pool),
+            "included_count": len(deterministic_results),
+            "excluded_count": 0,
+            "excluded_candidates": [],
+            "deterministic_category_codes": deterministic_codes,
+            "call_count": 0,
+        }
+        timings["reranker_latency_ms"] = 0.0
+    elif all_candidates:
         reranker_started = time.perf_counter()
         ranked_candidates, reranker_debug = semantic_rerank_candidates(
             frame,
@@ -3416,7 +3556,23 @@ def run_ai_search(request_data, *, user=None):
             "excluded_candidates": [],
         }
 
-    if reranker_debug.get("status") not in {"executed", "partial_executed", "degraded_success", "skipped"}:
+    reranker_available = reranker_debug.get("status") in {
+        "executed",
+        "partial_executed",
+        "degraded_success",
+        "skipped",
+    }
+    ranking_fallback_candidates = []
+    if not reranker_available:
+        # AI 후보 평가가 실패해도 수집한 후보를 버리지 않고 사전 근거/거리 순서로 보여준다.
+        ranking_fallback_candidates, _ = _top_up_ranked_candidates(
+            [],
+            candidate_pool,
+            [],
+            limit=limit,
+        )
+
+    if not reranker_available and not ranking_fallback_candidates:
         intent_plan = {
             **intent_plan,
             "action": "ai_unavailable",
@@ -3462,6 +3618,14 @@ def run_ai_search(request_data, *, user=None):
             "ai_call_count": ai_call_count,
         })
         return data
+
+    if ranking_fallback_candidates:
+        ranked_candidates = ranking_fallback_candidates
+        reranker_debug = {
+            **reranker_debug,
+            "ranking_fallback_applied": True,
+            "ranking_fallback_count": len(ranking_fallback_candidates),
+        }
 
     hidden_weak = reranker_debug.get("excluded_candidates") or []
     unresolved_candidates = reranker_debug.get("unresolved_candidates") or []
@@ -3522,7 +3686,10 @@ def run_ai_search(request_data, *, user=None):
         hidden_weak=hidden_weak,
         candidate_pool=candidate_pool,
         location_resolution=location_resolution,
-        fallback_used=query_repair_debug.get("status") == "executed",
+        fallback_used=(
+            query_repair_debug.get("status") == "executed"
+            or bool(ranking_fallback_candidates)
+        ),
         fallback_created_candidates=False,
         timings=finish_timings(),
         ai_call_count=ai_call_count,

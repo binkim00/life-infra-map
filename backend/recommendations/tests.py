@@ -23,6 +23,11 @@ from recommendations.models import (
     UserSavedPlace,
     UserSearchLog,
 )
+from recommendations.services.ai_intent_planner import _local_rule_anchor_location
+from recommendations.services.ai_search_orchestrator import (
+    _deterministic_category_codes,
+    _deterministic_ranked_candidates,
+)
 from recommendations.services.ai_situation_parser import parse_situation
 from recommendations.services.ai_web_search_provider import (
     clear_ai_web_search_cache,
@@ -11830,3 +11835,94 @@ class RecommendationSearchTests(TestCase):
         self.assertEqual(parsed["block_reason"], "safety_check_unavailable")
         self.assertEqual(parsed["parser_provider"], "gms")
         self.assertFalse(parsed["parser_fallback"])
+
+
+class AnchorLocationParsingTests(TestCase):
+    """시간/지시 표현이 지명으로 잡히지 않는지 확인한다."""
+
+    def test_time_expression_is_not_treated_as_anchor_location(self):
+        # `지금 화장실 급해`의 `지금`이 지명으로 잡혀 카카오에서 엉뚱한 좌표를 잡던 회귀.
+        for query in (
+            "지금 화장실 급해",
+            "이따가 카페 갈 곳",
+            "당장 주차장 찾아줘",
+            "오늘 산책 할 만한 곳",
+        ):
+            with self.subTest(query=query):
+                self.assertEqual(_local_rule_anchor_location(query), "")
+
+    def test_deictic_expression_is_not_treated_as_anchor_location(self):
+        for query in ("근처 화장실", "주변 주차장", "여기 약국"):
+            with self.subTest(query=query):
+                self.assertEqual(_local_rule_anchor_location(query), "")
+
+    def test_real_place_name_is_still_used_as_anchor_location(self):
+        self.assertEqual(_local_rule_anchor_location("서면 화장실"), "서면")
+        self.assertEqual(_local_rule_anchor_location("부산역 주차장"), "부산역")
+        # `지금동`은 김포시 실제 지명이므로 정확히 일치할 때만 걸러야 한다.
+        self.assertEqual(_local_rule_anchor_location("지금동 화장실"), "지금동")
+
+
+class DeterministicCategoryRoutingTests(TestCase):
+    """카테고리 + 거리로 답이 정해지는 요청만 AI 평가를 건너뛰는지 확인한다."""
+
+    def test_utility_category_request_is_routed(self):
+        for terms in (["화장실"], ["주차장"], ["무료 와이파이"], ["흡연구역"], ["쉼터"]):
+            with self.subTest(terms=terms):
+                codes = _deterministic_category_codes({"target_objects": terms})
+                self.assertTrue(codes, f"{terms} 는 라우팅 대상이어야 한다")
+
+    def test_proximity_constraints_do_not_block_routing(self):
+        # `지금 화장실 급해`의 constraints 는 `긴급`, `가까운 곳`이라 후보를 걸러내지 않는다.
+        codes = _deterministic_category_codes({
+            "target_objects": ["화장실"],
+            "candidate_place_types": ["공중화장실", "개방화장실"],
+            "constraints": ["긴급", "가까운 곳"],
+        })
+        self.assertEqual(codes, ["toilet"])
+
+    def test_subjective_request_is_not_routed(self):
+        for frame in (
+            {"target_objects": ["카페"]},
+            {"target_objects": ["조용한 카페"]},
+            {"target_objects": ["야경 좋은 곳"]},
+            {"target_objects": ["공원"]},
+            {"target_objects": ["관광지"]},
+        ):
+            with self.subTest(frame=frame):
+                self.assertEqual(_deterministic_category_codes(frame), [])
+
+    def test_discriminating_condition_keeps_ai_path(self):
+        # 후보마다 판단이 필요한 조건이 붙으면 AI가 그대로 평가해야 한다.
+        self.assertEqual(
+            _deterministic_category_codes({"target_objects": ["화장실"], "constraints": ["24시간"]}),
+            [],
+        )
+        self.assertEqual(
+            _deterministic_category_codes({"target_objects": ["화장실"], "exclusions": ["지하철역"]}),
+            [],
+        )
+
+    def test_mixed_category_request_keeps_ai_path(self):
+        self.assertEqual(
+            _deterministic_category_codes({"target_objects": ["화장실", "카페"]}),
+            [],
+        )
+
+    def test_routing_can_be_disabled_by_setting(self):
+        with override_settings(AI_SEARCH_ROUTE_CATEGORY_REQUESTS=False):
+            self.assertEqual(_deterministic_category_codes({"target_objects": ["화장실"]}), [])
+
+    def test_routed_results_are_ordered_by_distance(self):
+        pool = [
+            {"id": "db:3", "name": "먼 화장실", "distance": 900, "pre_ai_evidence_level": "medium"},
+            {"id": "db:1", "name": "가까운 화장실", "distance": 60, "pre_ai_evidence_level": "medium"},
+            {"id": "db:2", "name": "중간 화장실", "distance": 300, "pre_ai_evidence_level": "medium"},
+        ]
+        ranked = _deterministic_ranked_candidates(pool, ["toilet"], limit=8)
+
+        self.assertEqual([c["name"] for c in ranked], ["가까운 화장실", "중간 화장실", "먼 화장실"])
+        self.assertEqual([c["backend_rank"] for c in ranked], [1, 2, 3])
+        # 추천 이유는 실제 거리/카테고리 사실만 쓴다.
+        self.assertIn("60m", ranked[0]["recommend_reason"])
+        self.assertIn("화장실", ranked[0]["recommend_reason"])
