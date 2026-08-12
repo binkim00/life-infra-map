@@ -26,12 +26,25 @@ spring:
     open-in-view: false
 
 app:
+  storage:
+    # Django 와 같은 버킷을 씁니다. 값도 backend/.env 와 맞춰야 합니다.
+    endpoint: ${S3_ENDPOINT_URL:http://127.0.0.1:9000}
+    bucket: ${S3_BUCKET:life-infra-map-media}
+    access-key: ${S3_ACCESS_KEY:life_infra_map}
+    secret-key: ${S3_SECRET_KEY:life_infra_map_secret}
+    region: ${S3_REGION:us-east-1}
   media:
     # 업로드 파일 공개 주소입니다. Django 의 S3_PUBLIC_DOMAIN 과 같은 값을 가리켜야 합니다.
     base-url: ${MEDIA_BASE_URL:http://127.0.0.1:9000/life-infra-map-media}
   jwt:
     # Django 와 같은 값을 써야 서로 발급한 토큰을 검증할 수 있습니다.
-    secret: ${JWT_SECRET:change-me-in-env-at-least-32-bytes-long}
+    #
+    # 기본값은 backend/.env.sample 의 JWT_SECRET 과 같은 로컬 개발용 값입니다.
+    # 값이 어긋나면 로그인은 되지만 그 토큰으로 Django API 를 호출할 때
+    # 서명 검증에 실패합니다. 증상이 인증 오류로만 보여서 원인을 찾기 어렵습니다.
+    #
+    # 배포 환경에서는 반드시 JWT_SECRET 환경변수로 덮어쓰고, Django 쪽에도 같은 값을 주입하세요.
+    secret: ${JWT_SECRET:local-dev-secret-key-at-least-32-bytes-long}
     access-token-minutes: ${JWT_ACCESS_MINUTES:120}
 
 logging:

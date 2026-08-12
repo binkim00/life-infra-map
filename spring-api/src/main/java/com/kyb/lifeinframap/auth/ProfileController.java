@@ -37,6 +37,8 @@ public class ProfileController {
     private final InquiryRepository inquiryRepository;
     private final PenaltyService penaltyService;
     private final BoardResponseAssembler assembler;
+    private final com.kyb.lifeinframap.storage.StorageService storageService;
+    private final com.kyb.lifeinframap.account.UserPayloadFactory userPayloadFactory;
 
     public ProfileController(
             UserRepository userRepository,
@@ -47,7 +49,9 @@ public class ProfileController {
             NotificationRepository notificationRepository,
             InquiryRepository inquiryRepository,
             PenaltyService penaltyService,
-            BoardResponseAssembler assembler) {
+            BoardResponseAssembler assembler,
+            com.kyb.lifeinframap.storage.StorageService storageService,
+            com.kyb.lifeinframap.account.UserPayloadFactory userPayloadFactory) {
         this.userRepository = userRepository;
         this.profileRepository = profileRepository;
         this.contributionService = contributionService;
@@ -57,6 +61,8 @@ public class ProfileController {
         this.inquiryRepository = inquiryRepository;
         this.penaltyService = penaltyService;
         this.assembler = assembler;
+        this.storageService = storageService;
+        this.userPayloadFactory = userPayloadFactory;
     }
 
     public record NicknameRequest(@NotBlank String nickname) {
@@ -93,7 +99,31 @@ public class ProfileController {
             return ResponseEntity.badRequest().body(Map.of("nickname", List.of("이미 사용 중인 닉네임입니다.")));
         }
         profile.changeNickname(nickname);
-        return ResponseEntity.ok(Map.of("user", userPayload(user)));
+        return ResponseEntity.ok(Map.of("user", userPayloadFactory.of(user)));
+    }
+
+    /** 프론트가 FormData 로 파일을 보냅니다. Django 와 같은 필드 이름을 씁니다. */
+    @PatchMapping(value = "/me/profile-image",
+            consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
+    @Transactional
+    public ResponseEntity<?> updateProfileImageFile(
+            @RequestParam("profile_image") org.springframework.web.multipart.MultipartFile file,
+            Authentication authentication) {
+        User user = currentUser(authentication);
+        if (user == null) {
+            return unauthorized();
+        }
+        UserProfile profile = profileRepository.findByUserId(user.getId()).orElse(null);
+        if (profile == null) {
+            return ResponseEntity.badRequest().body(Map.of("detail", "프로필이 없습니다."));
+        }
+        try {
+            profile.changeProfileImage(
+                    storageService.upload(file, com.kyb.lifeinframap.storage.StorageService.PROFILE_IMAGE_PREFIX));
+        } catch (IllegalArgumentException exception) {
+            return ResponseEntity.badRequest().body(Map.of("profile_image", List.of(exception.getMessage())));
+        }
+        return ResponseEntity.ok(Map.of("user", userPayloadFactory.of(user)));
     }
 
     @PatchMapping("/me/profile-image")
@@ -110,7 +140,7 @@ public class ProfileController {
         }
         // 파일 업로드 자체는 프론트가 저장소에 올리고, 여기서는 키만 받습니다.
         profile.changeProfileImage(request.profileImage());
-        return ResponseEntity.ok(Map.of("user", userPayload(user)));
+        return ResponseEntity.ok(Map.of("user", userPayloadFactory.of(user)));
     }
 
     @GetMapping("/mypage")
@@ -133,7 +163,7 @@ public class ProfileController {
                 .forEach(comment -> comments.add(assembler.comment(comment, context, user.getId(), List.of())));
 
         Map<String, Object> body = new LinkedHashMap<>();
-        body.put("user", userPayload(user));
+        body.put("user", userPayloadFactory.of(user));
         body.put("posts", posts);
         body.put("comments", comments);
         body.put("unread_notification_count", notificationRepository.countByRecipientIdAndReadFalse(user.getId()));
@@ -143,26 +173,6 @@ public class ProfileController {
         return ResponseEntity.ok(body);
     }
 
-    /** Django `UserSerializer` 와 같은 필드로 맞춥니다. */
-    private Map<String, Object> userPayload(User user) {
-        UserProfile profile = profileRepository.findByUserId(user.getId()).orElse(null);
-        ContributionService.TierInfo tier = contributionService.getTierInfo(user.getId(), user.isStaff());
-
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("id", user.getId());
-        payload.put("username", user.getUsername());
-        payload.put("nickname", profile == null ? user.getUsername() : profile.getNickname());
-        payload.put("profile_image_url", assembler.fileUrl(profile == null ? null : profile.getProfileImage()));
-        payload.put("email", user.getEmail());
-        payload.put("is_staff", user.isStaff());
-        payload.put("score", tier.score());
-        payload.put("contribution", tier.contribution());
-        payload.put("tier", tier.tier());
-        payload.put("tier_label", tier.tierLabel());
-        payload.put("tier_color", tier.tierColor());
-        payload.put("nickname_color", tier.nicknameColor());
-        return payload;
-    }
 
     private User currentUser(Authentication authentication) {
         if (authentication == null || authentication.getName() == null) {

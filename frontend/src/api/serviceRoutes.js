@@ -20,15 +20,9 @@ const SPRING_PATH_PREFIXES = [
   '/recommendations/admin/place-reports',
 ]
 
-/**
- * 아직 Django 가 담당하는 경로입니다.
- *
- * 회원가입은 프로필 사진을 multipart 로 올리는데 Spring 쪽에 파일 업로드가 아직 없습니다.
- * Django 회원가입도 같은 JWT 를 돌려주므로 자격증명은 한 종류로 유지됩니다.
- */
-const DJANGO_OVERRIDE_PREFIXES = [
-  '/accounts/signup',
-]
+// 이관이 끝나 Django 로 돌려보낼 경로는 없습니다.
+// 되돌릴 일이 생기면 여기에 경로를 넣으면 그 경로만 Django 로 갑니다.
+const DJANGO_OVERRIDE_PREFIXES = []
 
 const normalize = (url = '') => {
   const path = String(url || '')

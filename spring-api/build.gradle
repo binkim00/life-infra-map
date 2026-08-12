@@ -30,6 +30,10 @@ dependencies {
     runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.6'
     runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.12.6'
 
+    // 업로드 파일은 Django 와 같은 S3 호환 저장소(MinIO/AWS S3)에 둡니다.
+    implementation platform('software.amazon.awssdk:bom:2.29.29')
+    implementation 'software.amazon.awssdk:s3'
+
     runtimeOnly 'org.postgresql:postgresql'
 
     testImplementation 'org.springframework.boot:spring-boot-starter-test'

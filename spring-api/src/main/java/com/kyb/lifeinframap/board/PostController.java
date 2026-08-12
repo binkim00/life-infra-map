@@ -28,18 +28,21 @@ public class PostController {
     private final UserRepository userRepository;
     private final BoardResponseAssembler assembler;
     private final PenaltyService penaltyService;
+    private final com.kyb.lifeinframap.storage.StorageService storageService;
 
     public PostController(
             PostRepository postRepository,
             CommentRepository commentRepository,
             UserRepository userRepository,
             BoardResponseAssembler assembler,
-            PenaltyService penaltyService) {
+            PenaltyService penaltyService,
+            com.kyb.lifeinframap.storage.StorageService storageService) {
         this.postRepository = postRepository;
         this.commentRepository = commentRepository;
         this.userRepository = userRepository;
         this.assembler = assembler;
         this.penaltyService = penaltyService;
+        this.storageService = storageService;
     }
 
     public record PostRequest(@NotBlank String title, @NotBlank String content,
@@ -71,6 +74,24 @@ public class PostController {
             body.add(assembler.post(post, context, viewerId, false));
         }
         return body;
+    }
+
+    /** 이미지를 함께 올리는 글쓰기입니다. 프론트가 FormData 로 보냅니다. */
+    @PostMapping(consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
+    @Transactional
+    public ResponseEntity<?> createMultipart(
+            @RequestParam String title,
+            @RequestParam String content,
+            @RequestParam(name = "board_type", required = false) String boardType,
+            @RequestParam(required = false) org.springframework.web.multipart.MultipartFile image,
+            Authentication authentication) {
+        String imageKey;
+        try {
+            imageKey = storageService.upload(image, com.kyb.lifeinframap.storage.StorageService.BOARD_IMAGE_PREFIX);
+        } catch (IllegalArgumentException exception) {
+            return ResponseEntity.badRequest().body(Map.of("image", List.of(exception.getMessage())));
+        }
+        return create(new PostRequest(title, content, boardType, imageKey), authentication);
     }
 
     @PostMapping

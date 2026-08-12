@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -35,16 +36,22 @@ public class AccountController {
     private final UserProfileRepository profileRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
+    private final com.kyb.lifeinframap.storage.StorageService storageService;
+    private final com.kyb.lifeinframap.account.UserPayloadFactory userPayloadFactory;
 
     public AccountController(
             UserRepository userRepository,
             UserProfileRepository profileRepository,
             PasswordEncoder passwordEncoder,
-            JwtService jwtService) {
+            JwtService jwtService,
+            com.kyb.lifeinframap.storage.StorageService storageService,
+            com.kyb.lifeinframap.account.UserPayloadFactory userPayloadFactory) {
         this.userRepository = userRepository;
         this.profileRepository = profileRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
+        this.storageService = storageService;
+        this.userPayloadFactory = userPayloadFactory;
     }
 
     public record SignupRequest(
@@ -61,9 +68,39 @@ public class AccountController {
             @NotBlank @Size(min = 8) String newPasswordConfirm) {
     }
 
+    /**
+     * 프로필 사진을 함께 올리는 회원가입입니다.
+     *
+     * 프론트가 FormData 로 보내므로 필드 이름은 Django 와 같은 스네이크 표기를 씁니다.
+     */
+    @PostMapping(value = "/signup", consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
+    @Transactional
+    public ResponseEntity<?> signupMultipart(
+            @RequestParam String username,
+            @RequestParam String nickname,
+            @RequestParam(required = false) String email,
+            @RequestParam String password,
+            @RequestParam("password_confirm") String passwordConfirm,
+            @RequestParam(value = "profile_image", required = false)
+            org.springframework.web.multipart.MultipartFile profileImage) {
+
+        String imageKey;
+        try {
+            imageKey = storageService.upload(profileImage, com.kyb.lifeinframap.storage.StorageService.PROFILE_IMAGE_PREFIX);
+        } catch (IllegalArgumentException exception) {
+            return badRequest("profile_image", exception.getMessage());
+        }
+
+        return createAccount(new SignupRequest(username, nickname, email, password, passwordConfirm), imageKey);
+    }
+
     @PostMapping("/signup")
     @Transactional
     public ResponseEntity<?> signup(@Valid @RequestBody SignupRequest request) {
+        return createAccount(request, null);
+    }
+
+    private ResponseEntity<?> createAccount(SignupRequest request, String profileImageKey) {
         if (!request.password().equals(request.passwordConfirm())) {
             return badRequest("passwordConfirm", "비밀번호가 일치하지 않습니다.");
         }
@@ -81,14 +118,18 @@ public class AccountController {
 
         User user = userRepository.save(
                 User.create(request.username(), request.email(), passwordEncoder.encode(request.password())));
-        profileRepository.save(new UserProfile(user, nickname));
+        UserProfile profile = new UserProfile(user, nickname);
+        if (profileImageKey != null) {
+            profile.changeProfileImage(profileImageKey);
+        }
+        profileRepository.save(profile);
 
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("message", "회원가입이 완료되었습니다.");
         body.put("access_token", jwtService.issueAccessToken(user.getId(), user.getUsername()));
         body.put("token_type", "Bearer");
         body.put("expires_in", jwtService.getAccessTokenSeconds());
-        body.put("user", userPayload(user, nickname));
+        body.put("user", userPayloadFactory.of(user, nickname, profileImageKey));
         return ResponseEntity.status(HttpStatus.CREATED).body(body);
     }
 
@@ -121,10 +162,7 @@ public class AccountController {
         if (user == null) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("detail", "인증이 필요합니다."));
         }
-        String nickname = profileRepository.findByUserId(user.getId())
-                .map(UserProfile::getNickname)
-                .orElse(user.getUsername());
-        return ResponseEntity.ok(userPayload(user, nickname));
+        return ResponseEntity.ok(userPayloadFactory.of(user));
     }
 
     private User currentUser(org.springframework.security.core.Authentication authentication) {
@@ -138,15 +176,6 @@ public class AccountController {
         }
     }
 
-    private Map<String, Object> userPayload(User user, String nickname) {
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("id", user.getId());
-        payload.put("username", user.getUsername());
-        payload.put("nickname", nickname);
-        payload.put("email", user.getEmail());
-        payload.put("is_staff", user.isStaff());
-        return payload;
-    }
 
     private ResponseEntity<Map<String, Object>> badRequest(String field, String message) {
         return ResponseEntity.badRequest().body(Map.of(field, java.util.List.of(message)));
