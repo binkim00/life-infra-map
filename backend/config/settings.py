@@ -271,6 +271,38 @@ STATIC_URL = 'static/'
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
+# 업로드 파일 저장 위치입니다.
+# `local` 은 기존처럼 backend/media/ 에 두고, `s3` 는 S3 호환 저장소(MinIO/AWS S3)에 둡니다.
+# 배포하면 컨테이너 재시작마다 로컬 파일이 사라지므로 s3 를 씁니다.
+FILE_STORAGE_BACKEND = os.getenv("FILE_STORAGE_BACKEND", "local").strip().lower()
+
+# 테스트는 저장소 컨테이너가 떠 있는지에 좌우되면 안 되고,
+# 실행할 때마다 버킷에 파일을 남겨서도 안 됩니다.
+if IS_TESTING:
+    FILE_STORAGE_BACKEND = "local"
+
+if FILE_STORAGE_BACKEND == "s3":
+    AWS_ACCESS_KEY_ID = os.getenv("S3_ACCESS_KEY", "")
+    AWS_SECRET_ACCESS_KEY = os.getenv("S3_SECRET_KEY", "")
+    AWS_STORAGE_BUCKET_NAME = os.getenv("S3_BUCKET", "life-infra-map-media")
+    AWS_S3_REGION_NAME = os.getenv("S3_REGION", "us-east-1")
+    # MinIO 를 쓸 때만 지정합니다. 실제 AWS S3 로 가면 비워 두면 됩니다.
+    AWS_S3_ENDPOINT_URL = os.getenv("S3_ENDPOINT_URL", "") or None
+    # 브라우저가 접근할 주소입니다. 컨테이너 내부 주소와 다를 수 있어 따로 둡니다.
+    AWS_S3_CUSTOM_DOMAIN = os.getenv("S3_PUBLIC_DOMAIN", "") or None
+    # 로컬 MinIO 는 http 이고 배포 S3 는 https 입니다.
+    AWS_S3_URL_PROTOCOL = os.getenv("S3_URL_PROTOCOL", "https:").strip()
+    AWS_QUERYSTRING_AUTH = _env_bool("S3_QUERYSTRING_AUTH", False)
+    AWS_S3_FILE_OVERWRITE = False
+    AWS_DEFAULT_ACL = None
+    # MinIO 는 가상 호스트 방식 주소를 기본 지원하지 않습니다.
+    AWS_S3_ADDRESSING_STYLE = os.getenv("S3_ADDRESSING_STYLE", "path")
+
+    STORAGES = {
+        "default": {"BACKEND": "storages.backends.s3.S3Storage"},
+        "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+    }
+
 # CORS 설정
 CORS_ALLOWED_ORIGINS = [
     'http://localhost:5173',

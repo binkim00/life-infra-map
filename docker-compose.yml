@@ -54,6 +54,45 @@ services:
       # 접속 대상을 미리 등록해 둡니다. 최초 실행 때 한 번만 읽힙니다.
       - ./docker/pgadmin/servers.json:/pgadmin4/servers.json:ro
 
+  # 업로드 파일(오류 제보 사진, 게시글 이미지, 프로필)을 두는 S3 호환 저장소입니다.
+  # 로컬 `media/` 에 두면 배포 시 컨테이너가 재시작될 때마다 파일이 날아갑니다.
+  # 개발 단계에서 같은 방식을 쓰면 나중에 S3 로 바꿀 때 설정값만 바뀝니다.
+  storage:
+    image: minio/minio:RELEASE.2024-10-13T13-34-11Z
+    container_name: life-infra-map-storage
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-life_infra_map}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-life_infra_map_secret}
+    ports:
+      - "${S3_PORT:-9000}:9000"       # API
+      - "${S3_CONSOLE_PORT:-9001}:9001"  # 웹 콘솔
+    volumes:
+      - storage_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # 버킷을 만들고 공개 읽기로 열어 둡니다. 한 번 실행되고 종료됩니다.
+  storage_init:
+    image: minio/mc:RELEASE.2024-10-08T09-37-26Z
+    container_name: life-infra-map-storage-init
+    depends_on:
+      storage:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://storage:9000 ${S3_ACCESS_KEY:-life_infra_map} ${S3_SECRET_KEY:-life_infra_map_secret} &&
+      mc mb --ignore-existing local/${S3_BUCKET:-life-infra-map-media} &&
+      mc anonymous set download local/${S3_BUCKET:-life-infra-map-media} &&
+      echo '버킷 준비 완료'
+      "
+    restart: "no"
+
 volumes:
   db_data:
   pgadmin_data:
+  storage_data:

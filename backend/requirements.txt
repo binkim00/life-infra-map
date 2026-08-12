@@ -1,7 +1,9 @@
 asgiref==3.11.1
+boto3==1.43.69
 certifi==2026.4.22
 charset-normalizer==3.4.7
 django-cors-headers==4.9.0
+django-storages[s3]==1.14.4
 Django==6.0.5
 djangorestframework==3.17.1
 idna==3.15
