@@ -1,12 +1,19 @@
-# 로컬 개발용 데이터베이스입니다.
+# 로컬 개발용 인프라입니다.
 # 앱(백엔드/프론트)은 아직 컨테이너로 띄우지 않고 호스트에서 그대로 실행합니다.
 #
-#   docker compose up -d      # DB 시작
-#   docker compose down       # DB 중지 (데이터는 남음)
-#   docker compose down -v    # DB 중지 + 데이터 삭제
+#   docker compose up -d          # 전체 시작
+#   docker compose up -d db pgadmin   # DB + 관리 도구만 시작
+#   docker compose down           # 중지 (데이터는 남음)
+#   docker compose down -v        # 중지 + 데이터 삭제
+#
+# DB 를 브라우저에서 눈으로 보려면 pgAdmin 을 사용합니다.
+#
+#   http://localhost:5050
+#
+# 접속 방법과 문제 해결은 docs/02_data/pgadmin-guide.md 를 참고하세요.
 #
 # PostGIS 이미지를 쓰는 이유는 장소 검색이 반경/거리 질의를 하기 때문입니다.
-# 지금은 PostGIS 확장을 켜두기만 하고, 질의 전환은 이후 단계에서 합니다.
+# 반경 검색은 ST_DWithin + GiST 인덱스로 처리합니다. (Place.geog 생성 컬럼)
 
 services:
   db:

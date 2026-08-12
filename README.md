@@ -252,8 +252,13 @@ DB 태그가 없는 카카오 결과에는 추천 점수나 추천 이유를 억
 
 ### 🗄️ Database
 
-- SQLite
-- PostgreSQL 검토
+- PostgreSQL 16
+- PostGIS 3.4 (반경/거리 질의)
+- 로컬 개발 환경은 Docker 컨테이너로 실행
+
+초기에는 SQLite를 사용했으나, 사용자 제보와 게시글처럼 쓰기가 상시 발생하는 구조가 되면서 PostgreSQL로 전환했습니다. 반경 검색을 애플리케이션 대신 DB 인덱스로 처리하기 위해 PostGIS를 함께 사용합니다.
+
+전환 이유와 결과는 `docs/02_data/postgres-migration.md`에 정리했습니다.
 
 ### 🗺️ Map API
 
