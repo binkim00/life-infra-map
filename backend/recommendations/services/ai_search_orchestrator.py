@@ -19,6 +19,10 @@ from recommendations.services.ai_web_search_provider import (
     get_ai_web_search_result,
     get_ai_web_search_status,
 )
+from recommendations.services.area_gazetteer import (
+    resolve_area_coordinates,
+    resolve_area_coordinates_by_token,
+)
 from recommendations.services.kakao_local import search_places_by_keyword
 from recommendations.services.map_search import get_matching_categories
 from recommendations.services.place_urls import get_kakao_place_url
@@ -442,6 +446,21 @@ def _resolve_anchor_location(anchor_location, *, lat=None, lng=None):
             "label": "",
         }
 
+    # `서면`, `광안리` 같은 통칭 지명은 카카오 검색으로 풀리지 않으므로 사전에서 먼저 해결한다.
+    area = resolve_area_coordinates(anchor_location)
+    if area:
+        area_lat, area_lng, area_label = area
+        return {
+            "status": "resolved",
+            "reason": "",
+            "lat": area_lat,
+            "lng": area_lng,
+            "label": area_label,
+            "source": "area_gazetteer",
+            "external_id": "",
+            "address": "",
+        }
+
     coordinates = _coordinate_pair(anchor_location)
     if coordinates:
         resolved_lat, resolved_lng = coordinates
@@ -613,17 +632,28 @@ def _resolve_anchor_location(anchor_location, *, lat=None, lng=None):
         resolved_candidates.sort(key=lambda item: (-item["score"], item["name_length"]))
         best = resolved_candidates[0]
         if best["score"] < MIN_ANCHOR_RESOLUTION_SCORE:
-            return {
-                "status": "failed",
-                "reason": "anchor_match_too_weak",
-                "lat": None,
-                "lng": None,
-                "label": anchor_location,
-            }
-        selected = dict(best)
-        selected.pop("score", None)
-        selected.pop("name_length", None)
-        return selected
+            # 점수가 낮으면 쓰지 않고 아래 지명 사전 폴백으로 내려간다.
+            last_error_reason = "anchor_match_too_weak"
+        else:
+            selected = dict(best)
+            selected.pop("score", None)
+            selected.pop("name_length", None)
+            return selected
+
+    # 카카오로도 못 풀었으면 지명이 다른 말과 붙어 있는지 낱말 단위로 마지막 확인을 한다.
+    token_area = resolve_area_coordinates_by_token(anchor_location)
+    if token_area:
+        token_lat, token_lng, token_label = token_area
+        return {
+            "status": "resolved",
+            "reason": "",
+            "lat": token_lat,
+            "lng": token_lng,
+            "label": token_label,
+            "source": "area_gazetteer_token",
+            "external_id": "",
+            "address": "",
+        }
 
     return {
         "status": "failed",

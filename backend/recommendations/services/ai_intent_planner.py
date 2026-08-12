@@ -848,6 +848,31 @@ def _local_rule_plan_for_known_intent(raw_query):
         "\uc8fc\ucc28",
         "\ub178\ub798",
     ])
+    # 야경/드라이브는 목적이 분명하고 DB에 대응 태그가 있으므로 되묻지 않고 바로 검색한다.
+    # (`야경` 348건, `전망좋음` 308건, `드라이브목적지` 189건)
+    if _has_any(text, ["야경", "노을", "일몰", "밤바다", "야경명소"]):
+        return _local_rule_search_plan(
+            text,
+            normalized_query="야경 명소",
+            target_objects=["야경 명소"],
+            candidate_place_types=["전망대", "공원", "해수욕장", "관광명소"],
+            result_match_terms=["야경", "전망좋음", "노을"],
+            primary_search_queries=["야경 명소", "전망대", "야경 좋은 공원"],
+            candidate_category_codes=["tourism", "city_park", "beach"],
+        )
+
+    if _has_any(text, ["드라이브", "드라이브코스"]):
+        return _local_rule_search_plan(
+            text,
+            normalized_query="드라이브 목적지",
+            # `드라이브`가 질의문에 그대로 들어 있어야 `갈 만한 곳`이 막연한 요청으로 분류되지 않는다.
+            target_objects=["드라이브", "드라이브 목적지"],
+            candidate_place_types=["해안도로", "전망대", "해수욕장", "관광명소"],
+            result_match_terms=["드라이브목적지", "전망좋음", "야경"],
+            primary_search_queries=["드라이브 코스", "해안도로", "전망 좋은 곳"],
+            candidate_category_codes=["tourism", "beach", "city_park"],
+        )
+
     if broad_place_request and not broad_place_has_specific_target:
         return _local_rule_clarification_plan(
             text,
@@ -1581,6 +1606,12 @@ def _validate_plan(plan, raw_query="", lat=None, lng=None, map_center=None):
 def _canonicalize(raw_plan, raw_query="", lat=None, lng=None, map_center=None):
     raw_plan = raw_plan if isinstance(raw_plan, dict) else {}
     frame = _normalize_frame(raw_plan.get("frame") or raw_plan.get("place_intent_frame") or {})
+    # AI가 지명을 빠뜨리는 경우가 있어(`광안리 맛집` -> anchor 없음) 규칙으로 찾은 지명으로 채운다.
+    if not _clean_text(frame.get("anchor_location")):
+        local_anchor = _local_rule_anchor_location(raw_query)
+        if local_anchor:
+            frame["anchor_location"] = local_anchor
+            frame["location_mode"] = "explicit"
     clarification = _normalize_clarification(raw_plan.get("clarification") or raw_plan)
     action = _clean_text(raw_plan.get("action") or raw_plan.get("decision_action"))
     plan = {

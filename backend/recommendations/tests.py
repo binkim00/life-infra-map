@@ -27,6 +27,11 @@ from recommendations.services.ai_intent_planner import _local_rule_anchor_locati
 from recommendations.services.ai_search_orchestrator import (
     _deterministic_category_codes,
     _deterministic_ranked_candidates,
+    _resolve_anchor_location,
+)
+from recommendations.services.area_gazetteer import (
+    resolve_area_coordinates,
+    resolve_area_coordinates_by_token,
 )
 from recommendations.services.ai_situation_parser import parse_situation
 from recommendations.services.ai_web_search_provider import (
@@ -11926,3 +11931,43 @@ class DeterministicCategoryRoutingTests(TestCase):
         # 추천 이유는 실제 거리/카테고리 사실만 쓴다.
         self.assertIn("60m", ranked[0]["recommend_reason"])
         self.assertIn("화장실", ranked[0]["recommend_reason"])
+
+
+class AreaGazetteerTests(TestCase):
+    """통칭 지명이 사용자 위치와 무관하게 같은 좌표로 풀리는지 확인한다."""
+
+    def test_known_area_resolves_to_fixed_coordinates(self):
+        for alias in ("서면", "해운대", "광안리", "남포동", "부산역"):
+            with self.subTest(alias=alias):
+                found = resolve_area_coordinates(alias)
+                self.assertIsNotNone(found, f"{alias} 는 사전에 있어야 한다")
+                lat, lng, label = found
+                # 부산권 안의 좌표여야 한다.
+                self.assertTrue(34.9 <= lat <= 35.4, f"{alias} 위도 이상: {lat}")
+                self.assertTrue(128.7 <= lng <= 129.35, f"{alias} 경도 이상: {lng}")
+                self.assertEqual(label, alias)
+
+    def test_trailing_suffix_is_trimmed(self):
+        self.assertEqual(resolve_area_coordinates("서면역")[2], "서면역")
+        self.assertEqual(resolve_area_coordinates("광안리 근처")[2], "광안리")
+        self.assertEqual(resolve_area_coordinates("해운대 일대")[2], "해운대")
+
+    def test_unknown_area_returns_none(self):
+        for alias in ("", "존재하지않는동네", "순천시 서면 학구리"):
+            with self.subTest(alias=alias):
+                self.assertIsNone(resolve_area_coordinates(alias))
+
+    def test_token_fallback_finds_area_inside_longer_anchor(self):
+        # `서면 맛집거리`처럼 지명 뒤에 다른 말이 붙어도 마지막 수단으로 찾아낸다.
+        found = resolve_area_coordinates_by_token("서면 맛집거리")
+        self.assertIsNotNone(found)
+        self.assertEqual(found[2], "서면")
+        self.assertIsNone(resolve_area_coordinates_by_token("아무 관련 없는 문장"))
+
+    def test_anchor_resolution_uses_gazetteer_regardless_of_user_location(self):
+        # 사용자가 어디에 있든 `서면`은 부산진구 서면으로 풀려야 한다.
+        far = _resolve_anchor_location("서면", lat=37.4979, lng=127.0276)
+        near = _resolve_anchor_location("서면", lat=35.1578, lng=129.0594)
+        self.assertEqual(far["status"], "resolved")
+        self.assertEqual(far["source"], "area_gazetteer")
+        self.assertEqual((far["lat"], far["lng"]), (near["lat"], near["lng"]))
