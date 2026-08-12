@@ -1,0 +1,105 @@
+/*
+ * 겹친 마커 선택 메뉴는 카카오 InfoWindow 안에서 직접 DOM 으로 만들어집니다.
+ * 컴포넌트 스타일 스코프 밖이라 전역 스타일로 둡니다. (Vue 의 :global(...) 과 같은 역할)
+ */
+.map-marker-choice {
+  min-width: 190px;
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+  color: #222222;
+  font-family: inherit;
+}
+
+.map-marker-choice-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: center;
+}
+
+.map-marker-choice-title {
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.map-marker-choice-close {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #667085;
+  font-size: 18px;
+  font-weight: 900;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.map-marker-choice-close:hover {
+  background: #f3f4f6;
+  color: #222222;
+}
+
+.map-marker-choice-list {
+  display: grid;
+  gap: 6px;
+}
+
+.map-marker-choice-button {
+  width: 100%;
+  padding: 7px 8px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #222222;
+  text-align: left;
+  cursor: pointer;
+}
+
+.map-marker-choice-button:hover {
+  border-color: #222222;
+  background: #fff8e9;
+}
+
+.map-marker-choice-label {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border: 2px solid #222222;
+  border-radius: 999px;
+  background: #ffffff;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.map-marker-choice-copy {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.map-marker-choice-copy strong,
+.map-marker-choice-copy small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.map-marker-choice-copy strong {
+  font-size: 13px;
+}
+
+.map-marker-choice-copy small {
+  color: #667085;
+  font-size: 11px;
+}

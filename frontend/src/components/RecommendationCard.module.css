@@ -1,0 +1,142 @@
+.card {
+  padding: 20px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  margin-bottom: 16px;
+  background: #fff;
+}
+
+.cardHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.cardHeader h2 {
+  margin: 0;
+}
+
+.meta {
+  margin-top: 8px;
+  color: #555;
+}
+
+.address {
+  color: #666;
+}
+
+.trustRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.trustRow span {
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: #e7f5ff;
+  color: #1864ab;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.tagSection {
+  margin-top: 12px;
+}
+
+.tagLabel {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #555;
+}
+
+.tags {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.tags span {
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 14px;
+}
+
+.runtime span {
+  background: #f1f3f5;
+}
+
+.suggested span {
+  background: #fff3bf;
+}
+
+.verified span {
+  background: #d3f9d8;
+}
+
+.warning span {
+  background: #ffe3e3;
+}
+
+.scoreDetail {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #f8f9fa;
+  font-size: 13px;
+  color: #555;
+}
+
+.scoreDetail p {
+  margin: 2px 0;
+}
+
+.tagDetails {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #f8f9fa;
+  font-size: 13px;
+}
+
+.tagDetails summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.tagDetails ul {
+  margin: 8px 0 0;
+  padding-left: 18px;
+}
+
+.tagDetails li {
+  margin-bottom: 8px;
+}
+
+.tagDetails p {
+  margin: 4px 0 0;
+  color: #666;
+}
+
+.reason {
+  margin-top: 16px;
+  font-weight: 500;
+}
+
+.caution {
+  color: #777;
+  font-size: 14px;
+}
+
+.navButton {
+  display: inline-block;
+  margin-top: 12px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: #222;
+  color: white;
+  text-decoration: none;
+}

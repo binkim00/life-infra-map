@@ -1,5 +1,4 @@
-import { ref, watch } from 'vue'
-import { defineStore } from 'pinia'
+import { create } from 'zustand'
 
 const STORAGE_KEY = 'lifeInfraSettings'
 
@@ -20,41 +19,45 @@ const loadSettings = () => {
   }
 }
 
-export const useSettingsStore = defineStore('settings', () => {
-  const savedSettings = loadSettings()
+const persistSettings = (settings) => {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      commentNotifications: settings.commentNotifications,
+      inquiryNotifications: settings.inquiryNotifications,
+      compactMode: settings.compactMode,
+    }))
+  } catch (error) {
+    // localStorage can be unavailable in restricted browser contexts.
+  }
+}
 
-  const commentNotifications = ref(savedSettings.commentNotifications)
-  const inquiryNotifications = ref(savedSettings.inquiryNotifications)
-  const compactMode = ref(savedSettings.compactMode)
+export const useSettingsStore = create((set, get) => ({
+  ...loadSettings(),
 
-  const isNotificationVisible = (notification) => {
-    if (notification.notification_type === 'post_commented') {
-      return commentNotifications.value
-    }
+  setSetting: (key, value) => {
+    set({ [key]: value })
+    persistSettings(get())
+  },
 
-    if (notification.notification_type === 'inquiry_answered') {
-      return inquiryNotifications.value
-    }
+  toggleSetting: (key) => {
+    set({ [key]: !get()[key] })
+    persistSettings(get())
+  },
+}))
 
-    return true
+/**
+ * 알림 종류별 노출 여부입니다. 렌더링 중에도 부르므로 구독 없이 현재 값을 읽습니다.
+ */
+export const isNotificationVisible = (notification) => {
+  const { commentNotifications, inquiryNotifications } = useSettingsStore.getState()
+
+  if (notification?.notification_type === 'post_commented') {
+    return commentNotifications
   }
 
-  watch(
-    [commentNotifications, inquiryNotifications, compactMode],
-    () => {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({
-        commentNotifications: commentNotifications.value,
-        inquiryNotifications: inquiryNotifications.value,
-        compactMode: compactMode.value,
-      }))
-    },
-    { deep: true },
-  )
-
-  return {
-    commentNotifications,
-    inquiryNotifications,
-    compactMode,
-    isNotificationVisible,
+  if (notification?.notification_type === 'inquiry_answered') {
+    return inquiryNotifications
   }
-})
+
+  return true
+}

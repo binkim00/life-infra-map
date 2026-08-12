@@ -1,0 +1,279 @@
+.admin-report-page {
+  min-height: 100vh;
+  padding: 40px 24px;
+  background: #f6f7fb;
+}
+
+.admin-report-container {
+  max-width: 1180px;
+  margin: 0 auto;
+  display: grid;
+  gap: 14px;
+}
+
+.page-title {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-end;
+}
+
+.eyebrow,
+.page-title p {
+  margin: 0;
+}
+
+.eyebrow {
+  color: #2563eb;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+h1,
+h2 {
+  margin: 0;
+  color: #111827;
+}
+
+.page-title p {
+  color: #667085;
+  font-weight: 700;
+}
+
+.admin-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.admin-tab {
+  padding: 10px 14px;
+  border: 1px solid #d0d5dd;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #344054;
+  font-size: 14px;
+  font-weight: 900;
+  text-decoration: none;
+}
+
+.admin-tab.router-link-active {
+  border-color: #2563eb;
+  background: #eff6ff;
+  color: #2563eb;
+}
+
+.panel {
+  padding: 18px;
+  border: 1px solid #e5e8f0;
+  border-radius: 18px;
+  background: #ffffff;
+  box-shadow: 0 10px 28px rgba(20, 35, 70, 0.08);
+}
+
+.filter-panel {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+select,
+textarea {
+  padding: 10px 12px;
+  border: 1px solid #d0d5dd;
+  border-radius: 10px;
+  font: inherit;
+}
+
+textarea {
+  width: 100%;
+  resize: vertical;
+}
+
+.workspace {
+  display: grid;
+  grid-template-columns: 380px minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.report-list,
+.detail-body {
+  margin-top: 12px;
+  display: grid;
+  gap: 10px;
+}
+
+.report-row {
+  width: 100%;
+  padding: 12px;
+  display: grid;
+  gap: 5px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: #f9fafb;
+  color: #111827;
+  text-align: left;
+  cursor: pointer;
+}
+
+.report-row.active,
+.report-row:hover {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+}
+
+.report-row span,
+.report-row time {
+  color: #667085;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.status-badge,
+.chip {
+  width: fit-content;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.status-badge.approved {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.status-badge.rejected {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: 90px minmax(0, 1fr);
+  gap: 8px;
+}
+
+.detail-grid span {
+  color: #667085;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.chip-row,
+.review-actions,
+.pager {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.chip {
+  background: #e0f2fe;
+  color: #075985;
+}
+
+.report-block {
+  padding: 12px;
+  border-radius: 12px;
+  background: #f9fafb;
+}
+
+.report-block p {
+  margin: 6px 0 0;
+  color: #344054;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.image-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 8px;
+}
+
+.image-grid img {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  border-radius: 10px;
+  object-fit: cover;
+}
+
+label {
+  display: grid;
+  gap: 6px;
+  color: #344054;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.review-actions button,
+.pager button {
+  min-height: 34px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 8px;
+  color: #ffffff;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.review-actions .approve {
+  background: #16a34a;
+}
+
+.review-actions .reject {
+  background: #dc2626;
+}
+
+.pager {
+  margin-top: 12px;
+  justify-content: center;
+  color: #344054;
+  font-weight: 900;
+}
+
+.pager button {
+  border: 1px solid #d0d5dd;
+  background: #ffffff;
+  color: #344054;
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.empty,
+.status-message {
+  margin: 12px 0 0;
+  padding: 12px;
+  border-radius: 12px;
+  background: #f9fafb;
+  color: #667085;
+  font-weight: 800;
+}
+
+.status-message {
+  color: #2563eb;
+}
+
+@media (max-width: 920px) {
+  .page-title {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .admin-tabs {
+    justify-content: flex-start;
+  }
+
+  .workspace {
+    grid-template-columns: 1fr;
+  }
+}

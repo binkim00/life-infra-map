@@ -1,0 +1,10 @@
+.guide-page { min-height: 100vh; padding: 40px 24px; background: #f6f7fb; }
+.guide-container { max-width: 860px; margin: 0 auto; }
+.page-header { margin-bottom: 24px; }
+.eyebrow { margin: 0 0 6px; color: #2563eb; font-size: 13px; font-weight: 900; letter-spacing: 0.08em; }
+h1 { margin: 0; color: #111827; }
+.guide-board { overflow: hidden; border: 1px solid #e5e8f0; border-radius: 8px; background: #fff; box-shadow: 0 10px 28px rgba(20,35,70,.06); }
+.guide-row { padding: 18px 20px; display: grid; gap: 8px; border-bottom: 1px solid #edf0f4; }
+.guide-row:last-child { border-bottom: 0; }
+.guide-row strong { color: #111827; font-size: 15px; }
+.guide-row p { margin: 0; color: #344054; line-height: 1.7; }

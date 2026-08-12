@@ -1,0 +1,164 @@
+.history-page {
+  min-height: 100vh;
+  padding: 40px 24px;
+  background: #f6f7fb;
+}
+
+.history-container {
+  max-width: 920px;
+  margin: 0 auto;
+  display: grid;
+  gap: 14px;
+}
+
+.page-title {
+  display: grid;
+  gap: 6px;
+}
+
+.back-link {
+  width: fit-content;
+  color: #2563eb;
+  font-size: 13px;
+  font-weight: 900;
+  text-decoration: none;
+}
+
+.eyebrow {
+  margin: 0;
+  color: #2563eb;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+h1,
+h2 {
+  margin: 0;
+  color: #111827;
+}
+
+.page-title p,
+.section-heading-row p {
+  margin: 0;
+  color: #667085;
+  font-weight: 700;
+}
+
+.panel {
+  padding: 20px;
+  border: 1px solid #e5e8f0;
+  border-radius: 18px;
+  background: #ffffff;
+  box-shadow: 0 10px 28px rgba(20, 35, 70, 0.08);
+}
+
+.history-list {
+  margin-top: 14px;
+  display: grid;
+  gap: 10px;
+}
+
+.history-item {
+  padding: 14px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  border-radius: 12px;
+  background: #f9fafb;
+}
+
+.history-main {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.history-main strong {
+  color: #111827;
+}
+
+.history-main span,
+.history-main time {
+  color: #667085;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chip {
+  max-width: 100%;
+  padding: 4px 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e0f2fe;
+  color: #075985;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-actions,
+.pager {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.history-actions button,
+.pager button {
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid #d0d5dd;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #344054;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.history-actions .danger {
+  border-color: #fecaca;
+  color: #b91c1c;
+}
+
+.history-actions button:disabled,
+.pager button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.pager {
+  margin-top: 14px;
+  justify-content: center;
+  color: #344054;
+  font-weight: 900;
+}
+
+.empty,
+.status-message {
+  margin: 12px 0 0;
+  padding: 12px;
+  border-radius: 12px;
+  background: #f9fafb;
+  color: #667085;
+  font-weight: 800;
+}
+
+.status-message {
+  color: #2563eb;
+}
+
+@media (max-width: 720px) {
+  .history-item {
+    grid-template-columns: 1fr;
+  }
+
+  .history-actions {
+    flex-wrap: wrap;
+  }
+}

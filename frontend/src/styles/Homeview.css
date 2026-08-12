@@ -1704,7 +1704,7 @@ h1 {
   transition: transform 0.25s ease, opacity 0.25s ease;
 }
 
-.map-area :deep(.map-section) {
+.map-area .map-section {
   height: 100%;
   min-height: inherit;
 }
@@ -1770,7 +1770,7 @@ h1 {
   opacity: 0.6;
 }
 
-:deep(.map) {
+.map {
   height: 100%;
   min-height: 0;
   border: 3px solid #222222;
@@ -2537,7 +2537,7 @@ h1 {
     min-height: 0;
   }
 
-  .map-area :deep(.map-section) {
+  .map-area .map-section {
     height: auto;
     min-height: 0;
   }
@@ -2559,7 +2559,7 @@ h1 {
     max-height: min(52vh, 460px);
   }
 
-  :deep(.map) {
+  .map {
     height: 420px;
     min-height: 320px;
     border-radius: 18px;
@@ -2702,7 +2702,7 @@ h1 {
     padding: 13px;
   }
 
-  :deep(.map) {
+  .map {
     height: min(58vh, 560px);
     min-height: 360px;
     border-radius: 20px;
@@ -2860,7 +2860,7 @@ h1 {
     padding: 10px 6px;
   }
 
-  :deep(.map) {
+  .map {
     height: 360px;
     min-height: 300px;
   }

@@ -1,5 +1,5 @@
-import { ref } from 'vue'
-import { defineStore } from 'pinia'
+import { create } from 'zustand'
+
 import api, { setUnauthorizedHandler } from '@/api/axios'
 
 const readStoredToken = () => {
@@ -27,25 +27,37 @@ const removeStoredAuth = () => {
   }
 }
 
-export const useAuthStore = defineStore('auth', () => {
-  const token = ref(readStoredToken())
-  const user = ref(readStoredUser())
-
-  const isLoggedIn = ref(!!token.value)
-
-  const clearAuthState = () => {
-    token.value = null
-    user.value = null
-    isLoggedIn.value = false
-
-    removeStoredAuth()
+const persistAuth = (token, user) => {
+  try {
+    localStorage.setItem('authToken', token)
+    localStorage.setItem('authUser', JSON.stringify(user))
+  } catch (error) {
+    // localStorage can be unavailable in restricted browser contexts.
   }
+}
 
-  setUnauthorizedHandler(() => {
-    clearAuthState()
-  })
+export const useAuthStore = create((set, get) => ({
+  token: readStoredToken(),
+  user: readStoredUser(),
+  isLoggedIn: Boolean(readStoredToken()),
 
-  const signup = async (payload) => {
+  clearAuthState: () => {
+    removeStoredAuth()
+    set({ token: null, user: null, isLoggedIn: false })
+  },
+
+  // 마이페이지에서 닉네임/프로필 사진을 고치면 헤더 표시도 함께 바뀌어야 합니다.
+  setUser: (user) => {
+    try {
+      localStorage.setItem('authUser', JSON.stringify(user))
+    } catch (error) {
+      // localStorage can be unavailable in restricted browser contexts.
+    }
+
+    set({ user })
+  },
+
+  signup: async (payload) => {
     const config = payload instanceof FormData ? {
       headers: {
         'Content-Type': 'multipart/form-data',
@@ -55,62 +67,58 @@ export const useAuthStore = defineStore('auth', () => {
     const response = await api.post('/accounts/signup/', payload, config)
 
     // Spring 은 access_token, 이관 전 Django 는 token 으로 내려줍니다.
-    token.value = response.data.access_token || response.data.token
-    user.value = response.data.user
-    isLoggedIn.value = true
+    const token = response.data.access_token || response.data.token
+    const user = response.data.user
 
-    localStorage.setItem('authToken', token.value)
-    localStorage.setItem('authUser', JSON.stringify(response.data.user))
+    persistAuth(token, user)
+    set({ token, user, isLoggedIn: true })
 
     return response.data
-  }
+  },
 
-  const login = async (payload) => {
+  login: async (payload) => {
     const response = await api.post('/auth/login', payload)
 
-    token.value = response.data.access_token || response.data.token
-    user.value = response.data.user
-    isLoggedIn.value = true
+    const token = response.data.access_token || response.data.token
+    const user = response.data.user
 
-    localStorage.setItem('authToken', token.value)
-    localStorage.setItem('authUser', JSON.stringify(response.data.user))
+    persistAuth(token, user)
+    set({ token, user, isLoggedIn: true })
 
     return response.data
-  }
+  },
 
-  const logout = async () => {
+  logout: async () => {
     try {
-      if (token.value) {
+      if (get().token) {
         await api.post('/accounts/logout/')
       }
     } catch (error) {
       console.error(error)
     }
 
-    clearAuthState()
-  }
+    get().clearAuthState()
+  },
 
-  const fetchMe = async () => {
-    if (!token.value) return
+  fetchMe: async () => {
+    if (!get().token) return undefined
 
     const response = await api.get('/accounts/me/')
+    const user = response.data.user
 
-    user.value = response.data.user
-    isLoggedIn.value = true
+    try {
+      localStorage.setItem('authUser', JSON.stringify(user))
+    } catch (error) {
+      // localStorage can be unavailable in restricted browser contexts.
+    }
 
-    localStorage.setItem('authUser', JSON.stringify(response.data.user))
+    set({ user, isLoggedIn: true })
 
-    return response.data.user
-  }
+    return user
+  },
+}))
 
-  return {
-    token,
-    user,
-    isLoggedIn,
-    signup,
-    login,
-    logout,
-    fetchMe,
-    clearAuthState,
-  }
+// 401 응답을 받으면 저장된 인증 상태를 지웁니다.
+setUnauthorizedHandler(() => {
+  useAuthStore.getState().clearAuthState()
 })
