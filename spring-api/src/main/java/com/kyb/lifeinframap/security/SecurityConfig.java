@@ -32,6 +32,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/auth/login").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/accounts/signup").permitAll()
                         .requestMatchers("/api/health").permitAll()
+                        // 이관 중 Django 계산 결과와 대조하기 위해 열어 둡니다. 이관이 끝나면 닫으세요.
+                        .requestMatchers("/api/tiers/**").permitAll()
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
