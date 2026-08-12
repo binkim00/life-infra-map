@@ -112,6 +112,10 @@ public class User {
         return lastLogin;
     }
 
+    public OffsetDateTime getDateJoined() {
+        return dateJoined;
+    }
+
     public void markLoggedIn(OffsetDateTime at) {
         this.lastLogin = at;
     }

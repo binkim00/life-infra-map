@@ -71,6 +71,11 @@ public class Post {
         this.viewCount += 1;
     }
 
+    /** 공지는 목록 위에 고정합니다. Django 는 board_type 이 notice 면 항상 고정합니다. */
+    public void pin(boolean pinned) {
+        this.pinned = pinned;
+    }
+
     public Long getId() { return id; }
     public String getBoardType() { return boardType; }
     public String getTitle() { return title; }
