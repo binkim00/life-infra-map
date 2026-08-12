@@ -1,0 +1,30 @@
+# Django 와 같은 Postgres 를 바라봅니다.
+# 스키마 소유자는 Django 이므로 ddl-auto 는 validate 로 두고 절대 변경하지 않습니다.
+server:
+  port: ${SPRING_PORT:8081}
+
+spring:
+  application:
+    name: life-infra-map-api
+  datasource:
+    url: jdbc:postgresql://${POSTGRES_HOST:127.0.0.1}:${POSTGRES_PORT:5432}/${POSTGRES_DB:life_infra_map}
+    username: ${POSTGRES_USER:life_infra_map}
+    password: ${POSTGRES_PASSWORD:life_infra_map}
+  jpa:
+    hibernate:
+      # Django 마이그레이션이 만든 스키마를 그대로 씁니다. Hibernate 가 손대면 안 됩니다.
+      ddl-auto: validate
+    properties:
+      hibernate:
+        format_sql: true
+    open-in-view: false
+
+app:
+  jwt:
+    # Django 와 같은 값을 써야 서로 발급한 토큰을 검증할 수 있습니다.
+    secret: ${JWT_SECRET:change-me-in-env-at-least-32-bytes-long}
+    access-token-minutes: ${JWT_ACCESS_MINUTES:120}
+
+logging:
+  level:
+    org.hibernate.SQL: ${SQL_LOG_LEVEL:info}
