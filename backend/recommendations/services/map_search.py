@@ -196,7 +196,10 @@ def apply_keyword_filter(queryset, include_tokens, exclude_tokens):
         queryset = queryset.exclude(exclude_filter)
 
     if include_tokens or exclude_tokens:
-        queryset = queryset.distinct()
+        # `place_tags` 조인 때문에 생기는 중복을 걷어낸다.
+        # `.distinct()`를 그대로 쓰면 `raw`(JSONField)까지 포함한 전체 행을 정렬해야 해서
+        # Postgres가 디스크로 스필한다. id만 추려서 다시 조회하면 정렬 대상이 정수 하나로 줄어든다.
+        queryset = queryset.model.objects.filter(pk__in=queryset.values("pk"))
 
     return queryset
 

@@ -1,0 +1,14 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "life-infra-map (local)",
+      "Group": "Servers",
+      "Host": "db",
+      "Port": 5432,
+      "MaintenanceDB": "life_infra_map",
+      "Username": "life_infra_map",
+      "SSLMode": "prefer",
+      "Comment": "pgAdmin 이 컨테이너 안에서 도니 호스트는 127.0.0.1 이 아니라 compose 서비스명 db 입니다. Port 도 호스트 매핑값이 아닌 컨테이너 내부 5432 입니다."
+    }
+  }
+}
