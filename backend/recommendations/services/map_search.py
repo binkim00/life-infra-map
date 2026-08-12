@@ -11,7 +11,9 @@ AI 해석 없이 입력한 검색어를 그대로 쓰되, 아래 세 가지를 �
 import math
 import re
 
+from django.db import connection
 from django.db.models import BooleanField, Exists, OuterRef, Q, Value
+from django.db.models.expressions import RawSQL
 
 from recommendations.models import Place, PlaceTag, Tag
 
@@ -219,6 +221,48 @@ def calculate_distance_m(lat1, lng1, lat2, lng2):
     return int(EARTH_RADIUS_M * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a)))
 
 
+def supports_postgis():
+    """PostGIS 를 쓸 수 있는 DB 인지 확인한다. SQLite 로 되돌려도 동작해야 하므로 매번 확인한다."""
+    return connection.vendor == "postgresql"
+
+
+def _geography_point(lat, lng):
+    """`ST_MakePoint` 는 (경도, 위도) 순서다."""
+    return "ST_SetSRID(ST_MakePoint(%s, %s), 4326)::geography", [lng, lat]
+
+
+def apply_radius_filter(queryset, lat, lng, radius_m):
+    """
+    반경 조건을 걸고, 가능하면 거리도 DB 에서 함께 계산한다.
+
+    PostGIS 가 있으면 `ST_DWithin` 이 GiST 인덱스로 정확한 반경을 처리하므로
+    파이썬에서 행마다 하버사인을 돌 필요가 없다.
+    없으면 기존대로 bounding box 로 좁히고 거리는 파이썬에서 계산한다.
+
+    (쿼리셋, DB 가 거리를 계산했는지 여부) 를 돌려준다.
+    """
+    if lat is None or lng is None:
+        return queryset, False
+
+    if not supports_postgis():
+        if radius_m:
+            queryset = queryset.filter(**build_bounding_box(lat, lng, radius_m))
+        return queryset, False
+
+    point_sql, point_params = _geography_point(lat, lng)
+    queryset = queryset.annotate(
+        db_distance=RawSQL(f"ST_Distance(geog, {point_sql})", point_params),
+    )
+    if radius_m:
+        queryset = queryset.annotate(
+            within_radius=RawSQL(
+                f"ST_DWithin(geog, {point_sql}, %s)",
+                [*point_params, radius_m],
+            ),
+        ).filter(within_radius=True)
+    return queryset, True
+
+
 def build_bounding_box(lat, lng, radius_m):
     """반경을 감싸는 위경도 범위를 만든다. SQL에서 먼저 후보를 줄이는 용도다."""
     lat_delta = radius_m / METERS_PER_LAT_DEGREE
@@ -342,25 +386,30 @@ def annotate_tag_match(queryset, tokens):
 
 def collect_scored_candidates(queryset, *, include_tokens, normalized_query,
                               matched_categories, attribute_query=False,
-                              lat=None, lng=None, radius=0):
+                              lat=None, lng=None, radius=0, db_distance=False):
     """
     후보의 관련도 점수와 거리를 계산해 정렬 가능한 목록으로 만든다.
 
     전체 모델 인스턴스를 만들지 않고 필요한 컬럼만 읽어 메모리와 시간을 줄인다.
     태그로 맞았는지 여부는 `Exists` 서브쿼리로 같은 쿼리 안에서 함께 읽는다.
+    `db_distance` 가 참이면 거리는 PostGIS 가 이미 계산했으므로 그대로 쓴다.
     """
-    candidate_fields = annotate_tag_match(queryset, include_tokens).values_list(
-        "id", "name", "address", "detail_location", "category", "lat", "lng",
-        "has_tag_match",
-    )
+    fields = ["id", "name", "address", "detail_location", "category", "lat", "lng", "has_tag_match"]
+    if db_distance:
+        fields.append("db_distance")
+
+    candidate_fields = annotate_tag_match(queryset, include_tokens).values_list(*fields)
 
     candidates = []
 
-    for (place_id, name, address, detail_location, category,
-         place_lat, place_lng, has_tag_match) in candidate_fields.iterator(chunk_size=2000):
+    for row in candidate_fields.iterator(chunk_size=2000):
+        (place_id, name, address, detail_location, category,
+         place_lat, place_lng, has_tag_match) = row[:8]
         distance = None
 
-        if lat is not None and lng is not None:
+        if db_distance:
+            distance = int(round(row[8]))
+        elif lat is not None and lng is not None:
             distance = calculate_distance_m(lat, lng, place_lat, place_lng)
 
             if radius and distance > radius:
@@ -509,6 +558,8 @@ def run_search_pass(*, source_queryset, include_tokens, exclude_tokens, matched_
 
         return dedupe_candidates(sort_candidates(candidates, has_location=False))
 
+    # 좌표가 없는 장소는 거리 계산이 불가능하므로 제외합니다. (PostGIS 경로에서도 동일)
+
     deduped = []
 
     for attempt_radius in build_radius_attempts(
@@ -517,10 +568,7 @@ def run_search_pass(*, source_queryset, include_tokens, exclude_tokens, matched_
         radius=radius,
         has_keyword=bool(include_tokens or exclude_tokens),
     ):
-        queryset = base_queryset
-
-        if attempt_radius:
-            queryset = queryset.filter(**build_bounding_box(lat, lng, attempt_radius))
+        queryset, db_distance = apply_radius_filter(base_queryset, lat, lng, attempt_radius)
 
         candidates = collect_scored_candidates(
             queryset,
@@ -531,6 +579,7 @@ def run_search_pass(*, source_queryset, include_tokens, exclude_tokens, matched_
             lat=lat,
             lng=lng,
             radius=attempt_radius or 0,
+            db_distance=db_distance,
         )
         deduped = dedupe_candidates(sort_candidates(candidates, has_location=True))
 
