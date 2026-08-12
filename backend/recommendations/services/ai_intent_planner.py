@@ -5,6 +5,8 @@ import re
 from django.conf import settings
 import requests
 
+from recommendations.services.map_search import get_matching_categories
+
 from recommendations.services.ai_situation_parser import _call_ai_chat_json as _shared_call_ai_chat_json
 from recommendations.services.ai_json_client import get_ai_json_unavailable_reason
 
@@ -503,6 +505,26 @@ def _enrich_frame_policy(frame, raw_query="", action="search"):
         "result_policy": result_policy,
         "resultPolicy": result_policy,
     }
+
+
+# 카테고리 이름만 적은 요청을 규칙으로 처리할 때 씁니다.
+# 카테고리와 거리로 답이 정해지는 생활 유틸리티만 넣습니다.
+# 카페/공원/관광지는 `조용한`, `야경 좋은` 같은 주관적 조건이 붙으므로 넣지 않습니다.
+UTILITY_CATEGORY_CODES = {"toilet", "parking", "freewifi", "shelter", "smoking_area"}
+UTILITY_CATEGORY_LABELS = {
+    "toilet": "화장실",
+    "parking": "주차장",
+    "freewifi": "무료 와이파이",
+    "shelter": "쉼터",
+    "smoking_area": "흡연구역",
+}
+
+# 검색어를 좁히기만 하고 카테고리 판단에는 쓸모없는 표현입니다.
+UTILITY_QUERY_STOPWORDS = frozenset({
+    "근처", "주변", "인근", "가까운", "가까이", "가장", "제일", "빨리", "급히", "당장",
+    "지금", "여기", "이곳", "어디", "좀", "곳", "장소", "알려줘", "찾아줘", "추천",
+    "추천해줘", "있는", "되는", "쓸", "이용", "가능한", "무료",
+})
 
 
 def _local_rule_anchor_location(raw_query):
@@ -1327,16 +1349,19 @@ def _local_rule_plan_for_known_intent(raw_query):
             candidate_category_codes=["cafe", "shelter"],
         )
 
-    if _has_any(text, ["무료 와이파이", "공공 와이파이", "와이파이 되는", "와이파이 쓸", "wifi", "wi-fi"]):
+    # 무료 와이파이는 DB 에 `freewifi` 로 83,145건이 저장돼 있습니다.
+    # 예전에는 카페의 편의시설로만 보고 cafe/shopping 을 찾았는데,
+    # 그러면 가장 큰 카테고리를 통째로 쓰지 못하고 "와이파이 여부 확인 필요"만 붙었습니다.
+    if _has_any(text, ["무료 와이파이", "공공 와이파이", "와이파이 되는", "와이파이 쓸",
+                       "와이파이 있는", "와이파이", "wifi", "wi-fi"]):
         return _local_rule_search_plan(
             text,
-            normalized_query="와이파이 가능한 방문 장소",
-            target_objects=["와이파이 가능한 방문 장소"],
-            candidate_place_types=["카페", "공공도서관", "터미널", "쇼핑몰"],
-            result_match_terms=["와이파이", "Wi-Fi", "카페", "도서관", "터미널", "쇼핑몰"],
-            primary_search_queries=["카페", "공공도서관", "터미널", "쇼핑몰"],
-            constraints=["와이파이 이용 가능"],
-            candidate_category_codes=["cafe", "shopping"],
+            normalized_query="무료 와이파이",
+            target_objects=["무료 와이파이"],
+            candidate_place_types=["무료 와이파이", "공공 와이파이"],
+            result_match_terms=["무료 와이파이", "와이파이", "Wi-Fi"],
+            primary_search_queries=["무료 와이파이", "공공 와이파이"],
+            candidate_category_codes=["freewifi"],
         )
 
     if _has_any(text, ["약국", "두통", "머리 아", "머리아", "진통제", "약 살", "약사"]):
@@ -1425,7 +1450,59 @@ def _local_rule_plan_for_known_intent(raw_query):
             ranking_policy="evidence_first",
         )
 
+    utility_plan = _local_rule_utility_category_plan(text)
+    if utility_plan:
+        return utility_plan
+
     return None
+
+
+def _local_rule_utility_category_plan(text):
+    """
+    `쉼터`, `화장실`처럼 생활 유틸리티 카테고리 이름만 적은 요청을 규칙으로 처리한다.
+
+    이런 요청은 카테고리와 거리로 답이 정해져서 AI 해석이 필요 없다.
+    앞선 개별 규칙에 걸리지 않은 경우만 여기까지 내려온다.
+
+    카테고리 별칭은 지도 검색이 쓰는 목록을 그대로 재사용한다.
+    말뭉치를 두 벌 관리하면 한쪽만 고쳐져 검색 결과가 갈린다.
+    """
+    tokens = [token for token in re.split(r"\s+", _clean_text(text, 200)) if token]
+    if not tokens:
+        return None
+
+    matched = set()
+    meaningful_tokens = []
+    for token in tokens:
+        compact = _compact(token)
+        if not compact or compact in UTILITY_QUERY_STOPWORDS:
+            continue
+        meaningful_tokens.append(token)
+        categories = get_matching_categories(token)
+        if not categories:
+            # 카테고리로 떨어지지 않는 표현이 섞이면 의미 판단이 필요한 요청이다.
+            return None
+        matched.update(categories)
+
+    # 남은 말이 없거나(전부 군더더기), 여러 카테고리가 섞이면 규칙으로 단정하지 않는다.
+    if not meaningful_tokens or len(matched) != 1:
+        return None
+
+    category = next(iter(matched))
+    if category not in UTILITY_CATEGORY_CODES:
+        return None
+
+    label = UTILITY_CATEGORY_LABELS[category]
+    return _local_rule_search_plan(
+        text,
+        normalized_query=label,
+        target_objects=[label],
+        candidate_place_types=[label],
+        result_match_terms=[label],
+        primary_search_queries=[label],
+        candidate_category_codes=[category],
+        ranking_policy="distance_first",
+    )
 
 
 def _broad_frame_terms():

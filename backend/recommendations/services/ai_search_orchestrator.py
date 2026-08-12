@@ -7,6 +7,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from django.conf import settings
 from django.db.models import Q
+from django.db.models.expressions import RawSQL
 
 from recommendations.models import Place
 from recommendations.services.ai_candidate_reranker import semantic_rerank_candidates
@@ -24,7 +25,7 @@ from recommendations.services.area_gazetteer import (
     resolve_area_coordinates_by_token,
 )
 from recommendations.services.kakao_local import search_places_by_keyword
-from recommendations.services.map_search import get_matching_categories
+from recommendations.services.map_search import get_matching_categories, supports_postgis
 from recommendations.services.place_urls import get_kakao_place_url
 from recommendations.services.smoking_area_data import calculate_distance_m
 from recommendations.services.tag_utils import get_category_display_name
@@ -358,6 +359,10 @@ COMMERCIAL_ANCHOR_CATEGORY_HINTS = (
 # 이 점수에 못 미치는 후보는 기준 위치로 쓰지 않습니다.
 # 엉뚱한 곳을 기준으로 검색하느니 위치를 못 찾았다고 알리는 편이 낫습니다.
 MIN_ANCHOR_RESOLUTION_SCORE = 25
+# 카카오가 찾아준 기준점이 지명 사전 좌표에서 이만큼 떨어지면 다른 지역으로 봅니다.
+# 같은 지명이 전국에 여러 개 있어서 생기는 오해석을 걸러내는 용도라 넉넉하게 둡니다.
+# (`해운대 그랜드호텔`처럼 지명 안의 특정 장소는 이 안에 들어오므로 그대로 쓰입니다.)
+MAX_ANCHOR_GAP_FROM_KNOWN_AREA_M = 20_000
 
 LOCATION_ANCHOR_CATEGORY_HINTS = (
     "지하철",
@@ -638,6 +643,25 @@ def _resolve_anchor_location(anchor_location, *, lat=None, lng=None):
             selected = dict(best)
             selected.pop("score", None)
             selected.pop("name_length", None)
+
+            # 카카오가 찾아준 곳이 지명 사전의 위치에서 너무 멀면 다른 지역을 잡은 것으로 본다.
+            # `서면 맛집`이 전남 순천시 서면의 졸음쉼터로 풀리던 경우가 여기에 해당한다.
+            # 사전에 없는 지명은 이 검사를 건너뛰므로 기존 동작에 영향이 없다.
+            token_area = resolve_area_coordinates_by_token(anchor_location)
+            if token_area:
+                area_lat, area_lng, area_label = token_area
+                gap = calculate_distance_m(area_lat, area_lng, selected["lat"], selected["lng"])
+                if gap is not None and gap > MAX_ANCHOR_GAP_FROM_KNOWN_AREA_M:
+                    return {
+                        "status": "resolved",
+                        "reason": "",
+                        "lat": area_lat,
+                        "lng": area_lng,
+                        "label": area_label,
+                        "source": "area_gazetteer_far_match",
+                        "external_id": "",
+                        "address": "",
+                    }
             return selected
 
     # 카카오로도 못 풀었으면 지명이 다른 말과 붙어 있는지 낱말 단위로 마지막 확인을 한다.
@@ -2191,6 +2215,25 @@ def _candidate_has_invalid_display(candidate):
     return "검증 태그" in name or "테스트로" in address
 
 
+def _order_by_distance(queryset, lat, lng):
+    """
+    후보를 가까운 순으로 정렬한다.
+
+    PostGIS 가 있으면 GiST 인덱스를 타는 `ST_Distance` 로 DB 에서 정렬하고,
+    없으면(SQLite 로 되돌린 경우) 기존 품질순으로 둔다.
+    좌표가 없으면 거리 정렬 자체가 불가능하므로 품질순을 쓴다.
+    """
+    if lat is None or lng is None or not supports_postgis():
+        return queryset.order_by("-data_quality_score", "-updated_at")
+
+    return queryset.annotate(
+        collect_distance=RawSQL(
+            "ST_Distance(geog, ST_SetSRID(ST_MakePoint(%s, %s), 4326)::geography)",
+            (lng, lat),
+        ),
+    ).order_by("collect_distance")
+
+
 def collect_db_candidates(frame, *, lat=None, lng=None, limit=50, radius=None):
     terms = _db_evidence_terms(frame)
     search_terms = terms["search"]
@@ -2231,7 +2274,12 @@ def collect_db_candidates(frame, *, lat=None, lng=None, limit=50, radius=None):
             lng__lte=bounds["lng_max"],
         )
 
-    queryset = queryset.order_by("-data_quality_score", "-updated_at")
+    # 좌표가 있으면 가까운 순으로 뽑습니다.
+    #
+    # 예전에는 데이터 품질순으로 정렬한 뒤 앞부분만 잘라 썼는데, 카테고리가 큰 경우
+    # (freewifi 83,145건) 반경 안에서도 가까운 곳이 잘려나가 3~5km 떨어진 결과만 남았습니다.
+    # 이름으로 걸리는 카테고리(쉼터 등)는 우연히 가까운 게 잡혔을 뿐입니다.
+    queryset = _order_by_distance(queryset, lat, lng)
     candidates = []
     for place in queryset[: max(limit * 5, 100)]:
         distance = _distance(lat, lng, place.lat, place.lng)

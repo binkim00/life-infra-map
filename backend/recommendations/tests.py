@@ -25,7 +25,10 @@ from recommendations.models import (
     UserSavedPlace,
     UserSearchLog,
 )
-from recommendations.services.ai_intent_planner import _local_rule_anchor_location
+from recommendations.services.ai_intent_planner import (
+    _local_rule_anchor_location,
+    _local_rule_plan_for_known_intent,
+)
 from recommendations.services.ai_search_orchestrator import (
     _deterministic_category_codes,
     _deterministic_ranked_candidates,
@@ -5770,7 +5773,7 @@ class RecommendationSearchTests(TestCase):
         self.assertLess(data["results"][0]["distance_m"], data["results"][1]["distance_m"])
         self.assertEqual(data["results"][1]["id"], far_toilet.id)
 
-    @skip("Spring 으로 이관됨 - spring-api 의 SavedPlaceController 테스트로 옮겨야 합니다.")
+    @skip("Spring 으로 이관됨. 대체 테스트: spring-api UserDataApiTest 의 저장 장소 항목")
     def test_authenticated_user_can_save_db_place(self):
         response = self.client.post(
             "/api/recommendations/saved-places/",
@@ -5810,7 +5813,7 @@ class RecommendationSearchTests(TestCase):
         saved_place.refresh_from_db()
         self.assertEqual(saved_place.memo, "창가 자리 확인")
 
-    @skip("Spring 으로 이관됨 - spring-api 의 SavedPlaceController 테스트로 옮겨야 합니다.")
+    @skip("Spring 으로 이관됨. 대체 테스트: spring-api UserDataApiTest 의 저장 장소 항목")
     def test_authenticated_user_can_save_external_kakao_place(self):
         response = self.client.post(
             "/api/recommendations/saved-places/",
@@ -5838,7 +5841,7 @@ class RecommendationSearchTests(TestCase):
         self.assertEqual(str(saved_place.lat), "35.123457")
         self.assertEqual(str(saved_place.lng), "129.123457")
 
-    @skip("Spring 으로 이관됨 - spring-api 의 SavedPlaceController 테스트로 옮겨야 합니다.")
+    @skip("Spring 으로 이관됨. 대체 테스트: spring-api UserDataApiTest 의 저장 장소 항목")
     def test_user_can_list_update_and_delete_own_saved_places(self):
         other_user = get_user_model().objects.create_user(
             username="other-saver",
@@ -5896,7 +5899,7 @@ class RecommendationSearchTests(TestCase):
         self.assertFalse(UserSavedPlace.objects.filter(id=own_saved_place.id).exists())
         self.assertEqual(UserSavedPlace.objects.count(), 1)
 
-    @skip("Spring 으로 이관됨 - spring-api 의 SavedPlaceController 테스트로 옮겨야 합니다.")
+    @skip("Spring 으로 이관됨. 대체 테스트: spring-api UserDataApiTest 의 저장 장소 항목")
     def test_saved_place_requires_authenticated_user(self):
         response = self.client.post(
             "/api/recommendations/saved-places/",
@@ -11375,7 +11378,8 @@ class RecommendationSearchTests(TestCase):
             ("물 마실 곳", ["음료 살 곳"], ["편의점", "카페"]),
             ("노래 부를 곳", ["노래방"], ["노래방", "코인노래방"]),
             ("비 오는데 잠깐 피할 곳", ["실내 쉬어갈 곳"], ["카페", "공공도서관"]),
-            ("사상 무료 와이파이 되는 곳", ["와이파이 가능한 방문 장소"], ["카페", "공공도서관"]),
+            # 무료 와이파이는 DB 에 freewifi 로 83,145건이 있으므로 카페가 아니라 그 카테고리를 찾습니다.
+            ("사상 무료 와이파이 되는 곳", ["무료 와이파이"], ["무료 와이파이", "공공 와이파이"]),
             ("머리 아픈데 근처 약국", ["약국"], ["약국", "야간 약국"]),
             ("떡볶이 먹고 싶어", ["떡볶이/분식"], ["떡볶이", "분식집"]),
             ("운동화 살 곳", ["신발/운동화"], ["운동화 매장", "신발 매장"]),
@@ -12049,3 +12053,98 @@ class SharedJWTAuthenticationTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
+
+
+class UtilityCategoryPlanTests(TestCase):
+    """카테고리 이름만 적은 요청이 규칙으로 처리되는지 확인한다."""
+
+    def _codes(self, query):
+        plan = _local_rule_plan_for_known_intent(query)
+        if not plan:
+            return None
+        return plan["frame"].get("candidate_category_codes")
+
+    def test_bare_category_word_maps_to_its_category(self):
+        for query, expected in (
+            ("쉼터", ["shelter"]),
+            ("화장실", ["toilet"]),
+            ("주차장", ["parking"]),
+            ("흡연구역", ["smoking_area"]),
+            ("무료 와이파이", ["freewifi"]),
+        ):
+            with self.subTest(query=query):
+                self.assertEqual(self._codes(query), expected)
+
+    def test_proximity_words_do_not_block_the_rule(self):
+        # `가까운 쉼터`가 AI 경로로 빠져 23초 걸리던 회귀.
+        for query in ("가까운 쉼터", "근처 화장실", "주변 주차장", "지금 흡연구역 어디"):
+            with self.subTest(query=query):
+                self.assertIsNotNone(self._codes(query), f"{query} 는 규칙으로 처리되어야 한다")
+
+    def test_wifi_uses_freewifi_category_not_cafe(self):
+        # 예전에는 카페 편의시설로 보고 cafe/shopping 을 찾아 83,145건을 통째로 못 썼습니다.
+        for query in ("와이파이", "무료 와이파이 되는 곳", "공공 와이파이", "wifi 되는 곳"):
+            with self.subTest(query=query):
+                self.assertEqual(self._codes(query), ["freewifi"])
+
+    def test_mixed_or_subjective_query_falls_through_to_ai(self):
+        # 카테고리가 섞이거나 주관적 조건이 붙으면 규칙으로 단정하지 않습니다.
+        for query in ("화장실이랑 주차장", "조용한 카페", "야경 좋은 곳", "쉼터 근처 맛집"):
+            with self.subTest(query=query):
+                codes = self._codes(query)
+                self.assertNotIn(codes, ([["shelter"]], [["toilet"]]))
+
+    def test_utility_plan_uses_distance_ranking(self):
+        plan = _local_rule_plan_for_known_intent("쉼터")
+
+        self.assertEqual(plan["frame"].get("ranking_policy"), "distance_first")
+        self.assertEqual(plan["action"], "search")
+
+
+@override_settings(KAKAO_REST_API_KEY="fake-key")
+class AnchorFarMatchTests(TestCase):
+    """같은 지명이 전국에 여러 개 있을 때 엉뚱한 지역을 잡지 않는지 확인한다."""
+
+    def _kakao_response(self, name, lat, lng, category="여행 > 관광,명소"):
+        return {
+            "documents": [{
+                "id": "1", "place_name": name, "category_name": category,
+                "address_name": "주소", "road_address_name": "도로명주소",
+                "x": str(lng), "y": str(lat),
+            }]
+        }
+
+    @patch("recommendations.services.ai_search_orchestrator.search_places_by_keyword")
+    def test_far_kakao_match_falls_back_to_known_area(self, mock_search):
+        # `서면` 만 적으면 사전이 바로 처리하므로, AI 가 만들어 내는 변형 표현을 씁니다.
+        # 전남 순천시 서면(약 200km)을 돌려주는 상황을 재현합니다.
+        mock_search.return_value = self._kakao_response("순천졸음쉼터 부산방향", 35.0529, 127.4230)
+
+        resolved = _resolve_anchor_location("서면 맛집거리", lat=35.1710, lng=129.1300)
+
+        # 어느 경로로 풀리든 부산 서면 좌표여야 합니다. 내부 경로 이름은 검증하지 않습니다.
+        self.assertEqual(resolved["status"], "resolved")
+        self.assertAlmostEqual(resolved["lat"], 35.15679, places=3)
+        self.assertAlmostEqual(resolved["lng"], 129.05642, places=3)
+
+    @patch("recommendations.services.ai_search_orchestrator.search_places_by_keyword")
+    def test_nearby_kakao_match_is_kept(self, mock_search):
+        # 지명 안에 있는 특정 장소는 그대로 씁니다. 사전 좌표로 뭉개면 정밀도를 잃습니다.
+        mock_search.return_value = self._kakao_response("해운대 그랜드호텔", 35.1600, 129.1600)
+
+        resolved = _resolve_anchor_location("해운대 그랜드호텔", lat=35.1578, lng=129.0594)
+
+        # 지명 안의 특정 장소는 사전 좌표로 뭉개지 않고 카카오가 준 위치를 씁니다.
+        self.assertEqual(resolved["status"], "resolved")
+        self.assertAlmostEqual(resolved["lat"], 35.1600, places=3)
+        self.assertEqual(resolved["label"], "해운대 그랜드호텔")
+
+    @patch("recommendations.services.ai_search_orchestrator.search_places_by_keyword")
+    def test_unknown_area_is_not_affected(self, mock_search):
+        # 사전에 없는 지명은 이 검사를 건너뛰므로 카카오 결과를 그대로 씁니다.
+        mock_search.return_value = self._kakao_response("전주한옥마을", 35.8150, 127.1530)
+
+        resolved = _resolve_anchor_location("전주한옥마을", lat=35.1578, lng=129.0594)
+
+        self.assertEqual(resolved["status"], "resolved")
+        self.assertAlmostEqual(resolved["lat"], 35.8150, places=3)
