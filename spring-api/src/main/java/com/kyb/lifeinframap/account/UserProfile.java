@@ -66,6 +66,12 @@ public class UserProfile {
         return profileImage;
     }
 
+    /** 저장소에 올라간 파일 키만 바꿉니다. 파일 자체는 S3 호환 저장소에 있습니다. */
+    public void changeProfileImage(String profileImage) {
+        this.profileImage = profileImage;
+        this.updatedAt = OffsetDateTime.now();
+    }
+
     public void changeNickname(String nickname) {
         this.nickname = nickname;
         this.updatedAt = OffsetDateTime.now();
