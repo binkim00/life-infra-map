@@ -480,8 +480,8 @@ Spring이 발급한 토큰을 Django도 검증합니다. `backend/accounts/authe
 | Spring이 슈퍼유저로 접속 중 | `life_infra_map` 역할이 superuser입니다. 현재는 `ddl-auto: validate`가 유일한 안전장치이며 설정 한 줄로 뚫립니다. 배포 전에 DDL 권한이 없는 별도 역할(`SELECT/INSERT/UPDATE/DELETE` + 시퀀스 `USAGE`만 부여)로 분리하는 것이 좋습니다. |
 | SQLite 폴백이 사실상 무효 | `DB_ENGINE=sqlite`로 되돌리는 경로는 남아 있지만 Spring은 PostgreSQL만 접속합니다. Spring이 포함된 통합 환경에서는 성립하지 않고, Django 단독 테스트용으로만 의미가 있습니다. |
 | 환경변수 이중 관리 | Django는 `.env`, Spring은 OS 환경변수를 읽습니다. 값이 어긋나면 서로 다른 DB를 보거나 토큰 검증에 실패합니다. 맞춰야 하는 값 목록은 7.5에 있습니다. |
-| **Django 뷰 코드가 아직 남아 있다** | `config/urls.py`에서 URL 등록만 내려 두었고 `accounts/views.py`(181줄)·`boards/views.py`(1,039줄)는 남아 있습니다. 외부에서 닿지 않으므로 되돌릴 때는 `urls.py`만 고치면 됩니다. Spring 테스트 93개가 붙어 **이제 삭제 가능**하며, 판정 근거는 `config/urls.py` 상단 주석에 적어 두었습니다. |
-| multipart 업로드 테스트 없음 | 저장소(MinIO)가 필요해 프로필·게시글 이미지 업로드는 자동 테스트가 없습니다. JSON 키 전달 경로만 확인했습니다. |
+| **Django 뷰 코드가 아직 남아 있다** | `config/urls.py`에서 URL 등록만 내려 두었고 `accounts/views.py`(181줄)·`boards/views.py`(1,039줄)는 남아 있습니다. 외부에서 닿지 않으므로 되돌릴 때는 `urls.py`만 고치면 됩니다. Spring 테스트 96개가 붙어 **이제 삭제 가능**하며, 판정 근거는 `config/urls.py` 상단 주석에 적어 두었습니다. |
+| multipart 업로드 테스트 | 기본 회귀 테스트는 `StorageService`를 mock 처리해 회원가입·프로필 변경·게시글 이미지 업로드를 검증합니다. 실제 MinIO 저장은 별도 `integrationTest`로 분리했습니다. |
 | 연결 수 | `max_connections=100`, Django `CONN_MAX_AGE=60` + HikariCP 기본 10이므로 로컬에서는 여유가 있습니다. |
 | 배포 구성 | 배포·시연용 서버에는 DB와 앱을 함께 두어 네트워크 지연을 없앱니다. 개발용 공유 DB와는 다른 목적입니다. |
 
@@ -491,8 +491,8 @@ Spring이 발급한 토큰을 Django도 검증합니다. `backend/accounts/authe
 
 | 확인 항목 | 결과 |
 |---|---|
-| Django 테스트 | 355개 통과 |
-| **Spring 테스트** | **93개 통과** |
+| Django 테스트 | 363개 실행, 실패 0 (21개 skip) |
+| **Spring 테스트** | **96개 통과** |
 | **Spring 부팅** | 성공 — `ddl-auto: validate`가 실제 Django 스키마를 통과 |
 | **교차 인증** | Spring이 발급한 JWT를 Django `SharedJWTAuthentication`이 검증 성공. 클레임 `{sub, username, iat, exp}` 확인 |
 | 프론트 라우팅 | `serviceRoutes.js`의 경로 분기, `Bearer` 헤더 전환, Spring 후행 슬래시 제거 동작 |
@@ -510,6 +510,7 @@ Spring이 발급한 토큰을 Django도 검증합니다. `backend/accounts/authe
 | `AdminApiTest` | 17 | 관리자 권한 경계, 목록 응답 형태, 등급 조회 인증 |
 | `UserDataApiTest` | 18 | 알림·문의·저장 장소의 사용자별 격리 |
 | `ReportApiTest` | 12 | 신고 규칙(본인·중복), 처리 권한, 관리자 알림 |
+| `MultipartUploadApiTest` | 3 | 회원가입 프로필 이미지·프로필 이미지 변경·게시글 이미지 업로드 |
 | `ContributionRulesTest` · `DjangoPasswordEncoderTest` | 8 | 기여도 규칙, Django 해시 호환 |
 
 ### 테스트로 찾은 결함
@@ -524,9 +525,16 @@ Spring이 발급한 토큰을 Django도 검증합니다. `backend/accounts/authe
 | `JWT_SECRET` 기본값 불일치 | 로그인은 되지만 Django API 만 401 | `application.yml` 기본값을 맞춤 |
 | `/api/tiers/**` 전면 공개 | 인증 없이 남의 등급·기여도 조회 가능 | 인증 필요로 변경 |
 
-### 테스트가 없는 부분
+### MinIO 통합 테스트
 
-프로필 사진과 게시글 이미지의 **multipart 업로드**는 저장소(MinIO)가 필요해 테스트가 없습니다. JSON 으로 키를 넘기는 경로만 확인했습니다. 업로드 동작을 바꿀 때는 수동으로 확인해야 합니다.
+`MultipartUploadApiTest`는 `StorageService`를 mock 처리하므로 기본 Spring 회귀 테스트가 MinIO 상태에 의존하지 않습니다. 실제 저장소 연동은 `StorageServiceMinioIntegrationTest`가 파일 업로드·조회·콘텐츠 타입·정리까지 확인합니다.
+
+루트에서 `docker compose up -d storage storage_init`으로 MinIO와 버킷을 준비한 뒤 다음처럼 별도로 실행합니다.
+
+```powershell
+cd spring-api
+.\gradlew.bat integrationTest
+```
 
 ---
 
