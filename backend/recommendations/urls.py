@@ -15,6 +15,7 @@ from django.urls import path
 from . import views
 
 urlpatterns = [
+    path('interactions/', views.place_interactions),
     path("health/", views.health_check),
 
     # 검색

@@ -20,6 +20,7 @@ const PlaceResultList = ({
   getRecommendationMatchedLabels,
   getRecommendationReasonSummary,
   onSelectPlace,
+  onDismissPlace,
   onReportPlace,
 }) => {
   if (isSearching) {
@@ -150,6 +151,16 @@ const PlaceResultList = ({
                   <span className="place-list-phone">전화 {place.phone}</span>
                 ) : null}
               </span>
+            </button>
+            <button
+              type='button'
+              className='place-result-dismiss-button'
+              onClick={(event) => {
+                event.stopPropagation()
+                onDismissPlace?.(place)
+              }}
+            >
+              이 결과는 아니에요
             </button>
             <button
               type="button"

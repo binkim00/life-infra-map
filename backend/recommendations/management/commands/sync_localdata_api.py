@@ -86,6 +86,7 @@ def sync_localdata_api(
         "duplicates": 0,
         "total_count": None,
     }
+    stats['exhausted'] = False
     sync_run = None
     if not dry_run:
         sync_run = DataSourceSyncRun.objects.create(
@@ -122,6 +123,7 @@ def sync_localdata_api(
             if total_count is not None:
                 stats["total_count"] = total_count
             if not items:
+                stats['exhausted'] = True
                 break
             if effective_page_size is None:
                 effective_page_size = len(items)
@@ -156,6 +158,7 @@ def sync_localdata_api(
                 and (start_page - 1) * effective_page_size + stats["read"]
                 >= total_count
             ):
+                stats['exhausted'] = True
                 break
 
         if sync_run is not None:

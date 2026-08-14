@@ -5,21 +5,23 @@ from django.shortcuts import get_object_or_404
 from django.db.models import Q
 from django.utils import timezone
 from rest_framework import status
-from rest_framework.decorators import api_view, parser_classes, permission_classes
+from rest_framework.decorators import api_view, parser_classes, permission_classes, throttle_classes
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
-from rest_framework.permissions import IsAdminUser, IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAdminUser, IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.throttling import SimpleRateThrottle
 
 from accounts.tier_notifications import (
     get_current_user_tier,
     notify_tier_upgrade_if_needed,
 )
-from .models import Place, PlaceReport, PlaceTag, Tag, UserPreference, UserSavedPlace, UserSearchLog
+from .models import Place, PlaceInteractionEvent, PlaceReport, PlaceTag, Tag, UserPreference, UserSavedPlace, UserSearchLog
 from .serializers import (
     PlaceReportAdminReviewSerializer,
     PlaceReportCreateSerializer,
     PlaceReportDetailSerializer,
     PlaceReportListSerializer,
+    PlaceInteractionEventSerializer,
     UserPreferenceSerializer,
     UserSavedPlaceSerializer,
     UserSearchLogListSerializer,
@@ -34,6 +36,7 @@ from .services.place_mapper import (
     get_saved_tag_data,
     map_kakao_place_to_recommendation,
 )
+from .services.tag_enrichment_queue import enqueue_tag_enrichment
 from .services.ai_situation_parser import parse_situation
 from .services.ai_web_search_provider import (
     get_ai_web_search_result,
@@ -59,9 +62,27 @@ from .services.user_preferences import (
     unique_valid_labels,
     update_user_preferences_from_search_log,
 )
+from .management.commands.aggregate_place_tag_interactions import (
+    aggregate_place_tag_interactions,
+)
 
 
 logger = logging.getLogger(__name__)
+
+
+class PlaceInteractionRateThrottle(SimpleRateThrottle):
+    scope = 'place_interactions'
+    rate = '120/minute'
+
+    def get_cache_key(self, request, view):
+        if getattr(request.user, 'is_authenticated', False):
+            ident = 'user:{}'.format(request.user.pk)
+        else:
+            ident = 'ip:{}'.format(self.get_ident(request))
+        return self.cache_format % {
+            'scope': self.scope,
+            'ident': ident,
+        }
 
 SCENARIO_KEYWORDS = {
     "work_cafe": "카페",
@@ -1041,6 +1062,58 @@ def recommendation_search(request):
     )
 
     return Response(data)
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+@throttle_classes([PlaceInteractionRateThrottle])
+def place_interactions(request):
+    payload = request.data
+    is_batch = isinstance(payload, dict) and isinstance(payload.get('events'), list)
+    items = payload.get('events', []) if is_batch else [payload]
+    if not items or len(items) > 50:
+        return Response(
+            {'detail': 'Send between 1 and 50 interaction events.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    serializers = [
+        PlaceInteractionEventSerializer(
+            data=item,
+            context={'request': request},
+        )
+        for item in items
+    ]
+    errors = []
+    for index, serializer in enumerate(serializers):
+        if not serializer.is_valid():
+            errors.append({'index': index, 'errors': serializer.errors})
+    if errors:
+        return Response(
+            {'events': errors},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    with transaction.atomic():
+        events = [serializer.save() for serializer in serializers]
+    feedback_events = [
+        event for event in events
+        if event.event_type in {'tag_confirm', 'tag_reject'} and event.place_id
+    ]
+    if feedback_events:
+        aggregate_place_tag_interactions(
+            place_ids={event.place_id for event in feedback_events},
+            tag_names={event.tag_name for event in feedback_events},
+        )
+    queued_enrichments = enqueue_tag_enrichment(events)
+    return Response(
+        {
+            'count': len(events),
+            'event_ids': [event.id for event in events],
+            'queued_enrichments': queued_enrichments,
+        },
+        status=status.HTTP_201_CREATED,
+    )
 
 
 @api_view(["POST"])

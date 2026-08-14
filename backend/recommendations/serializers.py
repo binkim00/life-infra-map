@@ -1,11 +1,13 @@
 import json
 import os
+import hashlib
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 from rest_framework import serializers
 
 from .models import (
     Place,
+    PlaceInteractionEvent,
     PlaceReport,
     PlaceReportImage,
     UserPreference,
@@ -261,6 +263,129 @@ class UserSearchLogListSerializer(serializers.ModelSerializer):
         data["scenario"] = normalize_preference_label(data.get("scenario"))
         data["target_query"] = normalize_preference_label(data.get("target_query"))
         return data
+
+
+class PlaceInteractionEventSerializer(serializers.ModelSerializer):
+    event_key = serializers.CharField(required=False, allow_blank=True, max_length=64)
+    place_id = serializers.IntegerField(required=False, allow_null=True, write_only=True)
+    search_log_id = serializers.IntegerField(required=False, allow_null=True, write_only=True)
+
+    class Meta:
+        model = PlaceInteractionEvent
+        fields = [
+            'id',
+            'event_key',
+            'session_key',
+            'search_id',
+            'search_log_id',
+            'event_type',
+            'place_id',
+            'place_key',
+            'place_source',
+            'place_external_id',
+            'place_name',
+            'place_category',
+            'query',
+            'requested_tags',
+            'tag_name',
+            'position',
+            'context',
+            'created_at',
+        ]
+        read_only_fields = ['id', 'created_at']
+
+    def validate_requested_tags(self, value):
+        if not isinstance(value, list):
+            raise serializers.ValidationError('requested_tags must be a list.')
+        return unique_valid_labels(value)[:20]
+
+    def validate_context(self, value):
+        if not isinstance(value, dict):
+            raise serializers.ValidationError('context must be an object.')
+        if len(json.dumps(value, ensure_ascii=False)) > 8192:
+            raise serializers.ValidationError('context is too large.')
+        return value
+
+    def validate(self, attrs):
+        event_type = attrs.get('event_type')
+        tag_name = str(attrs.get('tag_name') or '').strip().lstrip('#')[:50]
+        attrs['tag_name'] = tag_name
+        attrs['query'] = str(attrs.get('query') or '').strip()[:255]
+        attrs['search_id'] = str(attrs.get('search_id') or '').strip()[:64]
+        attrs['place_key'] = str(attrs.get('place_key') or '').strip()[:255]
+        attrs['place_source'] = str(attrs.get('place_source') or '').strip()[:50]
+        attrs['place_external_id'] = str(
+            attrs.get('place_external_id') or ''
+        ).strip()[:100]
+        attrs['place_name'] = str(attrs.get('place_name') or '').strip()[:200]
+        attrs['place_category'] = str(
+            attrs.get('place_category') or ''
+        ).strip()[:100]
+
+        if event_type in {'tag_confirm', 'tag_reject'} and not tag_name:
+            raise serializers.ValidationError(
+                {'tag_name': 'A tag is required for tag feedback.'}
+            )
+        if event_type == 'search' and not attrs['query']:
+            raise serializers.ValidationError(
+                {'query': 'A query is required for a search event.'}
+            )
+        if event_type not in {'search', 'clarification'} and not any([
+            attrs.get('place_id'),
+            attrs['place_key'],
+            attrs['place_external_id'],
+        ]):
+            raise serializers.ValidationError(
+                {'place_key': 'A place identity is required for this event.'}
+            )
+        return attrs
+
+    def create(self, validated_data):
+        request = self.context.get('request')
+        raw_session_key = str(validated_data.pop('session_key', '') or '').strip()
+        session_key = hashlib.sha256(raw_session_key.encode('utf-8')).hexdigest() \
+            if raw_session_key else ''
+        place_id = validated_data.pop('place_id', None)
+        search_log_id = validated_data.pop('search_log_id', None)
+        event_key = str(validated_data.pop('event_key', '') or '').strip()
+        user = None
+        if request is not None and getattr(request.user, 'is_authenticated', False):
+            user = request.user
+
+        place = None
+        if place_id:
+            place = Place.objects.filter(id=place_id).first()
+        if place is None and validated_data.get('place_external_id'):
+            place_query = Place.objects.filter(
+                external_id=validated_data['place_external_id'],
+            )
+            if validated_data.get('place_source'):
+                place_query = place_query.filter(
+                    source=validated_data['place_source'],
+                )
+            place = place_query.first()
+
+        search_log = None
+        if search_log_id and user is not None:
+            search_log = UserSearchLog.objects.filter(
+                id=search_log_id,
+                user=user,
+            ).first()
+
+        defaults = {
+            **validated_data,
+            'user': user,
+            'session_key': session_key,
+            'place': place,
+            'search_log': search_log,
+        }
+        if event_key:
+            event, _ = PlaceInteractionEvent.objects.get_or_create(
+                event_key=event_key,
+                defaults=defaults,
+            )
+            return event
+        return PlaceInteractionEvent.objects.create(**defaults)
 
 
 class UserPreferenceSerializer(serializers.ModelSerializer):

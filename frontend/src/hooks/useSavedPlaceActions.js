@@ -57,7 +57,7 @@ export const useSavedPlaceActions = () => {
 
     if (!isLoggedInRef.current) {
       navigate('/login')
-      return
+      return { status: 'login_required' }
     }
 
     try {
@@ -74,8 +74,10 @@ export const useSavedPlaceActions = () => {
       setSaveMessage(response.message === 'saved place updated'
         ? '이미 저장된 장소를 최신 정보로 갱신했습니다.'
         : '장소를 저장했습니다.')
+      return { status: 'saved', savedPlace }
     } catch (error) {
       setSaveMessage(error.response?.data?.detail || '장소를 저장하지 못했습니다.')
+      return { status: 'failed', error }
     } finally {
       setSavingPlaceId('')
     }

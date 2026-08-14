@@ -2,6 +2,7 @@ from django.contrib import admin
 from .models import (
     DataSourceSyncRun,
     Place,
+    PlaceInteractionEvent,
     PlaceCoverage,
     PlaceReport,
     PlaceReportImage,
@@ -17,6 +18,28 @@ from .models import (
 admin.site.register(Place)
 admin.site.register(Tag)
 admin.site.register(PlaceTag)
+
+
+@admin.register(PlaceInteractionEvent)
+class PlaceInteractionEventAdmin(admin.ModelAdmin):
+    list_display = (
+        'id',
+        'event_type',
+        'place_name',
+        'tag_name',
+        'user',
+        'created_at',
+    )
+    list_filter = ('event_type', 'place_source', 'created_at')
+    search_fields = (
+        'query',
+        'place_name',
+        'place_key',
+        'place_external_id',
+        'tag_name',
+        'search_id',
+    )
+    readonly_fields = ('event_key', 'session_key', 'created_at')
 
 
 @admin.register(DataSourceSyncRun)

@@ -160,6 +160,15 @@ export const saveSearchLog = async (payload) => {
   return response.data
 }
 
+export const savePlaceInteractions = async (events = []) => {
+  const normalizedEvents = Array.isArray(events) ? events : [events]
+  const response = await api.post('/recommendations/interactions/', {
+    events: normalizedEvents,
+  })
+
+  return response.data
+}
+
 export const fetchSearchLogs = async ({ page = 1, pageSize = 5 } = {}) => {
   const response = await api.get('/recommendations/search-logs/', {
     params: {

@@ -98,6 +98,9 @@ class PlaceTag(models.Model):
         # 서비스 운영 후 사용자가 맞다고 검증한 태그입니다.
         ("user_verified", "사용자 검증 태그"),
 
+        # 검색 결과 클릭·저장·거절을 여러 익명 주체에 걸쳐 집계한 약한 후보 신호입니다.
+        ("interaction_signal", "검색 행동 기반 후보 태그"),
+
         # warning_tags처럼 정보 부족 또는 확인 필요 목적으로 저장하는 태그입니다.
         ("warning_tags", "확인 필요 태그"),
     ]
@@ -362,6 +365,115 @@ class UserSearchLog(models.Model):
 
     def __str__(self):
         return f"{self.user} - {self.query}"
+
+
+class PlaceInteractionEvent(models.Model):
+    EVENT_TYPE_CHOICES = [
+        ('search', 'Search demand'),
+        ('clarification', 'Clarification answer'),
+        ('impression', 'Result impression'),
+        ('click', 'Result click'),
+        ('save', 'Place save'),
+        ('dismiss', 'Result rejection'),
+        ('tag_confirm', 'Tag confirmed'),
+        ('tag_reject', 'Tag rejected'),
+    ]
+
+    event_key = models.CharField(
+        max_length=64,
+        unique=True,
+        default=new_evidence_key,
+        editable=False,
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='place_interactions',
+    )
+    session_key = models.CharField(max_length=64, blank=True)
+    search_id = models.CharField(max_length=64, blank=True)
+    search_log = models.ForeignKey(
+        UserSearchLog,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='interactions',
+    )
+    event_type = models.CharField(max_length=30, choices=EVENT_TYPE_CHOICES)
+    place = models.ForeignKey(
+        Place,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='interaction_events',
+    )
+    place_key = models.CharField(max_length=255, blank=True)
+    place_source = models.CharField(max_length=50, blank=True)
+    place_external_id = models.CharField(max_length=100, blank=True)
+    place_name = models.CharField(max_length=200, blank=True)
+    place_category = models.CharField(max_length=100, blank=True)
+    query = models.CharField(max_length=255, blank=True)
+    requested_tags = models.JSONField(default=list, blank=True)
+    tag_name = models.CharField(max_length=50, blank=True)
+    position = models.PositiveSmallIntegerField(null=True, blank=True)
+    context = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['search_id', 'event_type']),
+            models.Index(fields=['place', 'event_type', '-created_at']),
+            models.Index(fields=['tag_name', 'event_type', '-created_at']),
+            models.Index(fields=['session_key', '-created_at']),
+        ]
+
+    def __str__(self):
+        target = self.place_name or self.place_key or self.query
+        return '{}: {}'.format(self.event_type, target)
+
+
+class TagEnrichmentRequest(models.Model):
+    STATUS_CHOICES = [
+        ('queued', 'Queued'),
+        ('processing', 'Processing'),
+        ('completed', 'Completed'),
+        ('failed', 'Failed'),
+    ]
+
+    place = models.ForeignKey(
+        Place,
+        on_delete=models.CASCADE,
+        related_name='tag_enrichment_requests',
+    )
+    tag_name = models.CharField(max_length=50)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='queued')
+    priority = models.PositiveIntegerField(default=1)
+    demand_count = models.PositiveIntegerField(default=1)
+    source_query = models.CharField(max_length=255, blank=True)
+    context = models.JSONField(default=dict, blank=True)
+    last_requested_at = models.DateTimeField(auto_now=True)
+    next_attempt_at = models.DateTimeField(null=True, blank=True)
+    locked_at = models.DateTimeField(null=True, blank=True)
+    error_message = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['place', 'tag_name'],
+                name='unique_place_tag_enrichment_request',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['status', '-priority', 'created_at']),
+            models.Index(fields=['tag_name', 'status']),
+        ]
+
+    def __str__(self):
+        return '{} - {} ({})'.format(self.place.name, self.tag_name, self.status)
 
 
 class UserPreference(models.Model):

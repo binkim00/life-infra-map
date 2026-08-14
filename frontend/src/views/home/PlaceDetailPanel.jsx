@@ -1,5 +1,7 @@
 import { useEffect, useRef } from 'react'
 
+import { getFeedbackTagOptions } from '@/hooks/usePlaceInteractionTracking'
+
 import {
   getPlaceSourceClass,
   getPlaceSourceText,
@@ -40,6 +42,9 @@ const PlaceDetailPanel = ({
   onExpand,
   onDismiss,
   onSavePlace,
+  requestedFeedbackTags,
+  onTagFeedback,
+  getTagFeedbackState,
   onReportPlace,
   onDetailFrameError,
 }) => {
@@ -58,6 +63,7 @@ const PlaceDetailPanel = ({
   const hasKakaoDetail = Boolean(kakaoDetailUrl)
   const matchedLabels = getRecommendationMatchedLabels(place)
   const isRecommendation = isRecommendationPlace(place)
+  const feedbackOptions = getFeedbackTagOptions(place, requestedFeedbackTags)
 
   if (isCollapsed) {
     return (
@@ -225,7 +231,40 @@ const PlaceDetailPanel = ({
           ) : null}
         </div>
 
-        <div className="detail-action-row">
+        <section className='place-tag-feedback'>
+          <div className='place-tag-feedback-heading'>
+            <strong>이 장소는 실제로 어떤가요?</strong>
+            <small>한 번의 선택이 다음 검색 결과를 더 정확하게 만들어요.</small>
+          </div>
+          <div className='place-tag-feedback-list'>
+            {feedbackOptions.map((option) => {
+              const feedbackStatus = getTagFeedbackState?.(place, option.tag) || ''
+              return (
+                <div className='place-tag-feedback-row' key={option.tag}>
+                  <span>#{option.label}</span>
+                  <button
+                    type='button'
+                    className={feedbackStatus === 'confirmed' ? 'is-selected' : ''}
+                    disabled={feedbackStatus === 'sending'}
+                    onClick={() => onTagFeedback?.(place, option.tag, true)}
+                  >
+                    맞아요
+                  </button>
+                  <button
+                    type='button'
+                    className={feedbackStatus === 'rejected' ? 'is-selected is-negative' : ''}
+                    disabled={feedbackStatus === 'sending'}
+                    onClick={() => onTagFeedback?.(place, option.tag, false)}
+                  >
+                    아니에요
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+        </section>
+
+        <div className='detail-action-row'>
           <button
             type="button"
             className="detail-action-button save"

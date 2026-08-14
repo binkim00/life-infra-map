@@ -1392,6 +1392,23 @@ h1 {
   color: #1d4ed8;
 }
 
+.place-result-dismiss-button {
+  margin: 0 0 10px 46px;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid #f4b4ad;
+  border-radius: 999px;
+  background: #fff7f6;
+  color: #b42318;
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.place-result-dismiss-button:hover {
+  border-color: #d92d20;
+  background: #fff1f0;
+}
 .place-list-marker {
   position: relative;
   width: 54px;
@@ -2200,6 +2217,74 @@ h1 {
   font-weight: 800;
 }
 
+.place-tag-feedback {
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid #d1e9ff;
+  border-radius: 16px;
+  background: #f5faff;
+}
+
+.place-tag-feedback-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  color: #1849a9;
+}
+
+.place-tag-feedback-heading small {
+  color: #475467;
+  font-size: 12px;
+}
+
+.place-tag-feedback-list {
+  margin-top: 10px;
+  display: grid;
+  gap: 7px;
+}
+
+.place-tag-feedback-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 6px;
+}
+
+.place-tag-feedback-row span {
+  overflow: hidden;
+  color: #344054;
+  font-size: 13px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.place-tag-feedback-row button {
+  padding: 6px 9px;
+  border: 1px solid #b2ddff;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #175cd3;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.place-tag-feedback-row button.is-selected {
+  border-color: #1570ef;
+  background: #1570ef;
+  color: #ffffff;
+}
+
+.place-tag-feedback-row button.is-selected.is-negative {
+  border-color: #d92d20;
+  background: #d92d20;
+}
+
+.place-tag-feedback-row button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
 .detail-action-row {
   margin-top: 12px;
   display: flex;

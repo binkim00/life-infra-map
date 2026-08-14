@@ -117,6 +117,33 @@ Then refresh coverage:
 
     .\venv\Scripts\python.exe manage.py rebuild_place_coverage --source localdata
 
+## Production refresh and monitoring
+
+Run quota-sized API batches for the three enabled datasets and continue from
+the cursor saved by the previous batch:
+
+    .\venv\Scripts\python.exe manage.py run_nationwide_sync --max-pages 100
+
+The command synchronizes general restaurants, rest restaurants/cafes, and
+bakeries. It then promotes new coordinates, regenerates objective tag evidence,
+and rebuilds coverage. A dataset can be selected explicitly, and the enrichment
+phase can be deferred when several API batches must run first:
+
+    .\venv\Scripts\python.exe manage.py run_nationwide_sync --dataset bakery --max-pages 100 --skip-enrichment
+
+A successful batch records whether the API dataset was fully exhausted. Until
+then, the next invocation resumes from `DataSourceSyncRun.cursor.next_page`.
+After exhaustion, the following scheduled refresh starts again at page 1.
+
+Use this command as a scheduler or container health job. It exits non-zero when
+a dataset has no recent run, the latest run failed, a run is older than the
+allowed age, or no coverage cells exist:
+
+    .\venv\Scripts\python.exe manage.py check_nationwide_data --max-age-hours 48
+
+The JSON output includes each dataset status, resume cursor, coverage cell
+count, and low-score cell count so it can be forwarded to normal log alerts.
+
 The importer currently accepts UTF-8 or CP949 CSV. Official file endpoints can
 require an interactive browser session and CAPTCHA, so download the initial
 snapshot manually from the official catalog when automated access is rejected.
@@ -164,8 +191,8 @@ order of nationwide enrichment jobs:
 3. Match canonical places to Kakao IDs without making Kakao the owned registry.
 4. Generate objective tag candidates from business type and official fields.
 5. Add evidence extraction queues and aggregation into `PlaceTag`.
-6. Log anonymous search, impression, click, rejection, and clarification events.
-7. Add nationwide coverage and failed-sync monitoring to operations.
+6. Build regional tag-demand dashboards from the collected anonymous events.
+7. Connect `check_nationwide_data` non-zero exits and JSON output to deployment alerts.
 
 Bulk storage or reuse of third-party map/search content must be reviewed against
 the provider's current terms before enabling that source in production.

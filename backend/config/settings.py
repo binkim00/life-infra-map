@@ -67,6 +67,8 @@ GMS_OPENAI_RESPONSES_PATH = os.getenv(
     "api.openai.com/v1/responses",
 )
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+TAG_ENRICHMENT_ENABLED = _env_bool("TAG_ENRICHMENT_ENABLED", False)
+TAG_ENRICHMENT_PROVIDER = os.getenv("TAG_ENRICHMENT_PROVIDER", "naver_search").strip().lower()
 OPENAI_API_BASE_URL = os.getenv("OPENAI_API_BASE_URL", "https://api.openai.com/v1")
 IS_TESTING = "test" in sys.argv
 AI_PROVIDER_CONFIGURED = (

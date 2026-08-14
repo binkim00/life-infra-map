@@ -638,3 +638,98 @@ class SourcePlacePromotionTests(TestCase):
         self.assertTrue(cafe.is_verified)
         self.assertEqual(brunch.status, "candidate")
         self.assertFalse(brunch.is_verified)
+
+
+class NationwideOperationsTests(TestCase):
+    def api_payload(self, *, total_count):
+        return {
+            'response': {
+                'header': {'resultCode': '00'},
+                'body': {
+                    'items': {'item': [{'MNG_NO': 'OPS-1', 'BPLC_NM': 'Ops'}]},
+                    'totalCount': total_count,
+                },
+            }
+        }
+
+    def test_sync_records_whether_dataset_was_exhausted(self):
+        complete = sync_localdata_api(
+            dataset='general_restaurant',
+            dataset_config={
+                'api_url': 'https://example.test/general',
+                'category': 'restaurant',
+            },
+            service_key='test-key',
+            dry_run=True,
+            session=LocaldataApiSyncTests.FakeSession(
+                self.api_payload(total_count=1)
+            ),
+        )
+        partial = sync_localdata_api(
+            dataset='general_restaurant',
+            dataset_config={
+                'api_url': 'https://example.test/general',
+                'category': 'restaurant',
+            },
+            service_key='test-key',
+            max_pages=1,
+            dry_run=True,
+            session=LocaldataApiSyncTests.FakeSession(
+                self.api_payload(total_count=1000)
+            ),
+        )
+
+        self.assertTrue(complete['exhausted'])
+        self.assertFalse(partial['exhausted'])
+
+    def test_resumable_page_uses_cursor_until_dataset_is_exhausted(self):
+        from recommendations.management.commands.run_nationwide_sync import (
+            resumable_page,
+        )
+
+        DataSourceSyncRun.objects.create(
+            source='localdata',
+            dataset='general_restaurant',
+            status='succeeded',
+            cursor={'next_page': 41},
+            stats={'exhausted': False},
+        )
+        self.assertEqual(resumable_page('general_restaurant'), 41)
+
+        DataSourceSyncRun.objects.create(
+            source='localdata',
+            dataset='general_restaurant',
+            status='succeeded',
+            cursor={'next_page': 101},
+            stats={'exhausted': True},
+        )
+        self.assertEqual(resumable_page('general_restaurant'), 1)
+
+    def test_health_report_is_healthy_for_fresh_runs_and_coverage(self):
+        from recommendations.management.commands.check_nationwide_data import (
+            build_health_report,
+        )
+        from recommendations.management.commands.run_nationwide_sync import (
+            DEFAULT_DATASETS,
+        )
+
+        for index, dataset in enumerate(DEFAULT_DATASETS):
+            DataSourceSyncRun.objects.create(
+                source='localdata',
+                dataset=dataset,
+                status='succeeded',
+                cursor={'next_page': 1},
+                stats={'exhausted': True},
+            )
+            PlaceCoverage.objects.create(
+                administrative_code=str(index),
+                category='restaurant',
+                source='localdata',
+                coverage_score=50,
+            )
+
+        report = build_health_report()
+
+        self.assertTrue(report['healthy'])
+        self.assertEqual(report['coverage']['cells'], 3)
+        self.assertEqual(report['problems'], [])

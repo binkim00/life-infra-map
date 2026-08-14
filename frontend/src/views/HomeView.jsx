@@ -7,6 +7,7 @@ import {
   RESULT_SORT_OPTIONS,
 } from '@/constants/homeViewUiConstants'
 import { useHomeSearch } from '@/hooks/useHomeSearch'
+import { usePlaceInteractionTracking } from '@/hooks/usePlaceInteractionTracking'
 import { useSavedPlaceActions } from '@/hooks/useSavedPlaceActions'
 import {
   getClarificationOptionItems,
@@ -58,6 +59,78 @@ const HomeView = ({ initialTab = 'search' }) => {
   const searchedPlaces = home.searchedPlaces()
   const mapPlaces = home.mapPlaces()
   const resultCountText = home.getResultCountText()
+  const activeSearchPlan = s.activeSearchPlan || {}
+  const interactionQuery = getTextValue(
+    activeSearchPlan.originalQuery
+    || activeSearchPlan.original_query
+    || activeSearchPlan.normalizedQuery
+    || activeSearchPlan.normalized_query
+    || s.mapSearchKeyword,
+  )
+  const interactionRequestedTags = [
+    ...(Array.isArray(activeSearchPlan.preferredTags) ? activeSearchPlan.preferredTags : []),
+    ...(Array.isArray(activeSearchPlan.preferred_tags) ? activeSearchPlan.preferred_tags : []),
+    ...(Array.isArray(activeSearchPlan.requestedConditions) ? activeSearchPlan.requestedConditions : []),
+    ...(Array.isArray(activeSearchPlan.requested_conditions) ? activeSearchPlan.requested_conditions : []),
+    ...(Array.isArray(activeSearchPlan.constraints) ? activeSearchPlan.constraints : []),
+  ]
+  const placeInteractions = usePlaceInteractionTracking({
+    query: interactionQuery,
+    requestedTags: interactionRequestedTags,
+    places: searchedPlaces,
+  })
+
+  const handleTrackedPlaceSelect = (place, event) => {
+    void placeInteractions.trackPlaceEvent('click', place)
+    home.selectPlaceFromList(place, event)
+  }
+
+  const handleTrackedMapPlaceSelect = (place, target) => {
+    void placeInteractions.trackPlaceEvent('click', place)
+    home.selectPlace(place, target)
+  }
+
+  const handleTrackedPlaceSave = async (place) => {
+    const result = await handleSavePlace(place)
+    if (result?.status === 'saved') {
+      await placeInteractions.trackPlaceEvent('save', place)
+    }
+    return result
+  }
+
+  const handleResultDismiss = (place) => {
+    void placeInteractions.trackPlaceEvent('dismiss', place)
+  }
+
+  const handleTrackedClarificationOption = (option) => {
+    const answer = getClarificationOptionValue(option) || getClarificationOptionLabel(option)
+    void placeInteractions.trackSearchEvent('clarification', {
+      query: answer,
+      requested_tags: [...placeInteractions.requestedTags, answer].filter(Boolean),
+      context: {
+        answer,
+        question: getTextValue(s.pendingClarification?.clarification_question),
+        answer_type: 'option',
+      },
+    })
+    home.submitClarificationOption(option)
+  }
+
+  const handleTrackedClarificationFollowUp = () => {
+    const answer = s.followUpInput.trim()
+    if (answer) {
+      void placeInteractions.trackSearchEvent('clarification', {
+        query: answer,
+        requested_tags: [...placeInteractions.requestedTags, answer],
+        context: {
+          answer,
+          question: getTextValue(s.pendingClarification?.clarification_question),
+          answer_type: 'free_text',
+        },
+      })
+    }
+    home.submitClarificationFollowUp()
+  }
 
   // 선택한 장소가 바뀌면 목록에서 그 항목이 보이도록 스크롤합니다.
   useEffect(() => {
@@ -488,7 +561,7 @@ const HomeView = ({ initialTab = 'search' }) => {
                       key={`${getClarificationOptionLabel(option)}-${getClarificationOptionValue(option)}`}
                       type="button"
                       disabled={s.isSearchingMap}
-                      onClick={() => home.submitClarificationOption(option)}
+                      onClick={() => handleTrackedClarificationOption(option)}
                     >
                       {getClarificationOptionLabel(option)}
                     </button>
@@ -501,7 +574,7 @@ const HomeView = ({ initialTab = 'search' }) => {
                   className="clarification-follow-up"
                   onSubmit={(event) => {
                     event.preventDefault()
-                    home.submitClarificationFollowUp()
+                    handleTrackedClarificationFollowUp()
                   }}
                 >
                   <input
@@ -696,7 +769,8 @@ const HomeView = ({ initialTab = 'search' }) => {
                         placeListItemRefs={home.placeListItemRefs}
                         getRecommendationMatchedLabels={home.getRecommendationMatchedLabels}
                         getRecommendationReasonSummary={home.getRecommendationReasonSummary}
-                        onSelectPlace={home.selectPlaceFromList}
+                        onSelectPlace={handleTrackedPlaceSelect}
+                        onDismissPlace={handleResultDismiss}
                         onReportPlace={home.goToPlaceReport}
                       />
 
@@ -747,7 +821,7 @@ const HomeView = ({ initialTab = 'search' }) => {
                   hiddenPlaceId={s.hiddenMapMarkerPlaceId}
                   choiceRequestKey={s.markerChoiceRequestKey}
                   onCenterChange={home.handleMapViewportChange}
-                  onSelectPlace={home.selectPlace}
+                  onSelectPlace={handleTrackedMapPlaceSelect}
                   onMarkerTargetChange={home.updateMascotFetchTarget}
                 />
               </div>
@@ -768,7 +842,10 @@ const HomeView = ({ initialTab = 'search' }) => {
                   onCollapse={() => setStateValue('isPlaceDetailCollapsed', true)}
                   onExpand={() => setStateValue('isPlaceDetailCollapsed', false)}
                   onDismiss={home.dismissPlaceDetailPanel}
-                  onSavePlace={handleSavePlace}
+                  onSavePlace={handleTrackedPlaceSave}
+                  requestedFeedbackTags={placeInteractions.requestedTags}
+                  onTagFeedback={placeInteractions.submitTagFeedback}
+                  getTagFeedbackState={placeInteractions.getTagFeedbackState}
                   onReportPlace={home.goToPlaceReport}
                   onDetailFrameError={() => setStateValue('detailFrameError', true)}
                 />
