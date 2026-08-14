@@ -1,10 +1,10 @@
 package com.kyb.lifeinframap.support;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.kyb.lifeinframap.account.User;
-import com.kyb.lifeinframap.account.UserProfile;
-import com.kyb.lifeinframap.account.UserProfileRepository;
-import com.kyb.lifeinframap.account.UserRepository;
+import com.kyb.lifeinframap.account.domain.User;
+import com.kyb.lifeinframap.account.domain.UserProfile;
+import com.kyb.lifeinframap.account.repository.UserProfileRepository;
+import com.kyb.lifeinframap.account.repository.UserRepository;
 import com.kyb.lifeinframap.security.JwtService;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.springframework.beans.factory.annotation.Autowired;

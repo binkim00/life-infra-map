@@ -7,7 +7,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.kyb.lifeinframap.account.User;
+import com.kyb.lifeinframap.account.domain.User;
 import com.kyb.lifeinframap.support.ApiTestBase;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -40,7 +40,7 @@ class AuthApiTest extends ApiTestBase {
         String username = "logintest_" + System.nanoTime();
         User user = User.create(username, username + "@test.dev", passwordEncoder.encode("testpass1234"));
         userRepository.save(user);
-        profileRepository.save(new com.kyb.lifeinframap.account.UserProfile(user, "로그인테스트"));
+        profileRepository.save(new com.kyb.lifeinframap.account.domain.UserProfile(user, "로그인테스트"));
 
         mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -59,7 +59,7 @@ class AuthApiTest extends ApiTestBase {
         String username = "loginfail_" + System.nanoTime();
         User user = User.create(username, username + "@test.dev", passwordEncoder.encode("testpass1234"));
         userRepository.save(user);
-        profileRepository.save(new com.kyb.lifeinframap.account.UserProfile(user, "실패테스트"));
+        profileRepository.save(new com.kyb.lifeinframap.account.domain.UserProfile(user, "실패테스트"));
 
         mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -197,7 +197,7 @@ class AuthApiTest extends ApiTestBase {
         String username = "pwchange_" + System.nanoTime();
         User user = User.create(username, username + "@test.dev", passwordEncoder.encode("oldpass1234"));
         userRepository.save(user);
-        profileRepository.save(new com.kyb.lifeinframap.account.UserProfile(user, "비번변경" + System.nanoTime()));
+        profileRepository.save(new com.kyb.lifeinframap.account.domain.UserProfile(user, "비번변경" + System.nanoTime()));
 
         mockMvc.perform(patch("/api/accounts/me/password")
                         .header("Authorization", bearer(user))
@@ -223,7 +223,7 @@ class AuthApiTest extends ApiTestBase {
         String username = "pwfail_" + System.nanoTime();
         User user = User.create(username, username + "@test.dev", passwordEncoder.encode("oldpass1234"));
         userRepository.save(user);
-        profileRepository.save(new com.kyb.lifeinframap.account.UserProfile(user, "비번실패" + System.nanoTime()));
+        profileRepository.save(new com.kyb.lifeinframap.account.domain.UserProfile(user, "비번실패" + System.nanoTime()));
 
         mockMvc.perform(patch("/api/accounts/me/password")
                         .header("Authorization", bearer(user))

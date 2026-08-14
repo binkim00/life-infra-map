@@ -10,10 +10,10 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.kyb.lifeinframap.account.User;
-import com.kyb.lifeinframap.board.Post;
-import com.kyb.lifeinframap.board.PostRepository;
-import com.kyb.lifeinframap.storage.StorageService;
+import com.kyb.lifeinframap.account.domain.User;
+import com.kyb.lifeinframap.board.domain.Post;
+import com.kyb.lifeinframap.board.repository.PostRepository;
+import com.kyb.lifeinframap.storage.service.StorageService;
 import com.kyb.lifeinframap.support.ApiTestBase;
 import java.nio.charset.StandardCharsets;
 import org.junit.jupiter.api.DisplayName;

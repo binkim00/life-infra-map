@@ -2,8 +2,8 @@ package com.kyb.lifeinframap;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.kyb.lifeinframap.tier.ContributionRules;
-import com.kyb.lifeinframap.tier.Tier;
+import com.kyb.lifeinframap.tier.domain.ContributionRules;
+import com.kyb.lifeinframap.tier.domain.Tier;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
