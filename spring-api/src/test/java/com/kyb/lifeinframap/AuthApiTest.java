@@ -326,7 +326,13 @@ class AuthApiTest extends ApiTestBase {
         User user = createUser();
 
         mockMvc.perform(get("/api/accounts/mypage").header("Authorization", bearer(user)))
-                .andExpect(status().isOk());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.user.date_joined").exists())
+                .andExpect(jsonPath("$.posts").isArray())
+                .andExpect(jsonPath("$.comments").isArray())
+                .andExpect(jsonPath("$.liked_posts").isArray())
+                .andExpect(jsonPath("$.notifications").isArray())
+                .andExpect(jsonPath("$.inquiries").isArray());
     }
 
     @Test

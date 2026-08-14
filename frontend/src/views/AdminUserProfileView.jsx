@@ -15,6 +15,13 @@ const PENALTY_OPTIONS = [
   ['permanent_ban', '영구밴'],
 ]
 
+const normalizeAdminProfile = (payload = {}) => ({
+  user: payload.user || payload,
+  posts: Array.isArray(payload.posts) ? payload.posts : [],
+  comments: Array.isArray(payload.comments) ? payload.comments : [],
+  penalties: Array.isArray(payload.penalties) ? payload.penalties : [],
+})
+
 const AdminUserProfileView = () => {
   const navigate = useNavigate()
   const { userId } = useParams()
@@ -39,7 +46,7 @@ const AdminUserProfileView = () => {
 
     try {
       const response = await getAdminUser(userId)
-      setProfile(response.data)
+      setProfile(normalizeAdminProfile(response.data))
     } catch (error) {
       console.error(error)
       setErrorMessage('유저 프로필을 불러오지 못했습니다.')

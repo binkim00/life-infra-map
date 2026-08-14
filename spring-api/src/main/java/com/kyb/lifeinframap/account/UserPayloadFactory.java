@@ -46,6 +46,7 @@ public class UserPayloadFactory {
         payload.put("profile_image_url", fileUrl(profileImageKey));
         payload.put("email", user.getEmail());
         payload.put("is_staff", user.isStaff());
+        payload.put("date_joined", user.getDateJoined());
         payload.put("score", tier.score());
         payload.put("contribution", tier.contribution());
         payload.put("tier", tier.tier());

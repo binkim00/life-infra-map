@@ -32,6 +32,7 @@ public class ProfileController {
     private final UserProfileRepository profileRepository;
     private final ContributionService contributionService;
     private final PostRepository postRepository;
+    private final PostLikeRepository postLikeRepository;
     private final CommentRepository commentRepository;
     private final NotificationRepository notificationRepository;
     private final InquiryRepository inquiryRepository;
@@ -45,6 +46,7 @@ public class ProfileController {
             UserProfileRepository profileRepository,
             ContributionService contributionService,
             PostRepository postRepository,
+            PostLikeRepository postLikeRepository,
             CommentRepository commentRepository,
             NotificationRepository notificationRepository,
             InquiryRepository inquiryRepository,
@@ -56,6 +58,7 @@ public class ProfileController {
         this.profileRepository = profileRepository;
         this.contributionService = contributionService;
         this.postRepository = postRepository;
+        this.postLikeRepository = postLikeRepository;
         this.commentRepository = commentRepository;
         this.notificationRepository = notificationRepository;
         this.inquiryRepository = inquiryRepository;
@@ -150,27 +153,82 @@ public class ProfileController {
         if (user == null) {
             return unauthorized();
         }
-        BoardResponseAssembler.AuthorContext context = assembler.loadAuthors(List.of(user));
+        List<Post> authoredPosts = postRepository.findByAuthorIdOrderByCreatedAtDesc(user.getId());
+        List<Comment> authoredComments = commentRepository.findByAuthorIdOrderByCreatedAtDesc(user.getId());
+        List<Post> likedPostEntities = postLikeRepository.findByUserIdOrderByCreatedAtDesc(user.getId()).stream()
+                .map(PostLike::getPost)
+                .toList();
+
+        List<User> authors = new ArrayList<>();
+        authors.add(user);
+        likedPostEntities.forEach(post -> authors.add(post.getAuthor()));
+        BoardResponseAssembler.AuthorContext context = assembler.loadAuthors(authors);
 
         List<Map<String, Object>> posts = new ArrayList<>();
-        postRepository.findAll().stream()
-                .filter(post -> post.getAuthor().getId().equals(user.getId()))
-                .forEach(post -> posts.add(assembler.post(post, context, user.getId(), false)));
+        authoredPosts.forEach(post -> posts.add(assembler.post(post, context, user.getId(), false)));
 
         List<Map<String, Object>> comments = new ArrayList<>();
-        commentRepository.findAll().stream()
-                .filter(comment -> comment.getAuthor().getId().equals(user.getId()))
-                .forEach(comment -> comments.add(assembler.comment(comment, context, user.getId(), List.of())));
+        authoredComments.forEach(comment -> comments.add(assembler.comment(comment, context, user.getId(), List.of())));
+
+        List<Map<String, Object>> likedPosts = new ArrayList<>();
+        likedPostEntities.forEach(post -> likedPosts.add(assembler.post(post, context, user.getId(), false)));
+
+        List<Map<String, Object>> notifications = notificationRepository
+                .findByRecipientIdOrderByCreatedAtDesc(user.getId()).stream()
+                .map(this::serializeNotification)
+                .toList();
+        List<Map<String, Object>> inquiries = inquiryRepository
+                .findByAuthorIdOrderByCreatedAtDesc(user.getId()).stream()
+                .map(this::serializeInquiry)
+                .toList();
 
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("user", userPayloadFactory.of(user));
         body.put("posts", posts);
         body.put("comments", comments);
+        body.put("liked_posts", likedPosts);
+        body.put("notifications", notifications);
+        body.put("inquiries", inquiries);
         body.put("unread_notification_count", notificationRepository.countByRecipientIdAndReadFalse(user.getId()));
         body.put("inquiry_count", inquiryRepository
                 .findByAuthorIdOrderByCreatedAtDesc(user.getId(), PageRequest.of(0, 1)).getTotalElements());
         body.put("penalty", penaltyService.serialize(penaltyService.findCurrent(user.getId())));
         return ResponseEntity.ok(body);
+    }
+
+    private Map<String, Object> serializeNotification(Notification notification) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("id", notification.getId());
+        body.put("notification_type", notification.getNotificationType());
+        body.put("title", notification.getTitle());
+        body.put("message", notification.getMessage());
+        body.put("is_read", notification.isRead());
+        body.put("sender", notification.getSender() == null ? null : notification.getSender().getId());
+        body.put("sender_username",
+                notification.getSender() == null ? null : notification.getSender().getUsername());
+        body.put("target_post", notification.getTargetPost() == null ? null : notification.getTargetPost().getId());
+        body.put("target_comment",
+                notification.getTargetComment() == null ? null : notification.getTargetComment().getId());
+        body.put("created_at", notification.getCreatedAt());
+        return body;
+    }
+
+    private Map<String, Object> serializeInquiry(Inquiry inquiry) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("id", inquiry.getId());
+        body.put("author", inquiry.getAuthor().getId());
+        body.put("author_username", inquiry.getAuthor().getUsername());
+        body.put("title", inquiry.getTitle());
+        body.put("content", inquiry.getContent());
+        body.put("status", inquiry.getStatus());
+        body.put("admin_reply", inquiry.getAdminReply());
+        body.put("replied_by", inquiry.getRepliedBy() == null ? null : inquiry.getRepliedBy().getId());
+        body.put("replied_by_username",
+                inquiry.getRepliedBy() == null ? null : inquiry.getRepliedBy().getUsername());
+        body.put("replied_at", inquiry.getRepliedAt());
+        body.put("created_at", inquiry.getCreatedAt());
+        body.put("updated_at", inquiry.getUpdatedAt());
+        return body;
     }
 
 

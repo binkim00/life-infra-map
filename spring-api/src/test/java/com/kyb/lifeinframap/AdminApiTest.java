@@ -60,6 +60,24 @@ class AdminApiTest extends ApiTestBase {
                 .andExpect(status().isForbidden());
     }
 
+    @Test
+    @DisplayName("관리자 사용자 상세는 React 화면이 기대하는 중첩 응답을 반환한다")
+    void userDetailReturnsReactShape() throws Exception {
+        User staff = createUser(true);
+        User target = createUser(false);
+
+        mockMvc.perform(get("/api/admin/users/{id}", target.getId())
+                        .header("Authorization", bearer(staff)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.user.id").value(target.getId()))
+                .andExpect(jsonPath("$.user.posts_count").isNumber())
+                .andExpect(jsonPath("$.user.comments_count").isNumber())
+                .andExpect(jsonPath("$.user.received_reports_count").isNumber())
+                .andExpect(jsonPath("$.posts").isArray())
+                .andExpect(jsonPath("$.comments").isArray())
+                .andExpect(jsonPath("$.penalties").isArray());
+    }
+
     // ---------- 제재 ----------
 
     @Test

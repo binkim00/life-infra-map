@@ -68,6 +68,23 @@ const getMappedLabel = (value, labelMap = {}) => {
 
 const getUserContribution = (user) => user?.contribution ?? user?.score ?? 0
 
+const normalizeMypageData = (payload = {}) => ({
+  ...payload,
+  user: payload.user || {},
+  posts: Array.isArray(payload.posts) ? payload.posts : [],
+  comments: Array.isArray(payload.comments) ? payload.comments : [],
+  liked_posts: Array.isArray(payload.liked_posts) ? payload.liked_posts : [],
+  notifications: Array.isArray(payload.notifications) ? payload.notifications : [],
+  inquiries: Array.isArray(payload.inquiries) ? payload.inquiries : [],
+  penalty: payload.penalty || {
+    is_suspended: false,
+    suspended_until: null,
+    is_permanent_ban: false,
+    reason: '',
+    penalty_type: '',
+  },
+})
+
 const getNicknameColorStyle = (user) => {
   return user?.nickname_color ? { color: user.nickname_color } : undefined
 }
@@ -289,9 +306,10 @@ const MypageView = () => {
       try {
         setIsLoading(true)
         const response = await getMypage()
-        setData(response.data)
-        setNicknameInput(response.data.user.nickname || '')
-        setProfileImagePreviewUrl(response.data.user.profile_image_url || '')
+        const mypageData = normalizeMypageData(response.data)
+        setData(mypageData)
+        setNicknameInput(mypageData.user.nickname || '')
+        setProfileImagePreviewUrl(mypageData.user.profile_image_url || '')
         fetchRecentSearchLogs()
         fetchPreferences()
         fetchSavedPlaces()

@@ -29,7 +29,10 @@ public class AdminUserController {
     private final NotificationRepository notificationRepository;
     private final PostRepository postRepository;
     private final CommentRepository commentRepository;
+    private final ReportRepository reportRepository;
     private final ContributionService contributionService;
+    private final PenaltyService penaltyService;
+    private final BoardResponseAssembler assembler;
 
     public AdminUserController(
             UserRepository userRepository,
@@ -38,14 +41,20 @@ public class AdminUserController {
             NotificationRepository notificationRepository,
             PostRepository postRepository,
             CommentRepository commentRepository,
-            ContributionService contributionService) {
+            ReportRepository reportRepository,
+            ContributionService contributionService,
+            PenaltyService penaltyService,
+            BoardResponseAssembler assembler) {
         this.userRepository = userRepository;
         this.profileRepository = profileRepository;
         this.penaltyRepository = penaltyRepository;
         this.notificationRepository = notificationRepository;
         this.postRepository = postRepository;
         this.commentRepository = commentRepository;
+        this.reportRepository = reportRepository;
         this.contributionService = contributionService;
+        this.penaltyService = penaltyService;
+        this.assembler = assembler;
     }
 
     public record PenaltyRequest(@NotBlank String penaltyType, @NotBlank String reason, Integer days) {
@@ -84,15 +93,25 @@ public class AdminUserController {
         if (user == null) {
             return notFound();
         }
-        Map<String, Object> body = summarize(user,
-                contributionService.getTierInfo(user.getId(), user.isStaff()));
-        body.put("post_count", postRepository.countByAuthorId(userId));
-        body.put("comment_count", commentRepository.countByAuthorId(userId));
+        List<Post> authoredPosts = postRepository.findByAuthorIdOrderByCreatedAtDesc(userId);
+        List<Comment> authoredComments = commentRepository.findByAuthorIdOrderByCreatedAtDesc(userId);
+        BoardResponseAssembler.AuthorContext context = assembler.loadAuthors(List.of(user));
+
+        List<Map<String, Object>> posts = new ArrayList<>();
+        authoredPosts.forEach(post -> posts.add(assembler.post(post, context, userId, false)));
+        List<Map<String, Object>> comments = new ArrayList<>();
+        authoredComments.forEach(comment -> comments.add(assembler.comment(comment, context, userId, List.of())));
 
         List<Map<String, Object>> penalties = new ArrayList<>();
         for (UserPenalty penalty : penaltyRepository.findByUserIdOrderByCreatedAtDesc(userId)) {
             penalties.add(serializePenalty(penalty));
         }
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("user", summarize(user,
+                contributionService.getTierInfo(user.getId(), user.isStaff())));
+        body.put("posts", posts);
+        body.put("comments", comments);
         body.put("penalties", penalties);
         return ResponseEntity.ok(body);
     }
@@ -157,6 +176,15 @@ public class AdminUserController {
         body.put("tier", tier == null ? "iron" : tier.tier());
         body.put("tier_label", tier == null ? "아이언" : tier.tierLabel());
         body.put("contribution", tier == null ? 0 : tier.contribution());
+        body.put("posts_count", postRepository.countByAuthorId(user.getId()));
+        body.put("comments_count", commentRepository.countByAuthorId(user.getId()));
+        body.put("received_reports_count",
+                reportRepository.countByPostAuthorId(user.getId())
+                        + reportRepository.countByCommentAuthorId(user.getId()));
+        UserPenalty currentPenalty = penaltyService.findCurrent(user.getId());
+        body.put("current_penalty", currentPenalty == null ? null : serializePenalty(currentPenalty));
+        List<UserPenalty> penalties = penaltyRepository.findByUserIdOrderByCreatedAtDesc(user.getId());
+        body.put("recent_penalty", penalties.isEmpty() ? null : serializePenalty(penalties.get(0)));
         return body;
     }
 
