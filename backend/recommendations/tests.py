@@ -2079,7 +2079,7 @@ class RecommendationSearchTests(TestCase):
         self.assertNotIn("map_kakao_place_to_recommendation", source)
 
     def test_frontend_ai_search_path_returns_before_local_planner(self):
-        source = self._repo_file_text("frontend/src/views/Homeview.vue")
+        source = self._repo_file_text("frontend/src/hooks/useHomeSearch.js")
         start = source.index("const performUnifiedMapSearch = async")
         backend_only_start = source.index("if (!useMapBounds)", start)
         local_planner_start = source.index("let conversationalPlan =", start)
@@ -2093,20 +2093,20 @@ class RecommendationSearchTests(TestCase):
         self.assertNotIn("runKakaoRecommendationFallbackSearch", backend_only_block)
 
     def test_frontend_ai_first_response_returns_before_kakao_fallback_paths(self):
-        source = self._repo_file_text("frontend/src/views/Homeview.vue")
+        source = self._repo_file_text("frontend/src/hooks/useHomeSearch.js")
         start = source.index("const runAiMapSearchAtCenter = async")
         ai_first_start = source.index("if (backendIsAiFirst)", start)
         post_ai_first_index = source.index("const menuSearchProfile =", ai_first_start)
         ai_first_block = source[ai_first_start:post_ai_first_index]
 
         self.assertIn("return", ai_first_block)
-        self.assertIn("fallbackResults.value = []", ai_first_block)
+        self.assertIn("s.fallbackResults = []", ai_first_block)
         self.assertNotIn("shouldRunKakaoRecommendationFallback(", ai_first_block)
         self.assertNotIn("runKakaoRecommendationFallbackSearch(", ai_first_block)
         self.assertNotIn("[카카오 fallback 시작]", source)
 
     def test_frontend_ai_unavailable_and_zero_results_do_not_run_kakao_fallback(self):
-        source = self._repo_file_text("frontend/src/views/Homeview.vue")
+        source = self._repo_file_text("frontend/src/hooks/useHomeSearch.js")
         start = source.index("const runAiMapSearchAtCenter = async")
         non_search_start = source.index("if (backendAction && backendAction !== 'search')", start)
         ai_first_start = source.index("if (backendIsAiFirst)", start)
@@ -2115,18 +2115,21 @@ class RecommendationSearchTests(TestCase):
         ai_first_block = source[ai_first_start:post_ai_first_index]
 
         self.assertIn("return", non_search_block)
-        self.assertIn("mainResults.value = []", ai_first_block)
-        self.assertIn("searchResultStatus.value = data.decision_action === 'ai_unavailable' ? 'error' : 'empty'", ai_first_block)
+        self.assertIn("s.mainResults = []", ai_first_block)
+        self.assertIn("s.searchResultStatus = data.decision_action === 'ai_unavailable' ? 'error' : 'empty'", ai_first_block)
         self.assertNotIn("runKakaoRecommendationFallbackSearch(", ai_first_block)
 
     def test_frontend_ai_first_response_resets_rule_parser_banner_state(self):
-        source = self._repo_file_text("frontend/src/views/Homeview.vue")
-        parser_status_start = source.index("const mapParserStatus = computed")
-        parser_status_end = source.index("const searchPlanStatus = computed", parser_status_start)
-        parser_status_block = source[parser_status_start:parser_status_end]
-        response_start = source.index("mapAiParse.value = {")
-        response_end = source.index("if (backendAction && backendAction !== 'search')", response_start)
-        response_block = source[response_start:response_end]
+        # 배너는 화면(HomeView.jsx), 응답 반영은 훅(useHomeSearch.js)으로 나뉘어 있습니다.
+        view_source = self._repo_file_text("frontend/src/views/HomeView.jsx")
+        parser_status_start = view_source.index("const mapParserStatus = (() =>")
+        parser_status_end = view_source.index("const searchPlanStatus =", parser_status_start)
+        parser_status_block = view_source[parser_status_start:parser_status_end]
+
+        hook_source = self._repo_file_text("frontend/src/hooks/useHomeSearch.js")
+        response_start = hook_source.index("s.mapAiParse = {")
+        response_end = hook_source.index("if (backendAction && backendAction !== 'search')", response_start)
+        response_block = hook_source[response_start:response_end]
 
         self.assertIn("executionMode === 'ai_first_orchestrator'", parser_status_block)
         self.assertIn("parserProvider === 'ai_intent_planner'", parser_status_block)
