@@ -3382,6 +3382,28 @@ def _candidate_preview_frame(request_data):
             frame[snake_name] = value
 
     queries = _normalize_search_queries(frame.get("primary_search_queries"))
+    specific_target_queries = []
+    for target_term in _frame_terms(frame, "target_objects"):
+        parts = _split_specific_evidence_terms(target_term, frame)
+        qualifiers = [
+            part
+            for part in parts
+            if _compact(part) not in DIRECT_TARGET_GENERIC_TERMS
+        ]
+        category_parts = [
+            part
+            for part in parts
+            if get_matching_categories(part)
+        ]
+        for qualifier in qualifiers:
+            specific_target_queries.append(
+                " ".join([qualifier, *category_parts[:1]])
+            )
+    if specific_target_queries:
+        queries = _normalize_search_queries([
+            *specific_target_queries,
+            *queries,
+        ])
     if not queries:
         queries = _normalize_search_queries(
             search_plan.get("kakaoKeywordCandidates")
@@ -3457,9 +3479,12 @@ def run_ai_search_candidates(request_data, *, user=None):
         if not _candidate_has_invalid_display(candidate)
         and not _has_only_retrieval_query_evidence(candidate)
         and not _blocking_unmet_constraints(candidate)
-        and candidate.get("pre_ai_evidence_level") in {"strong", "medium"}
+        and candidate.get("pre_ai_evidence_level") in {"strong", "medium", "weak"}
     ]
-    ranked = sorted(candidate_pool, key=_candidate_sort_key)[:limit]
+    ranked = _prioritize_direct_specific_targets(
+        sorted(candidate_pool, key=_candidate_sort_key),
+        frame,
+    )[:limit]
     results = []
     for index, candidate in enumerate(ranked):
         reason = candidate.get("recommendation_reason") or "요청 조건과 가까운 후보예요. AI가 적합도 순서를 확인하고 있습니다."

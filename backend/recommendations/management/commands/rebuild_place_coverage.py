@@ -1,5 +1,5 @@
 from django.core.management.base import BaseCommand
-from django.db.models import Count, Q
+from django.db.models import Count, Max, Q
 
 from recommendations.models import PlaceCoverage, SourcePlaceRecord
 
@@ -21,11 +21,11 @@ class Command(BaseCommand):
 
         groups = queryset.values(
             "administrative_code",
-            "sido_name",
-            "sigungu_name",
             "category",
             "source",
         ).annotate(
+            sido_name=Max("sido_name"),
+            sigungu_name=Max("sigungu_name"),
             source_record_count=Count("id"),
             active_record_count=Count("id", filter=Q(is_active=True)),
             normalized_place_count=Count("normalized_place", distinct=True),

@@ -56,8 +56,8 @@ API_HEADER_ALIASES = {
     "address": ["LOTNO_ADDR"],
     "road_address": ["ROAD_NM_ADDR"],
     "administrative_code": ["OPN_ATMY_GRP_CD"],
-    "source_x": ["CRD_INFO_X"],
-    "source_y": ["CRD_INFO_Y"],
+    "source_x": ["CRD_INFO_X", "\uc88c\ud45c\uc815\ubcf4(X)"],
+    "source_y": ["CRD_INFO_Y", "\uc88c\ud45c\uc815\ubcf4(Y)"],
     "license_date": ["LCPMT_YMD"],
     "closed_date": ["CLSBIZ_YMD"],
     "source_updated_at": ["LAST_MDFCN_PNT", "DAT_UPDT_PNT"],
@@ -84,6 +84,7 @@ class Command(BaseCommand):
         parser.add_argument("--encoding", default="auto")
         parser.add_argument("--delimiter", default="")
         parser.add_argument("--batch-size", type=int, default=1000)
+        parser.add_argument("--start-row", type=int, default=0)
         parser.add_argument("--limit", type=int)
         parser.add_argument("--dry-run", action="store_true")
 
@@ -107,6 +108,7 @@ class Command(BaseCommand):
             encoding=options["encoding"],
             delimiter=options["delimiter"],
             batch_size=max(1, options["batch_size"]),
+            start_row=max(0, options["start_row"]),
             limit=options["limit"],
             dry_run=options["dry_run"],
         )
@@ -131,6 +133,7 @@ def import_localdata_csv(
     encoding="auto",
     delimiter="",
     batch_size=1000,
+    start_row=0,
     limit=None,
     dry_run=False,
 ):
@@ -139,6 +142,7 @@ def import_localdata_csv(
     resolved_delimiter = delimiter or detect_delimiter(path, resolved_encoding)
     checksum = calculate_sha256(path)
     stats = {
+        "start_row": start_row,
         "read": 0,
         "valid": 0,
         "created": 0,
@@ -164,7 +168,9 @@ def import_localdata_csv(
             if not reader.fieldnames:
                 raise CommandError("CSV header is missing.")
 
-            for row in reader:
+            for row_index, row in enumerate(reader):
+                if row_index < start_row:
+                    continue
                 if limit is not None and stats["read"] >= limit:
                     break
                 stats["read"] += 1
@@ -343,16 +349,22 @@ def parse_source_date(value):
     if not text:
         return None
     digits = "".join(character for character in text if character.isdigit())
-    if len(digits) >= 8:
-        return parse_date(f"{digits[:4]}-{digits[4:6]}-{digits[6:8]}")
-    return parse_date(text)
+    try:
+        if len(digits) >= 8:
+            return parse_date(f"{digits[:4]}-{digits[4:6]}-{digits[6:8]}")
+        return parse_date(text)
+    except (TypeError, ValueError):
+        return None
 
 
 def parse_source_datetime(value):
     text = clean_text(value)
     if not text:
         return None
-    parsed = parse_datetime(text)
+    try:
+        parsed = parse_datetime(text)
+    except (TypeError, ValueError):
+        parsed = None
     if parsed is None:
         digits = "".join(character for character in text if character.isdigit())
         if len(digits) >= 14:

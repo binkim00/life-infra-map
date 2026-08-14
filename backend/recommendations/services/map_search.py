@@ -32,6 +32,37 @@ PLACE_CATEGORY_ALIASES = {
     "shelter": ["shelter", "쉼터", "무더위쉼터", "한파쉼터"],
 }
 
+PLACE_CATEGORY_ALIASES["restaurant"] = [
+    "restaurant",
+    "\uc2dd\ub2f9",
+    "\uc74c\uc2dd\uc810",
+    "\ub9db\uc9d1",
+    "\ubc25\uc9d1",
+]
+
+LOCATION_TOKEN_SUFFIXES = (
+    "\uc2dc",
+    "\ub3c4",
+    "\uad6c",
+    "\uad70",
+    "\ub3d9",
+    "\uc74d",
+    "\uba74",
+    "\ub9ac",
+    "\uc5ed",
+)
+
+SOFT_PREFERENCE_TOKENS = frozenset({
+    "\ubd84\uc704\uae30",
+    "\uc88b\uc740",
+    "\uc88b\uc740\uacf3",
+    "\uc870\uc6a9\ud55c",
+    "\uc608\uc05c",
+    "\uad1c\ucc2e\uc740",
+    "\ub9db\uc788\ub294",
+    "\ucd94\ucc9c",
+})
+
 # `주차장 말고 화장실`처럼 바로 앞 단어를 제외 조건으로 바꾸는 표현입니다.
 NEGATION_MARKERS = (
     "말고",
@@ -513,6 +544,44 @@ def drop_unmatched_tokens(tokens, queryset):
     return matched_tokens, dropped_tokens
 
 
+def relax_tokens_for_results(tokens, queryset):
+    """Keep category/location constraints, then add only compatible preferences."""
+    unique_tokens = list(dict.fromkeys(tokens))
+    location_tokens = set()
+
+    for token in unique_tokens:
+        if not token.endswith(LOCATION_TOKEN_SUFFIXES):
+            continue
+        location_filter = (
+            Q(name__icontains=token)
+            | Q(address__icontains=token)
+            | Q(detail_location__icontains=token)
+        )
+        if queryset.filter(location_filter).exists():
+            location_tokens.add(token)
+
+    def priority(token):
+        if get_matching_categories(token):
+            return 0
+        if token in location_tokens:
+            return 1
+        if token not in SOFT_PREFERENCE_TOKENS:
+            return 2
+        return 3
+
+    selected = set()
+    current_queryset = queryset
+    for token in sorted(unique_tokens, key=priority):
+        candidate_queryset = current_queryset.filter(build_token_filter(token))
+        if candidate_queryset.exists():
+            selected.add(token)
+            current_queryset = candidate_queryset
+
+    relaxed_tokens = [token for token in unique_tokens if token in selected]
+    dropped_tokens = [token for token in unique_tokens if token not in selected]
+    return relaxed_tokens, dropped_tokens
+
+
 def build_radius_attempts(*, lat, lng, radius, has_keyword):
     """
     시도할 반경 목록을 만든다.
@@ -616,7 +685,18 @@ def search_saved_places(*, keyword="", lat=None, lng=None, radius=0, limit=30, q
 
     # 결과가 없고 토큰이 여러 개면, 데이터에 없는 표현만 빼고 한 번 더 시도합니다.
     if not deduped and len(include_tokens) > 1:
-        relaxed_tokens, dropped_tokens = drop_unmatched_tokens(include_tokens, source_queryset)
+        relaxation_queryset = source_queryset
+        if lat is not None and lng is not None and radius:
+            relaxation_queryset, _ = apply_radius_filter(
+                source_queryset,
+                lat,
+                lng,
+                radius,
+            )
+        relaxed_tokens, dropped_tokens = relax_tokens_for_results(
+            include_tokens,
+            relaxation_queryset,
+        )
 
         if relaxed_tokens and dropped_tokens:
             deduped = run_search_pass(
