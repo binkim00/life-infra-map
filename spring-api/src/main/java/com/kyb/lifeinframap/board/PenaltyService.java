@@ -11,7 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * 활동정지/밴 확인입니다.
  *
- * Django `boards/views.py` 의 get_current_penalty / serialize_penalty / blocked_response 를 옮긴 것입니다.
+ * 기존 Django 구현과 동일한 제재 판정 및 응답 계약을 제공합니다.
  * 글쓰기·댓글·좋아요·신고처럼 쓰기 동작 앞에서 확인합니다.
  */
 @Service

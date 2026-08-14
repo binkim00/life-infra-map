@@ -15,7 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 /**
- * 게시글 API 입니다. Django `boards/views.py` 의 post_list_create / post_detail_update_delete 를 옮겼습니다.
+ * 게시글 API를 담당하는 Spring 엔드포인트입니다.
  *
  * 목록은 페이지네이션 없이 배열을 그대로 내려줍니다. Django 와 같은 형태입니다.
  */

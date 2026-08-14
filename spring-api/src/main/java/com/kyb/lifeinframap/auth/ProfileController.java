@@ -19,7 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 /**
- * 프로필과 마이페이지입니다. Django `accounts/views.py` 의 나머지 엔드포인트를 옮겼습니다.
+ * 프로필과 마이페이지를 담당하는 Spring 엔드포인트입니다.
  *
  * 로그아웃은 토큰을 서버에 저장하지 않는 방식이라 서버가 할 일이 없습니다.
  * 프론트가 토큰을 지우면 끝나므로 응답만 맞춰 줍니다.

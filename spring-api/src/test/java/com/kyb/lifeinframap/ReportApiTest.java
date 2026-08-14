@@ -12,7 +12,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MvcResult;
 
 /**
- * 신고 API 입니다. Django `boards/views.py` 의 신고 관련 뷰를 옮긴 결과를 확인합니다.
+ * 신고 API의 Spring 이관 결과를 확인합니다.
  *
  * 신고는 규칙이 여러 개 겹칩니다(본인 글 제외, 중복 제외, 처리 권한).
  * Django 쪽 테스트가 `@skip` 으로 넘어가 있어 여기가 유일한 안전망입니다.

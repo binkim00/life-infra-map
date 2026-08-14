@@ -480,7 +480,6 @@ Spring이 발급한 토큰을 Django도 검증합니다. `backend/accounts/authe
 | Spring이 슈퍼유저로 접속 중 | `life_infra_map` 역할이 superuser입니다. 현재는 `ddl-auto: validate`가 유일한 안전장치이며 설정 한 줄로 뚫립니다. 배포 전에 DDL 권한이 없는 별도 역할(`SELECT/INSERT/UPDATE/DELETE` + 시퀀스 `USAGE`만 부여)로 분리하는 것이 좋습니다. |
 | SQLite 폴백이 사실상 무효 | `DB_ENGINE=sqlite`로 되돌리는 경로는 남아 있지만 Spring은 PostgreSQL만 접속합니다. Spring이 포함된 통합 환경에서는 성립하지 않고, Django 단독 테스트용으로만 의미가 있습니다. |
 | 환경변수 이중 관리 | Django는 `.env`, Spring은 OS 환경변수를 읽습니다. 값이 어긋나면 서로 다른 DB를 보거나 토큰 검증에 실패합니다. 맞춰야 하는 값 목록은 7.5에 있습니다. |
-| **Django 뷰 코드가 아직 남아 있다** | `config/urls.py`에서 URL 등록만 내려 두었고 `accounts/views.py`(181줄)·`boards/views.py`(1,039줄)는 남아 있습니다. 외부에서 닿지 않으므로 되돌릴 때는 `urls.py`만 고치면 됩니다. Spring 테스트 96개가 붙어 **이제 삭제 가능**하며, 판정 근거는 `config/urls.py` 상단 주석에 적어 두었습니다. |
 | multipart 업로드 테스트 | 기본 회귀 테스트는 `StorageService`를 mock 처리해 회원가입·프로필 변경·게시글 이미지 업로드를 검증합니다. 실제 MinIO 저장은 별도 `integrationTest`로 분리했습니다. |
 | 연결 수 | `max_connections=100`, Django `CONN_MAX_AGE=60` + HikariCP 기본 10이므로 로컬에서는 여유가 있습니다. |
 | 배포 구성 | 배포·시연용 서버에는 DB와 앱을 함께 두어 네트워크 지연을 없앱니다. 개발용 공유 DB와는 다른 목적입니다. |
@@ -492,7 +491,7 @@ Spring이 발급한 토큰을 Django도 검증합니다. `backend/accounts/authe
 | 확인 항목 | 결과 |
 |---|---|
 | Django 테스트 | 363개 실행, 실패 0 (21개 skip) |
-| **Spring 테스트** | **96개 통과** |
+| **Spring 테스트** | **97개 통과** |
 | **Spring 부팅** | 성공 — `ddl-auto: validate`가 실제 Django 스키마를 통과 |
 | **교차 인증** | Spring이 발급한 JWT를 Django `SharedJWTAuthentication`이 검증 성공. 클레임 `{sub, username, iat, exp}` 확인 |
 | 프론트 라우팅 | `serviceRoutes.js`의 경로 분기, `Bearer` 헤더 전환, Spring 후행 슬래시 제거 동작 |

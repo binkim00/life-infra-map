@@ -17,7 +17,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.web.servlet.MvcResult;
 
 /**
- * 인증·계정 API 입니다. Django `accounts/views.py` 를 옮긴 결과를 확인합니다.
+ * 인증·계정 API의 Spring 이관 결과를 확인합니다.
  *
  * 프론트가 응답의 `access_token`, `token_type`, `user.nickname` 을 그대로 읽으므로
  * 상태 코드만이 아니라 응답 형태도 함께 검증합니다.
@@ -189,8 +189,7 @@ class AuthApiTest extends ApiTestBase {
 
     // ---------- 계정 수정 ----------
     //
-    // Django `accounts/views.py` 의 나머지 뷰(비밀번호 변경·닉네임·프로필사진·마이페이지·로그아웃)에
-     // 대응합니다. 이 다섯 개가 덮이면 `accounts/views.py` 를 지워도 대조할 근거가 남습니다.
+    // 비밀번호 변경·닉네임·프로필사진·마이페이지·로그아웃의 회귀를 검증합니다.
 
     @Test
     @DisplayName("현재 비밀번호가 맞으면 변경된다")

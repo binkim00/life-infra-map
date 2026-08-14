@@ -18,7 +18,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MvcResult;
 
 /**
- * 게시판 API 입니다. Django `boards/views.py` 를 옮긴 결과를 확인합니다.
+ * 게시판 API의 Spring 이관 결과를 확인합니다.
  *
  * 권한 검사에 무게를 둡니다. 남의 글을 고칠 수 있는 종류의 결함은 조용히 들어가고,
  * 지금 Django 쪽 테스트가 1개뿐이라 이관 전후를 대조할 근거가 없습니다.
