@@ -1,3 +1,5 @@
+import uuid
+
 from django.conf import settings
 from django.db import models
 
@@ -155,6 +157,168 @@ class PlaceTag(models.Model):
     @property
     def status_label(self):
         return dict(self.TAG_STATUS_CHOICES).get(self.status, self.status)
+
+
+class DataSourceSyncRun(models.Model):
+    SYNC_TYPE_CHOICES = [("full", "Full snapshot"), ("delta", "Delta")]
+    STATUS_CHOICES = [
+        ("running", "Running"),
+        ("succeeded", "Succeeded"),
+        ("failed", "Failed"),
+    ]
+
+    source = models.CharField(max_length=50)
+    dataset = models.CharField(max_length=100)
+    sync_type = models.CharField(max_length=20, choices=SYNC_TYPE_CHOICES, default="full")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="running")
+    source_uri = models.TextField(blank=True)
+    source_checksum = models.CharField(max_length=64, blank=True)
+    cursor = models.JSONField(default=dict, blank=True)
+    stats = models.JSONField(default=dict, blank=True)
+    error_message = models.TextField(blank=True)
+    started_at = models.DateTimeField(auto_now_add=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["source", "dataset", "-started_at"]),
+            models.Index(fields=["status", "-started_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.source}:{self.dataset} ({self.status})"
+
+
+class SourcePlaceRecord(models.Model):
+    """Source-owned place row before normalization, geocoding, and deduplication."""
+
+    source = models.CharField(max_length=50)
+    dataset = models.CharField(max_length=100)
+    source_record_id = models.CharField(max_length=160)
+    name = models.CharField(max_length=255, blank=True)
+    category = models.CharField(max_length=100, blank=True)
+    business_type = models.CharField(max_length=100, blank=True)
+    business_status = models.CharField(max_length=50, blank=True)
+    is_active = models.BooleanField(default=True)
+    address = models.CharField(max_length=500, blank=True)
+    road_address = models.CharField(max_length=500, blank=True)
+    sido_name = models.CharField(max_length=50, blank=True)
+    sigungu_name = models.CharField(max_length=80, blank=True)
+    administrative_code = models.CharField(max_length=30, blank=True)
+    source_x = models.CharField(max_length=50, blank=True)
+    source_y = models.CharField(max_length=50, blank=True)
+    coordinate_reference_system = models.CharField(max_length=30, blank=True)
+    license_date = models.DateField(null=True, blank=True)
+    closed_date = models.DateField(null=True, blank=True)
+    source_updated_at = models.DateTimeField(null=True, blank=True)
+    last_seen_at = models.DateTimeField(auto_now=True)
+    normalized_place = models.ForeignKey(
+        Place,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="source_records",
+    )
+    raw = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["source", "dataset", "source_record_id"],
+                name="unique_source_place_record",
+            )
+        ]
+        indexes = [
+            models.Index(fields=["source", "dataset", "is_active"]),
+            models.Index(fields=["sido_name", "sigungu_name", "category"]),
+            models.Index(fields=["normalized_place"]),
+        ]
+
+    def __str__(self):
+        return self.name or f"{self.source}:{self.source_record_id}"
+
+
+def new_evidence_key():
+    return uuid.uuid4().hex
+
+
+class PlaceTagEvidence(models.Model):
+    POLARITY_CHOICES = [
+        ("positive", "Positive"),
+        ("negative", "Negative"),
+        ("neutral", "Neutral"),
+    ]
+
+    place = models.ForeignKey(Place, on_delete=models.CASCADE, related_name="tag_evidence")
+    tag = models.ForeignKey(Tag, on_delete=models.CASCADE, related_name="place_evidence")
+    evidence_key = models.CharField(
+        max_length=64,
+        unique=True,
+        default=new_evidence_key,
+        editable=False,
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="place_tag_evidence",
+    )
+    source = models.CharField(max_length=50)
+    source_reference = models.CharField(max_length=500, blank=True)
+    polarity = models.CharField(max_length=20, choices=POLARITY_CHOICES, default="positive")
+    confidence = models.PositiveSmallIntegerField(default=50)
+    evidence = models.TextField(blank=True)
+    context = models.JSONField(default=dict, blank=True)
+    raw = models.JSONField(default=dict, blank=True)
+    observed_at = models.DateTimeField(null=True, blank=True)
+    expires_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["place", "tag", "polarity"]),
+            models.Index(fields=["source", "-observed_at"]),
+            models.Index(fields=["expires_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.place} - {self.tag} ({self.polarity})"
+
+
+class PlaceCoverage(models.Model):
+    """Materialized nationwide coverage metrics by administrative area and category."""
+
+    administrative_code = models.CharField(max_length=30)
+    sido_name = models.CharField(max_length=50, blank=True)
+    sigungu_name = models.CharField(max_length=80, blank=True)
+    category = models.CharField(max_length=100)
+    source = models.CharField(max_length=50, blank=True)
+    source_record_count = models.PositiveIntegerField(default=0)
+    active_record_count = models.PositiveIntegerField(default=0)
+    normalized_place_count = models.PositiveIntegerField(default=0)
+    tagged_place_count = models.PositiveIntegerField(default=0)
+    evidence_place_count = models.PositiveIntegerField(default=0)
+    coverage_score = models.FloatField(default=0)
+    calculated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["administrative_code", "category", "source"],
+                name="unique_place_coverage_cell",
+            )
+        ]
+        indexes = [
+            models.Index(fields=["sido_name", "sigungu_name", "category"]),
+            models.Index(fields=["coverage_score"]),
+        ]
+
+    def __str__(self):
+        return f"{self.administrative_code}:{self.category} ({self.coverage_score:.1f})"
 
 
 class UserSearchLog(models.Model):

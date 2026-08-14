@@ -88,6 +88,8 @@ Thumbs.db
 htmlcov/
 
 backend/.installers/
+backend/data/raw/
+backend/data/staging/
 
 
 # =========================

@@ -1,0 +1,45 @@
+{
+  "source": "localdata",
+  "provider": "Ministry of the Interior and Safety",
+  "license": {
+    "name": "No usage restriction",
+    "commercial_use": true,
+    "source_url": "https://www.data.go.kr/"
+  },
+  "coordinate_reference_system": "EPSG:5174",
+  "refresh_policy": {
+    "api": "daily",
+    "full_snapshot": "monthly"
+  },
+  "service_key_environment_variable": "DATA_GO_KR_SERVICE_KEY",
+  "datasets": {
+    "general_restaurant": {
+      "category": "restaurant",
+      "file_url": "https://file.localdata.go.kr/file/general_restaurants/info",
+      "catalog_url": "https://www.data.go.kr/data/15045016/fileData.do",
+      "api_url": "https://apis.data.go.kr/1741000/general_restaurants/info",
+      "api_catalog_url": "https://www.data.go.kr/data/15154916/openapi.do"
+    },
+    "rest_restaurant": {
+      "category": "food_service",
+      "service_key_environment_variable": "DATA_GO_KR_REST_RESTAURANT_SERVICE_KEY",
+      "file_url": "https://file.localdata.go.kr/file/rest_cafes/info",
+      "catalog_url": "https://www.data.go.kr/data/15006730/fileData.do",
+      "api_url": "https://apis.data.go.kr/1741000/rest_cafes/info",
+      "api_catalog_url": "https://www.data.go.kr/data/15154921/openapi.do"
+    },
+    "bakery": {
+      "category": "bakery",
+      "service_key_environment_variable": "DATA_GO_KR_BAKERY_SERVICE_KEY",
+      "file_url": "https://file.localdata.go.kr/file/bakeries/info",
+      "catalog_url": "https://www.data.go.kr/data/15044973/fileData.do",
+      "api_url": "https://apis.data.go.kr/1741000/bakeries/info",
+      "api_catalog_url": "https://www.data.go.kr/data/15155252/openapi.do"
+    },
+    "tourist_restaurant": {
+      "category": "restaurant",
+      "api_url": "https://apis.data.go.kr/1741000/tourist_restaurants/info",
+      "api_catalog_url": "https://www.data.go.kr/data/15154897/openapi.do"
+    }
+  }
+}
