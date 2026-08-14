@@ -21,6 +21,7 @@ urlpatterns = [
     path("places/", views.place_list),
     path("map-search/", views.map_place_search),
     path("search/", views.recommendation_search),
+    path("ai-search/candidates/", views.ai_recommendation_candidates),
     path("ai-search/", views.ai_recommendation_search),
     path("ai-web-search/", views.ai_web_search),
     path("search-safety/", views.search_safety_check),

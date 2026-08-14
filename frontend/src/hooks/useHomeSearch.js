@@ -2,6 +2,7 @@ import { useCallback, useEffect, useReducer, useRef } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 
 import {
+  aiSearchCandidateRecommendations,
   aiSearchRecommendations,
   buildConversationalSearchPlan,
   checkSearchSafety,
@@ -2422,12 +2423,13 @@ export const useHomeSearch = ({ initialTab = 'search' } = {}) => {
     extraAiPayload = {},
   }) => {
     s.loadingMessage = '상황 해석 중'
+    s.isAiReranking = false
     s.sortMode = 'recommendation'
     commit()
     const recommendationIntent = parsedIntent?.recommendationIntent || getRecommendationIntent(`${originalQuery} ${targetQuery}`)
     const preferredTags = parsedIntent?.preferredTags || getPreferredTagsForIntent(recommendationIntent)
     const requestedConditions = parsedIntent?.requestedConditions || []
-    const data = await aiSearchRecommendations({
+    const searchPayload = {
       query: targetQuery,
       originalQuery,
       lat: center.lat,
@@ -2442,7 +2444,60 @@ export const useHomeSearch = ({ initialTab = 'search' } = {}) => {
       exclusions: parsedIntent?.exclusions || [],
       ranking_policy: getFrameRankingPolicy(parsedIntent || {}),
       ...extraAiPayload,
-    })
+    }
+    const previewTask = aiSearchCandidateRecommendations(searchPayload)
+      .then((value) => ({ kind: 'preview', value }))
+      .catch((error) => ({ kind: 'preview', error }))
+    const finalTask = aiSearchRecommendations(searchPayload)
+      .then((value) => ({ kind: 'final', value }))
+      .catch((error) => ({ kind: 'final', error }))
+    const firstOutcome = await Promise.race([previewTask, finalTask])
+    let finalOutcome = firstOutcome.kind === 'final' ? firstOutcome : null
+
+    if (firstOutcome.kind === 'preview' && !firstOutcome.error) {
+      const previewData = firstOutcome.value || {}
+      const previewResults = convertRecommendationPlaces(
+        Array.isArray(previewData.results) ? previewData.results : [],
+        {
+          preferredTags,
+          recommendationIntent: getRecommendationIntentForScoring(recommendationIntent, parsedIntent || {}),
+          requestedConditions,
+          searchPlan: parsedIntent || {},
+          getKakaoDetailUrl,
+        },
+      )
+
+      if (previewResults.length) {
+        s.preserveBackendResultOrder = true
+        s.fallbackResults = []
+        s.resultFilterMode = 'all'
+        s.visibleCount = DISPLAY_BATCH_SIZE
+        s.activeResultView = 'results'
+        s.isResultListCollapsed = false
+        s.resultSourceLabel = '빠른 후보'
+        s.resultMessageSuffix = 'AI가 적합도 순서를 확인하고 있어요.'
+        s.selectedPlace = null
+        s.showDetailPanel = false
+        s.detailFrameError = false
+        setMainResults(previewResults)
+        s.searchResultStatus = 'success'
+        clearMainSearchErrorState()
+        s.mapFitBoundsKey += 1
+        s.locationMessage = `${baseLabel} 후보를 먼저 보여드리고 있어요.`
+        s.loadingMessage = 'AI가 후보 순서를 다듬는 중'
+        s.isAiReranking = true
+        commit()
+      }
+    }
+
+    if (!finalOutcome) {
+      finalOutcome = await finalTask
+    }
+    s.isAiReranking = false
+    if (finalOutcome.error) {
+      throw finalOutcome.error
+    }
+    const data = finalOutcome.value
 
     if (IS_DEV) {
       console.debug('[AI 추천 API 응답]', {
@@ -3247,8 +3302,30 @@ export const useHomeSearch = ({ initialTab = 'search' } = {}) => {
       return null
     }
 
+    const previousUserQuery = getPlannerText(
+      s.activeSearchPlan.originalQuery
+      || s.activeSearchPlan.original_query
+      || s.activeSearchPlan.normalizedQuery
+      || s.activeSearchPlan.normalized_query
+      || s.mapSearchKeyword
+      || s.searchKeyword,
+    )
+    const previousFrame = s.activeSearchPlan.placeIntentFrame
+      || s.activeSearchPlan.place_intent_frame
+      || {}
+
     return {
-      query: s.mapSearchKeyword.trim() || s.searchKeyword.trim(),
+      query: previousUserQuery,
+      previous_user_query: previousUserQuery,
+      original_query: previousUserQuery,
+      place_intent_frame: previousFrame,
+      last_resolved_location_context: {
+        locationQuery: s.activeSearchPlan.locationQuery || s.activeSearchPlan.location_query || '',
+        anchorLocation: getFrameAnchorLocation(s.activeSearchPlan) || '',
+        locationMode: getFrameLocationMode(s.activeSearchPlan) || 'current_context',
+        lat: s.mapCenter?.lat ?? null,
+        lng: s.mapCenter?.lng ?? null,
+      },
       search_plan: {
         locationQuery: s.activeSearchPlan.locationQuery || '',
         baseLocationQuery: s.activeSearchPlan.baseLocationQuery || '',
@@ -3258,7 +3335,7 @@ export const useHomeSearch = ({ initialTab = 'search' } = {}) => {
         menu_keywords: s.activeSearchPlan.menu_keywords || [],
         place_type_keywords: s.activeSearchPlan.place_type_keywords || [],
         requestedConditions: s.activeSearchPlan.requestedConditions || [],
-        place_intent_frame: s.activeSearchPlan.placeIntentFrame || s.activeSearchPlan.place_intent_frame || {},
+        place_intent_frame: previousFrame,
         candidate_place_types: s.activeSearchPlan.candidatePlaceTypes || [],
         constraints: s.activeSearchPlan.constraints || [],
         exclusions: s.activeSearchPlan.exclusions || [],
@@ -3433,6 +3510,17 @@ export const useHomeSearch = ({ initialTab = 'search' } = {}) => {
 
       if (pendingClarificationForFollowUp && displayResults().length) {
         appendSearchSummaryMessage(s.locationMessage || getResultCountText())
+      } else if (
+        !pendingClarificationForFollowUp
+        && !s.pendingClarification
+        && ['success', 'empty'].includes(s.searchResultStatus)
+      ) {
+        setDecisionConversationThread(
+          keyword,
+          { search_plan: s.activeSearchPlan || {} },
+          s.locationMessage || getResultCountText() || '검색 결과를 확인해 주세요.',
+          'search_summary',
+        )
       }
       if (!s.baseLocationCandidates.length) {
         s.isSearchingMap = false

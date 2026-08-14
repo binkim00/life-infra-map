@@ -53,6 +53,7 @@ export const createHomeSearchState = () => ({
 
   isLocating: false,
   isSearchingMap: false,
+  isAiReranking: false,
 
   locationMessage: '지도 버튼을 누르면 현재 위치 기준으로 지도를 표시합니다.',
   loadingMessage: '',

@@ -32,6 +32,7 @@ from recommendations.services.ai_intent_planner import (
 from recommendations.services.ai_search_orchestrator import (
     _deterministic_category_codes,
     _deterministic_ranked_candidates,
+    _prioritize_direct_specific_targets,
     _resolve_anchor_location,
 )
 from recommendations.services.area_gazetteer import (
@@ -7858,6 +7859,170 @@ class RecommendationSearchTests(TestCase):
         mock_kakao.assert_called()
         mock_rerank.assert_called_once()
 
+    @override_settings(IS_TESTING=True)
+    @patch("recommendations.services.ai_search_orchestrator.semantic_rerank_candidates")
+    @patch("recommendations.services.ai_search_orchestrator.build_ai_intent_plan")
+    @patch(
+        "recommendations.services.ai_search_orchestrator.collect_kakao_candidates",
+        return_value=([], [{"query": "작업 카페", "count": 0}]),
+    )
+    @patch("recommendations.services.ai_search_orchestrator.collect_db_candidates")
+    def test_ai_search_candidates_returns_preview_without_ai_calls(
+        self,
+        mock_collect_db,
+        mock_collect_kakao,
+        mock_intent,
+        mock_rerank,
+    ):
+        mock_collect_db.return_value = [{
+            "id": "db:1",
+            "place_id": self.place.id,
+            "candidate_source": "db",
+            "name": self.place.name,
+            "category": self.place.category,
+            "address": self.place.address,
+            "lat": self.place.lat,
+            "lng": self.place.lng,
+            "distance": 120,
+            "pre_ai_evidence_level": "strong",
+            "evidence_level": "strong",
+            "matched_evidence": [{"type": "target_direct", "value": "작업 카페"}],
+            "pre_ai_unmet_constraints": [],
+            "policy_matched_constraints": [],
+            "policy_verification_needed": [],
+            "recommendation_reason": "작업 카페 후보",
+        }]
+
+        response = self.client.post(
+            "/api/recommendations/ai-search/candidates/",
+            data=json.dumps({
+                "query": "작업 카페",
+                "lat": 35.1556,
+                "lng": 129.0641,
+                "limit": 3,
+                "search_plan": {
+                    "kakaoKeywordCandidates": ["작업 카페"],
+                    "placeIntentFrame": {
+                        "targetObjects": ["작업 카페"],
+                        "candidatePlaceTypes": ["카페"],
+                    },
+                },
+            }, ensure_ascii=False),
+            content_type="application/json",
+            HTTP_HOST="localhost",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data["provisional"])
+        self.assertEqual(data["search_phase"], "candidates")
+        self.assertEqual(data["candidate_pipeline"], "fast_candidate_preview")
+        self.assertEqual(data["results"][0]["place_id"], self.place.id)
+        self.assertEqual(data["place_intent_frame"]["target_objects"], ["작업 카페"])
+        self.assertEqual(data["external_queries"], ["작업 카페"])
+        self.assertEqual(data["debug_pipeline"]["ai_call_count"], 0)
+        self.assertIsInstance(data["timings"]["retrieval_latency_ms"], (int, float))
+        self.assertIsInstance(data["timings"]["total_latency_ms"], (int, float))
+        mock_collect_db.assert_called_once()
+        mock_collect_kakao.assert_called_once()
+        mock_intent.assert_not_called()
+        mock_rerank.assert_not_called()
+
+    @override_settings(
+        IS_TESTING=True,
+        AI_SEARCH_MIN_STRONG_MEDIUM_CANDIDATES=3,
+    )
+    @patch("recommendations.services.ai_search_orchestrator.semantic_rerank_candidates")
+    @patch("recommendations.services.ai_search_orchestrator.collect_kakao_candidates")
+    @patch("recommendations.services.ai_search_orchestrator.collect_db_candidates", return_value=[])
+    @patch("recommendations.services.ai_search_orchestrator.build_ai_intent_plan")
+    def test_ai_search_retrieves_broad_same_target_fallback_when_specific_queries_are_empty(
+        self,
+        mock_intent,
+        mock_collect_db,
+        mock_collect_kakao,
+        mock_rerank,
+    ):
+        mock_intent.return_value = {
+            "action": "search",
+            "decision_action": "search",
+            "normalized_query": "광안리 조용한 식당",
+            "frame": {
+                "location_mode": "current_context",
+                "anchor_location": "",
+                "target_objects": ["식당"],
+                "candidate_place_types": ["식당", "음식점"],
+                "result_match_terms": ["식당", "음식점"],
+                "constraints": ["조용함"],
+                "exclusions": [],
+                "ranking_policy": "evidence_first",
+                "primary_search_queries": ["조용한 식당"],
+                "secondary_search_queries": [],
+                "fallback_targets": [{
+                    "label": "넓은 음식점 후보",
+                    "queries": ["식당", "음식점", "맛집"],
+                }],
+            },
+            "clarification": {},
+            "confidence": 0.9,
+            "ai_retry_count": 0,
+        }
+        restaurant_candidate = {
+            "id": "kakao:restaurant-1:식당",
+            "external_id": "restaurant-1",
+            "candidate_source": "kakao",
+            "name": "광안리 테스트 식당",
+            "category": "음식점",
+            "address": "부산 수영구",
+            "lat": 35.1532,
+            "lng": 129.1187,
+            "distance": 180,
+            "pre_ai_evidence_level": "strong",
+            "evidence_level": "strong",
+            "matched_evidence": [{"type": "target_direct", "value": "식당"}],
+            "pre_ai_unmet_constraints": [],
+            "policy_matched_constraints": [],
+            "policy_verification_needed": ["조용함 여부 확인 필요"],
+        }
+        mock_collect_kakao.side_effect = [
+            ([], [{"query": "조용한 식당", "count": 0}]),
+            ([restaurant_candidate], [{"query": "식당", "count": 1}]),
+        ]
+        mock_rerank.return_value = ([{
+            **restaurant_candidate,
+            "backend_rank": 1,
+            "unified_rank": 1,
+            "semantic_score": 65,
+            "evidence_level": "medium",
+        }], {
+            "status": "executed",
+            "included_count": 1,
+            "excluded_count": 0,
+            "excluded_candidates": [],
+        })
+
+        response = self.client.post(
+            "/api/recommendations/ai-search/",
+            data=json.dumps({
+                "query": "광안리 조용한 식당",
+                "lat": 35.1556,
+                "lng": 129.0641,
+                "limit": 5,
+            }, ensure_ascii=False),
+            content_type="application/json",
+            HTTP_HOST="localhost",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["results"][0]["name"], "광안리 테스트 식당")
+        self.assertEqual(mock_collect_kakao.call_count, 2)
+        self.assertEqual(mock_collect_kakao.call_args_list[1].args[1], ["식당", "음식점", "맛집"])
+        self.assertEqual(
+            data["debug_pipeline"]["query_generation"]["fallback_queries"],
+            ["식당", "음식점", "맛집"],
+        )
+
     @override_settings(
         AI_PROVIDER="rule",
         AI_WEB_SEARCH_ENABLED=True,
@@ -11506,6 +11671,115 @@ class RecommendationSearchTests(TestCase):
         self.assertNotIn("카페 제외", study_cafe_plan["frame"]["exclusions"])
         self.assertIn("카페 제외", walk_plan["frame"]["exclusions"])
         self.assertIn("산책할 곳", walk_plan["frame"]["target_objects"])
+
+    @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=False)
+    def test_ai_intent_planner_preserves_brunch_restaurant_and_ambience_terms(self):
+        from recommendations.services.ai_intent_planner import build_ai_intent_plan
+
+        brunch_plan = build_ai_intent_plan(
+            "서면 분위기 좋은 브런치 카페",
+            lat=35.1556,
+            lng=129.0641,
+        )
+        restaurant_plan = build_ai_intent_plan(
+            "광안리 조용한 식당",
+            lat=35.1556,
+            lng=129.0641,
+        )
+
+        self.assertEqual(brunch_plan["action"], "search")
+        self.assertEqual(brunch_plan["frame"]["anchor_location"], "서면")
+        self.assertEqual(brunch_plan["frame"]["target_objects"], ["브런치 카페"])
+        self.assertIn("브런치 카페", brunch_plan["frame"]["primary_search_queries"])
+        self.assertIn("분위기 좋음", brunch_plan["frame"]["constraints"])
+        self.assertEqual(brunch_plan["frame"]["candidate_category_codes"], ["cafe"])
+
+        self.assertEqual(restaurant_plan["action"], "search")
+        self.assertEqual(restaurant_plan["frame"]["anchor_location"], "광안리")
+        self.assertEqual(restaurant_plan["frame"]["target_objects"], ["식당"])
+        self.assertEqual(restaurant_plan["frame"]["primary_search_queries"][:2], ["식당", "맛집"])
+        self.assertIn("조용함", restaurant_plan["frame"]["constraints"])
+        self.assertEqual(restaurant_plan["frame"]["candidate_category_codes"], ["restaurant"])
+
+    @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=False)
+    def test_ai_intent_planner_asks_abdominal_pain_follow_up_in_korean(self):
+        from recommendations.services.ai_intent_planner import build_ai_intent_plan
+
+        plan = build_ai_intent_plan("배가 아파", lat=35.1556, lng=129.0641)
+
+        self.assertEqual(plan["action"], "ask_clarification")
+        self.assertIn("필요한 도움", plan["clarification"]["question"])
+        labels = [option["label"] for option in plan["clarification"]["options"]]
+        self.assertTrue(all(any("가" <= char <= "힣" for char in label) for label in labels))
+        self.assertIn("진료가 필요함 · 병원/내과", labels)
+
+    def test_ai_intent_planner_prefers_clarification_option_labels_over_internal_values(self):
+        from recommendations.services.ai_intent_planner import _normalize_clarification
+
+        clarification = _normalize_clarification({
+            "question": "어떤 도움을 원하시나요?",
+            "options": [
+                {"label": "병원/내과", "value": "hospital"},
+                {"label": "약국", "value": "pharmacy"},
+                {"label": "잠시 쉴 곳", "value": "place_to_rest"},
+            ],
+        })
+
+        self.assertEqual(clarification["options"], ["병원/내과", "약국", "잠시 쉴 곳"])
+        self.assertNotIn("hospital", clarification["options"])
+
+    @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=False)
+    def test_ai_intent_planner_applies_common_follow_up_to_previous_frame(self):
+        from recommendations.services.ai_intent_planner import build_ai_intent_plan
+
+        previous_frame = {
+            "location_mode": "explicit",
+            "anchor_location": "광안리",
+            "target_objects": ["식당"],
+            "candidate_place_types": ["식당", "음식점"],
+            "result_match_terms": ["식당", "음식점", "맛집"],
+            "constraints": ["식사 가능"],
+            "exclusions": [],
+            "ranking_policy": "evidence_first",
+            "primary_search_queries": ["식당", "맛집"],
+            "secondary_search_queries": [],
+        }
+
+        plan = build_ai_intent_plan(
+            "좀 더 조용한 곳",
+            lat=35.1556,
+            lng=129.0641,
+            previous_context={
+                "previous_user_query": "광안리 식당",
+                "place_intent_frame": previous_frame,
+                "search_plan": {"place_intent_frame": previous_frame},
+            },
+        )
+
+        self.assertEqual(plan["action"], "search")
+        self.assertEqual(plan["frame"]["anchor_location"], "광안리")
+        self.assertEqual(plan["frame"]["target_objects"], ["식당"])
+        self.assertIn("조용함", plan["frame"]["constraints"])
+        self.assertEqual(plan["frame"]["primary_search_queries"][:2], ["조용한 식당", "식당"])
+        self.assertEqual(plan["ai_debug"]["planner"]["call_count"], 0)
+
+    def test_ai_search_prioritizes_direct_specific_target_names(self):
+        candidates = [
+            {"id": "generic", "name": "분위기 좋은 베이커리", "category": "카페", "backend_rank": 1},
+            {"id": "direct", "name": "램블 브런치카페", "category": "카페", "backend_rank": 4},
+        ]
+
+        ranked = _prioritize_direct_specific_targets(
+            candidates,
+            {
+                "anchor_location": "서면",
+                "target_objects": ["브런치 카페"],
+                "result_match_terms": ["브런치", "카페"],
+            },
+        )
+
+        self.assertEqual([candidate["id"] for candidate in ranked], ["direct", "generic"])
+        self.assertEqual([candidate["backend_rank"] for candidate in ranked], [1, 2])
 
     @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=False)
     def test_ai_intent_planner_local_rules_handle_weather_information_as_out_of_scope(self):

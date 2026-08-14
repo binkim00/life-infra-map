@@ -784,6 +784,76 @@ def _local_rule_clarification_plan(raw_query, *, question, options, missing_fiel
     }
 
 
+def _local_rule_followup_plan(raw_query, previous_context):
+    previous_context = previous_context if isinstance(previous_context, dict) else {}
+    previous_frame = (
+        previous_context.get("pending_clarification_frame")
+        or previous_context.get("place_intent_frame")
+        or previous_context.get("search_plan", {}).get("place_intent_frame")
+        or previous_context.get("search_plan", {}).get("placeIntentFrame")
+        or {}
+    )
+    frame = _normalize_frame(previous_frame)
+    if not frame.get("target_objects"):
+        return None
+
+    text = _clean_text(raw_query, 500)
+    quiet = _has_any(text, ["조용", "시끄럽지", "한적", "붐비지"])
+    ambience = _has_any(text, ["분위기", "감성", "예쁜", "멋진"])
+    closer = _has_any(text, ["더 가까", "가까운 곳", "가까운 데", "근처"])
+    alternate = _has_any(text, ["다른 곳", "다른 데", "다른곳", "다른데"])
+    if not any([quiet, ambience, closer, alternate]):
+        return None
+
+    constraints = list(frame.get("constraints") or [])
+    if quiet:
+        constraints.append("조용함")
+    if ambience:
+        constraints.append("분위기 좋음")
+    if closer:
+        constraints.append("가까운 곳")
+    frame["constraints"] = _dedupe(constraints)
+    if closer:
+        frame["ranking_policy"] = "distance_first"
+
+    place_types = frame.get("candidate_place_types") or frame.get("target_objects") or []
+    primary_type = _clean_text(place_types[0], 80)
+    previous_queries = list(frame.get("primary_search_queries") or [])
+    refined_queries = []
+    if quiet and primary_type:
+        refined_queries.append(f"조용한 {primary_type}")
+    if ambience and primary_type:
+        refined_queries.append(f"분위기 좋은 {primary_type}")
+    if primary_type:
+        refined_queries.append(primary_type)
+    frame["primary_search_queries"] = _dedupe([*refined_queries, *previous_queries])[:6]
+    frame = _enrich_frame_policy(frame, raw_query=text, action="search")
+
+    normalized_query = " ".join([
+        _clean_text((frame.get("target_objects") or [""])[0], 80),
+        *([item for item in ["조용함" if quiet else "", "분위기 좋음" if ambience else "", "가까운 곳" if closer else ""] if item]),
+    ]).strip()
+    return {
+        "action": "search",
+        "decision_action": "search",
+        "can_search_now": True,
+        "normalized_query": normalized_query or text,
+        "frame": frame,
+        "clarification": {},
+        "confidence": 0.92,
+        "ai_retry_count": 0,
+        "ai_debug": {
+            "planner": {
+                "status": "local_followup_rule",
+                "reason": "deterministic_previous_frame_refinement",
+                "retry_count": 0,
+                "call_count": 0,
+                "validation_errors": [],
+            },
+        },
+    }
+
+
 def _local_rule_plan_for_known_intent(raw_query):
     text = _clean_text(raw_query, 500)
     if not text:
@@ -805,6 +875,43 @@ def _local_rule_plan_for_known_intent(raw_query):
             ],
             missing_fields=["condition_priority"],
             expected_patch_fields=["constraints", "exclusions", "ranking_policy"],
+        )
+
+    explicit_medical_target = _has_any(text, ["약국", "병원", "내과", "응급실", "의원"])
+    abdominal_pain = _has_any(text, [
+        "배가 아",
+        "배가아",
+        "복통",
+        "배탈",
+        "속이 아",
+        "속이아",
+    ])
+    if abdominal_pain and not explicit_medical_target:
+        return _local_rule_clarification_plan(
+            text,
+            question="배가 아프시군요. 지금 필요한 도움을 골라 주세요. 갑작스럽고 매우 심한 통증이면 즉시 119 또는 응급실을 이용해 주세요.",
+            options=[
+                {"label": "갑작스럽고 매우 심함 · 응급실", "value": "응급실"},
+                {"label": "진료가 필요함 · 병원/내과", "value": "병원 내과"},
+                {"label": "약을 사고 싶음 · 약국", "value": "약국"},
+                {"label": "잠시 쉴 곳이 필요함", "value": "잠시 쉴 곳"},
+            ],
+            missing_fields=["medical_help_type"],
+            expected_patch_fields=["target_objects", "candidate_place_types", "primary_search_queries"],
+        )
+
+    if _has_any(text, ["병원", "내과", "응급실", "의원"]):
+        urgent = _has_any(text, ["응급실", "갑자기", "심해", "심한", "극심", "위급"])
+        return _local_rule_search_plan(
+            text,
+            normalized_query="응급실" if urgent else "병원/내과",
+            target_objects=["응급실"] if urgent else ["병원"],
+            candidate_place_types=["응급실", "종합병원"] if urgent else ["병원", "내과", "의원"],
+            result_match_terms=["응급실", "종합병원"] if urgent else ["병원", "내과", "의원", "의료기관"],
+            primary_search_queries=["응급실", "종합병원"] if urgent else ["내과", "병원", "의원"],
+            constraints=["가까운 곳"],
+            candidate_category_codes=["hospital"],
+            ranking_policy="urgent_nearest" if urgent else "distance_first",
         )
 
     if _has_any(text, [
@@ -1397,6 +1504,36 @@ def _local_rule_plan_for_known_intent(raw_query):
         _has_any(text, ["작업", "공부", "노트북", "놋북", "카공", "콘센트"])
         or (_has_any(text, ["스터디"]) and not study_cafe_excluded)
     )
+    ambience_constraints = []
+    if _has_any(text, ["분위기", "감성", "예쁜", "멋진"]):
+        ambience_constraints.append("분위기 좋음")
+    if _has_any(text, ["조용", "시끄럽지", "한적", "붐비지"]):
+        ambience_constraints.append("조용함")
+
+    if has_cafe and _has_any(text, ["브런치"]):
+        return _local_rule_search_plan(
+            text,
+            normalized_query="브런치 카페",
+            target_objects=["브런치 카페"],
+            candidate_place_types=["브런치 카페", "카페"],
+            result_match_terms=["브런치", "카페", "베이커리", "샌드위치"],
+            primary_search_queries=["브런치 카페", "브런치", "베이커리 카페"],
+            constraints=ambience_constraints,
+            candidate_category_codes=["cafe"],
+        )
+
+    if _has_any(text, ["식당", "음식점", "맛집", "레스토랑"]):
+        return _local_rule_search_plan(
+            text,
+            normalized_query="식당/맛집",
+            target_objects=["식당"],
+            candidate_place_types=["식당", "음식점", "레스토랑"],
+            result_match_terms=["식당", "음식점", "맛집", "레스토랑"],
+            primary_search_queries=["식당", "맛집", "음식점"],
+            constraints=["식사 가능", *ambience_constraints],
+            candidate_category_codes=["restaurant"],
+        )
+
     if has_cafe and has_work:
         return _local_rule_search_plan(
             text,
@@ -1585,9 +1722,33 @@ def _normalize_frame(raw_frame):
 
 def _normalize_clarification(raw):
     raw = raw if isinstance(raw, dict) else {}
+    raw_options = raw.get("options") or raw.get("clarification_options") or []
+    option_labels = []
+    seen_option_labels = set()
+    if isinstance(raw_options, (str, int, float, bool)):
+        raw_options = [raw_options]
+    if isinstance(raw_options, list):
+        for item in raw_options:
+            if isinstance(item, dict):
+                option_label = _clean_text(
+                    item.get("label")
+                    or item.get("text")
+                    or item.get("name")
+                    or item.get("value"),
+                    80,
+                )
+            else:
+                option_label = _clean_text(item, 80)
+            option_key = _compact(option_label)
+            if not option_key or option_key in seen_option_labels:
+                continue
+            seen_option_labels.add(option_key)
+            option_labels.append(option_label)
+            if len(option_labels) >= 5:
+                break
     return {
         "question": _clean_text(raw.get("question") or raw.get("clarification_question"), 300),
-        "options": _as_list(raw.get("options") or raw.get("clarification_options"), max_items=5, max_length=80),
+        "options": option_labels,
         "missing_fields": _as_list(raw.get("missing_fields") or raw.get("missingFields"), max_items=8),
         "expected_patch_fields": _as_list(
             raw.get("expected_patch_fields") or raw.get("expectedPatchFields"),
@@ -1856,6 +2017,10 @@ def build_ai_intent_plan(query, *, lat=None, lng=None, map_center=None, previous
             "ai_retry_count": 0,
             "ai_debug": {"planner": {"status": "empty_query"}},
         }
+
+    local_followup_plan = _local_rule_followup_plan(raw_query, previous_context)
+    if local_followup_plan:
+        return local_followup_plan
 
     local_plan = _local_rule_plan_for_known_intent(raw_query)
     if local_plan:

@@ -11,9 +11,11 @@ vi.mock('@/hooks/useKakaoMapSdk', () => ({
 }))
 
 const aiSearchRecommendations = vi.fn()
+const aiSearchCandidateRecommendations = vi.fn()
 const saveSearchLog = vi.fn(() => Promise.resolve({}))
 
 vi.mock('@/api/recommendation', () => ({
+  aiSearchCandidateRecommendations: (...args) => aiSearchCandidateRecommendations(...args),
   aiSearchRecommendations: (...args) => aiSearchRecommendations(...args),
   buildConversationalSearchPlan: () => Promise.resolve(null),
   checkSearchSafety: () => Promise.resolve({ blocked: false }),
@@ -87,6 +89,8 @@ describe('HomeView', () => {
     localStorage.clear()
     installKakaoStub()
     aiSearchRecommendations.mockReset()
+    aiSearchCandidateRecommendations.mockReset()
+    aiSearchCandidateRecommendations.mockResolvedValue({ results: [] })
     saveSearchLog.mockClear()
     // 위치 권한을 거부해 지도 중심 기준으로 흐르게 둡니다.
     navigator.geolocation = {
@@ -169,8 +173,152 @@ describe('HomeView', () => {
 
     await waitFor(() => {
       expect(
-        screen.getByText(/조건에 맞는 장소를 찾지 못했어요|조건에 맞는 추천 결과가 없습니다/),
-      ).toBeInTheDocument()
+        screen.getAllByText(/조건에 맞는 장소를 찾지 못했어요|조건에 맞는 추천 결과가 없습니다/).length,
+      ).toBeGreaterThan(0)
+    })
+  })
+
+  it('빠른 후보를 먼저 표시한 뒤 AI 재정렬 결과로 교체합니다', async () => {
+    let resolveFinalSearch
+    aiSearchCandidateRecommendations.mockResolvedValue({
+      provisional: true,
+      search_phase: 'candidates',
+      unified_candidate_pipeline: true,
+      frontend_should_preserve_order: true,
+      results: [{
+        id: 'preview-1',
+        name: '빠른 후보 카페',
+        category: '카페',
+        address: '부산 진구',
+        lat: 35.1579,
+        lng: 129.0594,
+        distance: 120,
+      }],
+    })
+    aiSearchRecommendations.mockReturnValue(new Promise((resolve) => {
+      resolveFinalSearch = resolve
+    }))
+
+    const user = userEvent.setup()
+    renderHome()
+
+    await user.type(
+      screen.getByPlaceholderText('지금 어떤 장소가 필요하신가요?'),
+      '조용한 작업 카페',
+    )
+    await user.click(screen.getByRole('button', { name: '검색' }))
+
+    await waitFor(() => {
+      expect(screen.getByText('빠른 후보 카페')).toBeInTheDocument()
+      expect(screen.getByText('빠른 후보를 먼저 보여드리고 있어요.')).toBeInTheDocument()
+    })
+
+    resolveFinalSearch({
+      results: [{
+        id: 'final-1',
+        name: 'AI 최종 추천 카페',
+        category: '카페',
+        address: '부산 진구',
+        lat: 35.1581,
+        lng: 129.0599,
+        distance: 180,
+      }],
+      scenario: 'work_cafe',
+      execution_mode: 'ai_first_orchestrator',
+      unified_candidate_pipeline: true,
+      frontend_should_preserve_order: true,
+      ai_parse: { parser_provider: 'ai_intent_planner', parser_fallback: false },
+    })
+
+    await waitFor(() => {
+      expect(screen.getByText('AI 최종 추천 카페')).toBeInTheDocument()
+      expect(screen.queryByText('빠른 후보 카페')).not.toBeInTheDocument()
+    })
+  })
+
+  it('후속 검색에 이전 검색 문장과 조건 프레임을 전달합니다', async () => {
+    aiSearchRecommendations
+      .mockResolvedValueOnce({
+        results: [{
+          id: 'first-1',
+          name: '광안리 첫 식당',
+          category: '식당',
+          address: '부산 수영구',
+          lat: 35.1532,
+          lng: 129.1187,
+          distance: 150,
+        }],
+        scenario: 'ai_place_search',
+        execution_mode: 'ai_first_orchestrator',
+        unified_candidate_pipeline: true,
+        frontend_should_preserve_order: true,
+        search_plan: {
+          originalQuery: '광안리 식당',
+          locationQuery: '광안리',
+          targetQuery: '식당',
+          place_intent_frame: {
+            location_mode: 'explicit',
+            anchor_location: '광안리',
+            target_objects: ['식당'],
+            constraints: [],
+          },
+        },
+        ai_parse: { parser_provider: 'ai_intent_planner', parser_fallback: false },
+      })
+      .mockResolvedValueOnce({
+        results: [{
+          id: 'second-1',
+          name: '광안리 조용한 식당',
+          category: '식당',
+          address: '부산 수영구',
+          lat: 35.1535,
+          lng: 129.1190,
+          distance: 180,
+        }],
+        scenario: 'ai_place_search',
+        execution_mode: 'ai_first_orchestrator',
+        unified_candidate_pipeline: true,
+        frontend_should_preserve_order: true,
+        search_plan: {
+          originalQuery: '좀 더 조용한 곳',
+          locationQuery: '광안리',
+          targetQuery: '식당',
+          place_intent_frame: {
+            location_mode: 'explicit',
+            anchor_location: '광안리',
+            target_objects: ['식당'],
+            constraints: ['조용함'],
+          },
+        },
+        ai_parse: { parser_provider: 'ai_intent_planner', parser_fallback: false },
+      })
+
+    const user = userEvent.setup()
+    renderHome()
+    const input = screen.getByPlaceholderText('지금 어떤 장소가 필요하신가요?')
+
+    await user.type(input, '광안리 식당')
+    await user.click(screen.getByRole('button', { name: '검색' }))
+    await waitFor(() => {
+      expect(screen.getByText('광안리 첫 식당')).toBeInTheDocument()
+    })
+
+    const followUpInput = screen.getByLabelText('상황을 입력해 주세요')
+    await user.clear(followUpInput)
+    await user.type(followUpInput, '좀 더 조용한 곳')
+    await user.click(screen.getByRole('button', { name: '검색' }))
+    await waitFor(() => {
+      expect(aiSearchRecommendations).toHaveBeenCalledTimes(2)
+    })
+
+    const followUpPayload = aiSearchRecommendations.mock.calls[1][0]
+    expect(followUpPayload.previous_context.previous_user_query).toBe('광안리 식당')
+    expect(followUpPayload.previous_context.place_intent_frame).toEqual(expect.objectContaining({
+      anchor_location: '광안리',
+      target_objects: ['식당'],
+    }))
+    await waitFor(() => {
+      expect(screen.getByText('광안리 조용한 식당')).toBeInTheDocument()
     })
   })
 })

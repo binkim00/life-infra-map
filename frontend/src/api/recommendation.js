@@ -20,6 +20,26 @@ export const aiSearchRecommendations = async ({
   return response.data
 }
 
+export const aiSearchCandidateRecommendations = async ({
+  query,
+  lat = 37.5665,
+  lng = 126.9780,
+  limit = 10,
+  radius = null,
+  ...extraPayload
+}) => {
+  const response = await api.post('/recommendations/ai-search/candidates/', {
+    query,
+    lat,
+    lng,
+    limit,
+    radius,
+    ...extraPayload,
+  })
+
+  return response.data
+}
+
 export const checkSearchSafety = async ({ query }) => {
   const response = await api.post('/recommendations/search-safety/', {
     query,

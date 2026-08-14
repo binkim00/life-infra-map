@@ -2749,6 +2749,72 @@ def _candidate_sort_key(candidate):
     )
 
 
+DIRECT_TARGET_GENERIC_TERMS = {
+    "장소",
+    "곳",
+    "카페",
+    "커피",
+    "식당",
+    "음식점",
+    "맛집",
+    "레스토랑",
+    "분위기",
+    "분위기좋음",
+    "조용",
+    "조용함",
+    "좋은",
+    "가까운",
+}
+
+
+def _prioritize_direct_specific_targets(candidates, frame):
+    anchor_key = _compact(frame.get("anchor_location"))
+    specific_terms = []
+    for term in _frame_terms(frame, "target_objects", "result_match_terms"):
+        term_key = _compact(term)
+        if (
+            len(term_key) < 2
+            or term_key in DIRECT_TARGET_GENERIC_TERMS
+            or (anchor_key and term_key == anchor_key)
+        ):
+            continue
+        # "브런치 카페"처럼 대상과 업종이 붙은 표현에서도 핵심 직접 근거를 살린다.
+        stripped_key = term_key
+        for generic_term in ["카페", "식당", "음식점", "맛집", "레스토랑"]:
+            stripped_key = stripped_key.replace(generic_term, "")
+        if len(stripped_key) >= 2 and stripped_key not in DIRECT_TARGET_GENERIC_TERMS:
+            specific_terms.append(stripped_key)
+        elif term_key not in DIRECT_TARGET_GENERIC_TERMS:
+            specific_terms.append(term_key)
+    specific_terms = list(dict.fromkeys(specific_terms))
+    if not specific_terms:
+        return list(candidates or [])
+
+    prioritized = sorted(
+        candidates or [],
+        key=lambda candidate: (
+            0
+            if any(
+                term in _compact(" ".join([
+                    _clean_text(candidate.get("name")),
+                    _clean_text(candidate.get("category")),
+                ]))
+                for term in specific_terms
+            )
+            else 1,
+            _as_int(candidate.get("backend_rank") or candidate.get("unified_rank"), 999),
+        ),
+    )
+    return [
+        {
+            **candidate,
+            "backend_rank": index + 1,
+            "unified_rank": index + 1,
+        }
+        for index, candidate in enumerate(prioritized)
+    ]
+
+
 def _balanced_rerank_shortlist(candidates, limit):
     limit = max(_as_int(limit, 20), 1)
     valid = [
@@ -3280,6 +3346,187 @@ def _previous_context_from_request(data):
     return previous_context
 
 
+def _candidate_preview_frame(request_data):
+    """Build a retrieval frame from the client-side plan without calling an AI provider."""
+    search_plan = request_data.get("search_plan") or request_data.get("searchPlan") or {}
+    search_plan = search_plan if isinstance(search_plan, dict) else {}
+    frame = (
+        request_data.get("place_intent_frame")
+        or request_data.get("placeIntentFrame")
+        or search_plan.get("place_intent_frame")
+        or search_plan.get("placeIntentFrame")
+        or {}
+    )
+    frame = dict(frame) if isinstance(frame, dict) else {}
+
+    aliases = {
+        "target_objects": "targetObjects",
+        "candidate_place_types": "candidatePlaceTypes",
+        "candidate_category_codes": "candidateCategoryCodes",
+        "result_match_terms": "resultMatchTerms",
+        "constraints": "constraints",
+        "exclusions": "exclusions",
+        "ranking_policy": "rankingPolicy",
+        "primary_search_queries": "primarySearchQueries",
+    }
+    for snake_name, camel_name in aliases.items():
+        value = frame.get(snake_name) or frame.get(camel_name)
+        if value in (None, "", []):
+            value = (
+                request_data.get(snake_name)
+                or request_data.get(camel_name)
+                or search_plan.get(snake_name)
+                or search_plan.get(camel_name)
+            )
+        if value not in (None, "", []):
+            frame[snake_name] = value
+
+    queries = _normalize_search_queries(frame.get("primary_search_queries"))
+    if not queries:
+        queries = _normalize_search_queries(
+            search_plan.get("kakaoKeywordCandidates")
+            or search_plan.get("kakao_keywords")
+            or search_plan.get("kakaoKeywords")
+        )
+    if not queries:
+        queries = _normalize_search_queries([
+            *_frame_terms(frame, "target_objects"),
+            *_frame_terms(frame, "candidate_place_types"),
+            request_data.get("query"),
+        ])
+    frame["primary_search_queries"] = queries[:5]
+
+    # React has already resolved any explicit location to these coordinates.
+    frame.update({
+        "location_mode": "current_context",
+        "locationMode": "current_context",
+        "anchor_location": "",
+        "anchorLocation": "",
+    })
+    return frame, search_plan
+
+
+def run_ai_search_candidates(request_data, *, user=None):
+    """Return deterministic candidates quickly while the full AI search is running."""
+    del user  # Reserved for future personalization.
+    total_started = time.perf_counter()
+    query = _clean_text(request_data.get("query"), 500)
+    lat, lng = _context_coordinates(
+        lat=request_data.get("lat"),
+        lng=request_data.get("lng"),
+        map_center=request_data.get("map_center") or request_data.get("mapCenter"),
+    )
+    limit = _limit(request_data.get("limit"), default=15)
+    frame, search_plan = _candidate_preview_frame(request_data)
+    radius = _search_radius_for_frame(request_data.get("radius"), frame, query)
+    primary_queries = _normalize_search_queries(frame.get("primary_search_queries"))[:5]
+
+    retrieval_started = time.perf_counter()
+    if getattr(settings, "IS_TESTING", False):
+        db_candidates = collect_db_candidates(
+            frame, lat=lat, lng=lng, limit=max(limit * 3, 30), radius=radius,
+        )
+        kakao_candidates, query_counts = collect_kakao_candidates(
+            frame, primary_queries, lat=lat, lng=lng, radius=radius,
+        )
+    else:
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            db_future = executor.submit(
+                collect_db_candidates,
+                frame,
+                lat=lat,
+                lng=lng,
+                limit=max(limit * 3, 30),
+                radius=radius,
+            )
+            kakao_future = executor.submit(
+                collect_kakao_candidates,
+                frame,
+                primary_queries,
+                lat=lat,
+                lng=lng,
+                radius=radius,
+            )
+            db_candidates = db_future.result()
+            kakao_candidates, query_counts = kakao_future.result()
+    retrieval_latency_ms = round((time.perf_counter() - retrieval_started) * 1000, 2)
+
+    candidate_pool = [
+        candidate
+        for candidate in _dedupe_candidates([*db_candidates, *kakao_candidates])
+        if not _candidate_has_invalid_display(candidate)
+        and not _has_only_retrieval_query_evidence(candidate)
+        and not _blocking_unmet_constraints(candidate)
+        and candidate.get("pre_ai_evidence_level") in {"strong", "medium"}
+    ]
+    ranked = sorted(candidate_pool, key=_candidate_sort_key)[:limit]
+    results = []
+    for index, candidate in enumerate(ranked):
+        reason = candidate.get("recommendation_reason") or "요청 조건과 가까운 후보예요. AI가 적합도 순서를 확인하고 있습니다."
+        results.append({
+            **candidate,
+            "recommendation_reason": reason,
+            "recommend_reason": reason,
+            "backend_rank": index + 1,
+            "unified_rank": index + 1,
+            "preview_rank": index + 1,
+        })
+
+    total_latency_ms = round((time.perf_counter() - total_started) * 1000, 2)
+    timings = {
+        "planner_latency_ms": 0.0,
+        "retrieval_latency_ms": retrieval_latency_ms,
+        "query_repair_latency_ms": None,
+        "web_latency_ms": None,
+        "reranker_latency_ms": None,
+        "total_latency_ms": total_latency_ms,
+    }
+    return {
+        "scenario": "ai_place_search",
+        "type": "search",
+        "decision_action": "search",
+        "decisionAction": "search",
+        "blocked": False,
+        "can_search_now": True,
+        "search_phase": "candidates",
+        "provisional": True,
+        "candidate_pipeline": "fast_candidate_preview",
+        "unified_candidate_pipeline": True,
+        "frontend_should_preserve_order": True,
+        "frontend_should_skip_kakao_fallback": True,
+        "candidate_source_counts": {
+            "db": len(db_candidates),
+            "kakao": len(kakao_candidates),
+            "web": 0,
+        },
+        "external_search_triggered": bool(kakao_candidates),
+        "external_query_count": len(primary_queries),
+        "external_queries": primary_queries,
+        "external_query_result_counts": query_counts,
+        "results": results,
+        "markers": _markers(results),
+        "count": len(results),
+        "result_count": len(results),
+        "relevant_result_count": len(results),
+        "search_plan": search_plan,
+        "place_intent_frame": frame,
+        "execution_mode": "candidate_preview",
+        "plan_source": "client_frame",
+        "timings": timings,
+        "debug_pipeline": {
+            "used_path": "candidate_preview",
+            "candidate_counts": {
+                "db": len(db_candidates),
+                "kakao": len(kakao_candidates),
+                "web": 0,
+                "top_results": len(results),
+            },
+            **timings,
+            "ai_call_count": 0,
+        },
+    }
+
+
 def run_ai_search(request_data, *, user=None):
     total_started = time.perf_counter()
     timings = {
@@ -3538,12 +3785,60 @@ def run_ai_search(request_data, *, user=None):
         getattr(settings, "AI_SEARCH_MIN_STRONG_MEDIUM_CANDIDATES", 3),
         3,
     )
+    strong_medium_count = sum(
+        1
+        for candidate in initial_candidates
+        if candidate.get("pre_ai_evidence_level") in {"strong", "medium"}
+        and not _blocking_unmet_constraints(candidate)
+    )
+    deterministic_fallback_queries = []
+    if min_strong_medium_candidates > 0 and strong_medium_count < min_strong_medium_candidates:
+        fallback_targets = frame.get("fallback_targets") or frame.get("fallbackTargets") or []
+        fallback_query_values = []
+        for fallback_target in fallback_targets:
+            if not isinstance(fallback_target, dict):
+                continue
+            fallback_query_values.extend(_as_list(fallback_target.get("queries"), max_items=4))
+        deterministic_fallback_queries = [
+            item
+            for item in _normalize_search_queries(fallback_query_values)
+            if item not in primary_queries
+        ][:3]
+        if deterministic_fallback_queries:
+            fallback_retrieval_started = time.perf_counter()
+            fallback_kakao, fallback_counts = collect_kakao_candidates(
+                frame,
+                deterministic_fallback_queries,
+                lat=search_lat,
+                lng=search_lng,
+                radius=radius,
+            )
+            timings["retrieval_latency_ms"] = round(
+                (timings["retrieval_latency_ms"] or 0)
+                + ((time.perf_counter() - fallback_retrieval_started) * 1000),
+                2,
+            )
+            query_generation["fallback_queries"] = deterministic_fallback_queries
+            query_counts.extend(fallback_counts)
+            kakao_candidates.extend(fallback_kakao)
+            candidate_counts["kakao"] = len(kakao_candidates)
+            initial_candidates = _dedupe_candidates([*db_candidates, *kakao_candidates])
+            strong_medium_count = sum(
+                1
+                for candidate in initial_candidates
+                if candidate.get("pre_ai_evidence_level") in {"strong", "medium"}
+                and not _blocking_unmet_constraints(candidate)
+            )
+
     query_repair_debug = {"status": "skipped"}
     should_repair_queries = (
         min_strong_medium_candidates > 0
         and (
-            not initial_candidates
-            or _query_needs_repair(primary_queries)
+            strong_medium_count < min_strong_medium_candidates
+            and (
+                not initial_candidates
+                or _query_needs_repair(primary_queries)
+            )
         )
     )
     if should_repair_queries:
@@ -3558,7 +3853,7 @@ def run_ai_search(request_data, *, user=None):
         repaired_queries = [
             item
             for item in _normalize_search_queries(repaired_queries)
-            if item not in primary_queries
+            if item not in [*primary_queries, *deterministic_fallback_queries]
         ]
         if repaired_queries:
             repaired_kakao, repaired_counts = collect_kakao_candidates(
@@ -3568,7 +3863,10 @@ def run_ai_search(request_data, *, user=None):
                 lng=search_lng,
                 radius=radius,
             )
-            query_generation["fallback_queries"] = repaired_queries
+            query_generation["fallback_queries"] = [
+                *deterministic_fallback_queries,
+                *repaired_queries,
+            ]
             query_counts.extend(repaired_counts)
             kakao_candidates.extend(repaired_kakao)
             candidate_counts["kakao"] = len(kakao_candidates)
@@ -3784,6 +4082,7 @@ def run_ai_search(request_data, *, user=None):
             "top_up_count": len(top_up_candidates),
             "top_up_candidate_ids": [candidate.get("id") for candidate in top_up_candidates],
         }
+    ranked_candidates = _prioritize_direct_specific_targets(ranked_candidates, frame)
     results = ranked_candidates[:limit]
     candidate_counts.update({
         "top_results": len(results),

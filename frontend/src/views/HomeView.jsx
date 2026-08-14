@@ -81,7 +81,7 @@ const HomeView = ({ initialTab = 'search' }) => {
     s.aiWebSearchContext && !s.isSearchingMap && !s.isResultListCollapsed && shouldSuggestAiWebSearch,
   )
   const shouldShowResultPanel = Boolean(
-    !s.isSearchingMap && (displayResults.length || shouldShowAiWebSearchPanel),
+    (!s.isSearchingMap || s.isAiReranking) && (displayResults.length || shouldShowAiWebSearchPanel),
   )
   const shouldShowSearchMapContent = Boolean(
     s.activeTab === 'map'
@@ -131,6 +131,10 @@ const HomeView = ({ initialTab = 'search' }) => {
   const searchQueryText = s.mapSearchKeyword.trim() || s.searchKeyword.trim()
 
   const searchConversationTitle = (() => {
+    if (s.isAiReranking && displayResults.length) {
+      return '빠른 후보를 먼저 보여드리고 있어요.'
+    }
+
     if (s.isSearchingMap) {
       return searchQueryText
         ? `“${searchQueryText}”에 맞는 장소를 찾는 중이에요.`
@@ -153,6 +157,10 @@ const HomeView = ({ initialTab = 'search' }) => {
   })()
 
   const searchConversationDetail = (() => {
+    if (s.isAiReranking && displayResults.length) {
+      return s.loadingMessage || 'AI가 적합도 순서를 다듬고 있습니다.'
+    }
+
     if (s.isSearchingMap) {
       return s.loadingMessage || '검색 조건을 확인하고 있습니다.'
     }
@@ -634,7 +642,7 @@ const HomeView = ({ initialTab = 'search' }) => {
                     </button>
                   </div>
 
-                  {displayResults.length && !s.isSearchingMap && !s.isResultListCollapsed ? (
+                  {displayResults.length && (!s.isSearchingMap || s.isAiReranking) && !s.isResultListCollapsed ? (
                     <div className="result-controls">
                       <div className="result-filter-buttons" aria-label="결과 필터">
                         {RESULT_FILTER_OPTIONS.map((filterOption) => (
@@ -683,7 +691,7 @@ const HomeView = ({ initialTab = 'search' }) => {
                       <PlaceResultList
                         places={searchedPlaces}
                         displayResultCount={displayResults.length}
-                        isSearching={s.isSearchingMap}
+                        isSearching={s.isSearchingMap && !s.isAiReranking}
                         selectedPlace={s.selectedPlace}
                         placeListItemRefs={home.placeListItemRefs}
                         getRecommendationMatchedLabels={home.getRecommendationMatchedLabels}
@@ -720,7 +728,7 @@ const HomeView = ({ initialTab = 'search' }) => {
                   </button>
                 ) : null}
 
-                {s.isSearchingMap ? (
+                {s.isSearchingMap && !s.isAiReranking ? (
                   <div className="map-loading-overlay">
                     <div className="map-loading-box">
                       <span className="loading-spinner" />

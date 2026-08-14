@@ -42,7 +42,7 @@ from .services.conversational_search_planner import (
     build_conversational_search_plan,
     sync_frame_location_to_search_plan,
 )
-from .services.ai_search_orchestrator import run_ai_search
+from .services.ai_search_orchestrator import run_ai_search, run_ai_search_candidates
 from .services.db_recommender import search_db_recommendations
 from .services.place_urls import get_kakao_place_url
 from .services.smoking_area_data import (
@@ -2148,7 +2148,31 @@ def _normalize_web_external_candidate(candidate, frame):
 @api_view(["POST"])
 def ai_recommendation_search(request):
     user = request.user if request.user.is_authenticated else None
-    return Response(run_ai_search(request.data, user=user))
+    data = run_ai_search(request.data, user=user)
+    timings = data.get("debug_pipeline") or {}
+    logger.info(
+        "AI search latency phase=reranked total_ms=%s planner_ms=%s retrieval_ms=%s reranker_ms=%s results=%s",
+        timings.get("total_latency_ms"),
+        timings.get("planner_latency_ms"),
+        timings.get("retrieval_latency_ms"),
+        timings.get("reranker_latency_ms"),
+        len(data.get("results") or []),
+    )
+    return Response(data)
+
+
+@api_view(["POST"])
+def ai_recommendation_candidates(request):
+    user = request.user if request.user.is_authenticated else None
+    data = run_ai_search_candidates(request.data, user=user)
+    timings = data.get("timings") or {}
+    logger.info(
+        "AI search latency phase=candidates total_ms=%s retrieval_ms=%s results=%s",
+        timings.get("total_latency_ms"),
+        timings.get("retrieval_latency_ms"),
+        len(data.get("results") or []),
+    )
+    return Response(data)
 
 
 @api_view(["POST"])
