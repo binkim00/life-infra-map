@@ -32,11 +32,14 @@ def scheduler_tick():
     today = timezone.localdate()
     recovered = recover_stale_jobs()
     planned = 0
-    if not PlaceTagCollectionJob.objects.filter(cycle_date=today).exists():
+    existing = PlaceTagCollectionJob.objects.filter(cycle_date=today).count()
+    remaining = max(0, settings.TAG_COLLECTION_DAILY_PLACE_LIMIT - existing)
+    if remaining:
         result = plan_daily_jobs(
             cycle_date=today,
-            place_limit=settings.TAG_COLLECTION_DAILY_PLACE_LIMIT,
+            place_limit=remaining,
             provider=settings.TAG_ENRICHMENT_PROVIDER,
+            mode=settings.TAG_COLLECTION_MODE,
         )
         planned = result["places"]
     counts = {

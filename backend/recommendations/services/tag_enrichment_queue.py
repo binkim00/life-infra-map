@@ -1,21 +1,9 @@
 from django.db import transaction
 
 from recommendations.models import PlaceTag, TagEnrichmentRequest
+from recommendations.services.canonical_tag_policy import CANONICAL_TAG_ALIASES
 
-
-SUBJECTIVE_TAG_ALIASES = {
-    '조용함': ('조용', '한적', '차분', '시끄럽지', '북적이지'),
-    '작업하기좋음': ('작업하기 좋', '공부하기 좋', '오래 작업'),
-    '노트북작업': ('노트북', '카공', '랩탑'),
-    '콘센트있음': ('콘센트', '전원 사용', '충전 가능'),
-    '무료와이파이': ('무료 와이파이', '와이파이', 'wifi'),
-    '분위기좋음': ('분위기', '감성', '무드', '예쁜', '아늑'),
-    '혼밥좋음': ('혼밥', '혼자먹', '혼자 먹', '1인식사', '1인 식사'),
-    '데이트좋음': ('데이트', '둘이가기', '둘이 가기'),
-    '대화하기좋음': ('대화하기', '얘기하기', '이야기하기'),
-    '전망좋음': ('전망', '뷰맛집', '뷰 맛집', '오션뷰', '시티뷰', '야경'),
-    '웨이팅적음': ('웨이팅적', '대기적', '안기다', '바로입장'),
-}
+SUBJECTIVE_TAG_ALIASES = CANONICAL_TAG_ALIASES
 
 
 def normalize_subjective_tags(values, query=''):

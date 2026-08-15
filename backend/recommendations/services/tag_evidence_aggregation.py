@@ -39,6 +39,7 @@ def aggregate_tag_evidence(place, tag, *, now=None, dry_run=False):
     web_positive_count = independent_count(web.filter(polarity="positive"))
     web_negative_count = independent_count(web.filter(polarity="negative"))
     web_net = web_positive_count - web_negative_count
+    web_quality = evidence_metrics(web, now=now)
     user_positive_count = independent_count(evidence.filter(source=USER_EVIDENCE_SOURCE, polarity="positive"))
     user_negative_count = independent_count(evidence.filter(source=USER_EVIDENCE_SOURCE, polarity="negative"))
     admin_positive_count = independent_count(evidence.filter(source=ADMIN_EVIDENCE_SOURCE, polarity="positive"))
@@ -55,6 +56,7 @@ def aggregate_tag_evidence(place, tag, *, now=None, dry_run=False):
         "admin_negative": admin_negative_count,
         "confirmed_source": "",
         "evidence_state": "NO_EVIDENCE",
+        "quality": web_quality,
         "status": "none",
         "confidence": 0,
     }
@@ -83,7 +85,9 @@ def aggregate_tag_evidence(place, tag, *, now=None, dry_run=False):
         result.update(
             evidence_state="POSITIVE_DOMINANT",
             status="candidate",
-            confidence=max(35, min(75, 40 + web_positive_count * 10 - web_negative_count * 8)),
+            confidence=aggregate_confidence(
+                "candidate", web_positive_count, web_negative_count, web_quality
+            ),
         )
     elif official_negative:
         result.update(evidence_state="NEGATIVE_DOMINANT", status="rejected", confidence=max(70, official_negative.confidence))
@@ -91,7 +95,9 @@ def aggregate_tag_evidence(place, tag, *, now=None, dry_run=False):
         result.update(
             evidence_state="NEGATIVE_DOMINANT",
             status="rejected",
-            confidence=min(75, 40 + web_negative_count * 10 - web_positive_count * 8),
+            confidence=aggregate_confidence(
+                "rejected", web_positive_count, web_negative_count, web_quality
+            ),
         )
     elif web_positive_count or web_negative_count:
         result.update(
@@ -101,7 +107,9 @@ def aggregate_tag_evidence(place, tag, *, now=None, dry_run=False):
                 else "POSITIVE_DOMINANT" if web_positive_count else "NEGATIVE_DOMINANT"
             ),
             status="needs_verification",
-            confidence=max(25, min(65, 35 + max(web_positive_count, web_negative_count) * 8)),
+            confidence=aggregate_confidence(
+                "needs_verification", web_positive_count, web_negative_count, web_quality
+            ),
         )
 
     if dry_run:
@@ -156,6 +164,59 @@ def clear_stale_aggregate_confirmations(place, tag, *, keep_source):
 
 def independent_count(queryset):
     return queryset.exclude(source_reference="").values("source_reference").distinct().count()
+
+
+def evidence_metrics(queryset, *, now):
+    rows = list(queryset.exclude(source_reference="").order_by("-confidence", "-observed_at"))
+    independent = {}
+    for row in rows:
+        independent.setdefault(row.source_reference, row)
+    rows = list(independent.values())
+    if not rows:
+        return {
+            "independent_urls": 0,
+            "source_diversity": 0,
+            "average_confidence": 0,
+            "freshness": 0,
+        }
+    average_confidence = round(sum(row.confidence for row in rows) / len(rows), 2)
+    freshness_values = []
+    for row in rows:
+        if not row.observed_at:
+            freshness_values.append(45)
+            continue
+        age_days = max(0, (now - row.observed_at).days)
+        freshness_values.append(100 if age_days <= 30 else 85 if age_days <= 180 else 70 if age_days <= 365 else 50)
+    return {
+        "independent_urls": len(rows),
+        "source_diversity": len({row.source for row in rows}),
+        "average_confidence": average_confidence,
+        "freshness": round(sum(freshness_values) / len(freshness_values), 2),
+    }
+
+
+def aggregate_confidence(status, positive_count, negative_count, quality):
+    average = quality["average_confidence"]
+    diversity = quality["source_diversity"]
+    freshness = quality["freshness"]
+    if status == "candidate":
+        score = (
+            25 + positive_count * 8 - negative_count * 7
+            + average * 0.25 + diversity * 2 + freshness * 0.08
+        )
+        return max(35, min(75, round(score)))
+    if status == "rejected":
+        score = (
+            30 + negative_count * 8 - positive_count * 6
+            + average * 0.20 + diversity * 2 + freshness * 0.05
+        )
+        return max(40, min(75, round(score)))
+    conflict_penalty = 8 if positive_count and negative_count else 0
+    score = (
+        20 + max(positive_count, negative_count) * 6
+        + average * 0.20 + diversity * 2 + freshness * 0.05 - conflict_penalty
+    )
+    return max(25, min(65, round(score)))
 
 
 def materialize_web_aggregate(place, tag, web, result, *, now):

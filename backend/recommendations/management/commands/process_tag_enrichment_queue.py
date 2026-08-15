@@ -7,6 +7,7 @@ from django.utils import timezone
 from recommendations.models import PlaceTag, PlaceTagEvidence, Tag, TagEnrichmentRequest
 from recommendations.services.subjective_tag_evidence_provider import collect_subjective_tag_evidence
 from recommendations.services.tag_source_policy import evidence_source_for
+from recommendations.services.tag_freshness import evidence_ttl
 
 
 class Command(BaseCommand):
@@ -99,6 +100,7 @@ def save_place_candidate_evidence(place, tag_name, result, *, observed_at):
         source_url,
         polarity,
     )
+    ttl = evidence_ttl(tag_name, evidence_source)
     PlaceTagEvidence.objects.update_or_create(
         evidence_key=hashlib.sha256(key_value.encode('utf-8')).hexdigest(),
         defaults={
@@ -107,12 +109,18 @@ def save_place_candidate_evidence(place, tag_name, result, *, observed_at):
             'source': evidence_source,
             'source_reference': source_url,
             'polarity': polarity,
-            'confidence': 55,
+            'confidence': max(1, min(100, int(result.get('confidence') or 55))),
             'evidence': result['evidence_summary'],
-            'context': {'source_title': result.get('source_title', ''), 'subjective': True},
+            'context': {
+                'source_title': result.get('source_title', ''),
+                'subjective': True,
+                'identity': result.get('identity') or {},
+                'extraction': result.get('extraction') or {},
+                'confidence_factors': result.get('confidence_factors') or {},
+            },
             'raw': raw,
             'observed_at': observed_at,
-            'expires_at': observed_at + timedelta(days=120),
+            'expires_at': observed_at + ttl if ttl else None,
         },
     )
     refresh_candidate_aggregate(place, tag)

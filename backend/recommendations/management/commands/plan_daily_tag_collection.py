@@ -12,6 +12,11 @@ from recommendations.services.place_tag_collection import (
     planned_requests_for_category,
     requested_tags_for_category,
 )
+from recommendations.services.bootstrap_priority import (
+    parse_tier_weights,
+    priority_context,
+    weighted_tier_selection,
+)
 
 
 REGIONS = (
@@ -42,6 +47,7 @@ class Command(BaseCommand):
         parser.add_argument("--date")
         parser.add_argument("--limit", type=int)
         parser.add_argument("--provider", default="naver_search")
+        parser.add_argument("--mode", choices=("balanced", "bootstrap"), default=None)
         parser.add_argument("--dry-run", action="store_true")
 
     def handle(self, *args, **options):
@@ -52,6 +58,7 @@ class Command(BaseCommand):
             cycle_date=cycle_date,
             place_limit=options["limit"] or settings.TAG_COLLECTION_DAILY_PLACE_LIMIT,
             provider=options["provider"],
+            mode=options["mode"] or settings.TAG_COLLECTION_MODE,
             dry_run=options["dry_run"],
         )
         self.stdout.write(self.style.SUCCESS(
@@ -65,7 +72,7 @@ class Command(BaseCommand):
         ))
 
 
-def plan_daily_jobs(*, cycle_date, place_limit, provider="naver_search", dry_run=False):
+def plan_daily_jobs(*, cycle_date, place_limit, provider="naver_search", mode="balanced", dry_run=False):
     place_limit = max(1, int(place_limit))
     budget = math.floor(
         settings.TAG_COLLECTION_DAILY_API_LIMIT
@@ -79,6 +86,16 @@ def plan_daily_jobs(*, cycle_date, place_limit, provider="naver_search", dry_run
         status__in=("queued", "processing", "completed", "retry"),
     ).values_list("place_id", flat=True)
     categories = tuple(COLLECTION_PROFILES)
+    if mode == "bootstrap":
+        return plan_bootstrap_jobs(
+            cycle_date=cycle_date,
+            place_limit=place_limit,
+            provider=provider,
+            budget=budget,
+            recent_place_ids=recent_place_ids,
+            categories=categories,
+            dry_run=dry_run,
+        )
     per_stratum = max(2, math.ceil(place_limit / (len(REGIONS) * len(categories))) * 2)
     pools = []
     for region, aliases in REGIONS:
@@ -129,4 +146,60 @@ def plan_daily_jobs(*, cycle_date, place_limit, provider="naver_search", dry_run
             if rows:
                 remaining.append((region, category, rows))
         pools = remaining
+    return {"places": created, "planned_requests": planned_requests, "covered_strata": len(covered)}
+
+
+def plan_bootstrap_jobs(
+    *, cycle_date, place_limit, provider, budget, recent_place_ids, categories, dry_run
+):
+    location = Q()
+    for _, aliases in REGIONS:
+        for alias in aliases:
+            location |= Q(address__startswith=alias)
+            location |= Q(detail_location__startswith=alias)
+    candidate_limit = max(1000, place_limit * 20)
+    places = list(
+        Place.objects.filter(location, category__in=categories)
+        .exclude(id__in=recent_place_ids)
+        .order_by("id")[:candidate_limit]
+    )
+    contexts = priority_context(
+        places,
+        category_priorities=settings.TAG_COLLECTION_CATEGORY_PRIORITIES,
+    )
+    selected = weighted_tier_selection(
+        [(place, contexts[place.id]) for place in places],
+        limit=place_limit,
+        tier_weights=parse_tier_weights(settings.TAG_COLLECTION_BOOTSTRAP_TIER_WEIGHTS),
+    )
+    created = 0
+    planned_requests = 0
+    covered = set()
+    for place, priority in selected:
+        requests = planned_requests_for_category(place.category)
+        if planned_requests + requests > budget:
+            break
+        if not dry_run:
+            _, was_created = PlaceTagCollectionJob.objects.get_or_create(
+                place=place,
+                provider=provider,
+                cycle_date=cycle_date,
+                defaults={
+                    "priority": max(1, priority["score"]),
+                    "requested_tags": requested_tags_for_category(place.category),
+                    "planned_requests": requests,
+                    "context": {
+                        "mode": "bootstrap",
+                        "tier": priority["tier"],
+                        "priority": priority,
+                        "category": place.category,
+                        "source": "daily_bootstrap_plan",
+                    },
+                },
+            )
+            if not was_created:
+                continue
+        created += 1
+        planned_requests += requests
+        covered.add((priority["tier"], place.category))
     return {"places": created, "planned_requests": planned_requests, "covered_strata": len(covered)}

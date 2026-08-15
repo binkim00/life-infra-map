@@ -11,7 +11,8 @@ from django.utils import timezone
 from recommendations.management.commands.process_tag_enrichment_queue import (
     save_place_candidate_evidence,
 )
-from recommendations.models import PlaceTagCollectionJob, ProviderQuotaUsage
+from recommendations.management.commands.generate_meaningful_place_tags import generate_meaningful_tags
+from recommendations.models import Place, PlaceTagCollectionJob, ProviderQuotaUsage
 from recommendations.services.place_tag_collection import collect_naver_place_evidence
 
 
@@ -48,6 +49,7 @@ class Command(BaseCommand):
 
 
 def process_jobs(*, limit=10, worker_id="worker", collector=None):
+    default_collector = collector is None
     collector = collector or collect_naver_place_evidence
     stats = {
         "processed": 0,
@@ -63,12 +65,34 @@ def process_jobs(*, limit=10, worker_id="worker", collector=None):
             stats["quota_exhausted"] = quota == "quota_exhausted"
             break
         stats["processed"] += 1
+        structured_evidences = 0
+        if getattr(settings, "TAG_COLLECTION_STRUCTURED_FIRST", True):
+            structured_stats = generate_meaningful_tags(
+                Place.objects.filter(id=job.place_id),
+                dry_run=False,
+            )
+            structured_evidences = structured_stats["evidence"]
         try:
-            result = collector(job.place, job.requested_tags)
+            if default_collector:
+                result = collector(
+                    job.place,
+                    job.requested_tags,
+                    allow_ai=(
+                        getattr(settings, "TAG_COLLECTION_AI_EXTRACTOR_ENABLED", False)
+                        and job.priority >= settings.TAG_COLLECTION_AI_PRIORITY_THRESHOLD
+                    ),
+                )
+            else:
+                result = collector(job.place, job.requested_tags)
         except Exception as exc:
             result = {"executed": True, "requests": 0, "evidences": [], "error": exc.__class__.__name__}
         requests_made = max(0, min(job.planned_requests, int(result.get("requests") or 0)))
-        settle_quota(job, requests_made, succeeded=not result.get("error") or result.get("error") == "insufficient_evidence")
+        settle_quota(
+            job,
+            requests_made,
+            succeeded=not result.get("error") or result.get("error") == "insufficient_evidence",
+            rate_limited=result.get("error") == "rate_limited",
+        )
         evidences = result.get("evidences") or []
         for evidence in evidences:
             observed_at = _observed_at(evidence.get("observed_date"))
@@ -96,7 +120,14 @@ def process_jobs(*, limit=10, worker_id="worker", collector=None):
             job.error_code = error[:100]
             job.next_attempt_at = None
             stats["failed"] += 1
-        job.stats = {"requests": requests_made, "evidences": len(evidences)}
+        job.stats = {
+            "requests": requests_made,
+            "evidences": len(evidences),
+            "structured_evidences": structured_evidences,
+            "ai_calls": int(result.get("ai_calls") or 0),
+            "miss_reason": result.get("miss_reason") or "",
+            "diagnostics": result.get("diagnostics") or {},
+        }
         job.error_message = error[:1000]
         job.locked_at = None
         job.worker_id = ""
@@ -143,7 +174,7 @@ def claim_next_job(*, worker_id):
         return job, quota
 
 
-def settle_quota(job, requests_made, *, succeeded):
+def settle_quota(job, requests_made, *, succeeded, rate_limited=False):
     today = timezone.localdate()
     ProviderQuotaUsage.objects.filter(
         provider=job.provider,
@@ -153,6 +184,7 @@ def settle_quota(job, requests_made, *, succeeded):
         request_count=F("request_count") + requests_made,
         success_count=F("success_count") + (requests_made if succeeded else 0),
         failed_count=F("failed_count") + (0 if succeeded else requests_made),
+        rate_limited_count=F("rate_limited_count") + (requests_made if rate_limited else 0),
     )
 
 

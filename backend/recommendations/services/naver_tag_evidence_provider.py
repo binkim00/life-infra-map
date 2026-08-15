@@ -2,6 +2,8 @@ import re
 from datetime import datetime
 
 from recommendations.services.naver_search_provider import _clean_html, _request_channel, _safe_text
+from recommendations.services.evidence_scoring import evidence_confidence, parse_observed_date
+from recommendations.services.tag_source_policy import NAVER_BLOG_SEARCH
 
 
 TAG_TERMS = {
@@ -49,6 +51,46 @@ TAG_TERMS = {
         'positive': ('웨이팅 없', '대기 없이', '바로 입장'),
         'negative': ('웨이팅 길', '대기 길', '오래 기다'),
     },
+    '장기체류좋음': {
+        'positive': ('오래 머물', '오래 있기 좋', '장시간 이용', '시간 보내기 좋'),
+        'negative': ('장시간 이용 불가', '이용 시간 제한', '오래 있기 어렵'),
+    },
+    '가족동반좋음': {
+        'positive': ('가족 동반', '아이와 가기 좋', '아이랑 가기 좋', '가족 나들이'),
+        'negative': ('아이 동반 불가', '가족 방문 비추천'),
+    },
+    '산책좋음': {
+        'positive': ('산책하기 좋', '걷기 좋', '산책로'),
+        'negative': ('산책하기 어렵', '보행 불편'),
+    },
+    '야외활동좋음': {
+        'positive': ('야외활동', '피크닉', '나들이하기 좋'),
+        'negative': ('야외활동 불가', '피크닉 금지'),
+    },
+    '휠체어접근': {
+        'positive': ('휠체어 접근', '무장애', '배리어프리', '경사로 있'),
+        'negative': ('휠체어 접근 불가', '계단만 있', '경사로 없'),
+    },
+    '장애인시설': {
+        'positive': ('장애인 화장실', '장애인 편의시설', '장애인시설 있'),
+        'negative': ('장애인시설 없', '장애인 화장실 없'),
+    },
+    '장애인전용주차': {
+        'positive': ('장애인 주차', '장애인전용주차'),
+        'negative': ('장애인 주차 없',),
+    },
+    '24시간운영': {
+        'positive': ('24시간 운영', '24시간 개방', '상시 개방'),
+        'negative': ('24시간 아님', '야간 폐쇄'),
+    },
+    '무료이용': {
+        'positive': ('무료 이용', '무료 개방', '주차 무료'),
+        'negative': ('유료 이용', '주차 유료'),
+    },
+    '관리잘됨': {
+        'positive': ('관리 잘', '깨끗', '청결'),
+        'negative': ('관리 안', '더럽', '불결'),
+    },
 }
 
 SEARCH_KEYWORDS = {
@@ -63,6 +105,16 @@ SEARCH_KEYWORDS = {
     '대화하기좋음': '대화',
     '전망좋음': '전망',
     '웨이팅적음': '웨이팅',
+    '장기체류좋음': '오래 머물기',
+    '가족동반좋음': '아이와',
+    '산책좋음': '산책',
+    '야외활동좋음': '피크닉',
+    '휠체어접근': '휠체어',
+    '장애인시설': '장애인시설',
+    '장애인전용주차': '장애인주차',
+    '24시간운영': '24시간',
+    '무료이용': '무료',
+    '관리잘됨': '청결',
 }
 
 
@@ -79,33 +131,72 @@ def address_identity_terms(address):
 
 
 def identity_matches(place, text):
+    return identity_assessment(place, text)["matched"]
+
+
+def identity_assessment(place, text):
     compact_text = compact(text)
     name_terms = [compact(term) for term in re.findall(r'[0-9a-zA-Z가-힣]+', str(place.name or ''))]
     name_terms = [term for term in name_terms if len(term) >= 2]
-    if not name_terms or not all(term in compact_text for term in name_terms):
-        return False
+    full_name = compact(place.name)
+    exact_name = bool(full_name and full_name in compact_text)
+    matched_name_terms = [term for term in name_terms if term in compact_text]
+    if not name_terms or not matched_name_terms:
+        return {"matched": False, "score": 0, "signals": {"name": "none", "address_ratio": 0}}
+    all_name_terms = len(matched_name_terms) == len(name_terms)
+    name_score = 50 if exact_name else 40 if all_name_terms else 20
     strong_branch_identity = any(
         term.endswith('점') or any(character.isdigit() for character in term) or term.endswith('dt') or 'dt점' in term
         for term in name_terms[1:]
     )
-    if len(name_terms) >= 2 and strong_branch_identity:
-        return True
     address_terms = address_identity_terms(place.address)
-    return not address_terms or any(compact(term) in compact_text for term in address_terms)
+    matched_address_terms = [term for term in address_terms if compact(term) in compact_text]
+    address_ratio = len(matched_address_terms) / len(address_terms) if address_terms else 0
+    address_score = max(15, round(address_ratio * 35)) if matched_address_terms else 0
+    branch_score = 25 if len(name_terms) >= 2 and strong_branch_identity and all_name_terms else 0
+    score = min(100, name_score + address_score + branch_score)
+    return {
+        "matched": score >= 65,
+        "score": score,
+        "signals": {
+            "name": "exact" if exact_name else "all_terms" if all_name_terms else "partial",
+            "matched_name_terms": matched_name_terms,
+            "address_ratio": round(address_ratio, 3),
+            "matched_address_terms": matched_address_terms,
+            "strong_branch": bool(branch_score),
+        },
+    }
 
 
 def evidence_polarity(tag_name, text):
+    return polarity_assessment(tag_name, text)["polarity"]
+
+
+def polarity_assessment(tag_name, text):
     terms = TAG_TERMS.get(tag_name) or {}
     compact_text = compact(text)
-    has_negative = any(compact(term) in compact_text for term in terms.get('negative', ()))
-    has_positive = any(compact(term) in compact_text for term in terms.get('positive', ()))
+    positive_terms = [term for term in terms.get('positive', ()) if compact(term) in compact_text]
+    negative_terms = [term for term in terms.get('negative', ()) if compact(term) in compact_text]
+    has_negative = bool(negative_terms)
+    has_positive = bool(positive_terms)
     if has_negative and has_positive:
-        return 'unknown'
-    if has_negative:
-        return 'negative'
-    if has_positive:
-        return 'positive'
-    return 'unknown'
+        polarity = 'unknown'
+        clarity = 20
+    elif has_negative:
+        polarity = 'negative'
+        clarity = min(100, 75 + len(negative_terms) * 8)
+    elif has_positive:
+        polarity = 'positive'
+        clarity = min(100, 75 + len(positive_terms) * 8)
+    else:
+        polarity = 'unknown'
+        clarity = 0
+    return {
+        "polarity": polarity,
+        "clarity_score": clarity,
+        "positive_terms": positive_terms,
+        "negative_terms": negative_terms,
+    }
 
 
 def collect_naver_tag_evidence(place, tag_name):
@@ -125,9 +216,11 @@ def collect_naver_tag_evidence(place, tag_name):
         title = _clean_html(item.get('title'), 180)
         summary = _clean_html(item.get('description'), 500)
         combined = '{} {}'.format(title, summary)
-        if not identity_matches(place, combined):
+        identity = identity_assessment(place, combined)
+        if not identity['matched']:
             continue
-        polarity = evidence_polarity(tag_name, combined)
+        extraction = polarity_assessment(tag_name, combined)
+        polarity = extraction['polarity']
         url = _safe_text(item.get('link'), 500)
         if (
             polarity == 'unknown'
@@ -140,12 +233,23 @@ def collect_naver_tag_evidence(place, tag_name):
         observed_at = None
         if re.fullmatch(r'\d{8}', postdate):
             observed_at = datetime.strptime(postdate, '%Y%m%d').date().isoformat()
+        parsed_observed_at = parse_observed_date(postdate)
+        confidence, confidence_factors = evidence_confidence(
+            source=NAVER_BLOG_SEARCH,
+            identity_score=identity['score'],
+            clarity_score=extraction['clarity_score'],
+            observed_at=parsed_observed_at,
+        )
         evidences.append({
             'polarity': polarity,
             'evidence_summary': summary or title,
             'source_url': url,
             'source_title': title,
             'observed_date': observed_at,
+            'confidence': confidence,
+            'identity': identity,
+            'extraction': extraction,
+            'confidence_factors': confidence_factors,
             'raw': {'channel': 'naver_blog', 'query': query},
         })
     if not evidences:

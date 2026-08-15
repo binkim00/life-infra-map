@@ -37,7 +37,7 @@ class TagEvidenceAggregationTests(TestCase):
         self.assertEqual(result["status"], "candidate")
         self.assertEqual(tag.status, "candidate")
         self.assertFalse(tag.is_verified)
-        self.assertEqual(tag.confidence, 70)
+        self.assertEqual(tag.confidence, 75)
 
     def test_three_web_sources_plus_explicit_user_confirmation_can_confirm(self):
         for index in range(3):

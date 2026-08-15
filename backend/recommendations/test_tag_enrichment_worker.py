@@ -90,4 +90,4 @@ class TagEnrichmentWorkerTests(TestCase):
         )
 
         self.assertEqual(PlaceTagEvidence.objects.count(), 4)
-        self.assertEqual(PlaceTag.objects.get().confidence, 62)
+        self.assertEqual(PlaceTag.objects.get().confidence, 66)
