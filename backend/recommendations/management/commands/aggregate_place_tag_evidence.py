@@ -27,7 +27,14 @@ class Command(BaseCommand):
 
         from recommendations.models import Place, Tag
 
-        stats = {"pairs": 0, "confirmed": 0, "candidate": 0, "rejected": 0, "none": 0}
+        stats = {
+            "pairs": 0,
+            "confirmed": 0,
+            "candidate": 0,
+            "needs_verification": 0,
+            "rejected": 0,
+            "none": 0,
+        }
         for place_id, tag_id in pairs.iterator():
             result = aggregate_tag_evidence(
                 Place.objects.get(id=place_id),
@@ -40,5 +47,6 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS(
             f"{prefix}Evidence aggregation complete: pairs={stats['pairs']} "
             f"confirmed={stats['confirmed']} candidate={stats['candidate']} "
+            f"needs_verification={stats['needs_verification']} "
             f"rejected={stats['rejected']} none={stats['none']}"
         ))

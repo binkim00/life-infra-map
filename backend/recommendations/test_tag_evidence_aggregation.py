@@ -33,7 +33,7 @@ class TagEvidenceAggregationTests(TestCase):
         for index in range(3):
             self.add_evidence(source="ai_suggested", reference=f"https://blog/{index}")
         result = aggregate_tag_evidence(self.place, self.tag, now=self.now)
-        tag = PlaceTag.objects.get(source="ai_suggested")
+        tag = PlaceTag.objects.get(source="web_evidence")
         self.assertEqual(result["status"], "candidate")
         self.assertEqual(tag.status, "candidate")
         self.assertFalse(tag.is_verified)
@@ -67,8 +67,27 @@ class TagEvidenceAggregationTests(TestCase):
         self.add_evidence(source="ai_suggested", reference="https://blog/negative", polarity="negative")
         self.add_evidence(source="user_feedback", reference="interaction:1")
         result = aggregate_tag_evidence(self.place, self.tag, now=self.now)
-        self.assertEqual(result["status"], "candidate")
+        self.assertEqual(result["status"], "needs_verification")
+        self.assertEqual(result["evidence_state"], "CONFLICT")
         self.assertFalse(PlaceTag.objects.filter(source="user_verified", is_verified=True).exists())
+
+    def test_single_positive_is_not_automatically_a_candidate(self):
+        self.add_evidence(source="naver_blog_search", reference="https://blog/only")
+        result = aggregate_tag_evidence(self.place, self.tag, now=self.now)
+        self.assertEqual(result["status"], "needs_verification")
+        self.assertEqual(result["evidence_state"], "POSITIVE_DOMINANT")
+
+    def test_negative_dominant_web_evidence_is_rejected(self):
+        self.add_evidence(source="naver_blog_search", reference="https://blog/positive")
+        for index in range(3):
+            self.add_evidence(
+                source="naver_blog_search",
+                reference=f"https://blog/negative-{index}",
+                polarity="negative",
+            )
+        result = aggregate_tag_evidence(self.place, self.tag, now=self.now)
+        self.assertEqual(result["status"], "rejected")
+        self.assertEqual(result["evidence_state"], "NEGATIVE_DOMINANT")
 
     def test_official_negative_blocks_an_official_positive(self):
         self.add_evidence(source="field_rule", reference="official:positive")

@@ -15,7 +15,7 @@ class TagEnrichmentWorkerTests(TestCase):
             place=self.place, tag_name='조용함', priority=3,
         )
 
-    def test_saves_sourced_web_result_as_expiring_candidate(self):
+    def test_saves_single_sourced_web_result_for_verification(self):
         def provider(place, tag_name):
             return {
                 'executed': True,
@@ -32,12 +32,13 @@ class TagEnrichmentWorkerTests(TestCase):
         evidence = PlaceTagEvidence.objects.get()
         self.assertEqual(stats['candidates'], 1)
         self.assertEqual(self.request.status, 'completed')
-        self.assertEqual(candidate.status, 'candidate')
+        self.assertEqual(candidate.status, 'needs_verification')
+        self.assertEqual(candidate.source, 'web_evidence')
         self.assertFalse(candidate.is_verified)
         self.assertEqual(evidence.source_reference, 'https://example.com/place-review')
         self.assertIsNotNone(evidence.expires_at)
 
-    def test_negative_evidence_does_not_create_positive_candidate(self):
+    def test_single_negative_evidence_requires_verification(self):
         def provider(place, tag_name):
             return {
                 'executed': True,
@@ -49,7 +50,8 @@ class TagEnrichmentWorkerTests(TestCase):
         stats = process_queue(limit=1, evidence_provider=provider)
 
         self.assertEqual(stats['negative'], 1)
-        self.assertFalse(PlaceTag.objects.exists())
+        aggregate = PlaceTag.objects.get()
+        self.assertEqual(aggregate.status, 'needs_verification')
         self.assertEqual(PlaceTagEvidence.objects.get().polarity, 'negative')
 
     def test_rejects_result_without_source(self):

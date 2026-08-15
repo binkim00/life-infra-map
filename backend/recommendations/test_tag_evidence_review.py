@@ -33,7 +33,7 @@ class TagEvidenceReviewTests(TestCase):
         self.positive = PlaceTagEvidence.objects.create(
             place=self.place,
             tag=self.tag,
-            source="ai_suggested",
+            source="naver_blog_search",
             source_reference="https://blog.example/positive",
             polarity="positive",
             confidence=55,
@@ -44,7 +44,7 @@ class TagEvidenceReviewTests(TestCase):
         PlaceTagEvidence.objects.create(
             place=self.place,
             tag=self.tag,
-            source="ai_suggested",
+            source="naver_blog_search",
             source_reference="https://blog.example/negative",
             polarity="negative",
             confidence=55,
@@ -55,7 +55,7 @@ class TagEvidenceReviewTests(TestCase):
         PlaceTag.objects.create(
             place=self.place,
             tag=self.tag,
-            source="ai_suggested",
+            source="web_evidence",
             status="candidate",
             confidence=50,
         )

@@ -6,6 +6,7 @@ from django.utils import timezone
 
 from recommendations.models import PlaceTag, PlaceTagEvidence, Tag, TagEnrichmentRequest
 from recommendations.services.subjective_tag_evidence_provider import collect_subjective_tag_evidence
+from recommendations.services.tag_source_policy import evidence_source_for
 
 
 class Command(BaseCommand):
@@ -90,11 +91,7 @@ def save_place_candidate_evidence(place, tag_name, result, *, observed_at):
     source_url = result['source_url']
     polarity = result['polarity']
     raw = result.get('raw') or {}
-    evidence_source = (
-        'naver_blog_search'
-        if raw.get('channel') == 'naver_blog'
-        else 'web_search'
-    )
+    evidence_source = evidence_source_for(raw)
     key_value = '{}|{}|{}|{}|{}'.format(
         place.id,
         tag.id,

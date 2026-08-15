@@ -92,6 +92,9 @@ class PlaceTag(models.Model):
         # AI가 장소명, 설명, 카테고리 등을 보고 추천한 후보 태그입니다.
         ("ai_suggested", "AI 추천 후보 태그"),
 
+        # 여러 독립 웹 근거를 집계한 결과입니다. 개별 공급자는 PlaceTagEvidence.source에 남습니다.
+        ("web_evidence", "웹 근거 집계 태그"),
+
         # 팀 검수와 관리자 검수를 하나로 합친 값입니다.
         ("checked", "검수 완료 태그"),
 

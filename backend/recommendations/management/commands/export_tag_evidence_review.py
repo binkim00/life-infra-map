@@ -8,6 +8,7 @@ from django.db.models import Q
 from django.utils import timezone
 
 from recommendations.models import PlaceTag, PlaceTagEvidence, TagEnrichmentRequest
+from recommendations.services.tag_source_policy import WEB_AGGREGATE_SOURCE, WEB_EVIDENCE_SOURCES
 
 
 CSV_FIELDS = (
@@ -37,7 +38,11 @@ class Command(BaseCommand):
         parser.add_argument("--output", default="tmp/tag_evidence_review.csv")
         parser.add_argument("--report", default="tmp/tag_evidence_review_report.json")
         parser.add_argument("--labels", default="", help="Reviewed CSV containing evidence_id and manual_correct.")
-        parser.add_argument("--source", default="ai_suggested")
+        parser.add_argument(
+            "--source",
+            default="web",
+            help="Evidence source or 'web' for all canonical web evidence sources.",
+        )
         parser.add_argument("--tag", action="append", default=[])
         parser.add_argument("--include-expired", action="store_true")
         parser.add_argument("--limit", type=int)
@@ -47,9 +52,14 @@ class Command(BaseCommand):
             raise CommandError("--limit must be at least 1.")
         labels = load_manual_labels(options["labels"]) if options["labels"] else {}
         now = timezone.now()
-        queryset = PlaceTagEvidence.objects.filter(source=options["source"]).select_related(
-            "place", "tag"
-        ).order_by("tag__name", "place_id", "-observed_at", "id")
+        queryset = PlaceTagEvidence.objects.all()
+        if options["source"] == "web":
+            queryset = queryset.filter(source__in=WEB_EVIDENCE_SOURCES)
+        else:
+            queryset = queryset.filter(source=options["source"])
+        queryset = queryset.select_related("place", "tag").order_by(
+            "tag__name", "place_id", "-observed_at", "id"
+        )
         if options["tag"]:
             queryset = queryset.filter(tag__name__in=options["tag"])
         if not options["include_expired"]:
@@ -155,7 +165,7 @@ def build_report(evidences, *, labels, source):
         adopted_pairs = set(PlaceTag.objects.filter(
             place_id__in={pair[0] for pair in positive_pairs},
             tag__name=tag_name,
-            source=source,
+            source=WEB_AGGREGATE_SOURCE if source == "web" else source,
         ).values_list("place_id", "tag_id"))
         reviewed = [
             labels[str(row.id)]["correct"]
