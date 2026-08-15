@@ -6,7 +6,8 @@ from django.core.management.base import BaseCommand
 from django.db.models import Count
 from django.utils import timezone
 
-from recommendations.models import PlaceTagCollectionJob, ProviderQuotaUsage
+from recommendations.models import PlaceTagCollectionJob, PlaceTagEvidence, ProviderQuotaUsage
+from recommendations.services.tag_source_policy import OFFICIAL_EVIDENCE_SOURCES, WEB_EVIDENCE_SOURCES
 
 
 class Command(BaseCommand):
@@ -56,6 +57,16 @@ def build_collection_report(cycle_date, *, mode="", latest=None):
         "provider", "request_count", "success_count", "failed_count", "rate_limited_count"
     )
     with_evidence = sum(int((job.stats or {}).get("evidences") or 0) > 0 for job in jobs)
+    place_ids = [job.place_id for job in jobs]
+    web_evidence_places = set(PlaceTagEvidence.objects.filter(
+        place_id__in=place_ids,
+        source__in=WEB_EVIDENCE_SOURCES,
+    ).values_list("place_id", flat=True))
+    structured_evidence_places = set(PlaceTagEvidence.objects.filter(
+        place_id__in=place_ids,
+        source__in=OFFICIAL_EVIDENCE_SOURCES,
+    ).values_list("place_id", flat=True))
+    any_evidence_places = web_evidence_places | structured_evidence_places
     return {
         "date": cycle_date.isoformat(),
         "mode": mode or "all",
@@ -63,6 +74,10 @@ def build_collection_report(cycle_date, *, mode="", latest=None):
         "places": len(jobs),
         "places_with_evidence": with_evidence,
         "evidence_hit_rate": round(with_evidence / len(jobs), 4) if jobs else None,
+        "web_evidence_places": len(web_evidence_places),
+        "structured_evidence_places": len(structured_evidence_places),
+        "places_with_any_evidence": len(any_evidence_places),
+        "overall_evidence_hit_rate": round(len(any_evidence_places) / len(jobs), 4) if jobs else None,
         "evidence_count": sum(int((job.stats or {}).get("evidences") or 0) for job in jobs),
         "structured_evidence_count": sum(int((job.stats or {}).get("structured_evidences") or 0) for job in jobs),
         "ai_call_count": sum(int((job.stats or {}).get("ai_calls") or 0) for job in jobs),

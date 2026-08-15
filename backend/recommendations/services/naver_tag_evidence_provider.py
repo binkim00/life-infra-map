@@ -140,11 +140,32 @@ def search_location_terms(address):
     return selected
 
 
-def identity_matches(place, text):
-    return identity_assessment(place, text)["matched"]
+REGION_PREFIXES = {
+    "서울": ("서울특별시", "서울 "),
+    "부산": ("부산광역시", "부산 "),
+    "대구": ("대구광역시", "대구 "),
+    "인천": ("인천광역시", "인천 "),
+    "광주": ("광주광역시", "광주 "),
+    "대전": ("대전광역시", "대전 "),
+    "울산": ("울산광역시", "울산 "),
+    "세종": ("세종특별자치시", "세종 "),
+    "경기": ("경기도",), "강원": ("강원",), "충북": ("충청북도",),
+    "충남": ("충청남도",), "전북": ("전북", "전라북도"),
+    "전남": ("전라남도",), "경북": ("경상북도",), "경남": ("경상남도",),
+    "제주": ("제주",),
+}
+GENERIC_IDENTITY_TERMS = {
+    "공원", "근린공원", "어린이공원", "소공원", "화장실", "공중화장실",
+    "주차장", "공영주차장", "도서관", "관광지", "전망대", "경로당",
+    "행정복지센터", "주민센터", "쉼터", "무더위쉼터",
+}
 
 
-def identity_assessment(place, text):
+def identity_matches(place, text, *, title=""):
+    return identity_assessment(place, text, title=title)["matched"]
+
+
+def identity_assessment(place, text, *, title=""):
     compact_text = compact(text)
     name_terms = [compact(term) for term in re.findall(r'[0-9a-zA-Z가-힣]+', str(place.name or ''))]
     name_terms = [term for term in name_terms if len(term) >= 2]
@@ -164,9 +185,40 @@ def identity_assessment(place, text):
     address_ratio = len(matched_address_terms) / len(address_terms) if address_terms else 0
     address_score = max(15, round(address_ratio * 35)) if matched_address_terms else 0
     branch_score = 25 if len(name_terms) >= 2 and strong_branch_identity and all_name_terms else 0
-    score = min(100, name_score + address_score + branch_score)
+    expected_region = next(
+        (region for region, prefixes in REGION_PREFIXES.items() if str(place.address or "").startswith(prefixes)),
+        "",
+    )
+    mentioned_regions = [region for region in REGION_PREFIXES if region in compact_text]
+    explicit_region_mismatch = bool(
+        expected_region and mentioned_regions and expected_region not in mentioned_regions
+    )
+    full_length = len(full_name)
+    exact_in_title = bool(full_name and full_name in compact(title))
+    generic_suffix_only = full_name in {
+        compact(value) for value in (
+            "공립수목원", "근린공원", "어린이공원", "소공원", "공영주차장",
+            "공중화장실", "화장실", "주차장", "경로당", "행정복지센터", "주민센터",
+        )
+    }
+    distinctive_title = exact_in_title and full_length >= 5 and not generic_suffix_only
+    distinctive_terms = [term for term in name_terms if term not in {compact(value) for value in GENERIC_IDENTITY_TERMS}]
+    multi_term_region = (
+        all_name_terms
+        and len(distinctive_terms) >= 2
+        and expected_region in mentioned_regions
+    )
+    tour_region_match = (
+        getattr(place, "source", "") == "tour_api"
+        and exact_name
+        and expected_region in mentioned_regions
+        and (full_length >= 5 or full_name.endswith("터"))
+    )
+    contextual_score = 15 if distinctive_title or multi_term_region or tour_region_match else 0
+    score = min(100, name_score + address_score + branch_score + contextual_score)
+    matched = score >= 65 and not explicit_region_mismatch
     return {
-        "matched": score >= 65,
+        "matched": matched,
         "score": score,
         "signals": {
             "name": "exact" if exact_name else "all_terms" if all_name_terms else "partial",
@@ -174,22 +226,36 @@ def identity_assessment(place, text):
             "address_ratio": round(address_ratio, 3),
             "matched_address_terms": matched_address_terms,
             "strong_branch": bool(branch_score),
+            "exact_in_title": exact_in_title,
+            "expected_region": expected_region,
+            "mentioned_regions": mentioned_regions,
+            "explicit_region_mismatch": explicit_region_mismatch,
+            "contextual_score": contextual_score,
+            "distinctive_name_terms": distinctive_terms,
         },
     }
 
 
-def evidence_polarity(tag_name, text):
-    return polarity_assessment(tag_name, text)["polarity"]
+def evidence_polarity(tag_name, text, *, category=""):
+    return polarity_assessment(tag_name, text, category=category)["polarity"]
 
 
-def polarity_assessment(tag_name, text):
+def polarity_assessment(tag_name, text, *, category=""):
     terms = TAG_TERMS.get(tag_name) or {}
     compact_text = compact(text)
     positive_terms = [term for term in terms.get('positive', ()) if compact(term) in compact_text]
     negative_terms = [term for term in terms.get('negative', ()) if compact(term) in compact_text]
     has_negative = bool(negative_terms)
     has_positive = bool(positive_terms)
-    if has_negative and has_positive:
+    contextual_exclusion = (
+        tag_name == "웨이팅적음"
+        and category in {"tourism", "city_park"}
+        and any(term in compact_text for term in ("주차", "주차장", "주차기준"))
+    )
+    if contextual_exclusion:
+        polarity = 'unknown'
+        clarity = 0
+    elif has_negative and has_positive:
         polarity = 'unknown'
         clarity = 20
     elif has_negative:
@@ -206,6 +272,7 @@ def polarity_assessment(tag_name, text):
         "clarity_score": clarity,
         "positive_terms": positive_terms,
         "negative_terms": negative_terms,
+        "contextual_exclusion": contextual_exclusion,
     }
 
 
@@ -226,10 +293,10 @@ def collect_naver_tag_evidence(place, tag_name):
         title = _clean_html(item.get('title'), 180)
         summary = _clean_html(item.get('description'), 500)
         combined = '{} {}'.format(title, summary)
-        identity = identity_assessment(place, combined)
+        identity = identity_assessment(place, combined, title=title)
         if not identity['matched']:
             continue
-        extraction = polarity_assessment(tag_name, combined)
+        extraction = polarity_assessment(tag_name, combined, category=place.category)
         polarity = extraction['polarity']
         url = _safe_text(item.get('link'), 500)
         if (

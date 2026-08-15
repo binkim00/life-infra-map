@@ -6,6 +6,7 @@ from django.test import SimpleTestCase
 from recommendations.services.naver_tag_evidence_provider import (
     collect_naver_tag_evidence,
     evidence_polarity,
+    identity_assessment,
     identity_matches,
 )
 
@@ -69,6 +70,63 @@ class NaverTagEvidenceProviderTests(SimpleTestCase):
 
         self.assertEqual(result['polarity'], 'unknown')
         self.assertEqual(result['error'], 'insufficient_evidence')
+
+    def test_accepts_distinctive_exact_name_in_title_without_snippet_address(self):
+        place = SimpleNamespace(
+            name='남도해양열차 에스트레인(S-train)',
+            address='부산광역시 동구 중앙대로 206',
+            source='tour_api',
+        )
+        title = '남도해양열차 에스트레인 S-train 후기'
+        result = identity_assessment(place, title + ' 창밖 전망이 좋다', title=title)
+        self.assertTrue(result['matched'])
+        self.assertEqual(result['signals']['contextual_score'], 15)
+
+    def test_does_not_accept_incidental_exact_name_in_summary(self):
+        place = SimpleNamespace(
+            name='그런고로',
+            address='부산광역시 부산진구 서전로 40',
+            source='tour_api',
+        )
+        result = identity_assessment(
+            place,
+            '부산 돈까스 후기 그런고로 맛있게 먹었다',
+            title='부산 돈까스 후기',
+        )
+        self.assertFalse(result['matched'])
+
+    def test_generic_facility_word_does_not_make_two_distinctive_terms(self):
+        place = SimpleNamespace(
+            name='운현궁 화장실',
+            address='서울특별시 종로구 삼일대로 464',
+            source='public_toilet_standard',
+        )
+        text = '서울 종로구 숙소 화장실 후기이며 주변에는 운현궁이 있다'
+        result = identity_assessment(place, text, title='서울 숙소 후기')
+        self.assertFalse(result['matched'])
+        self.assertEqual(result['signals']['distinctive_name_terms'], ['운현궁'])
+
+    def test_tourism_parking_wait_is_not_attraction_wait_evidence(self):
+        result = evidence_polarity(
+            '웨이팅적음',
+            '주차 기준 대기시간과 웨이팅 없이 바로 주차 가능',
+            category='tourism',
+        )
+        self.assertEqual(result, 'unknown')
+
+    def test_explicit_other_region_blocks_title_match(self):
+        place = SimpleNamespace(
+            name='강변둥지공원',
+            address='부산광역시 북구 화명동 188-2',
+            source='citypark_standard',
+        )
+        result = identity_assessment(
+            place,
+            '서울 강변둥지공원 산책 후기',
+            title='서울 강변둥지공원 산책 후기',
+        )
+        self.assertFalse(result['matched'])
+        self.assertTrue(result['signals']['explicit_region_mismatch'])
 
     @patch('recommendations.services.naver_tag_evidence_provider._request_channel')
     def test_keeps_only_one_evidence_per_independent_url(self, request_channel):

@@ -58,7 +58,6 @@ CATEGORY_ALIASES = {
     "food_service": "restaurant",
 }
 
-
 def canonical_category(category):
     value = str(category or "").strip().lower()
     return CATEGORY_ALIASES.get(value, value)
@@ -80,6 +79,11 @@ def planned_requests_for_category(category):
     return len(collection_profile(category))
 
 
+def build_collection_query(place, keyword):
+    location = " ".join(search_location_terms(place.address))
+    return "{} {} {}".format(place.name, location, keyword).strip()
+
+
 def collect_naver_place_evidence(place, requested_tags=None, *, allow_ai=False):
     """Collect multiple tag observations with one request per semantic pack."""
     requested = set(requested_tags or requested_tags_for_category(place.category))
@@ -95,7 +99,6 @@ def collect_naver_place_evidence(place, requested_tags=None, *, allow_ai=False):
     if not profiles:
         return {"executed": True, "requests": 0, "evidences": [], "error": "unsupported_category"}
 
-    location = " ".join(search_location_terms(place.address))
     evidences = []
     seen = set()
     requests_made = 0
@@ -105,7 +108,7 @@ def collect_naver_place_evidence(place, requested_tags=None, *, allow_ai=False):
         # Naver treats a long list of semantic words as restrictive search terms.
         # Search with one representative word, then extract every tag in the pack
         # from the returned title/summary.
-        query = "{} {} {}".format(place.name, location, keyword).strip()
+        query = build_collection_query(place, keyword)
         try:
             acquire_provider_slot("naver_search")
             payload = _request_channel("blog", query)
@@ -126,7 +129,7 @@ def collect_naver_place_evidence(place, requested_tags=None, *, allow_ai=False):
             title = _clean_html(item.get("title"), 180)
             summary = _clean_html(item.get("description"), 500)
             combined = "{} {}".format(title, summary)
-            identity = identity_assessment(place, combined)
+            identity = identity_assessment(place, combined, title=title)
             if not identity["matched"]:
                 continue
             diagnostics["identity_matches"] += 1
@@ -137,7 +140,7 @@ def collect_naver_place_evidence(place, requested_tags=None, *, allow_ai=False):
                 continue
             snippet_evidences = 0
             for tag_name in tag_names:
-                extraction = polarity_assessment(tag_name, combined)
+                extraction = polarity_assessment(tag_name, combined, category=place.category)
                 polarity = extraction["polarity"]
                 key = (tag_name, source_url, polarity)
                 if polarity == "unknown" or key in seen:
