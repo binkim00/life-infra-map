@@ -239,6 +239,9 @@ Useful safety options:
 - `--confirmed-score` and `--min-margin`: keep weak or close candidates out of
   automatic linking.
 
+A live quota-bounded validation run and its cache-replay result are recorded in
+[`docs/02_data/kakao-normalization-validation-2026-08-15.md`](02_data/kakao-normalization-validation-2026-08-15.md).
+
 ## Nationwide library standard adapter
 
 Download the merged CSV from the official

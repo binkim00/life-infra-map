@@ -1,10 +1,10 @@
 {
-  "generated_at": "2026-08-15 12:06:27.214141+00:00",
+  "generated_at": "2026-08-15 12:15:27.120767+00:00",
   "database_vendor": "postgresql",
   "places": {
-    "total": 215398,
-    "with_external_id": 215398,
-    "kakao_canonical": 17163,
+    "total": 215408,
+    "with_external_id": 215408,
+    "kakao_canonical": 17173,
     "categories": [
       {
         "category": "beach",
@@ -21,6 +21,10 @@
       {
         "category": "freewifi",
         "count": 83145
+      },
+      {
+        "category": "library",
+        "count": 10
       },
       {
         "category": "parking",
@@ -62,7 +66,7 @@
       },
       {
         "source": "kakao_local",
-        "count": 17163
+        "count": 17173
       },
       {
         "source": "public_parking_standard",
@@ -144,11 +148,11 @@
       },
       {
         "sido": "경상남도",
-        "count": 19407
+        "count": 19415
       },
       {
         "sido": "경상북도",
-        "count": 18812
+        "count": 18813
       },
       {
         "sido": "광주광역시",
@@ -168,7 +172,7 @@
       },
       {
         "sido": "서울특별시",
-        "count": 28118
+        "count": 28119
       },
       {
         "sido": "세종특별자치시",
@@ -207,7 +211,7 @@
   "source_records": {
     "total": 861631,
     "active": 861631,
-    "normalized": 0,
+    "normalized": 10,
     "datasets": [
       {
         "source": "data_go_kr",
@@ -300,8 +304,21 @@
     ]
   },
   "kakao_matches": {
-    "total": 0,
-    "statuses": [],
+    "total": 20,
+    "statuses": [
+      {
+        "status": "ambiguous",
+        "count": 4
+      },
+      {
+        "status": "confirmed",
+        "count": 10
+      },
+      {
+        "status": "unmatched",
+        "count": 6
+      }
+    ],
     "integrity": {
       "confirmed_without_canonical_place": 0,
       "confirmed_without_kakao_id": 0,
