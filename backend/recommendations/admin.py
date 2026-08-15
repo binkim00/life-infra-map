@@ -1,6 +1,8 @@
 from django.contrib import admin
 from .models import (
     DataSourceSyncRun,
+    KakaoPlaceMatch,
+    KakaoPlaceSearchCache,
     Place,
     PlaceInteractionEvent,
     PlaceCoverage,
@@ -65,6 +67,27 @@ class SourcePlaceRecordAdmin(admin.ModelAdmin):
     list_filter = ("source", "dataset", "category", "is_active", "sido_name")
     search_fields = ("name", "address", "road_address", "source_record_id")
     readonly_fields = ("created_at", "updated_at", "last_seen_at")
+
+
+@admin.register(KakaoPlaceMatch)
+class KakaoPlaceMatchAdmin(admin.ModelAdmin):
+    list_display = (
+        "id", "source_record", "status", "kakao_place_id", "score",
+        "score_margin", "distance_m", "last_attempted_at",
+    )
+    list_filter = ("status", "source_record__source", "source_record__dataset")
+    search_fields = (
+        "source_record__name", "source_record__source_record_id",
+        "kakao_place_id", "query",
+    )
+    readonly_fields = ("created_at", "updated_at", "last_attempted_at", "matched_at")
+
+
+@admin.register(KakaoPlaceSearchCache)
+class KakaoPlaceSearchCacheAdmin(admin.ModelAdmin):
+    list_display = ("query", "result_count", "fetched_at", "expires_at")
+    search_fields = ("query", "query_hash")
+    readonly_fields = ("query_hash", "fetched_at", "created_at")
 
 
 @admin.register(PlaceTagEvidence)

@@ -74,3 +74,49 @@ natural-language query and filling remaining rows with category defaults.
 This supplies nationwide cold-start demand without inventing subjective facts:
 objective tags work on day one, while subjective tags become reliable only as
 independent evidence accumulates.
+
+## Nationwide stratified bootstrap queue
+
+Create the subjective-evidence bootstrap sample only after Kakao normalization:
+
+    python manage.py build_nationwide_tag_enrichment_sample \
+        --per-stratum 5 \
+        --categories cafe,restaurant,tourism,city_park \
+        --dry-run
+
+The default matrix is 17 provinces/cities by four categories. Sampling is spread
+across the source-record ID range inside each stratum and deduplicated by Kakao
+canonical place. Records are eligible only when all of the following hold:
+
+- the source record is active;
+- `KakaoPlaceMatch.status` is `confirmed`;
+- `normalized_place.source` is `kakao_local`;
+- the category is cafe, restaurant, tourism, or city park.
+
+The command reports covered and missing strata so an incomplete regional source
+registry cannot silently look nationwide. Existing queue rows are idempotently
+reused, and already confirmed user-verified tags are skipped. Do not enable the
+enrichment worker until the dry-run shows acceptable nationwide coverage.
+
+## Evidence review and promotion
+
+Export active web evidence and a tag-level report:
+
+    python manage.py export_tag_evidence_review \
+        --output tmp/tag_evidence_review.csv \
+        --report tmp/tag_evidence_review_report.json
+
+The CSV includes place name, address, tag, polarity, source URL, short evidence,
+confidence, observation/expiry dates, and blank manual review columns. Fill
+`manual_correct` with `맞음/틀림`, `true/false`, or `1/0`, then pass the reviewed
+file back through `--labels` to calculate overall and per-tag precision. The JSON
+also reports adoption, no-evidence, and positive/negative conflict rates.
+
+Materialize active evidence after collection or review:
+
+    python manage.py aggregate_place_tag_evidence --dry-run
+
+Three independent web URLs increase candidate confidence but never confirm a
+tag. Confirmation requires an official positive field, or web evidence combined
+with explicit user confirmation or an `admin_review` evidence row. Expired rows
+are ignored and active negative rows reduce confidence or block promotion.

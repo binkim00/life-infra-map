@@ -1,0 +1,71 @@
+from datetime import timedelta
+
+from django.test import TestCase
+from django.utils import timezone
+
+from recommendations.models import Place, PlaceTag, PlaceTagEvidence, Tag
+from recommendations.services.tag_evidence_aggregation import aggregate_tag_evidence
+
+
+class TagEvidenceAggregationTests(TestCase):
+    def setUp(self):
+        self.place = Place.objects.create(
+            name="근거 집계 카페", category="cafe", address="서울", lat=37.5, lng=127,
+            source="kakao_local", external_id="aggregation-1",
+        )
+        self.tag = Tag.objects.create(name="조용함")
+        self.now = timezone.now()
+
+    def add_evidence(self, *, source, reference, polarity="positive", expires=True):
+        return PlaceTagEvidence.objects.create(
+            place=self.place,
+            tag=self.tag,
+            source=source,
+            source_reference=reference,
+            polarity=polarity,
+            confidence=70,
+            evidence=f"{source} {polarity}",
+            observed_at=self.now,
+            expires_at=(self.now + timedelta(days=30)) if expires else (self.now - timedelta(days=1)),
+        )
+
+    def test_three_web_sources_raise_confidence_but_never_auto_confirm(self):
+        for index in range(3):
+            self.add_evidence(source="ai_suggested", reference=f"https://blog/{index}")
+        result = aggregate_tag_evidence(self.place, self.tag, now=self.now)
+        tag = PlaceTag.objects.get(source="ai_suggested")
+        self.assertEqual(result["status"], "candidate")
+        self.assertEqual(tag.status, "candidate")
+        self.assertFalse(tag.is_verified)
+        self.assertEqual(tag.confidence, 70)
+
+    def test_three_web_sources_plus_explicit_user_confirmation_can_confirm(self):
+        for index in range(3):
+            self.add_evidence(source="ai_suggested", reference=f"https://blog/{index}")
+        self.add_evidence(source="user_feedback", reference="interaction:1")
+        result = aggregate_tag_evidence(self.place, self.tag, now=self.now)
+        verified = PlaceTag.objects.get(source="user_verified")
+        self.assertEqual(result["status"], "confirmed")
+        self.assertTrue(verified.is_verified)
+
+    def test_admin_review_combined_with_web_evidence_can_confirm(self):
+        self.add_evidence(source="ai_suggested", reference="https://blog/1")
+        self.add_evidence(source="admin_review", reference="admin-review:1")
+        result = aggregate_tag_evidence(self.place, self.tag, now=self.now)
+        self.assertEqual(result["confirmed_source"], "checked")
+        self.assertTrue(PlaceTag.objects.get(source="checked").is_verified)
+
+    def test_official_positive_evidence_can_confirm_without_web(self):
+        self.add_evidence(source="field_rule", reference="official:field:1")
+        result = aggregate_tag_evidence(self.place, self.tag, now=self.now)
+        self.assertEqual(result["status"], "confirmed")
+        self.assertTrue(PlaceTag.objects.get(source="field_rule").is_verified)
+
+    def test_expired_and_negative_evidence_reduce_or_block_promotion(self):
+        self.add_evidence(source="ai_suggested", reference="https://blog/expired", expires=False)
+        self.add_evidence(source="ai_suggested", reference="https://blog/positive")
+        self.add_evidence(source="ai_suggested", reference="https://blog/negative", polarity="negative")
+        self.add_evidence(source="user_feedback", reference="interaction:1")
+        result = aggregate_tag_evidence(self.place, self.tag, now=self.now)
+        self.assertEqual(result["status"], "candidate")
+        self.assertFalse(PlaceTag.objects.filter(source="user_verified", is_verified=True).exists())

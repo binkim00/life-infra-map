@@ -98,7 +98,11 @@ AI_SEARCH_RERANK_MAX_CANDIDATES = _env_int("AI_SEARCH_RERANK_MAX_CANDIDATES", 8,
 AI_SEARCH_RERANK_MAX_COMPLETION_TOKENS = _env_int("AI_SEARCH_RERANK_MAX_COMPLETION_TOKENS", 2500, 800, 4000)
 # 같은 후보 묶음에 대한 AI 판정 재사용 시간(초). 0이면 캐시하지 않는다.
 # 테스트는 각 케이스가 실제 호출 경로를 그대로 타야 하므로 캐시를 쓰지 않는다.
-AI_RERANK_CACHE_TTL = _env_int("AI_RERANK_CACHE_TTL", 0 if IS_TESTING else 900, 0, 86400)
+AI_RERANK_CACHE_TTL = (
+    0
+    if IS_TESTING
+    else _env_int("AI_RERANK_CACHE_TTL", 900, 0, 86400)
+)
 # 화장실/주차장처럼 카테고리와 거리로 답이 정해지는 요청에서 AI 후보 평가를 건너뛴다.
 AI_SEARCH_ROUTE_CATEGORY_REQUESTS = _env_bool("AI_SEARCH_ROUTE_CATEGORY_REQUESTS", True)
 AI_REQUEST_TIMEOUT = int(os.getenv("AI_REQUEST_TIMEOUT", "20"))

@@ -196,3 +196,75 @@ order of nationwide enrichment jobs:
 
 Bulk storage or reuse of third-party map/search content must be reviewed against
 the provider's current terms before enabling that source in production.
+
+## Kakao ID normalization
+
+`SourcePlaceRecord` keeps the provider's original record ID. The final searchable
+identity is a `Place(source="kakao_local", external_id=<Kakao place ID>)` only
+when a match is confirmed from multiple signals. The matcher scores normalized
+name, road/lot address, coordinate distance, phone, Kakao category, and franchise
+branch identity. A place-name substring alone is never enough to link a record.
+
+Run a small quota-bounded batch first:
+
+    python manage.py match_source_places_to_kakao \
+        --source localdata --after-id 0 --limit 100 \
+        --max-api-requests 150 --batch-size 50
+
+The command stores `confirmed`, `ambiguous`, `unmatched`, or `error` in
+`KakaoPlaceMatch`. Only `confirmed` changes `SourcePlaceRecord.normalized_place`.
+`KakaoPlaceSearchCache` caches each query for 30 days by default. Resume from the
+reported `last_id`, retry selected outcomes with `--match-statuses ambiguous,error`,
+and use `--refresh-cache` only when stale Kakao results must be fetched again.
+
+Useful safety options:
+
+- `--dry-run`: score candidates without writing matches or canonical places;
+- `--max-api-requests`: stop before exceeding the planned quota;
+- `--max-queries`: cap query variants per source row;
+- `--confirmed-score` and `--min-margin`: keep weak or close candidates out of
+  automatic linking.
+
+## Nationwide library standard adapter
+
+Download the merged CSV from the official
+[`전국도서관표준데이터`](https://www.data.go.kr/data/15013109/standard.do) page,
+then stage it without inventing map IDs:
+
+    python manage.py import_library_standard_data C:\data\전국도서관표준데이터.csv
+    python manage.py match_source_places_to_kakao \
+        --source data_go_kr --dataset library_standard --max-api-requests 500
+    python manage.py generate_library_meaningful_tags
+
+The adapter stores library name/type, closure days, weekday/Saturday/holiday
+hours, seats, address, operator, phone, homepage, coordinates, and reference
+date in `SourcePlaceRecord`. After Kakao matching, only official-field facts are
+confirmed: weekday closing at or after 21:00 (`야간운영`), valid Saturday or
+holiday hours, and at least 100 reading seats by default. `도서관` remains the
+category. Outlet availability, Wi-Fi, and laptop suitability are never inferred
+from this standard dataset.
+
+## Bookstore and SEMAS registry
+
+No independently downloadable, clearly reusable nationwide bookstore registry
+was identified. `서점ON` is useful for discovery and industry services, but its
+complete store list is not exposed here as an open nationwide dataset. The
+official SEMAS quarterly commercial-store snapshot is therefore the primary
+bookstore registry and also a supplemental cafe/restaurant registry:
+
+- file catalog: https://www.data.go.kr/data/15083033/fileData.do
+- API catalog: https://www.data.go.kr/data/15012005/openapi.do
+
+Use the CSV for the initial nationwide load:
+
+    python manage.py import_semas_stores C:\data\소상공인_상가정보.csv \
+        --snapshot-date 2026-03-31 \
+        --categories cafe,restaurant,bookstore
+
+The importer keeps `상가업소번호` only as `SourcePlaceRecord.source_record_id`,
+stores the three-level and KSIC industry classifications in `raw`, and treats
+them as place categories/search filters rather than meaningful tags. It skips
+unrelated industries and then uses the same Kakao matching command with
+`--source semas --dataset commercial_store`. The source warns that store IDs can
+change when its classification system is rebuilt, so each quarterly snapshot
+must be rematched rather than assumed to preserve historical identity.

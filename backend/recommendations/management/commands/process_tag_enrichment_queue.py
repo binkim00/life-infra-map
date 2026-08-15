@@ -101,29 +101,6 @@ def save_candidate_evidence(request, result, *, observed_at):
 
 
 def refresh_candidate_aggregate(place, tag):
-    active = PlaceTagEvidence.objects.filter(
-        place=place,
-        tag=tag,
-        source='ai_suggested',
-        expires_at__gt=timezone.now(),
-    )
-    positive = active.filter(polarity='positive')
-    positive_count = positive.values('source_reference').distinct().count()
-    negative_count = active.filter(polarity='negative').values('source_reference').distinct().count()
-    if not positive_count:
-        PlaceTag.objects.filter(place=place, tag=tag, source='ai_suggested').delete()
-        return
-    confidence = max(35, min(75, 40 + positive_count * 10 - negative_count * 8))
-    summary = positive.order_by('-observed_at').values_list('evidence', flat=True).first() or ''
-    PlaceTag.objects.update_or_create(
-        place=place,
-        tag=tag,
-        source='ai_suggested',
-        defaults={
-            'status': 'candidate',
-            'confidence': confidence,
-            'evidence': summary,
-            'is_verified': False,
-            'verified_at': None,
-        },
-    )
+    from recommendations.services.tag_evidence_aggregation import aggregate_tag_evidence
+
+    aggregate_tag_evidence(place, tag)

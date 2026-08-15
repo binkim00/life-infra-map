@@ -243,6 +243,75 @@ class SourcePlaceRecord(models.Model):
         return self.name or f"{self.source}:{self.source_record_id}"
 
 
+class KakaoPlaceSearchCache(models.Model):
+    """Quota-saving cache for a single Kakao Local keyword request."""
+
+    query_hash = models.CharField(max_length=64, unique=True)
+    query = models.CharField(max_length=500)
+    lat = models.FloatField(null=True, blank=True)
+    lng = models.FloatField(null=True, blank=True)
+    radius = models.PositiveIntegerField(default=3000)
+    response = models.JSONField(default=dict, blank=True)
+    result_count = models.PositiveIntegerField(default=0)
+    error_message = models.TextField(blank=True)
+    fetched_at = models.DateTimeField(auto_now=True)
+    expires_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [models.Index(fields=["expires_at"])]
+
+    def __str__(self):
+        return self.query
+
+
+class KakaoPlaceMatch(models.Model):
+    STATUS_CHOICES = [
+        ("pending", "Pending"),
+        ("confirmed", "Confirmed"),
+        ("ambiguous", "Ambiguous"),
+        ("unmatched", "Unmatched"),
+        ("error", "Error"),
+    ]
+
+    source_record = models.OneToOneField(
+        SourcePlaceRecord,
+        on_delete=models.CASCADE,
+        related_name="kakao_match",
+    )
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
+    canonical_place = models.ForeignKey(
+        Place,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="kakao_source_matches",
+    )
+    kakao_place_id = models.CharField(max_length=100, blank=True)
+    score = models.FloatField(default=0)
+    score_margin = models.FloatField(default=0)
+    distance_m = models.PositiveIntegerField(null=True, blank=True)
+    query = models.CharField(max_length=500, blank=True)
+    score_details = models.JSONField(default=dict, blank=True)
+    candidates = models.JSONField(default=list, blank=True)
+    attempt_count = models.PositiveIntegerField(default=0)
+    error_message = models.TextField(blank=True)
+    matched_at = models.DateTimeField(null=True, blank=True)
+    last_attempted_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["status", "source_record"]),
+            models.Index(fields=["kakao_place_id"]),
+            models.Index(fields=["-last_attempted_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.source_record} -> {self.kakao_place_id or self.status}"
+
+
 def new_evidence_key():
     return uuid.uuid4().hex
 
