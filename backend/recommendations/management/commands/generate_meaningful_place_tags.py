@@ -6,6 +6,7 @@ from django.utils import timezone
 
 from recommendations.models import Place, PlaceTag, PlaceTagEvidence, Tag
 from recommendations.services.meaningful_tag_rules import extract_meaningful_tags
+from recommendations.services.structured_evidence_freshness import structured_expiry
 
 
 class Command(BaseCommand):
@@ -75,17 +76,20 @@ def save_matches(matches, stats, *, dry_run=False):
     evidence_rows = []
     for place, match in matches:
         tag = existing[match["tag"]]
+        observed_at = observed_at_for_place(place, now)
+        expires_at = structured_expiry(observed_at, place_source=place.source)
+        is_stale = bool(expires_at and expires_at <= now)
         reference = f"{place.source}:{place.external_id}:{match['field']}"
         evidence_text = f"{match['description']} ({match['field']}={match['value']})"
         aggregates.append(PlaceTag(
             place=place,
             tag=tag,
             source="field_rule",
-            status="confirmed",
+            status="needs_verification" if is_stale else "confirmed",
             confidence=match["confidence"],
             evidence=evidence_text,
-            is_verified=True,
-            verified_at=now,
+            is_verified=not is_stale,
+            verified_at=None if is_stale else now,
         ))
         key_value = f"{place.id}|{tag.id}|field_rule|{reference}|positive"
         evidence_rows.append(PlaceTagEvidence(
@@ -99,7 +103,8 @@ def save_matches(matches, stats, *, dry_run=False):
             evidence=evidence_text,
             context={"field": match["field"], "objective": True},
             raw={"field": match["field"], "value": match["value"]},
-            observed_at=observed_at_for_place(place, now),
+            observed_at=observed_at,
+            expires_at=expires_at,
         ))
 
     PlaceTag.objects.bulk_create(
@@ -118,7 +123,7 @@ def save_matches(matches, stats, *, dry_run=False):
         update_conflicts=True,
         unique_fields=["evidence_key"],
         update_fields=[
-            "confidence", "evidence", "context", "raw", "observed_at",
+            "confidence", "evidence", "context", "raw", "observed_at", "expires_at",
             "updated_at",
         ],
     )
