@@ -4,9 +4,7 @@
 
 현재 프로젝트는 데이터 수집·정제·태그 생성 과정을 거쳐 최종 DB 상태를 `dumpdata`로 저장해 두었습니다. 따라서 일반 실행 환경에서는 복잡한 import 명령어를 다시 실행하지 않고, `loaddata`로 최종 DB를 복원하는 방식을 사용합니다.
 
-DB는 SQLite에서 PostgreSQL 16 + PostGIS로 전환했습니다. 전환 이유와 결과는 `docs/02_data/postgres-migration.md`에 정리했습니다.
-
-`DB_ENGINE` 값에 따라 두 DB를 모두 쓸 수 있으며, 이 문서는 PostgreSQL 기준으로 설명합니다. SQLite로 실행하려면 5번 항목의 안내를 따릅니다.
+DB는 PostgreSQL 16 + PostGIS로 고정되어 있으며 Django와 Spring이 같은 데이터베이스를 공유합니다. 선택 이유와 이관 검증은 `docs/02_data/postgres-migration.md`에 정리했습니다.
 
 ---
 
@@ -77,10 +75,9 @@ docker compose ps
 
 ### 5.2 환경변수 설정
 
-`backend/.env`에 다음 값을 넣습니다. 기본값은 `sqlite`이므로 지정하지 않으면 PostgreSQL을 쓰지 않습니다.
+`backend/.env`에 다음 값을 넣습니다.
 
 ```text
-DB_ENGINE=postgres
 POSTGRES_DB=life_infra_map
 POSTGRES_USER=life_infra_map
 POSTGRES_PASSWORD=life_infra_map
@@ -99,29 +96,6 @@ docker compose up -d db
 
 `down -v`는 DB 데이터를 삭제합니다. 되돌릴 수 없으므로 실행 전에 확인합니다.
 
-### 5.4 SQLite로 실행할 경우
-
-기존 방식이 필요하면 `DB_ENGINE=sqlite`로 두고 `db.sqlite3`를 삭제합니다.
-
-```bash
-rm db.sqlite3
-```
-
-Windows에서 DB가 사용 중이면 삭제가 실패할 수 있습니다.
-
-```text
-rm: cannot remove 'db.sqlite3': Device or resource busy
-```
-
-이 경우 아래 항목을 닫고 다시 삭제합니다.
-
-```text
-- 실행 중인 Django 서버
-- python manage.py shell
-- VS Code SQLite/DB viewer
-- DB Browser for SQLite
-```
-
 ---
 
 ## 6. DB 마이그레이션
@@ -135,7 +109,7 @@ python manage.py migrate
 보통 프로젝트에 migration 파일이 이미 포함되어 있으므로 일반 실행 환경에서는 `makemigrations`를 실행하지 않습니다.
 모델을 직접 수정한 경우에만 별도로 `makemigrations`를 실행합니다.
 
-PostgreSQL로 실행하면 `0009_place_geography_index`가 `Place`에 PostGIS `geog` 생성 컬럼과 GiST 인덱스를 만듭니다. SQLite에서는 이 마이그레이션이 아무 일도 하지 않고 넘어갑니다.
+`0009_place_geography_index`가 `Place`에 PostGIS `geog` 생성 컬럼과 GiST 인덱스를 만듭니다.
 
 적용 결과를 확인합니다.
 
@@ -301,8 +275,6 @@ cd backend
 
 pip install -r requirements.txt
 
-# .env 에 DB_ENGINE=postgres 설정 후
-
 python manage.py migrate
 
 python -X utf8 manage.py loaddata recommendations/fixtures/loaddata/tags.json
@@ -315,19 +287,6 @@ python manage.py repair_place_data
 마지막 `repair_place_data`까지 실행해야 현재 개발 DB와 같은 상태가 됩니다.
 
 DB를 완전히 비우고 다시 만들려면 `docker compose down -v` 후 다시 올립니다.
-
-SQLite로 실행하는 경우에는 `docker compose` 단계 대신 `rm db.sqlite3`를 실행합니다. 삭제가 실패하면 실행 중인 서버, shell, DB viewer를 종료한 뒤 다시 삭제합니다.
-
-### 기존 SQLite 데이터를 그대로 옮기는 경우
-
-이미 SQLite로 작업한 데이터가 있고 그것을 PostgreSQL로 옮기려는 경우에는 `loaddata` 대신 전용 명령어를 사용합니다.
-
-```bash
-python manage.py migrate_sqlite_to_postgres --dry-run   # 건수만 비교
-python manage.py migrate_sqlite_to_postgres             # 실제 복사
-```
-
-이 명령어는 `.env`의 `DB_ENGINE=postgres`와 PostgreSQL 쪽 `migrate` 완료를 전제로 하며, 대상 테이블에 이미 데이터가 있으면 해당 모델을 건너뜁니다. 자세한 내용은 `docs/02_data/postgres-migration.md`의 4번 항목을 참고하세요.
 
 ---
 

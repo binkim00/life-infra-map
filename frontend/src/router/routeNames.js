@@ -1,7 +1,7 @@
 import { matchPath } from 'react-router-dom'
 
 /**
- * Vue Router 의 name 을 그대로 옮겨 둡니다.
+ * 화면 전환에서 공통으로 사용하는 라우트 이름입니다.
  * 헤더/마스코트가 화면을 이름으로 구분하고 있어서, 이름이 사라지면 그 분기가 전부 무너집니다.
  * 순서도 의미가 있습니다. /boards/:boardType/write 가 /boards/:boardType/:postId 보다 앞이어야 합니다.
  */

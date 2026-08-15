@@ -29,7 +29,7 @@
 
 ## 현재 구현/수집 반영 상태
 
-- Django + DRF 백엔드와 Vue 프론트엔드 기본 구조를 생성했습니다.
+- Django + DRF, Spring Boot, React 프론트엔드 구조를 사용합니다.
 - 카카오 지도와 추천 결과 마커 표시 흐름을 테스트했습니다.
 - 흡연구역 데이터는 JSON 직접 조회 방식에서 DB 조회 방식으로 전환했습니다.
 - `Place`, `Tag`, `PlaceTag` 기반 태그 연결 구조를 사용합니다.
@@ -45,12 +45,12 @@
 - 관광지 블로그 기반 태그 후보 생성 스크립트와 결과 파일을 추가했습니다.
 - 진행 상황은 `docs/01_progress/PROGRESS.md`에 일차별로 기록합니다.
 
-- DB는 SQLite에서 PostgreSQL 16 + PostGIS 3.4로 전환했습니다. 반경/거리 질의를 파이썬 하버사인 대신 `ST_DWithin` 인덱스로 처리합니다.
+- DB는 PostgreSQL 16 + PostGIS 3.4로 고정하며 반경/거리 질의를 `ST_DWithin` 인덱스로 처리합니다.
 
 ## 구조 및 로컬 실행 참고 문서
 
 - 전체 구조(Django + Spring, 단일 PostgreSQL)는 `docs/00_project/hybrid-architecture.md`에 정리했습니다.
 - 로컬 DB는 `docker-compose.yml`의 `db` 서비스(PostGIS)로 실행합니다.
-- DB 전환 이유와 결과는 `docs/02_data/postgres-migration.md`에 정리했습니다.
+- PostgreSQL/PostGIS를 선택한 이유와 이관 검증은 `docs/02_data/postgres-migration.md`에 정리했습니다.
 - DB 데이터를 브라우저에서 확인하는 방법은 `docs/02_data/pgadmin-guide.md`에 정리했습니다.
 - 장소/태그 데이터 적재 절차는 `docs/02_data/db-seed-import-guide.md`에 정리했습니다.

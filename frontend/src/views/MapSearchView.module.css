@@ -256,7 +256,7 @@
   cursor: wait;
 }
 
-/* KakaoMap 이 들고 있는 클래스라 CSS Modules 해싱 대상이 아닙니다. (Vue 의 :deep 자리) */
+/* KakaoMap 내부 클래스라 CSS Modules 해싱 대상이 아닙니다. */
 .map-search-map-area :global(.map-section),
 .map-search-map-area :global(.map) {
   width: 100%;

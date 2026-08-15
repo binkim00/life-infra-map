@@ -199,43 +199,21 @@ WSGI_APPLICATION = 'config.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
-# DB_ENGINE 이 `postgres` 면 Postgres, 아니면 기존 SQLite 를 씁니다.
-# 전환 중에도 양쪽을 오갈 수 있도록 기본값은 SQLite 로 둡니다.
-DB_ENGINE = os.getenv("DB_ENGINE", "sqlite").strip().lower()
-
-if DB_ENGINE in {"postgres", "postgresql"}:
-    DATABASES = {
-        "default": {
-            # PostGIS 질의로 넘어가면 django.contrib.gis.db.backends.postgis 로 바꿉니다.
-            "ENGINE": "django.db.backends.postgresql",
-            "NAME": os.getenv("POSTGRES_DB", "life_infra_map"),
-            "USER": os.getenv("POSTGRES_USER", "life_infra_map"),
-            "PASSWORD": os.getenv("POSTGRES_PASSWORD", "life_infra_map"),
-            "HOST": os.getenv("POSTGRES_HOST", "127.0.0.1"),
-            "PORT": os.getenv("POSTGRES_PORT", "5432"),
-            # 요청마다 연결을 새로 맺지 않도록 재사용합니다.
-            "CONN_MAX_AGE": _env_int("DB_CONN_MAX_AGE", 60, 0, 600),
-            "OPTIONS": {
-                "connect_timeout": _env_int("DB_CONNECT_TIMEOUT", 5, 1, 30),
-            },
-        }
+# Django와 Spring은 하나의 PostgreSQL/PostGIS 데이터베이스를 공유합니다.
+DATABASES = {
+    "default": {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": os.getenv("POSTGRES_DB", "life_infra_map"),
+        "USER": os.getenv("POSTGRES_USER", "life_infra_map"),
+        "PASSWORD": os.getenv("POSTGRES_PASSWORD", "life_infra_map"),
+        "HOST": os.getenv("POSTGRES_HOST", "127.0.0.1"),
+        "PORT": os.getenv("POSTGRES_PORT", "5432"),
+        "CONN_MAX_AGE": _env_int("DB_CONN_MAX_AGE", 60, 0, 600),
+        "OPTIONS": {
+            "connect_timeout": _env_int("DB_CONNECT_TIMEOUT", 5, 1, 30),
+        },
     }
-else:
-    DATABASES = {
-        "default": {
-            "ENGINE": "django.db.backends.sqlite3",
-            "NAME": BASE_DIR / "db.sqlite3",
-        }
-    }
-
-# SQLite -> Postgres 이관용 읽기 전용 연결입니다.
-# `migrate_sqlite_to_postgres` 커맨드가 이 별칭에서 읽습니다. 이관이 끝나면 지워도 됩니다.
-LEGACY_SQLITE_PATH = os.getenv("LEGACY_SQLITE_PATH", str(BASE_DIR / "db.sqlite3"))
-if DB_ENGINE in {"postgres", "postgresql"} and os.path.exists(LEGACY_SQLITE_PATH):
-    DATABASES["legacy_sqlite"] = {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": LEGACY_SQLITE_PATH,
-    }
+}
 
 
 # Password validation

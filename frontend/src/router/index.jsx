@@ -26,7 +26,7 @@ import SignupView from '@/views/SignupView'
 import UpgradeGuideView from '@/views/UpgradeGuideView'
 
 /**
- * 경로와 순서는 Vue Router 설정을 그대로 옮긴 것입니다.
+ * 애플리케이션 경로와 라우트 우선순위를 정의합니다.
  * 화면 이름은 @/router/routeNames.js 가 들고 있습니다.
  */
 const router = createBrowserRouter([

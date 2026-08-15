@@ -188,7 +188,7 @@ import {
 
 const IS_DEV = import.meta.env.DEV
 
-// 원본 Vue 파일에서는 이 상수를 import 하지 않아 참조 오류가 났습니다. SDK 기본 문구와 같게 둡니다.
+// SDK 기본 오류 문구와 일치시킵니다.
 const KAKAO_MAP_LOAD_ERROR_MESSAGE = '카카오맵 SDK를 불러오지 못했습니다.'
 
 const normalizeTab = (tab) => (['search', 'map'].includes(tab) ? tab : 'search')

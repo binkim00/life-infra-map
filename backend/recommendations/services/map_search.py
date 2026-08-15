@@ -253,7 +253,7 @@ def calculate_distance_m(lat1, lng1, lat2, lng2):
 
 
 def supports_postgis():
-    """PostGIS 를 쓸 수 있는 DB 인지 확인한다. SQLite 로 되돌려도 동작해야 하므로 매번 확인한다."""
+    """현재 연결이 PostgreSQL/PostGIS 경로를 지원하는지 확인한다."""
     return connection.vendor == "postgresql"
 
 
@@ -268,7 +268,7 @@ def apply_radius_filter(queryset, lat, lng, radius_m):
 
     PostGIS 가 있으면 `ST_DWithin` 이 GiST 인덱스로 정확한 반경을 처리하므로
     파이썬에서 행마다 하버사인을 돌 필요가 없다.
-    없으면 기존대로 bounding box 로 좁히고 거리는 파이썬에서 계산한다.
+    좌표가 없으면 거리 조건을 적용하지 않는다.
 
     (쿼리셋, DB 가 거리를 계산했는지 여부) 를 돌려준다.
     """

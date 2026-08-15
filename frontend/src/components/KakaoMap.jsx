@@ -21,7 +21,7 @@ const nextFrame = () => new Promise((resolve) => {
  * 카카오 지도는 React 밖에서 DOM 을 직접 다룹니다.
  * 렌더마다 함수가 새로 만들어지면 리스너가 옛 값을 붙들게 되므로,
  * 지도 로직 전체를 컴포넌트 밖 클로저에 두고 최신 props 는 ref 로 읽습니다.
- * (Vue 버전의 <script setup> 클로저와 같은 구조입니다.)
+ * 지도 SDK 상태를 컴포넌트 인스턴스 안에서 관리합니다.
  */
 const createMapEngine = ({ containerRef, propsRef, callbacksRef }) => {
   let map = null
@@ -860,7 +860,7 @@ const KakaoMap = ({
   callbacksRef.current = { onSelectPlace, onCenterChange, onMarkerTargetChange }
 
   /**
-   * Vue 의 deep watch 는 내용이 바뀔 때만 돌지만 React 의 의존성은 참조로 비교합니다.
+   * React 의 효과 의존성은 참조로 비교되므로 변경 여부를 명시적으로 판단합니다.
    * 부모가 매 렌더 새 배열을 넘겨도 마커를 다시 그리지 않도록 내용으로 서명을 만듭니다.
    */
   const placesSignature = useMemo(() => (
@@ -897,7 +897,7 @@ const KakaoMap = ({
     }
   }, [])
 
-  // 아래 효과들은 Vue 의 watch 와 같은 자리입니다. 첫 렌더는 initMap 이 처리하므로 건너뜁니다.
+  // 첫 렌더는 initMap이 처리하므로 이후 변경만 반영합니다.
   const isFirstPlacesSync = useRef(true)
   useEffect(() => {
     if (isFirstPlacesSync.current) {

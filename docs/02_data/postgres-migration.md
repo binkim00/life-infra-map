@@ -2,7 +2,7 @@
 
 이 문서는 프로젝트 DB를 SQLite에서 PostgreSQL로 바꾼 이유와 결과를 정리합니다.
 
-전환은 완료되었습니다. 관련 커밋은 `434ca25`(Postgres 전환 및 로컬 DB 컨테이너 구성), `6d3f273`(반경/거리 계산을 PostGIS 로 이전)입니다.
+전환은 완료되었습니다. 관련 커밋은 `434ca25`(Postgres 전환 및 로컬 DB 컨테이너 구성), `6d3f273`(반경/거리 계산을 PostGIS로 이전)입니다. 현재 애플리케이션은 PostgreSQL/PostGIS 전용이며 예전 DB 엔진으로 돌아가는 실행 경로는 제거했습니다.
 
 ---
 
@@ -19,11 +19,7 @@
 | 반경/거리 계산 | bounding box + 파이썬 하버사인 | `ST_DWithin` + `ST_Distance` (GiST 인덱스) |
 | 연결 관리 | 해당 없음 | `CONN_MAX_AGE=60`, `connect_timeout=5` |
 
-전환 스위치는 `.env`의 `DB_ENGINE`입니다. 기본값이 `sqlite`이므로 값을 지정하지 않으면 기존 동작을 유지합니다.
-
-```text
-DB_ENGINE=postgres
-```
+현재 Django 설정은 `django.db.backends.postgresql`로 고정되어 있습니다. 접속 대상만 `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_HOST`, `POSTGRES_PORT`로 지정합니다.
 
 ---
 
@@ -100,15 +96,11 @@ SQLite는 파일이므로 컨테이너로 배포하면 재시작마다 데이터
 
 `dumpdata`/`loaddata`는 786,882건을 한 번에 JSON으로 만들면서 메모리를 크게 쓰기 때문에 사용하지 않았습니다.
 
-대신 전용 관리 명령어를 만들었습니다.
-
-```text
-backend/recommendations/management/commands/migrate_sqlite_to_postgres.py
-```
+대신 당시 전용 관리 명령어를 만들어 일회성으로 이관했습니다. 이관 완료 후 해당 명령과 레거시 DB 연결은 제거했습니다.
 
 동작 방식은 다음과 같습니다.
 
-- `settings.py`에 `legacy_sqlite` 읽기 전용 연결을 추가해 두 DB를 동시에 연결
+- 두 데이터베이스를 동시에 연결해 원본을 읽기 전용으로 조회
 - 외래키가 가리키는 쪽부터 순서대로 모델별 복사
 - `iterator()`로 SQLite를 스트리밍해 메모리 사용을 억제
 - 2,000건 단위 `bulk_create`
@@ -117,11 +109,6 @@ backend/recommendations/management/commands/migrate_sqlite_to_postgres.py
 PK를 유지한 이유는 `PlaceTag` 571,177건이 `Place.id`를 참조하기 때문입니다. PK가 바뀌면 참조를 전부 다시 매핑해야 합니다.
 
 시퀀스 재설정을 하지 않으면 시퀀스가 1에 머물러 있어서 새 글을 쓸 때 중복 키 오류가 납니다.
-
-```bash
-python manage.py migrate_sqlite_to_postgres --dry-run   # 건수만 비교
-python manage.py migrate_sqlite_to_postgres             # 실제 복사
-```
 
 ---
 
@@ -162,13 +149,13 @@ geog geography(Point, 4326)
 GENERATED ALWAYS AS (ST_SetSRID(ST_MakePoint(lng, lat), 4326)::geography) STORED
 ```
 
-생성 컬럼이므로 애플리케이션이 값을 채울 필요가 없습니다. 기존 `lat`/`lng` 컬럼을 그대로 두었기 때문에 SQLite로 되돌려도 코드가 동작합니다. GiST 인덱스 크기는 약 16MB입니다.
+생성 컬럼이므로 애플리케이션이 값을 채울 필요가 없습니다. 기존 `lat`/`lng` 컬럼은 외부 API와 좌표를 교환하기 위해 함께 유지합니다. GiST 인덱스 크기는 약 16MB입니다.
 
 ---
 
 ## 6. 검증 결과
 
-현재 `db.sqlite3`와 PostgreSQL의 건수를 비교한 결과입니다.
+이관 당시 원본과 PostgreSQL의 건수를 비교한 결과입니다.
 
 | 모델 | SQLite | PostgreSQL | 비고 |
 |---|---|---|---|
@@ -192,15 +179,9 @@ GENERATED ALWAYS AS (ST_SetSRID(ST_MakePoint(lng, lat), 4326)::geography) STORED
 
 ---
 
-## 7. 되돌리는 방법
+## 7. 현재 운영 기준
 
-`.env`의 값만 바꾸면 됩니다.
-
-```text
-DB_ENGINE=sqlite
-```
-
-`backend/db.sqlite3`와 기존 코드 경로가 그대로 남아 있으므로 즉시 되돌아갑니다. 단, PostgreSQL로 전환한 뒤에 쓴 데이터는 SQLite에 없습니다.
+PostgreSQL/PostGIS가 유일한 데이터베이스입니다. Django와 Spring은 같은 데이터베이스를 공유하며 Django가 마이그레이션을 소유합니다. 로컬 환경도 Docker Compose의 `db` 서비스를 사용하므로 별도 파일 DB나 엔진 전환 스위치는 제공하지 않습니다.
 
 ---
 
@@ -211,7 +192,6 @@ DB_ENGINE=sqlite
 | trigram 인덱스 | 측정 결과 플래너가 순차 스캔을 선택했고(Parallel Seq Scan 36ms vs 강제 Bitmap Index Scan 132ms), 한글 3글자 토큰의 선택도가 낮아 보류했습니다. `pg_trgm` 확장은 켜 두었으므로 테이블이 100만 건을 넘으면 재검토합니다. |
 | `django.contrib.gis` | 현재 PostGIS 질의는 raw SQL로 처리합니다. `GeoDjango` 백엔드(`django.contrib.gis.db.backends.postgis`)와 `PointField`로 옮기는 것은 이후 판단합니다. |
 | loaddata fixture | `recommendations/fixtures/loaddata/`의 fixture는 2026년 7월 7일 기준 스냅샷입니다. 차이는 `repair_place_data` 커맨드로 재현되므로 fixture를 다시 만들지 않습니다. 절차는 `docs/02_data/db-seed-import-guide.md`의 9번 항목에 있습니다. |
-| SQLite 정리 | 이관이 안정화되면 `db.sqlite3`와 `settings.py`의 `legacy_sqlite` 연결, `migrate_sqlite_to_postgres` 커맨드를 제거할 수 있습니다. 되돌릴 필요가 없어질 때까지는 남겨 둡니다. |
 
 ---
 

@@ -6,7 +6,7 @@ import NotificationMenu from './NotificationMenu'
 
 /**
  * app.css 가 `.nav-link.router-link-active` 를 보고 있습니다.
- * 스타일시트를 그대로 쓰기 위해 Vue Router 가 붙이던 클래스 이름을 유지합니다.
+ * 라우트 활성 상태에 맞춰 헤더 링크 클래스를 지정합니다.
  */
 const navLinkClassName = ({ isActive }, extraClass = '') => (
   ['nav-link', extraClass, isActive ? 'router-link-active' : ''].filter(Boolean).join(' ')

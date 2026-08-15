@@ -155,7 +155,7 @@ winget install dbeaver.dbeaver
 
 접속 정보는 4번 표의 **호스트에서 접속할 때** 열을 사용합니다.
 
-PostgreSQL과 SQLite를 한 창에서 볼 수 있으므로, 기존 `backend/db.sqlite3` 데이터와 비교할 때 유용합니다.
+PostgreSQL 연결과 쿼리 결과를 한 화면에서 확인할 수 있습니다.
 
 ---
 

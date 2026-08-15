@@ -23,7 +23,7 @@ DB 는 나누지 않는다  →  life_infra_map 하나를 공유
 
 ```text
                     ┌──────────────────────┐
-                    │  Vue (:5173)         │
+                    │  React (:5173)       │
                     └──────────┬───────────┘
                                │
               ┌────────────────┴────────────────┐
@@ -57,7 +57,7 @@ DB 는 나누지 않는다  →  life_infra_map 하나를 공유
    └──────────────────────────────────────────────────┘
 ```
 
-앱(Django, Spring, Vue)은 호스트에서 직접 실행하고, 인프라(DB, pgAdmin, MinIO)만 컨테이너로 띄웁니다.
+앱(Django, Spring, React)은 호스트에서 직접 실행하고, 인프라(DB, pgAdmin, MinIO)만 컨테이너로 띄웁니다.
 
 ---
 
@@ -127,7 +127,7 @@ Java/Spring을 담당하는 팀원과 Python/Django를 담당하는 팀원이 �
 |---|---|
 | **마이그레이션** | 스키마 변경 이력이 파일로 남고 순서가 보장됩니다. `0001`~`0009`가 그 기록이며, PostGIS 생성 컬럼 추가(`0009`)도 여기서 처리했습니다. 그래서 스키마 소유자를 Django로 정했습니다. |
 | **Admin 자동 생성** | 제보 승인, 태그 검수, 신고 처리 화면을 모델만 등록하면 얻습니다. 관리자 화면을 직접 만들 필요가 없습니다. |
-| **management command** | `import_fixture_places`, `import_cafe_place_tags`, `repair_place_data`, `migrate_sqlite_to_postgres`, `evaluate_ai_search` 등 데이터 작업 도구를 ORM과 같은 코드로 작성합니다. 78만 건 이관 스크립트도 이 구조로 만들었습니다. |
+| **management command** | 장소 적재, 태그 생성, 데이터 복구, 검색 평가 도구를 ORM과 같은 코드로 작성합니다. |
 | **fixtures** | `dumpdata`/`loaddata`로 DB 상태를 파일로 주고받습니다. |
 | **Python 생태계** | OpenAI SDK, 데이터 정제 스크립트, 좌표·문자열 처리를 같은 언어로 씁니다. AI 검색 오케스트레이터가 Django에 있는 핵심 이유입니다. |
 | **DRF** | serializer와 뷰로 API를 빠르게 만듭니다. |
@@ -298,7 +298,7 @@ DATABASES = {
 }
 ```
 
-값은 `backend/.env`에서 `load_dotenv`로 읽습니다. `DB_ENGINE=postgres`일 때만 이 설정이 적용됩니다.
+접속 값은 `backend/.env`에서 `load_dotenv`로 읽으며 PostgreSQL 설정에 직접 적용됩니다.
 
 ### 7.2 Spring
 
@@ -478,7 +478,6 @@ Spring이 발급한 토큰을 Django도 검증합니다. `backend/accounts/authe
 | 항목 | 내용 |
 |---|---|
 | Spring이 슈퍼유저로 접속 중 | `life_infra_map` 역할이 superuser입니다. 현재는 `ddl-auto: validate`가 유일한 안전장치이며 설정 한 줄로 뚫립니다. 배포 전에 DDL 권한이 없는 별도 역할(`SELECT/INSERT/UPDATE/DELETE` + 시퀀스 `USAGE`만 부여)로 분리하는 것이 좋습니다. |
-| SQLite 폴백이 사실상 무효 | `DB_ENGINE=sqlite`로 되돌리는 경로는 남아 있지만 Spring은 PostgreSQL만 접속합니다. Spring이 포함된 통합 환경에서는 성립하지 않고, Django 단독 테스트용으로만 의미가 있습니다. |
 | 환경변수 이중 관리 | Django는 `.env`, Spring은 OS 환경변수를 읽습니다. 값이 어긋나면 서로 다른 DB를 보거나 토큰 검증에 실패합니다. 맞춰야 하는 값 목록은 7.5에 있습니다. |
 | multipart 업로드 테스트 | 기본 회귀 테스트는 `StorageService`를 mock 처리해 회원가입·프로필 변경·게시글 이미지 업로드를 검증합니다. 실제 MinIO 저장은 별도 `integrationTest`로 분리했습니다. |
 | 연결 수 | `max_connections=100`, Django `CONN_MAX_AGE=60` + HikariCP 기본 10이므로 로컬에서는 여유가 있습니다. |
@@ -539,6 +538,6 @@ cd spring-api
 
 ## 13. 관련 문서
 
-- `docs/02_data/postgres-migration.md` — SQLite에서 PostgreSQL로 옮긴 이유와 결과
+- `docs/02_data/postgres-migration.md` — PostgreSQL/PostGIS 전환 이유와 검증 결과
 - `docs/02_data/pgadmin-guide.md` — DB 데이터를 브라우저에서 확인하는 방법
 - `docs/02_data/db-seed-import-guide.md` — 새 환경에서 DB를 만들고 데이터를 적재하는 절차

@@ -174,9 +174,9 @@ class AdminApiTest extends ApiTestBase {
     // ---------- 목록 응답 형태 ----------
     //
     // Django 는 이 목록들을 배열로 주고 프론트도 배열을 전제로 씁니다.
-    //   AdminInquiryView.vue      response.data.map(...)
-    //   ReportListView.vue        reportList.map(...)
-    //   MyInquiryView.vue         v-for + .length
+    //   AdminInquiryView          response.data.map(...)
+    //   ReportListView            reportList.map(...)
+    //   MyInquiryView             목록 렌더링 + 길이 확인
     // Spring 이관 과정에서 페이지네이션 객체로 감싸 세 화면이 깨진 적이 있습니다.
     // 형태를 바꾸면 프론트가 함께 바뀌어야 하므로 계약으로 고정합니다.
 

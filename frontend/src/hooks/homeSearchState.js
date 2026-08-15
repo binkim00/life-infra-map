@@ -9,7 +9,7 @@ import { getTextValue, matchesResultFilter } from '@/utils/homePlaceHelpers'
 /**
  * 홈 검색 화면의 상태입니다.
  *
- * Vue 에서는 ref 를 고치고 바로 다음 줄에서 computed 를 읽는 코드가 많습니다.
+ * 상태 변경 직후에도 일관된 파생 값을 읽을 수 있도록 구성합니다.
  * (예: setMainResults() 직후 displayResults.value.length 로 분기)
  * React 의 setState 는 비동기라 그대로 옮기면 이 흐름이 깨지므로,
  * 검색 파이프라인이 쓰는 상태는 일반 객체로 두고 동기적으로 고칩니다.
@@ -111,7 +111,7 @@ export const mergeAndSortMainResults = (primaryResults = [], secondaryResults = 
   return mergedResults
 }
 
-/** Vue 의 computed 와 같은 자리입니다. 읽을 때마다 현재 상태로 계산합니다. */
+/** 읽을 때마다 현재 상태를 기준으로 파생 값을 계산합니다. */
 export const getDisplayResults = (state) => {
   if (state.preserveBackendResultOrder) {
     return Array.isArray(state.mainResults) ? state.mainResults : []

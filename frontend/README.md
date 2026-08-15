@@ -1,38 +1,10 @@
-# .
+# life-infra-map frontend
 
-This template should help get you started developing with Vue 3 in Vite.
+React 19와 Vite로 구성된 프런트엔드입니다.
 
-## Recommended IDE Setup
-
-[VS Code](https://code.visualstudio.com/) + [Vue (Official)](https://marketplace.visualstudio.com/items?itemName=Vue.volar) (and disable Vetur).
-
-## Recommended Browser Setup
-
-- Chromium-based browsers (Chrome, Edge, Brave, etc.):
-  - [Vue.js devtools](https://chromewebstore.google.com/detail/vuejs-devtools/nhdogjmejiglipccpnnnanhbledajbpd)
-  - [Turn on Custom Object Formatter in Chrome DevTools](http://bit.ly/object-formatters)
-- Firefox:
-  - [Vue.js devtools](https://addons.mozilla.org/en-US/firefox/addon/vue-js-devtools/)
-  - [Turn on Custom Object Formatter in Firefox DevTools](https://fxdx.dev/firefox-devtools-custom-object-formatters/)
-
-## Customize configuration
-
-See [Vite Configuration Reference](https://vite.dev/config/).
-
-## Project Setup
-
-```sh
-npm install
-```
-
-### Compile and Hot-Reload for Development
-
-```sh
+```bash
+npm ci
 npm run dev
 ```
 
-### Compile and Minify for Production
-
-```sh
-npm run build
-```
+기본 개발 서버는 `http://localhost:5173`에서 실행됩니다. 테스트는 `npm test`, 배포 빌드는 `npm run build`로 확인합니다.

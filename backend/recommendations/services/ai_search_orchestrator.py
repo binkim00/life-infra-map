@@ -2219,8 +2219,7 @@ def _order_by_distance(queryset, lat, lng):
     """
     후보를 가까운 순으로 정렬한다.
 
-    PostGIS 가 있으면 GiST 인덱스를 타는 `ST_Distance` 로 DB 에서 정렬하고,
-    없으면(SQLite 로 되돌린 경우) 기존 품질순으로 둔다.
+    좌표가 있으면 GiST 인덱스를 타는 `ST_Distance` 로 DB 에서 정렬한다.
     좌표가 없으면 거리 정렬 자체가 불가능하므로 품질순을 쓴다.
     """
     if lat is None or lng is None or not supports_postgis():

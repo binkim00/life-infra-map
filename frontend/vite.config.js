@@ -12,12 +12,12 @@ export default defineConfig({
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
     },
-    // 확장자 없는 import 가 남아 있는 .vue 파일로 붙지 않도록 명시합니다.
+    // 프런트엔드 소스에서 사용하는 모듈 확장자만 명시합니다.
     extensions: ['.mjs', '.js', '.jsx', '.json'],
   },
   css: {
     modules: {
-      // Vue 의 scoped 스타일을 그대로 옮기려고 CSS Modules 를 씁니다.
+      // 컴포넌트별 스타일 격리를 위해 CSS Modules를 씁니다.
       // 원래 이름(.auth-page)과 camelCase(styles.authPage) 를 모두 쓸 수 있게 둡니다.
       localsConvention: 'camelCase',
     },
