@@ -8,6 +8,7 @@ from recommendations.management.commands.backfill_public_facility_raw import (
     merge_missing_official_fields,
     official_fields,
     parse_source_date,
+    source_date_value,
 )
 from recommendations.management.commands.import_fixture_places import enrich_items_with_raw_fallback
 
@@ -46,3 +47,8 @@ class PublicFacilityRawBackfillTests(SimpleTestCase):
     def test_parses_source_basis_date_without_inventing_missing_date(self):
         self.assertEqual(str(parse_source_date("2026-05-21")), "2026-05-21")
         self.assertIsNone(parse_source_date(""))
+        self.assertEqual(str(parse_source_date("20250604092532")), "2025-06-04")
+        self.assertEqual(
+            source_date_value({"raw": {"source_updated_at": "2026-06-04"}}, {}),
+            "2026-06-04",
+        )

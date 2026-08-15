@@ -79,6 +79,23 @@ class MeaningfulTagRuleTests(TestCase):
         })
         self.assertEqual({match["tag"] for match in matches}, {"24시간운영"})
 
+    def test_extracts_only_direct_shelter_facilities_and_hours(self):
+        matches = extract_meaningful_tags({
+            "CHCK_MATTER_NIGHT_OPN_AT": "Y",
+            "CHCK_MATTER_WKEND_HDAY_OPN_AT": "Y",
+            "CHCK_MATTER_STAYNG_PSBL_AT": "Y",
+            "COLR_HOLD_ARCNDTN": 2,
+            "WKDAY_OPER_BEGIN_TIME": "0000", "WKDAY_OPER_END_TIME": "2400",
+            "WKEND_HDAY_OPER_BEGIN_TIME": "0000", "WKEND_HDAY_OPER_END_TIME": "2400",
+        })
+        self.assertEqual({match["tag"] for match in matches}, {
+            "야간운영", "주말휴일운영", "숙박가능", "냉방시설있음", "24시간운영",
+        })
+
+    def test_does_not_infer_all_day_shelter_from_night_flag_alone(self):
+        matches = extract_meaningful_tags({"CHCK_MATTER_NIGHT_OPN_AT": "Y"})
+        self.assertEqual({match["tag"] for match in matches}, {"야간운영"})
+
     def test_persists_confirmed_tag_and_stable_evidence_idempotently(self):
         place = Place.objects.create(
             name="공식 상세정보 식당",

@@ -81,6 +81,18 @@ MEANINGFUL_TAG_RULES = (
     MeaningfulTagRule("편의시설", (
         "공원보유시설(편익시설)", "편익시설", "편의시설",
     ), "공식 원문에 편의시설이 명시됨", 95),
+    MeaningfulTagRule("야간운영", (
+        "CHCK_MATTER_NIGHT_OPN_AT", "야간운영여부", "야간개방여부",
+    ), "공식 원문에 야간 개방 여부가 Y로 명시됨", 96),
+    MeaningfulTagRule("주말휴일운영", (
+        "CHCK_MATTER_WKEND_HDAY_OPN_AT", "주말휴일개방여부",
+    ), "공식 원문에 주말·휴일 개방 여부가 Y로 명시됨", 96),
+    MeaningfulTagRule("냉방시설있음", (
+        "COLR_HOLD_ARCNDTN", "냉방시설보유수", "에어컨보유수",
+    ), "공식 원문에 냉방시설 보유 수가 1개 이상 명시됨", 97),
+    MeaningfulTagRule("숙박가능", (
+        "CHCK_MATTER_STAYNG_PSBL_AT", "숙박가능여부",
+    ), "공식 원문에 숙박 가능 여부가 Y로 명시됨", 96),
 )
 
 
@@ -115,6 +127,11 @@ def meaningful_value(field, value, tag):
             return False
     if tag == "카드결제가능" and field == normalize_field_name("결제방법"):
         return "카드" in compact
+    if tag == "냉방시설있음":
+        try:
+            return float(compact) > 0
+        except ValueError:
+            return False
     if tag == "반려동물동반" and compact in {"n", "no", "0"}:
         return False
     if compact in {"n", "no", "0", "false"}:
@@ -168,19 +185,42 @@ def extract_24_hour_match(leaves):
 
     days = "".join(values.get(normalize_field_name("운영요일"), "").split())
     required_days = ("평일", "토요일", "공휴일")
-    if not all(day in days for day in required_days):
-        return None
-    schedules = []
-    for prefix in required_days:
-        start = values.get(normalize_field_name(f"{prefix}운영시작시각"), "")
-        end = values.get(normalize_field_name(f"{prefix}운영종료시각"), "")
-        schedules.append((start, end))
-    if all(start in {"00:00", "0:00"} and end in {"23:59", "24:00"} for start, end in schedules):
+    if all(day in days for day in required_days):
+        schedules = []
+        for prefix in required_days:
+            start = values.get(normalize_field_name(f"{prefix}운영시작시각"), "")
+            end = values.get(normalize_field_name(f"{prefix}운영종료시각"), "")
+            schedules.append((start, end))
+        if all(start in {"00:00", "0:00"} and end in {"23:59", "24:00"} for start, end in schedules):
+            return {
+                "tag": "24시간운영",
+                "field": "운영요일+요일별운영시각",
+                "value": f"{days}; {schedules}",
+                "description": "공식 운영요일과 요일별 시각이 전일 운영으로 명시됨",
+                "confidence": 97,
+            }
+    weekday_start = values.get(normalize_field_name("WKDAY_OPER_BEGIN_TIME"), "")
+    weekday_end = values.get(normalize_field_name("WKDAY_OPER_END_TIME"), "")
+    weekend_start = values.get(normalize_field_name("WKEND_HDAY_OPER_BEGIN_TIME"), "")
+    weekend_end = values.get(normalize_field_name("WKEND_HDAY_OPER_END_TIME"), "")
+    weekend_enabled = values.get(normalize_field_name("CHCK_MATTER_WKEND_HDAY_OPN_AT"), "").lower()
+    if (
+        normalize_clock_text(weekday_start) == "0000"
+        and normalize_clock_text(weekday_end) in {"2359", "2400"}
+        and weekend_enabled in {"y", "yes", "true", "1"}
+        and normalize_clock_text(weekend_start) == "0000"
+        and normalize_clock_text(weekend_end) in {"2359", "2400"}
+    ):
         return {
             "tag": "24시간운영",
-            "field": "운영요일+요일별운영시각",
-            "value": f"{days}; {schedules}",
-            "description": "공식 운영요일과 요일별 시각이 전일 운영으로 명시됨",
+            "field": "평일+주말휴일운영시각",
+            "value": f"weekday={weekday_start}-{weekday_end}; weekend={weekend_start}-{weekend_end}",
+            "description": "공식 평일·주말·휴일 운영시각이 모두 전일 운영으로 명시됨",
             "confidence": 97,
         }
     return None
+
+
+def normalize_clock_text(value):
+    digits = "".join(character for character in str(value or "") if character.isdigit())
+    return digits.zfill(4) if digits else ""

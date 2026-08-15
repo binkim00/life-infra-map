@@ -27,6 +27,16 @@ SOURCE_CONFIG = {
         "path": "ExData/ImportPlan/final/citypark_db_ready.json",
         "container": "place_candidates",
     },
+    "tourism": {
+        "source": "tour_api",
+        "path": "ExData/ImportPlan/final/tourism_db_ready.json",
+        "container": "place_candidates",
+    },
+    "shelter": {
+        "source": "heat_shelter_api",
+        "path": "ExData/Cleaned/shelter_places.json",
+        "container": None,
+    },
 }
 
 
@@ -112,7 +122,7 @@ def backfill_category(category, *, region="", limit=None, batch_size=500, dry_ru
         processed_ids.append(place.id)
         official = official_fields(row)
         merged, added = merge_missing_official_fields(place.raw, official)
-        observed_date = parse_source_date(row.get("source_updated_at") or official.get("데이터기준일자"))
+        observed_date = parse_source_date(source_date_value(row, official))
         date_changed = observed_date is not None and (
             place.source_updated_at is None or observed_date > place.source_updated_at
         )
@@ -174,10 +184,39 @@ def parse_source_date(value):
     text = str(value or "").strip()
     if not text:
         return None
+    if len(text) >= 8 and text[:8].isdigit() and "-" not in text[:10]:
+        text = f"{text[:4]}-{text[4:6]}-{text[6:8]}"
     try:
         return date.fromisoformat(text[:10])
     except ValueError:
         return None
+
+
+def source_date_value(row, official):
+    for key in ("source_updated_at", "데이터기준일자", "reference_date", "MODF_TIME", "modifiedtime"):
+        value = find_nested_value(row, key)
+        if value not in (None, ""):
+            return value
+        value = find_nested_value(official, key)
+        if value not in (None, ""):
+            return value
+    return None
+
+
+def find_nested_value(value, target):
+    if isinstance(value, dict):
+        if target in value:
+            return value[target]
+        for child in value.values():
+            found = find_nested_value(child, target)
+            if found not in (None, ""):
+                return found
+    elif isinstance(value, list):
+        for child in value:
+            found = find_nested_value(child, target)
+            if found not in (None, ""):
+                return found
+    return None
 
 
 def neutralize_unsupported_all_day_evidence(place_ids, *, dry_run=False):
