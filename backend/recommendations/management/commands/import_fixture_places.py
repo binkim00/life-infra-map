@@ -10,6 +10,7 @@ from recommendations.models import Place, PlaceTag, Tag
 
 
 BACKEND_DIR = Path(__file__).resolve().parents[3]
+PROJECT_DIR = BACKEND_DIR.parent
 FIXTURES_PLACES_DIR = BACKEND_DIR / "recommendations" / "fixtures" / "places"
 
 PLACE_FILE_CONFIGS = {
@@ -36,6 +37,7 @@ PLACE_FILE_CONFIGS = {
         "kind": "db_ready",
         "default_category": "toilet",
         "default_source": "public_toilet_standard",
+        "raw_fallback": PROJECT_DIR / "ExData" / "Cleaned" / "toilet_places.json",
     },
     "smoking": {
         "filename": "smoking_places_merged_deduplicated.json",
@@ -226,6 +228,7 @@ class Command(BaseCommand):
 
             data = read_json(path)
             items, external_skipped = extract_items(data, config)
+            items, raw_fallback_count = enrich_items_with_raw_fallback(items, config)
 
             if limit is not None:
                 items = items[:limit]
@@ -240,6 +243,8 @@ class Command(BaseCommand):
             self.stdout.write(f"파일: {path}")
             self.stdout.write(f"입력 후보: {len(items)}개")
             self.stdout.write(f"external_places 스킵: {external_skipped}개")
+            if raw_fallback_count:
+                self.stdout.write(f"공식 raw 복원: {raw_fallback_count}개")
 
             with transaction.atomic():
                 for item in items:
@@ -349,6 +354,38 @@ def extract_items(data, config):
         return data, 0
 
     raise CommandError(f"지원하지 않는 kind입니다: {kind}")
+
+
+def enrich_items_with_raw_fallback(items, config):
+    path = config.get("raw_fallback")
+    if not path:
+        return items, 0
+    fallback_rows = read_json(path)
+    if not isinstance(fallback_rows, list):
+        raise CommandError("raw fallback 파일은 list 구조여야 합니다.")
+    fallback_by_id = {
+        clean_text(row.get("external_id")): row
+        for row in fallback_rows
+        if clean_text(row.get("external_id"))
+    }
+    enriched = []
+    restored = 0
+    for item in items:
+        external_id = clean_text(pick_first(item, EXTERNAL_ID_KEYS))
+        fallback = fallback_by_id.get(external_id)
+        official = (fallback or {}).get("raw")
+        if not isinstance(official, dict):
+            enriched.append(item)
+            continue
+        updated = dict(item)
+        current_raw = updated.get("raw")
+        current_raw = dict(current_raw) if isinstance(current_raw, dict) else dict(item)
+        current_raw["official_source"] = official
+        updated["raw"] = current_raw
+        updated["source_updated_at"] = fallback.get("source_updated_at") or updated.get("source_updated_at")
+        enriched.append(updated)
+        restored += 1
+    return enriched, restored
 
 
 def build_place_data(item, config):

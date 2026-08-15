@@ -16,7 +16,7 @@ SOURCE_POLICY = {
     "library": ["library standard/Place.raw", "official homepage", "naver_blog_search supplement"],
     "beach": ["beach_api/Place.raw", "official/local government", "naver_blog_search supplement"],
     "parking": ["public_parking_standard/Place.raw", "field_rule", "naver_blog_search supplement"],
-    "toilet": ["public_toilet_standard/Place.raw", "field_rule when fields are retained", "naver_blog_search last"],
+    "toilet": ["public_toilet_standard/Place.raw", "field_rule", "naver_blog_search last"],
     "shelter": ["heat_shelter_api/Place.raw", "field_rule", "naver_blog_search last"],
 }
 

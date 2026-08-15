@@ -1,13 +1,19 @@
 from django.test import TestCase
+from django.utils import timezone
 
 from recommendations.management.commands.generate_meaningful_place_tags import (
     generate_meaningful_tags,
+    observed_at_for_place,
 )
 from recommendations.models import Place, PlaceTag, PlaceTagEvidence
 from recommendations.services.meaningful_tag_rules import extract_meaningful_tags
 
 
 class MeaningfulTagRuleTests(TestCase):
+    def test_source_date_becomes_timezone_aware_evidence_observation(self):
+        place = Place(source_updated_at=timezone.localdate())
+        self.assertTrue(timezone.is_aware(observed_at_for_place(place, timezone.now())))
+
     def test_extracts_only_evidence_backed_non_category_attributes(self):
         matches = extract_meaningful_tags({
             "category": "카페",
@@ -34,6 +40,34 @@ class MeaningfulTagRuleTests(TestCase):
             {match["tag"] for match in matches},
             {"무료이용", "놀이시설"},
         )
+
+    def test_extracts_direct_toilet_accessibility_and_all_day_facts(self):
+        matches = extract_meaningful_tags({
+            "남성용-장애인용대변기수": "1",
+            "여성용-장애인용대변기수": "0",
+            "개방시간상세": "24시간 연중무휴",
+        })
+        self.assertEqual(
+            {match["tag"] for match in matches},
+            {"장애인시설", "24시간운영"},
+        )
+
+    def test_does_not_infer_accessibility_or_all_day_without_direct_facts(self):
+        matches = extract_meaningful_tags({
+            "category": "toilet",
+            "남성용-장애인용대변기수": "0",
+            "개방시간상세": "평일 09:00~18:00",
+        })
+        self.assertEqual(matches, [])
+
+    def test_extracts_all_day_parking_only_when_every_day_is_full_day(self):
+        matches = extract_meaningful_tags({
+            "운영요일": "평일+토요일+공휴일",
+            "평일운영시작시각": "00:00", "평일운영종료시각": "23:59",
+            "토요일운영시작시각": "00:00", "토요일운영종료시각": "23:59",
+            "공휴일운영시작시각": "00:00", "공휴일운영종료시각": "23:59",
+        })
+        self.assertEqual({match["tag"] for match in matches}, {"24시간운영"})
 
     def test_persists_confirmed_tag_and_stable_evidence_idempotently(self):
         place = Place.objects.create(

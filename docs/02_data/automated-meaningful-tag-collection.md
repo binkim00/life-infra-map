@@ -186,3 +186,38 @@ high-confidence 40% 이상, conflict 10% 이하, stale 40% 이하다. 각각 다
 성공했지만 공원·화장실 같은 공공시설은 블로그 snippet coverage가 낮다. 현재 가장 큰 병목은
 `IDENTITY_MISMATCH`와 카테고리별 source 적합성이다. 따라서 새 유료 Provider를 바로 추가하기보다
 공식 구조화 데이터 연결과 카테고리별 query/identity 정책을 먼저 확장한다.
+
+## 2026-08-16 공공시설 Structured Evidence backfill
+
+화장실 최종 DB-ready 파일은 이름·주소·좌표만 남겨 원본의 36개 공식 필드를 유실하고 있었다.
+`backfill_public_facility_raw`는 `ExData/Cleaned/toilet_places.json`의 동일 `external_id`를 기존
+`public_toilet_standard` Place에 연결하고, 기존 raw를 바꾸지 않은 채 누락 필드만
+`official_backfill` namespace에 추가한다. 주차장과 도시공원은 기존 중첩 raw에 공식 필드가
+이미 있어 복제하지 않는다. 향후 화장실 재import 때는 `import_fixture_places`가 정제 원본을
+fallback으로 결합해 같은 유실을 방지한다.
+
+    python manage.py backfill_public_facility_raw --category toilet --region 서울특별시 --limit 100 --dry-run
+    python manage.py backfill_public_facility_raw --dry-run
+    python manage.py backfill_public_facility_raw
+    python manage.py report_structured_evidence_coverage --output tmp/structured_evidence_coverage.json
+
+45,065개 원본 중 기존 Place 45,060개가 source ID로 연결됐고, 화장실 29,127곳에 공식 raw가
+보강됐다. 원본 `데이터기준일자`가 있는 Place는 `source_updated_at`에도 저장하고 Evidence의
+`observed_at`으로 사용한다. 공식 원문에서 직접 확인되는 경우에만 다음 태그를 만든다.
+
+- 화장실: 장애인용 변기 수가 1개 이상이면 `장애인시설`, 24시간/상시 명시가 있으면 `24시간운영`
+- 주차장: 무료 명시 `무료이용`, 장애인 전용구역 보유 명시 `장애인전용주차`, 모든 운영일의
+  00:00~23:59/24:00 명시 `24시간운영`
+- 도시공원: 해당 시설 문자열이 실제 존재할 때만 `놀이시설`, `운동시설`, `편의시설`
+
+공식 Evidence는 144건에서 47,900건으로 증가했다. `PlaceTagEvidence` 전체는 400건에서
+48,156건, Evidence 보유 Place는 207곳에서 32,174곳으로 증가했다. 원본에 없는 값이나
+카테고리만으로 추론한 태그는 만들지 않는다.
+
+사람 검수용 `identity_evidence_validation_final_150.csv`는 accepted 75행/rejected 75행이며,
+정답 열은 비어 있다. 다음 명령은 사람이 입력한 O/X/애매 값만 읽고 CSV를 수정하지 않는다.
+
+    python manage.py analyze_evidence_validation tmp/identity_evidence_validation_final_150.csv
+
+Identity, Evidence relevance, Tag, polarity 지표를 전체·Category·Source·confidence 구간별로
+출력하며 미입력과 애매 판정은 precision 분모에서 제외한다.

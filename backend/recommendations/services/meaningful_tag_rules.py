@@ -55,6 +55,10 @@ MEANINGFUL_TAG_RULES = (
     MeaningfulTagRule("장애인화장실", (
         "disabledtoilet", "장애인용화장실", "장애인화장실",
     ), "장애인 화장실이 공식 원문에 명시됨", 97),
+    MeaningfulTagRule("장애인시설", (
+        "남성용-장애인용대변기수", "남성용-장애인용소변기수",
+        "여성용-장애인용대변기수", "장애인용대변기수", "장애인용소변기수",
+    ), "공식 원문에 장애인용 화장실 기구가 1개 이상 명시됨", 97),
     MeaningfulTagRule("무료이용", (
         "요금정보", "fee", "usefee", "이용요금", "입장료",
     ), "공식 이용요금 필드가 무료로 명시됨", 95),
@@ -104,6 +108,11 @@ def meaningful_value(field, value, tag):
         return False
     if tag == "무료이용":
         return "무료" in compact or compact in {"0", "0원"}
+    if tag == "장애인시설" and "장애인용" in field:
+        try:
+            return float(compact) > 0
+        except ValueError:
+            return False
     if tag == "반려동물동반" and compact in {"n", "no", "0"}:
         return False
     if compact in {"n", "no", "0", "false"}:
@@ -131,4 +140,45 @@ def extract_meaningful_tags(raw):
                 "confidence": rule.confidence,
             })
             break
+    all_day = extract_24_hour_match(leaves)
+    if all_day:
+        matches.append(all_day)
     return matches
+
+
+def extract_24_hour_match(leaves):
+    """Return a direct all-day fact only when official fields explicitly support it."""
+    values = {
+        normalize_field_name(path.rsplit(".", 1)[-1]): str(value or "").strip()
+        for path, value in leaves
+    }
+    for field_name in ("개방시간", "개방시간상세", "운영시간"):
+        value = values.get(normalize_field_name(field_name), "")
+        compact = "".join(value.lower().split())
+        if any(marker in compact for marker in ("24시간", "24시개방", "상시개방", "연중무휴")) or compact == "상시":
+            return {
+                "tag": "24시간운영",
+                "field": field_name,
+                "value": value,
+                "description": "공식 원문에 24시간 또는 상시 개방이 명시됨",
+                "confidence": 97,
+            }
+
+    days = "".join(values.get(normalize_field_name("운영요일"), "").split())
+    required_days = ("평일", "토요일", "공휴일")
+    if not all(day in days for day in required_days):
+        return None
+    schedules = []
+    for prefix in required_days:
+        start = values.get(normalize_field_name(f"{prefix}운영시작시각"), "")
+        end = values.get(normalize_field_name(f"{prefix}운영종료시각"), "")
+        schedules.append((start, end))
+    if all(start in {"00:00", "0:00"} and end in {"23:59", "24:00"} for start, end in schedules):
+        return {
+            "tag": "24시간운영",
+            "field": "운영요일+요일별운영시각",
+            "value": f"{days}; {schedules}",
+            "description": "공식 운영요일과 요일별 시각이 전일 운영으로 명시됨",
+            "confidence": 97,
+        }
+    return None

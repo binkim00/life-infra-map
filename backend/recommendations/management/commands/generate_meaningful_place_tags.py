@@ -1,4 +1,5 @@
 import hashlib
+from datetime import date, datetime, time
 
 from django.core.management.base import BaseCommand
 from django.utils import timezone
@@ -98,7 +99,7 @@ def save_matches(matches, stats, *, dry_run=False):
             evidence=evidence_text,
             context={"field": match["field"], "objective": True},
             raw={"field": match["field"], "value": match["value"]},
-            observed_at=place.source_updated_at or now,
+            observed_at=observed_at_for_place(place, now),
         ))
 
     PlaceTag.objects.bulk_create(
@@ -123,3 +124,14 @@ def save_matches(matches, stats, *, dry_run=False):
     )
     stats["tags"] += len(aggregates)
     stats["evidence"] += len(evidence_rows)
+
+
+def observed_at_for_place(place, fallback):
+    value = place.source_updated_at
+    if not value:
+        return fallback
+    if isinstance(value, datetime):
+        return timezone.make_aware(value) if timezone.is_naive(value) else value
+    if isinstance(value, date):
+        return timezone.make_aware(datetime.combine(value, time.min))
+    return fallback
