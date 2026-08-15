@@ -88,6 +88,8 @@ class TagEvidenceAggregationTests(TestCase):
         result = aggregate_tag_evidence(self.place, self.tag, now=self.now)
         self.assertEqual(result["status"], "rejected")
         self.assertEqual(result["evidence_state"], "NEGATIVE_DOMINANT")
+        aggregate = PlaceTag.objects.get(place=self.place, tag=self.tag, source="web_evidence")
+        self.assertEqual(aggregate.status, "rejected")
 
     def test_official_negative_blocks_an_official_positive(self):
         self.add_evidence(source="field_rule", reference="official:positive")
@@ -103,6 +105,17 @@ class TagEvidenceAggregationTests(TestCase):
         rejected = PlaceTag.objects.get(source="field_rule")
         self.assertEqual(rejected.status, "rejected")
         self.assertFalse(rejected.is_verified)
+
+    def test_official_negative_overrides_web_positive_candidate(self):
+        for index in range(3):
+            self.add_evidence(source="naver_blog_search", reference=f"https://blog/{index}")
+        self.add_evidence(source="field_rule", reference="official:negative", polarity="negative")
+        result = aggregate_tag_evidence(self.place, self.tag, now=self.now)
+        self.assertEqual(result["status"], "rejected")
+        self.assertEqual(result["evidence_state"], "NEGATIVE_DOMINANT")
+        aggregate = PlaceTag.objects.get(place=self.place, tag=self.tag, source="web_evidence")
+        self.assertEqual(aggregate.status, "rejected")
+        self.assertIn("official negative evidence", aggregate.evidence)
 
     def test_expiry_revokes_only_confirmation_created_by_evidence_aggregation(self):
         web = [

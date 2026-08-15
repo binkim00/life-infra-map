@@ -67,6 +67,12 @@ def aggregate_tag_evidence(place, tag, *, now=None, dry_run=False):
             status="confirmed",
             confidence=max(80, official_positive.confidence),
         )
+    elif official_negative:
+        result.update(
+            evidence_state="NEGATIVE_DOMINANT",
+            status="rejected",
+            confidence=max(70, official_negative.confidence),
+        )
     elif (
         not official_negative
         and admin_positive_count > admin_negative_count
@@ -89,8 +95,6 @@ def aggregate_tag_evidence(place, tag, *, now=None, dry_run=False):
                 "candidate", web_positive_count, web_negative_count, web_quality
             ),
         )
-    elif official_negative:
-        result.update(evidence_state="NEGATIVE_DOMINANT", status="rejected", confidence=max(70, official_negative.confidence))
     elif web_negative_count >= 3 and web_net <= -2:
         result.update(
             evidence_state="NEGATIVE_DOMINANT",
@@ -115,7 +119,14 @@ def aggregate_tag_evidence(place, tag, *, now=None, dry_run=False):
     if dry_run:
         return result
 
-    materialize_web_aggregate(place, tag, web, result, now=now)
+    materialize_web_aggregate(
+        place,
+        tag,
+        web,
+        result,
+        now=now,
+        decisive_negative=official_negative,
+    )
     clear_stale_aggregate_confirmations(
         place,
         tag,
@@ -219,14 +230,17 @@ def aggregate_confidence(status, positive_count, negative_count, quality):
     return max(25, min(65, round(score)))
 
 
-def materialize_web_aggregate(place, tag, web, result, *, now):
+def materialize_web_aggregate(place, tag, web, result, *, now, decisive_negative=None):
     if result["status"] in {"candidate", "needs_verification", "rejected"} and (
         result["web_positive"] or result["web_negative"]
     ):
         preferred_polarity = "positive" if result["web_positive"] >= result["web_negative"] else "negative"
-        summary = web.filter(polarity=preferred_polarity).order_by("-observed_at").values_list(
-            "evidence", flat=True
-        ).first() or ""
+        if decisive_negative:
+            summary = f"Overridden by official negative evidence: {decisive_negative.evidence}"
+        else:
+            summary = web.filter(polarity=preferred_polarity).order_by("-observed_at").values_list(
+                "evidence", flat=True
+            ).first() or ""
         PlaceTag.objects.update_or_create(
             place=place,
             tag=tag,

@@ -88,7 +88,9 @@ def plan_daily_jobs(*, cycle_date, place_limit, provider="naver_search", mode="b
         provider=provider,
         cycle_date__gte=recent_cutoff,
         status__in=("queued", "processing", "completed", "retry"),
-    ).exclude(place_id__in=stale_place_ids).values_list("place_id", flat=True)
+    ).filter(
+        Q(cycle_date=cycle_date) | ~Q(place_id__in=stale_place_ids)
+    ).values_list("place_id", flat=True)
     categories = tuple(COLLECTION_PROFILES)
     if mode == "bootstrap":
         return plan_bootstrap_jobs(
