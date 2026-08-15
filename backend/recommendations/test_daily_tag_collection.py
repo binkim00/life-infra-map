@@ -83,6 +83,10 @@ class DailyTagCollectionTests(TestCase):
         self.assertEqual(quota.request_count, 2)
         self.assertEqual(quota.reserved_count, 0)
         self.assertEqual(PlaceTagEvidence.objects.count(), 2)
+        self.assertEqual(
+            set(PlaceTagEvidence.objects.values_list("source", flat=True)),
+            {"web_search"},
+        )
 
     @patch("recommendations.services.place_tag_collection._request_channel")
     def test_place_collection_queries_one_representative_keyword_per_pack(self, request_channel):

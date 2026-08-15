@@ -89,19 +89,31 @@ def save_place_candidate_evidence(place, tag_name, result, *, observed_at):
     )
     source_url = result['source_url']
     polarity = result['polarity']
-    key_value = '{}|{}|ai_suggested|{}|{}'.format(place.id, tag.id, source_url, polarity)
+    raw = result.get('raw') or {}
+    evidence_source = (
+        'naver_blog_search'
+        if raw.get('channel') == 'naver_blog'
+        else 'web_search'
+    )
+    key_value = '{}|{}|{}|{}|{}'.format(
+        place.id,
+        tag.id,
+        evidence_source,
+        source_url,
+        polarity,
+    )
     PlaceTagEvidence.objects.update_or_create(
         evidence_key=hashlib.sha256(key_value.encode('utf-8')).hexdigest(),
         defaults={
             'place': place,
             'tag': tag,
-            'source': 'ai_suggested',
+            'source': evidence_source,
             'source_reference': source_url,
             'polarity': polarity,
             'confidence': 55,
             'evidence': result['evidence_summary'],
             'context': {'source_title': result.get('source_title', ''), 'subjective': True},
-            'raw': result.get('raw') or {},
+            'raw': raw,
             'observed_at': observed_at,
             'expires_at': observed_at + timedelta(days=120),
         },
