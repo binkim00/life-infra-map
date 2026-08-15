@@ -1,5 +1,6 @@
 from collections import defaultdict
 
+from django.conf import settings
 from django.db.models import Case, Count, Q, Value, When
 from django.db.models.fields import CharField
 from django.utils import timezone
@@ -44,13 +45,13 @@ def build_coverage_report(*, now=None, thresholds=None):
     now = now or timezone.now()
     categories = tuple(COLLECTION_PROFILES)
     relevant_tags = {tag for category in categories for tag in requested_tags_for_category(category)}
-    thresholds = thresholds or {
+    thresholds = thresholds or getattr(settings, "TAG_COLLECTION_READINESS_THRESHOLDS", {
         "evidence_coverage": 0.20,
         "tag_coverage": 0.10,
         "high_confidence": 0.40,
         "max_conflict": 0.10,
         "max_stale": 0.40,
-    }
+    })
 
     totals = {
         (row["region"], row["category"]): row["count"]
@@ -159,4 +160,3 @@ def build_coverage_report(*, now=None, thresholds=None):
 
 def ratio(numerator, denominator):
     return round(numerator / denominator, 4) if denominator else 0.0
-

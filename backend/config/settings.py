@@ -40,6 +40,18 @@ def _env_int(name, default, min_value=None, max_value=None):
     return value
 
 
+def _env_float(name, default, min_value=None, max_value=None):
+    try:
+        value = float(os.getenv(name, default))
+    except (TypeError, ValueError):
+        value = default
+    if min_value is not None:
+        value = max(value, min_value)
+    if max_value is not None:
+        value = min(value, max_value)
+    return value
+
+
 KAKAO_REST_API_KEY = os.getenv("KAKAO_REST_API_KEY")
 AI_PROVIDER = os.getenv("AI_PROVIDER", "openai").strip().lower()
 AI_WEB_SEARCH_ENABLED = _env_bool("AI_WEB_SEARCH_ENABLED", False)
@@ -103,6 +115,13 @@ TAG_COLLECTION_AI_PRIORITY_THRESHOLD = _env_int("TAG_COLLECTION_AI_PRIORITY_THRE
 TAG_COLLECTION_AI_MAX_CALLS_PER_PLACE = _env_int("TAG_COLLECTION_AI_MAX_CALLS_PER_PLACE", 1, 0, 10)
 TAG_COLLECTION_AI_MODEL = os.getenv("TAG_COLLECTION_AI_MODEL", "gpt-5-nano").strip()
 TAG_COLLECTION_AI_DAILY_LIMIT = _env_int("TAG_COLLECTION_AI_DAILY_LIMIT", 100, 0, 10000)
+TAG_COLLECTION_READINESS_THRESHOLDS = {
+    "evidence_coverage": _env_float("TAG_COLLECTION_READY_EVIDENCE_COVERAGE", 0.20, 0, 1),
+    "tag_coverage": _env_float("TAG_COLLECTION_READY_TAG_COVERAGE", 0.10, 0, 1),
+    "high_confidence": _env_float("TAG_COLLECTION_READY_HIGH_CONFIDENCE", 0.40, 0, 1),
+    "max_conflict": _env_float("TAG_COLLECTION_READY_MAX_CONFLICT", 0.10, 0, 1),
+    "max_stale": _env_float("TAG_COLLECTION_READY_MAX_STALE", 0.40, 0, 1),
+}
 OPENAI_API_BASE_URL = os.getenv("OPENAI_API_BASE_URL", "https://api.openai.com/v1")
 IS_TESTING = "test" in sys.argv
 AI_PROVIDER_CONFIGURED = (
