@@ -158,7 +158,12 @@ def plan_daily_jobs(*, cycle_date, place_limit, provider="naver_search", mode="b
 def plan_bootstrap_jobs(
     *, cycle_date, place_limit, provider, budget, recent_place_ids, categories, dry_run
 ):
-    per_stratum = max(20, math.ceil(place_limit / max(1, len(REGIONS) * len(categories))) * 10)
+    # A nationally even pool can starve a high-value category when its records
+    # are concentrated in one city (the current cafe registry is mostly Busan).
+    # Fetch enough rows from one stratum to reach the configured category share,
+    # while bounding the candidate pool used by priority scoring.
+    category_share = settings.TAG_COLLECTION_BOOTSTRAP_CATEGORY_MAX_SHARE / 100
+    per_stratum = max(100, min(500, math.ceil(place_limit * category_share)))
     places_by_id = {}
     for _, aliases in REGIONS:
         location = Q()

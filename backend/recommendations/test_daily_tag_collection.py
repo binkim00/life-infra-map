@@ -75,6 +75,27 @@ class DailyTagCollectionTests(TestCase):
         self.assertGreater(tiers.count(1), 0)
         self.assertTrue(any(tier > 1 for tier in tiers))
 
+    @override_settings(
+        TAG_COLLECTION_DAILY_API_LIMIT=1000,
+        TAG_COLLECTION_BOOTSTRAP_TIER_WEIGHTS="70,15,10,5",
+        TAG_COLLECTION_BOOTSTRAP_CATEGORY_MAX_SHARE=40,
+        TAG_COLLECTION_CATEGORY_PRIORITIES={"cafe": 100, "city_park": 1},
+    )
+    def test_bootstrap_pool_does_not_starve_a_category_concentrated_in_one_city(self):
+        for index in range(80):
+            self.make_place(index, category="cafe", region="부산광역시")
+            self.make_place(1000 + index, category="city_park", region="부산광역시")
+
+        stats = plan_daily_jobs(
+            cycle_date=timezone.localdate(),
+            place_limit=100,
+            mode="bootstrap",
+        )
+
+        cafe_jobs = PlaceTagCollectionJob.objects.filter(place__category="cafe").count()
+        self.assertEqual(stats["places"], 100)
+        self.assertGreaterEqual(cafe_jobs, 40)
+
     def test_scheduler_refills_a_partial_daily_plan(self):
         places = [self.make_place(index) for index in range(1, 5)]
         PlaceTagCollectionJob.objects.create(
