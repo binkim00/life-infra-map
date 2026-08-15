@@ -172,8 +172,15 @@ high-confidence 40% 이상, conflict 10% 이하, stale 40% 이하다. 각각 다
 - 기존 balanced 100곳: Evidence Place 16곳(16%), 웹 Evidence 40건
 - 수정 후 혼합 bootstrap 100곳: Evidence Place 20곳(20%), 웹 Evidence 40건, 구조화 Evidence 17건
 - 후속 category-heavy 100곳: Evidence Place 12곳(12%), 웹 Evidence 35건, 구조화 Evidence 24건
+- 처리량 확장 500곳: Evidence Place 43곳(8.6%), 웹 Evidence 68건, 구조화 Evidence 103건,
+  Naver 1,039회, 207.9초, 실패/429 0
 - 세 배치 모두 API 실패 0, 429 0, 선택적 AI 호출 0
 - 활성 Evidence pair의 `PlaceTag` materialization은 source mismatch 수정 후 100%
+
+확장 실행까지 당일 총 900 Job, Naver 2,128회가 모두 완료됐다. 최종 활성 Evidence pair 185개는
+공식 confirmed 144개와 웹 aggregate 41개(candidate 1, needs_verification 40)로 모두 materialize됐다.
+활성 positive/negative 충돌은 1 pair다. 500곳 hit rate가 낮은 주원인은 공원 200곳과 관광지
+88곳 등 블로그 근거 적합도가 낮은 카테고리 비중이 커졌기 때문이다.
 
 전체 hit rate가 일관되게 상승했다고 보기는 아직 어렵다. 카페는 후속 배치에서 23곳 중 11곳이
 성공했지만 공원·화장실 같은 공공시설은 블로그 snippet coverage가 낮다. 현재 가장 큰 병목은
