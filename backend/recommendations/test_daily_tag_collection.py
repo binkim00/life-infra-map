@@ -15,6 +15,7 @@ from recommendations.models import (
     ProviderQuotaUsage,
 )
 from recommendations.services.place_tag_collection import collect_naver_place_evidence
+from recommendations.services.place_tag_collection import requested_tags_for_category
 
 
 @override_settings(
@@ -37,6 +38,11 @@ class DailyTagCollectionTests(TestCase):
             source="kakao_local",
             external_id="daily-{}-{}".format(category, index),
         )
+
+    def test_solo_use_is_collected_for_relevant_non_restaurant_profiles(self):
+        for category in ("cafe", "tourism", "city_park", "library"):
+            with self.subTest(category=category):
+                self.assertIn("혼자이용좋음", requested_tags_for_category(category))
 
     def test_plans_balanced_idempotent_jobs_within_request_budget(self):
         self.make_place(1, category="cafe", region="서울특별시")

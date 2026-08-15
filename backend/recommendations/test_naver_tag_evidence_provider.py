@@ -33,6 +33,16 @@ class NaverTagEvidenceProviderTests(SimpleTestCase):
             'unknown',
         )
 
+    def test_existing_solo_use_tag_requires_an_explicit_expression(self):
+        self.assertEqual(
+            evidence_polarity('혼자이용좋음', '혼자 이용하기 좋은 조용한 공간'),
+            'positive',
+        )
+        self.assertEqual(
+            evidence_polarity('혼자이용좋음', '혼자 가기 부담스러운 공간'),
+            'negative',
+        )
+
     @patch('recommendations.services.naver_tag_evidence_provider._request_channel')
     def test_collects_positive_and_negative_identity_matched_snippets(self, request_channel):
         request_channel.return_value = {'items': [
