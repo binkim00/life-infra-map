@@ -1,5 +1,19 @@
 # Nationwide place and evidence pipeline
 
+## PostgreSQL inventory baseline
+
+Generate a comparable inventory before and after imports or Kakao matching:
+
+```powershell
+cd backend
+.\venv\Scripts\python.exe manage.py report_place_inventory
+.\venv\Scripts\python.exe manage.py report_place_inventory --output ..\docs\02_data\place-inventory.json
+```
+
+The report groups canonical places by category, source, and all 17 provinces,
+then reports source datasets, normalization coverage, Kakao match states, tag
+evidence, queue counts, and confirmed-match integrity violations.
+
 ## Goal
 
 The service must return a useful base result anywhere in Korea and improve

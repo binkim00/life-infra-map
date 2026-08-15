@@ -1,0 +1,243 @@
+{
+  "generated_at": "2026-08-15 11:46:55.057080+00:00",
+  "database_vendor": "postgresql",
+  "places": {
+    "total": 215398,
+    "with_external_id": 215398,
+    "kakao_canonical": 17163,
+    "categories": [
+      {
+        "category": "beach",
+        "count": 235
+      },
+      {
+        "category": "cafe",
+        "count": 2475
+      },
+      {
+        "category": "city_park",
+        "count": 16653
+      },
+      {
+        "category": "freewifi",
+        "count": 83145
+      },
+      {
+        "category": "parking",
+        "count": 13580
+      },
+      {
+        "category": "shelter",
+        "count": 59837
+      },
+      {
+        "category": "smoking_area",
+        "count": 1425
+      },
+      {
+        "category": "toilet",
+        "count": 29127
+      },
+      {
+        "category": "tourism",
+        "count": 8921
+      }
+    ],
+    "sources": [
+      {
+        "source": "beach_api",
+        "count": 8
+      },
+      {
+        "source": "citypark_standard",
+        "count": 8856
+      },
+      {
+        "source": "freewifi",
+        "count": 83145
+      },
+      {
+        "source": "heat_shelter_api",
+        "count": 59837
+      },
+      {
+        "source": "kakao_local",
+        "count": 17163
+      },
+      {
+        "source": "public_parking_standard",
+        "count": 7077
+      },
+      {
+        "source": "public_toilet_standard",
+        "count": 29127
+      },
+      {
+        "source": "smokearea_kr_supabase",
+        "count": 632
+      },
+      {
+        "source": "smokingarea_site_reports",
+        "count": 206
+      },
+      {
+        "source": "tour_api",
+        "count": 8760
+      },
+      {
+        "source": "부산광역시 연제구_흡연실 현황_20250905",
+        "count": 104
+      },
+      {
+        "source": "서울특별시 성북구_흡연구역_20260223",
+        "count": 11
+      },
+      {
+        "source": "서울특별시 송파구_실외흡연구역 위치_20240630",
+        "count": 4
+      },
+      {
+        "source": "서울특별시 송파구_실외흡연구역위치_20200925",
+        "count": 4
+      },
+      {
+        "source": "서울특별시 영등포구_흡연구역(실외) 현황_20231212",
+        "count": 69
+      },
+      {
+        "source": "서울특별시 용산구_흡연구역_20240719",
+        "count": 76
+      },
+      {
+        "source": "서울특별시 중구_흡연구역정보_20230331",
+        "count": 6
+      },
+      {
+        "source": "서울특별시_서대문구_흡연시설 현황_20210607",
+        "count": 40
+      },
+      {
+        "source": "서울특별시_양천구_흡연시설 현황_20250815",
+        "count": 22
+      },
+      {
+        "source": "서울특별시_중랑구_흡연시설_20260212",
+        "count": 240
+      },
+      {
+        "source": "세종특별자치시_흡연구역 위치정보_20251224",
+        "count": 11
+      }
+    ],
+    "regions": [
+      {
+        "sido": "unknown",
+        "count": 1385
+      },
+      {
+        "sido": "강원특별자치도",
+        "count": 12463
+      },
+      {
+        "sido": "경기도",
+        "count": 40378
+      },
+      {
+        "sido": "경상남도",
+        "count": 19407
+      },
+      {
+        "sido": "경상북도",
+        "count": 18812
+      },
+      {
+        "sido": "광주광역시",
+        "count": 6239
+      },
+      {
+        "sido": "대구광역시",
+        "count": 5030
+      },
+      {
+        "sido": "대전광역시",
+        "count": 3909
+      },
+      {
+        "sido": "부산광역시",
+        "count": 10584
+      },
+      {
+        "sido": "서울특별시",
+        "count": 28118
+      },
+      {
+        "sido": "세종특별자치시",
+        "count": 1592
+      },
+      {
+        "sido": "울산광역시",
+        "count": 3091
+      },
+      {
+        "sido": "인천광역시",
+        "count": 8573
+      },
+      {
+        "sido": "전라남도",
+        "count": 17934
+      },
+      {
+        "sido": "전북특별자치도",
+        "count": 11608
+      },
+      {
+        "sido": "제주특별자치도",
+        "count": 5610
+      },
+      {
+        "sido": "충청남도",
+        "count": 12827
+      },
+      {
+        "sido": "충청북도",
+        "count": 7838
+      }
+    ]
+  },
+  "source_records": {
+    "total": 0,
+    "active": 0,
+    "normalized": 0,
+    "datasets": [],
+    "regions": []
+  },
+  "kakao_matches": {
+    "total": 0,
+    "statuses": [],
+    "integrity": {
+      "confirmed_without_canonical_place": 0,
+      "confirmed_without_kakao_id": 0,
+      "confirmed_non_kakao_canonical": 0,
+      "normalized_without_confirmed_match": 0
+    }
+  },
+  "tags": {
+    "place_tags": 571177,
+    "place_tag_statuses": [
+      {
+        "status": "candidate",
+        "count": 535096
+      },
+      {
+        "status": "confirmed",
+        "count": 13994
+      },
+      {
+        "status": "needs_verification",
+        "count": 22087
+      }
+    ],
+    "evidence": 0,
+    "enrichment_requests": 0
+  }
+}
