@@ -50,7 +50,7 @@ MEANINGFUL_TAG_RULES = (
     ), "유아·어린이 시설이 공식 원문에 명시됨", 95),
     MeaningfulTagRule("수유실", ("lactationroom", "수유실"),
                      "수유실 제공이 공식 원문에 명시됨", 97),
-    MeaningfulTagRule("기저귀교환대", ("diaperchanging", "기저귀교환대"),
+    MeaningfulTagRule("기저귀교환대", ("diaperchanging", "기저귀교환대", "기저귀교환대유무"),
                      "기저귀 교환대가 공식 원문에 명시됨", 97),
     MeaningfulTagRule("장애인화장실", (
         "disabledtoilet", "장애인용화장실", "장애인화장실",
@@ -67,7 +67,7 @@ MEANINGFUL_TAG_RULES = (
     ), "무료 무선인터넷 제공이 공식 원문에 명시됨", 95),
     MeaningfulTagRule("카드결제가능", (
         "chkcreditcard", "chkcreditcardfood", "creditcard",
-        "신용카드가능여부", "카드결제",
+        "신용카드가능여부", "카드결제", "결제방법",
     ), "카드 결제 가능 여부가 공식 원문에 명시됨"),
     MeaningfulTagRule("야외좌석", (
         "outdoorseating", "terrace", "야외좌석", "테라스좌석",
@@ -113,6 +113,8 @@ def meaningful_value(field, value, tag):
             return float(compact) > 0
         except ValueError:
             return False
+    if tag == "카드결제가능" and field == normalize_field_name("결제방법"):
+        return "카드" in compact
     if tag == "반려동물동반" and compact in {"n", "no", "0"}:
         return False
     if compact in {"n", "no", "0", "false"}:
@@ -155,7 +157,7 @@ def extract_24_hour_match(leaves):
     for field_name in ("개방시간", "개방시간상세", "운영시간"):
         value = values.get(normalize_field_name(field_name), "")
         compact = "".join(value.lower().split())
-        if any(marker in compact for marker in ("24시간", "24시개방", "상시개방", "연중무휴")) or compact == "상시":
+        if any(marker in compact for marker in ("24시간", "24시개방", "상시개방")) or compact == "상시":
             return {
                 "tag": "24시간운영",
                 "field": field_name,

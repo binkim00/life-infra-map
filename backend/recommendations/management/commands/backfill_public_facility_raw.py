@@ -7,7 +7,7 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
 from recommendations.management.commands.generate_meaningful_place_tags import generate_meaningful_tags
-from recommendations.models import Place, PlaceTagEvidence
+from recommendations.models import Place, PlaceTag, PlaceTagEvidence
 from recommendations.services.meaningful_tag_rules import extract_meaningful_tags
 
 
@@ -63,6 +63,7 @@ class Command(BaseCommand):
                 total[key] += value
 
         evidence_stats = None
+        invalidated = neutralize_unsupported_all_day_evidence(processed_ids, dry_run=options["dry_run"])
         if not options["dry_run"] and not options["skip_evidence"] and processed_ids:
             evidence_stats = generate_meaningful_tags(
                 Place.objects.filter(id__in=processed_ids).order_by("id"),
@@ -71,6 +72,7 @@ class Command(BaseCommand):
         total["field_rule_after"] = PlaceTagEvidence.objects.filter(source="field_rule").count()
         total["field_rule_created"] = total["field_rule_after"] - total["field_rule_before"]
         total["evidence_generation"] = evidence_stats
+        total["neutralized_unsupported_all_day"] = invalidated
         total["mode"] = "dry-run" if options["dry_run"] else "commit"
         self.stdout.write(json.dumps(total, ensure_ascii=False, indent=2))
 
@@ -176,3 +178,44 @@ def parse_source_date(value):
         return date.fromisoformat(text[:10])
     except ValueError:
         return None
+
+
+def neutralize_unsupported_all_day_evidence(place_ids, *, dry_run=False):
+    rows = list(PlaceTagEvidence.objects.filter(
+        place_id__in=place_ids,
+        place__category="toilet",
+        source="field_rule",
+        tag__name="24시간운영",
+        polarity="positive",
+    ))
+    invalid = []
+    for evidence in rows:
+        value = str((evidence.raw or {}).get("value", ""))
+        compact = "".join(value.lower().split())
+        explicit = (
+            any(marker in compact for marker in ("24시간", "24시개방", "상시개방"))
+            or compact == "상시"
+        )
+        if "연중무휴" in compact and not explicit:
+            invalid.append(evidence)
+    if dry_run or not invalid:
+        return len(invalid)
+    for evidence in invalid:
+        evidence.polarity = "neutral"
+        evidence.confidence = 0
+        context = dict(evidence.context or {})
+        context["invalidated_reason"] = "연중무휴는 24시간 운영의 직접 근거가 아님"
+        evidence.context = context
+    PlaceTagEvidence.objects.bulk_update(invalid, ["polarity", "confidence", "context", "updated_at"])
+    PlaceTag.objects.filter(
+        place_id__in=[evidence.place_id for evidence in invalid],
+        tag__name="24시간운영",
+        source="field_rule",
+    ).update(
+        status="needs_verification",
+        confidence=0,
+        evidence="기존 공식 field_rule이 24시간 운영을 직접 입증하지 못해 무효화됨",
+        is_verified=False,
+        verified_at=None,
+    )
+    return len(invalid)

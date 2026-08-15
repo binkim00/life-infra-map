@@ -11,8 +11,8 @@ from recommendations.services.coverage_reporting import build_coverage_report
 
 
 CATEGORY_TAGS = {
-    "toilet": ("장애인시설", "24시간운영"),
-    "parking": ("무료이용", "장애인전용주차", "24시간운영"),
+    "toilet": ("장애인시설", "24시간운영", "기저귀교환대"),
+    "parking": ("무료이용", "장애인전용주차", "24시간운영", "카드결제가능"),
     "city_park": ("놀이시설", "운동시설", "편의시설"),
 }
 
@@ -50,7 +50,10 @@ def build_structured_report(now=None):
         places = Place.objects.filter(category=category)
         total_places = places.count()
         evidence = PlaceTagEvidence.objects.filter(place__category=category, tag__name__in=tags)
-        active = evidence.filter(Q(expires_at__isnull=True) | Q(expires_at__gt=now))
+        active = evidence.filter(
+            Q(expires_at__isnull=True) | Q(expires_at__gt=now),
+            polarity__in=("positive", "negative"),
+        )
         evidence_places = active.values("place_id").distinct().count()
         pairs = active.values("place_id", "tag_id").distinct().count()
         high = active.filter(confidence__gte=90).count()

@@ -60,6 +60,16 @@ class MeaningfulTagRuleTests(TestCase):
         })
         self.assertEqual(matches, [])
 
+    def test_does_not_treat_year_round_operation_as_24_hours(self):
+        self.assertEqual(extract_meaningful_tags({"개방시간상세": "연중무휴 09:00~18:00"}), [])
+
+    def test_extracts_direct_diaper_table_and_card_payment(self):
+        matches = extract_meaningful_tags({
+            "기저귀교환대유무": "Y",
+            "결제방법": "현금, 신용카드",
+        })
+        self.assertEqual({match["tag"] for match in matches}, {"기저귀교환대", "카드결제가능"})
+
     def test_extracts_all_day_parking_only_when_every_day_is_full_day(self):
         matches = extract_meaningful_tags({
             "운영요일": "평일+토요일+공휴일",
