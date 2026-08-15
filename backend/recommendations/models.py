@@ -545,6 +545,86 @@ class TagEnrichmentRequest(models.Model):
         return '{} - {} ({})'.format(self.place.name, self.tag_name, self.status)
 
 
+class PlaceTagCollectionJob(models.Model):
+    STATUS_CHOICES = [
+        ('queued', 'Queued'),
+        ('processing', 'Processing'),
+        ('completed', 'Completed'),
+        ('retry', 'Retry'),
+        ('failed', 'Failed'),
+    ]
+
+    place = models.ForeignKey(
+        Place,
+        on_delete=models.CASCADE,
+        related_name='tag_collection_jobs',
+    )
+    provider = models.CharField(max_length=50, default='naver_search')
+    cycle_date = models.DateField()
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='queued')
+    priority = models.PositiveIntegerField(default=1)
+    requested_tags = models.JSONField(default=list, blank=True)
+    planned_requests = models.PositiveSmallIntegerField(default=1)
+    attempt_count = models.PositiveSmallIntegerField(default=0)
+    next_attempt_at = models.DateTimeField(null=True, blank=True)
+    locked_at = models.DateTimeField(null=True, blank=True)
+    worker_id = models.CharField(max_length=100, blank=True)
+    error_code = models.CharField(max_length=100, blank=True)
+    error_message = models.TextField(blank=True)
+    stats = models.JSONField(default=dict, blank=True)
+    context = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['place', 'provider', 'cycle_date'],
+                name='unique_daily_place_tag_collection_job',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['status', '-priority', 'created_at']),
+            models.Index(fields=['provider', 'cycle_date', 'status']),
+            models.Index(fields=['place', '-cycle_date']),
+        ]
+
+    def __str__(self):
+        return '{} - {} ({})'.format(self.place.name, self.cycle_date, self.status)
+
+
+class ProviderQuotaUsage(models.Model):
+    provider = models.CharField(max_length=50)
+    usage_date = models.DateField()
+    daily_limit = models.PositiveIntegerField(default=25000)
+    reserved_count = models.PositiveIntegerField(default=0)
+    request_count = models.PositiveIntegerField(default=0)
+    success_count = models.PositiveIntegerField(default=0)
+    failed_count = models.PositiveIntegerField(default=0)
+    rate_limited_count = models.PositiveIntegerField(default=0)
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['provider', 'usage_date'],
+                name='unique_provider_daily_quota_usage',
+            ),
+        ]
+        indexes = [models.Index(fields=['usage_date', 'provider'])]
+
+    @property
+    def available_count(self):
+        return max(0, self.daily_limit - self.reserved_count - self.request_count)
+
+    def __str__(self):
+        return '{} {}: {}/{}'.format(
+            self.provider, self.usage_date, self.request_count, self.daily_limit,
+        )
+
+
 class UserPreference(models.Model):
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,

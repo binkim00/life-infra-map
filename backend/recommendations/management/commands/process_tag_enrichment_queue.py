@@ -74,17 +74,26 @@ def process_queue(*, limit=10, dry_run=False, evidence_provider=None):
 
 
 def save_candidate_evidence(request, result, *, observed_at):
+    save_place_candidate_evidence(
+        request.place,
+        request.tag_name,
+        result,
+        observed_at=observed_at,
+    )
+
+
+def save_place_candidate_evidence(place, tag_name, result, *, observed_at):
     tag, _ = Tag.objects.get_or_create(
-        name=request.tag_name,
+        name=tag_name,
         defaults={'tag_type': 'recommendation', 'description': '수요 기반 웹 근거 후보 태그'},
     )
     source_url = result['source_url']
     polarity = result['polarity']
-    key_value = '{}|{}|ai_suggested|{}|{}'.format(request.place_id, tag.id, source_url, polarity)
+    key_value = '{}|{}|ai_suggested|{}|{}'.format(place.id, tag.id, source_url, polarity)
     PlaceTagEvidence.objects.update_or_create(
         evidence_key=hashlib.sha256(key_value.encode('utf-8')).hexdigest(),
         defaults={
-            'place': request.place,
+            'place': place,
             'tag': tag,
             'source': 'ai_suggested',
             'source_reference': source_url,
@@ -97,7 +106,7 @@ def save_candidate_evidence(request, result, *, observed_at):
             'expires_at': observed_at + timedelta(days=120),
         },
     )
-    refresh_candidate_aggregate(request.place, tag)
+    refresh_candidate_aggregate(place, tag)
 
 
 def refresh_candidate_aggregate(place, tag):
