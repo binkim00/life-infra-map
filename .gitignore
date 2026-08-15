@@ -88,6 +88,7 @@ htmlcov/
 backend/.installers/
 backend/data/raw/
 backend/data/staging/
+backend/tmp/
 
 
 # =========================

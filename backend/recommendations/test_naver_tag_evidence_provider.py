@@ -69,3 +69,17 @@ class NaverTagEvidenceProviderTests(SimpleTestCase):
 
         self.assertEqual(result['polarity'], 'unknown')
         self.assertEqual(result['error'], 'insufficient_evidence')
+
+    @patch('recommendations.services.naver_tag_evidence_provider._request_channel')
+    def test_keeps_only_one_evidence_per_independent_url(self, request_channel):
+        item = {
+            'title': '서면 테스트 카페 조용한 후기',
+            'description': '부산진구 부전동에서 평일에는 조용했다.',
+            'link': 'https://blog.example.com/same-post',
+            'postdate': '20260801',
+        }
+        request_channel.return_value = {'items': [item, dict(item)]}
+
+        result = collect_naver_tag_evidence(self.place, '조용함')
+
+        self.assertEqual(len(result['evidences']), 1)

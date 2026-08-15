@@ -118,6 +118,10 @@ confidence, observation/expiry dates, and blank manual review columns. Fill
 file back through `--labels` to calculate overall and per-tag precision. The JSON
 also reports adoption, no-evidence, and positive/negative conflict rates.
 
+The first bounded live-provider validation, including expiry behavior and the
+manual-review handoff, is recorded in
+[`docs/02_data/tag-evidence-review-2026-08-15.md`](02_data/tag-evidence-review-2026-08-15.md).
+
 Materialize active evidence after collection or review:
 
     python manage.py aggregate_place_tag_evidence --dry-run

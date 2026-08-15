@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-08-15 12:37:28.574938+00:00",
+  "generated_at": "2026-08-15 12:50:05.682418+00:00",
   "database_vendor": "postgresql",
   "places": {
     "total": 215498,
@@ -376,11 +376,11 @@
     }
   },
   "tags": {
-    "place_tags": 571177,
+    "place_tags": 571184,
     "place_tag_statuses": [
       {
         "status": "candidate",
-        "count": 535096
+        "count": 535103
       },
       {
         "status": "confirmed",
@@ -391,7 +391,7 @@
         "count": 22087
       }
     ],
-    "evidence": 0,
+    "evidence": 36,
     "enrichment_requests": 1351
   }
 }

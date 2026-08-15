@@ -120,6 +120,7 @@ def collect_naver_tag_evidence(place, tag_name):
     except Exception:
         return {'executed': True, 'error': 'request_failed'}
     evidences = []
+    seen_urls = set()
     for item in (payload or {}).get('items') or []:
         title = _clean_html(item.get('title'), 180)
         summary = _clean_html(item.get('description'), 500)
@@ -128,8 +129,13 @@ def collect_naver_tag_evidence(place, tag_name):
             continue
         polarity = evidence_polarity(tag_name, combined)
         url = _safe_text(item.get('link'), 500)
-        if polarity == 'unknown' or not url.startswith(('http://', 'https://')):
+        if (
+            polarity == 'unknown'
+            or not url.startswith(('http://', 'https://'))
+            or url in seen_urls
+        ):
             continue
+        seen_urls.add(url)
         postdate = str(item.get('postdate') or '')
         observed_at = None
         if re.fullmatch(r'\d{8}', postdate):
