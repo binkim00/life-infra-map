@@ -7,6 +7,7 @@ from django.db.models import Q
 from django.utils import timezone
 
 from recommendations.models import Place, PlaceTagCollectionJob
+from recommendations.models import PlaceTagEvidence
 from recommendations.services.place_tag_collection import (
     COLLECTION_PROFILES,
     planned_requests_for_category,
@@ -80,11 +81,14 @@ def plan_daily_jobs(*, cycle_date, place_limit, provider="naver_search", mode="b
         / 100
     )
     recent_cutoff = cycle_date - timedelta(days=settings.TAG_COLLECTION_REVISIT_DAYS)
+    stale_place_ids = PlaceTagEvidence.objects.filter(
+        expires_at__lte=timezone.now(),
+    ).values_list("place_id", flat=True)
     recent_place_ids = PlaceTagCollectionJob.objects.filter(
         provider=provider,
         cycle_date__gte=recent_cutoff,
         status__in=("queued", "processing", "completed", "retry"),
-    ).values_list("place_id", flat=True)
+    ).exclude(place_id__in=stale_place_ids).values_list("place_id", flat=True)
     categories = tuple(COLLECTION_PROFILES)
     if mode == "bootstrap":
         return plan_bootstrap_jobs(

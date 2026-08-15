@@ -6,9 +6,9 @@ from recommendations.services.naver_search_provider import _clean_html, _request
 from recommendations.services.naver_tag_evidence_provider import (
     SEARCH_KEYWORDS,
     TAG_TERMS,
-    address_identity_terms,
     identity_assessment,
     polarity_assessment,
+    search_location_terms,
 )
 from recommendations.services.evidence_scoring import evidence_confidence, parse_observed_date
 from recommendations.services.tag_source_policy import NAVER_BLOG_SEARCH
@@ -95,7 +95,7 @@ def collect_naver_place_evidence(place, requested_tags=None, *, allow_ai=False):
     if not profiles:
         return {"executed": True, "requests": 0, "evidences": [], "error": "unsupported_category"}
 
-    location = " ".join(address_identity_terms(place.address)[-2:])
+    location = " ".join(search_location_terms(place.address))
     evidences = []
     seen = set()
     requests_made = 0

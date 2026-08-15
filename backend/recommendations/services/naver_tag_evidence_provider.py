@@ -130,6 +130,16 @@ def address_identity_terms(address):
     return list(dict.fromkeys(terms))[-4:]
 
 
+def search_location_terms(address):
+    terms = address_identity_terms(address)
+    administrative = [
+        term for term in terms
+        if term.endswith(('시', '군', '구', '동', '읍', '면'))
+    ]
+    selected = administrative[:2] or terms[:2]
+    return selected
+
+
 def identity_matches(place, text):
     return identity_assessment(place, text)["matched"]
 
@@ -204,7 +214,7 @@ def collect_naver_tag_evidence(place, tag_name):
     if not terms:
         return {'executed': True, 'polarity': 'unknown', 'error': 'unsupported_tag'}
     keyword = SEARCH_KEYWORDS.get(tag_name) or terms['positive'][0]
-    location = ' '.join(address_identity_terms(place.address)[-2:])
+    location = ' '.join(search_location_terms(place.address))
     query = '{} {} {}'.format(place.name, location, keyword).strip()
     try:
         payload = _request_channel('blog', query)
