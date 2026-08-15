@@ -83,3 +83,36 @@ class NationwideTagSampleTests(TestCase):
         )
         self.assertFalse(TagEnrichmentRequest.objects.exists())
         self.assertIn("[dry-run]", output.getvalue())
+
+    def test_accepts_direct_kakao_registry_places_without_a_source_match(self):
+        direct = Place.objects.create(
+            name="카카오 직접 공원",
+            category="city_park",
+            address="제주특별자치도 제주시 테스트로 1",
+            lat=33.5,
+            lng=126.5,
+            source="kakao_local",
+            external_id="direct-park-1",
+        )
+        Place.objects.create(
+            name="외부 공원",
+            category="city_park",
+            address="제주특별자치도 제주시 테스트로 2",
+            lat=33.5,
+            lng=126.5,
+            source="citypark_standard",
+            external_id="external-park-1",
+        )
+
+        call_command(
+            "build_nationwide_tag_enrichment_sample",
+            categories="city_park",
+            tags="조용함",
+            per_stratum=1,
+            stdout=StringIO(),
+        )
+
+        self.assertSetEqual(
+            set(TagEnrichmentRequest.objects.values_list("place_id", flat=True)),
+            {direct.id},
+        )

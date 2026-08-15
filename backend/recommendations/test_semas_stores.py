@@ -6,10 +6,21 @@ from tempfile import TemporaryDirectory
 from django.core.management import call_command
 from django.test import TestCase
 
+from recommendations.management.commands.import_semas_stores import normalize_semas_sido
 from recommendations.models import SourcePlaceRecord
 
 
 class SemasStoreImportTests(TestCase):
+    def test_splits_combined_gwangju_jeonnam_label_for_17_sido_sampling(self):
+        self.assertEqual(
+            normalize_semas_sido("전남광주통합특별시", "광산구"),
+            "광주광역시",
+        )
+        self.assertEqual(
+            normalize_semas_sido("전남광주통합특별시", "여수시"),
+            "전라남도",
+        )
+
     def test_imports_bookstore_and_cafe_with_original_store_ids(self):
         fields = [
             "상가업소번호", "상호명", "지점명", "상권업종대분류명",

@@ -1,8 +1,8 @@
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
-from django.db.models import Max, Min
+from django.db.models import Max, Min, Q
 
-from recommendations.models import PlaceTag, SourcePlaceRecord, TagEnrichmentRequest
+from recommendations.models import Place, PlaceTag, SourcePlaceRecord, TagEnrichmentRequest
 
 
 SIDO_ALIASES = {
@@ -103,11 +103,29 @@ class Command(BaseCommand):
                     per_stratum,
                     excluded_place_ids=selected_place_ids,
                 )
-                if selected:
+                places = [record.normalized_place for record in selected]
+                selected_place_ids.update(place.id for place in places)
+                remaining = per_stratum - len(places)
+                if remaining:
+                    location_filter = Q()
+                    for alias in aliases:
+                        location_filter |= Q(address__startswith=alias)
+                        location_filter |= Q(detail_location__startswith=alias)
+                    direct_queryset = Place.objects.filter(
+                        location_filter,
+                        source="kakao_local",
+                        category__in=CATEGORY_SOURCE_VALUES[category],
+                    )
+                    places.extend(evenly_spread_places(
+                        direct_queryset,
+                        remaining,
+                        excluded_place_ids=selected_place_ids,
+                    ))
+                if places:
                     stats["covered_strata"] += 1
-                for record in selected:
-                    selected_place_ids.add(record.normalized_place_id)
-                    rows.append((sido, category, record.normalized_place, override_tags or CATEGORY_TAGS[category]))
+                for place in places:
+                    selected_place_ids.add(place.id)
+                    rows.append((sido, category, place, override_tags or CATEGORY_TAGS[category]))
 
         stats["selected_places"] = len(rows)
         if not options["dry_run"]:
@@ -191,6 +209,43 @@ def evenly_spread_records(queryset, limit, *, excluded_place_ids=None):
             selected.append(record)
             seen_records.add(record.id)
             excluded_place_ids.add(record.normalized_place_id)
+            if len(selected) >= limit:
+                break
+    return selected
+
+
+def evenly_spread_places(queryset, limit, *, excluded_place_ids=None):
+    excluded_place_ids = set(excluded_place_ids or ())
+    queryset = queryset.exclude(id__in=excluded_place_ids)
+    bounds = queryset.aggregate(min_id=Min("id"), max_id=Max("id"))
+    min_id = bounds["min_id"]
+    max_id = bounds["max_id"]
+    if min_id is None or max_id is None:
+        return []
+    if limit == 1 or min_id == max_id:
+        anchors = [min_id]
+    else:
+        span = max_id - min_id
+        anchors = [round(min_id + span * index / (limit - 1)) for index in range(limit)]
+
+    selected = []
+    seen = set()
+    for anchor in anchors:
+        candidates = queryset.filter(id__gte=anchor).order_by("id")[: max(5, limit * 2)]
+        for place in candidates:
+            if place.id in seen or place.id in excluded_place_ids:
+                continue
+            selected.append(place)
+            seen.add(place.id)
+            break
+        if len(selected) >= limit:
+            break
+    if len(selected) < limit:
+        for place in queryset.order_by("id")[: max(20, limit * 4)]:
+            if place.id in seen or place.id in excluded_place_ids:
+                continue
+            selected.append(place)
+            seen.add(place.id)
             if len(selected) >= limit:
                 break
     return selected

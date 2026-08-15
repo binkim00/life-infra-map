@@ -1,10 +1,10 @@
 {
-  "generated_at": "2026-08-15 12:15:27.120767+00:00",
+  "generated_at": "2026-08-15 12:37:28.574938+00:00",
   "database_vendor": "postgresql",
   "places": {
-    "total": 215408,
-    "with_external_id": 215408,
-    "kakao_canonical": 17173,
+    "total": 215498,
+    "with_external_id": 215498,
+    "kakao_canonical": 17263,
     "categories": [
       {
         "category": "beach",
@@ -12,7 +12,7 @@
       },
       {
         "category": "cafe",
-        "count": 2475
+        "count": 2528
       },
       {
         "category": "city_park",
@@ -29,6 +29,10 @@
       {
         "category": "parking",
         "count": 13580
+      },
+      {
+        "category": "restaurant",
+        "count": 37
       },
       {
         "category": "shelter",
@@ -66,7 +70,7 @@
       },
       {
         "source": "kakao_local",
-        "count": 17173
+        "count": 17263
       },
       {
         "source": "public_parking_standard",
@@ -140,19 +144,19 @@
       },
       {
         "sido": "강원특별자치도",
-        "count": 12463
+        "count": 12471
       },
       {
         "sido": "경기도",
-        "count": 40378
+        "count": 40384
       },
       {
         "sido": "경상남도",
-        "count": 19415
+        "count": 19420
       },
       {
         "sido": "경상북도",
-        "count": 18813
+        "count": 18817
       },
       {
         "sido": "광주광역시",
@@ -160,58 +164,58 @@
       },
       {
         "sido": "대구광역시",
-        "count": 5030
+        "count": 5037
       },
       {
         "sido": "대전광역시",
-        "count": 3909
+        "count": 3912
       },
       {
         "sido": "부산광역시",
-        "count": 10584
+        "count": 10585
       },
       {
         "sido": "서울특별시",
-        "count": 28119
+        "count": 28127
       },
       {
         "sido": "세종특별자치시",
-        "count": 1592
+        "count": 1597
       },
       {
         "sido": "울산광역시",
-        "count": 3091
+        "count": 3094
       },
       {
         "sido": "인천광역시",
-        "count": 8573
+        "count": 8576
       },
       {
         "sido": "전라남도",
-        "count": 17934
+        "count": 17946
       },
       {
         "sido": "전북특별자치도",
-        "count": 11608
+        "count": 11615
       },
       {
         "sido": "제주특별자치도",
-        "count": 5610
+        "count": 5619
       },
       {
         "sido": "충청남도",
-        "count": 12827
+        "count": 12832
       },
       {
         "sido": "충청북도",
-        "count": 7838
+        "count": 7842
       }
     ]
   },
   "source_records": {
-    "total": 861631,
-    "active": 861631,
-    "normalized": 10,
+    "total": 870391,
+    "active": 870391,
+    "normalized": 100,
     "datasets": [
       {
         "source": "data_go_kr",
@@ -222,101 +226,146 @@
         "source": "semas",
         "dataset": "commercial_store",
         "count": 858105
+      },
+      {
+        "source": "tour_api",
+        "dataset": "tourism",
+        "count": 8760
       }
     ],
     "regions": [
       {
+        "sido_name": "",
+        "count": 955
+      },
+      {
         "sido_name": "강원특별자치도",
-        "count": 38352
+        "count": 39077
+      },
+      {
+        "sido_name": "경기",
+        "count": 7
       },
       {
         "sido_name": "경기도",
-        "count": 191101
+        "count": 192814
       },
       {
-        "sido_name": "경상남도",
-        "count": 64574
-      },
-      {
-        "sido_name": "경상북도",
-        "count": 53151
-      },
-      {
-        "sido_name": "광주광역시",
-        "count": 316
-      },
-      {
-        "sido_name": "대구광역시",
-        "count": 38998
-      },
-      {
-        "sido_name": "대전광역시",
-        "count": 24579
-      },
-      {
-        "sido_name": "부산광역시",
-        "count": 54838
-      },
-      {
-        "sido_name": "서울특별시",
-        "count": 145959
-      },
-      {
-        "sido_name": "세종특별자치시",
-        "count": 5258
-      },
-      {
-        "sido_name": "울산광역시",
-        "count": 20227
-      },
-      {
-        "sido_name": "인천광역시",
-        "count": 42216
-      },
-      {
-        "sido_name": "전남광주통합특별시",
-        "count": 56844
-      },
-      {
-        "sido_name": "전라남도",
-        "count": 154
-      },
-      {
-        "sido_name": "전라북도",
+        "sido_name": "경남",
         "count": 1
       },
       {
+        "sido_name": "경북",
+        "count": 1
+      },
+      {
+        "sido_name": "경상남도",
+        "count": 64998
+      },
+      {
+        "sido_name": "경상북도",
+        "count": 53565
+      },
+      {
+        "sido_name": "광주광역시",
+        "count": 22457
+      },
+      {
+        "sido_name": "닫기",
+        "count": 1
+      },
+      {
+        "sido_name": "대구",
+        "count": 1
+      },
+      {
+        "sido_name": "대구광역시",
+        "count": 39158
+      },
+      {
+        "sido_name": "대전광역시",
+        "count": 24680
+      },
+      {
+        "sido_name": "부산",
+        "count": 1
+      },
+      {
+        "sido_name": "부산광역시",
+        "count": 55290
+      },
+      {
+        "sido_name": "서울",
+        "count": 2
+      },
+      {
+        "sido_name": "서울특별",
+        "count": 1
+      },
+      {
+        "sido_name": "서울특별시",
+        "count": 147785
+      },
+      {
+        "sido_name": "세종특별자치시",
+        "count": 5280
+      },
+      {
+        "sido_name": "울산",
+        "count": 1
+      },
+      {
+        "sido_name": "울산광역시",
+        "count": 20295
+      },
+      {
+        "sido_name": "인천",
+        "count": 1
+      },
+      {
+        "sido_name": "인천광역시",
+        "count": 42530
+      },
+      {
+        "sido_name": "전라남도",
+        "count": 35314
+      },
+      {
+        "sido_name": "전라북도",
+        "count": 2
+      },
+      {
         "sido_name": "전북특별자치도",
-        "count": 31818
+        "count": 32151
       },
       {
         "sido_name": "제주특별자치도",
-        "count": 20044
+        "count": 20287
       },
       {
         "sido_name": "충청남도",
-        "count": 41261
+        "count": 41555
       },
       {
         "sido_name": "충청북도",
-        "count": 31940
+        "count": 32181
       }
     ]
   },
   "kakao_matches": {
-    "total": 20,
+    "total": 635,
     "statuses": [
       {
         "status": "ambiguous",
-        "count": 4
+        "count": 43
       },
       {
         "status": "confirmed",
-        "count": 10
+        "count": 100
       },
       {
         "status": "unmatched",
-        "count": 6
+        "count": 492
       }
     ],
     "integrity": {
@@ -343,6 +392,6 @@
       }
     ],
     "evidence": 0,
-    "enrichment_requests": 0
+    "enrichment_requests": 1351
   }
 }

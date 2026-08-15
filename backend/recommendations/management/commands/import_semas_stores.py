@@ -17,6 +17,7 @@ from recommendations.models import DataSourceSyncRun, SourcePlaceRecord
 
 CATALOG_URL = "https://www.data.go.kr/data/15083033/fileData.do"
 SUPPORTED_CATEGORIES = {"cafe", "restaurant", "bookstore"}
+GWANGJU_DISTRICTS = {"광산구", "남구", "동구", "북구", "서구"}
 ALIASES = {
     "id": ("상가업소번호", "상가업소ID", "store_id", "bizesId"),
     "name": ("상호명", "store_name", "bizesNm"),
@@ -167,6 +168,7 @@ def build_semas_record(row, *, categories, snapshot_date=None):
     source_updated_at = None
     if snapshot_date:
         source_updated_at = timezone.make_aware(datetime.combine(snapshot_date, time.min))
+    sido_name = normalize_semas_sido(values["sido_name"], values["sigungu_name"])
     return {
         "source": "semas",
         "dataset": "commercial_store",
@@ -178,7 +180,7 @@ def build_semas_record(row, *, categories, snapshot_date=None):
         "is_active": True,
         "address": values["lot_address"][:500],
         "road_address": values["road_address"][:500],
-        "sido_name": values["sido_name"][:50],
+        "sido_name": sido_name[:50],
         "sigungu_name": values["sigungu_name"][:80],
         "administrative_code": (values["administrative_code"] or values["sigungu_code"])[:30],
         "source_x": values["lng"][:50],
@@ -197,9 +199,23 @@ def build_semas_record(row, *, categories, snapshot_date=None):
             "ksic_code": values["ksic_code"],
             "ksic_name": values["ksic_name"],
             "sido_code": values["sido_code"],
+            "source_sido_name": values["sido_name"],
             "sigungu_code": values["sigungu_code"],
         },
     }
+
+
+def normalize_semas_sido(sido_name, sigungu_name):
+    """Map the 2026 Q2 combined source label back to the service's 17 strata.
+
+    The original value is retained in ``raw.source_sido_name``.  Gwangju's five
+    autonomous districts are unambiguous within the combined source file.
+    """
+    if sido_name != "전남광주통합특별시":
+        return sido_name
+    if sigungu_name in GWANGJU_DISTRICTS:
+        return "광주광역시"
+    return "전라남도"
 
 
 def infer_store_category(values):

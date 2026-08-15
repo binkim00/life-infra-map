@@ -191,7 +191,13 @@ def score_candidate(record, candidate, *, source_coordinates=None):
 
     source_branches = branch_tokens(record.name)
     candidate_branches = branch_tokens(candidate.get("place_name"))
-    branch_conflict = bool(source_branches and candidate_branches and source_branches.isdisjoint(candidate_branches))
+    names_equivalent = normalize_name(record.name) == normalize_name(candidate.get("place_name"))
+    branch_conflict = bool(
+        not names_equivalent
+        and source_branches
+        and candidate_branches
+        and source_branches.isdisjoint(candidate_branches)
+    )
     branch_score = -30.0 if branch_conflict else 0.0
 
     total = max(0.0, min(100.0, name_score + address_score + distance_score + phone_score + category_score + branch_score))

@@ -32,6 +32,13 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument("--source", default="localdata")
         parser.add_argument("--dataset", default="")
+        parser.add_argument("--sido", default="")
+        parser.add_argument("--category", default="")
+        parser.add_argument(
+            "--per-stratum",
+            type=int,
+            help="Select this many rows per --sido x --category cell.",
+        )
         parser.add_argument("--after-id", type=int, default=0)
         parser.add_argument("--limit", type=int)
         parser.add_argument("--batch-size", type=int, default=100)
@@ -52,6 +59,15 @@ class Command(BaseCommand):
             raise CommandError("--limit must be at least 1.")
         if options["max_api_requests"] is not None and options["max_api_requests"] < 1:
             raise CommandError("--max-api-requests must be at least 1.")
+        if options["per_stratum"] is not None and options["per_stratum"] < 1:
+            raise CommandError("--per-stratum must be at least 1.")
+
+        sidos = [value.strip() for value in options["sido"].split(",") if value.strip()]
+        categories = [
+            value.strip() for value in options["category"].split(",") if value.strip()
+        ]
+        if options["per_stratum"] is not None and (not sidos or not categories):
+            raise CommandError("--per-stratum requires --sido and --category lists.")
 
         queryset = SourcePlaceRecord.objects.filter(
             source=options["source"],
@@ -60,6 +76,10 @@ class Command(BaseCommand):
         ).exclude(name="")
         if options["dataset"]:
             queryset = queryset.filter(dataset=options["dataset"])
+        if sidos:
+            queryset = queryset.filter(sido_name__in=sidos)
+        if categories:
+            queryset = queryset.filter(category__in=categories)
 
         statuses = {
             value.strip() for value in options["match_statuses"].split(",") if value.strip()
@@ -74,7 +94,17 @@ class Command(BaseCommand):
         elif not options["refresh"]:
             queryset = queryset.filter(kakao_match__isnull=True)
 
-        queryset = queryset.order_by("id")
+        if options["per_stratum"] is not None:
+            selected_ids = []
+            for sido in sidos:
+                for category in categories:
+                    selected_ids.extend(queryset.filter(
+                        sido_name=sido,
+                        category=category,
+                    ).order_by("id").values_list("id", flat=True)[:options["per_stratum"]])
+            queryset = queryset.filter(id__in=selected_ids)
+
+        queryset = queryset.order_by("sido_name", "category", "id")
         if options["limit"] is not None:
             queryset = queryset[:options["limit"]]
 

@@ -36,8 +36,9 @@ remain category/search-filter metadata and do not create meaningful tags.
 
 The 2026 Q2 source represents the former Gwangju and Jeonnam area as
 `전남광주통합특별시`, so this source snapshot has 16 first-level regions. The
-service's 17-region stratification continues to use canonical Kakao addresses;
-the SEMAS label is preserved as source provenance rather than silently rewritten.
+staging adapter derives Gwangju from its five autonomous districts and treats
+the remaining combined rows as Jeonnam for the service's 17-region strata. The
+original source label is retained in `raw.source_sido_name`.
 
 ## Validation
 

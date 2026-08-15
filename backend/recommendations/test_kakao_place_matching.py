@@ -103,6 +103,19 @@ class KakaoPlaceMatcherTests(TestCase):
         self.assertNotEqual(outcome["status"], "confirmed")
         self.assertTrue(outcome["top"]["details"]["branch_conflict"])
 
+    def test_spacing_difference_does_not_create_a_false_branch_conflict(self):
+        record = self.make_record(name="빽다방제주법조 타워점")
+        candidate = kakao_candidate(name="빽다방 제주법조타워점")
+
+        outcome = choose_match(
+            record,
+            [candidate],
+            source_coordinates=(37.49792, 127.02758),
+        )
+
+        self.assertEqual(outcome["status"], "confirmed")
+        self.assertFalse(outcome["top"]["details"]["branch_conflict"])
+
 
 class KakaoPlaceMatchingCommandTests(TestCase):
     def make_record(self, source_record_id="LOCAL-1"):
@@ -254,3 +267,60 @@ class KakaoPlaceMatchingCommandTests(TestCase):
         self.assertFalse(KakaoPlaceMatch.objects.filter(source_record=second).exists())
         self.assertIn("quota_reached=True", output.getvalue())
         self.assertIn(f"last_id={first.id}", output.getvalue())
+
+    @patch(
+        "recommendations.management.commands.match_source_places_to_kakao.search_places_by_keyword"
+    )
+    def test_filters_a_batch_by_sido_and_category(self, mock_search):
+        selected = self.make_record("LOCAL-1")
+        other_sido = self.make_record("LOCAL-2")
+        other_sido.sido_name = "부산광역시"
+        other_sido.save(update_fields=["sido_name"])
+        other_category = self.make_record("LOCAL-3")
+        other_category.category = "restaurant"
+        other_category.save(update_fields=["category"])
+        mock_search.return_value = {"documents": []}
+
+        call_command(
+            "match_source_places_to_kakao",
+            source="localdata",
+            sido="서울특별시",
+            category="cafe",
+            limit=1,
+            stdout=StringIO(),
+        )
+
+        self.assertTrue(KakaoPlaceMatch.objects.filter(source_record=selected).exists())
+        self.assertEqual(KakaoPlaceMatch.objects.count(), 1)
+
+    @patch(
+        "recommendations.management.commands.match_source_places_to_kakao.search_places_by_keyword"
+    )
+    def test_selects_each_requested_sido_category_stratum(self, mock_search):
+        seoul_cafe = self.make_record("SEOUL-CAFE")
+        busan_cafe = self.make_record("BUSAN-CAFE")
+        busan_cafe.sido_name = "부산광역시"
+        busan_cafe.save(update_fields=["sido_name"])
+        seoul_restaurant = self.make_record("SEOUL-RESTAURANT")
+        seoul_restaurant.category = "restaurant"
+        seoul_restaurant.save(update_fields=["category"])
+        busan_restaurant = self.make_record("BUSAN-RESTAURANT")
+        busan_restaurant.sido_name = "부산광역시"
+        busan_restaurant.category = "restaurant"
+        busan_restaurant.save(update_fields=["sido_name", "category"])
+        mock_search.return_value = {"documents": []}
+
+        call_command(
+            "match_source_places_to_kakao",
+            source="localdata",
+            sido="서울특별시,부산광역시",
+            category="cafe,restaurant",
+            per_stratum=1,
+            max_queries=1,
+            stdout=StringIO(),
+        )
+
+        self.assertSetEqual(
+            set(KakaoPlaceMatch.objects.values_list("source_record_id", flat=True)),
+            {seoul_cafe.id, busan_cafe.id, seoul_restaurant.id, busan_restaurant.id},
+        )

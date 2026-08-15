@@ -85,13 +85,19 @@ Create the subjective-evidence bootstrap sample only after Kakao normalization:
         --dry-run
 
 The default matrix is 17 provinces/cities by four categories. Sampling is spread
-across the source-record ID range inside each stratum and deduplicated by Kakao
-canonical place. Records are eligible only when all of the following hold:
+across the available ID range inside each stratum and deduplicated by Kakao
+canonical place. A staged source record is eligible only when all of the
+following hold:
 
 - the source record is active;
 - `KakaoPlaceMatch.status` is `confirmed`;
 - `normalized_place.source` is `kakao_local`;
 - the category is cafe, restaurant, tourism, or city park.
+
+Direct Kakao registry places satisfy the same identity requirement without an
+extra source-match row. The nationwide queue's current coverage and intentionally
+unfilled strata are recorded in
+[`docs/02_data/nationwide-tag-sample-2026-08-15.md`](02_data/nationwide-tag-sample-2026-08-15.md).
 
 The command reports covered and missing strata so an incomplete regional source
 registry cannot silently look nationwide. Existing queue rows are idempotently
