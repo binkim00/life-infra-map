@@ -11,7 +11,8 @@ from recommendations.services.tag_source_policy import WEB_EVIDENCE_SOURCES
 
 FIELDS = (
     "sample_type", "place_id", "category", "place_name", "place_address",
-    "tag", "polarity", "evidence", "source_url", "identity_score",
+    "tag", "polarity", "evidence_title", "evidence", "source_url",
+    "evidence_source", "identity_score", "evidence_confidence",
     "diagnostic_reason", "identity_correct", "evidence_about_place",
     "tag_supported", "polarity_correct", "review_notes",
 )
@@ -44,9 +45,12 @@ class Command(BaseCommand):
                 "place_address": evidence.place.address,
                 "tag": evidence.tag.name,
                 "polarity": evidence.polarity,
+                "evidence_title": (evidence.context or {}).get("source_title", ""),
                 "evidence": evidence.evidence,
                 "source_url": evidence.source_reference,
+                "evidence_source": evidence.source,
                 "identity_score": identity.get("score", ""),
+                "evidence_confidence": evidence.confidence,
                 "diagnostic_reason": "",
             })
         diagnostic_path = Path(options["diagnostics"]).resolve()
@@ -61,9 +65,12 @@ class Command(BaseCommand):
                 "place_address": row["place_address"],
                 "tag": "",
                 "polarity": "",
+                "evidence_title": row.get("result_title", ""),
                 "evidence": row["result_summary"],
                 "source_url": row["source_url"],
+                "evidence_source": "naver_blog_search",
                 "identity_score": row["identity_score"],
+                "evidence_confidence": "",
                 "diagnostic_reason": row["reason"],
             } for row in csv.DictReader(handle)]
         evidence_target = min(len(evidence_rows), size // 2)
