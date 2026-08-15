@@ -1,4 +1,5 @@
 from datetime import timedelta
+from unittest.mock import patch
 
 from django.test import TestCase, override_settings
 from django.utils import timezone
@@ -12,6 +13,7 @@ from recommendations.models import (
     PlaceTagEvidence,
     ProviderQuotaUsage,
 )
+from recommendations.services.place_tag_collection import collect_naver_place_evidence
 
 
 @override_settings(
@@ -81,6 +83,33 @@ class DailyTagCollectionTests(TestCase):
         self.assertEqual(quota.request_count, 2)
         self.assertEqual(quota.reserved_count, 0)
         self.assertEqual(PlaceTagEvidence.objects.count(), 2)
+
+    @patch("recommendations.services.place_tag_collection._request_channel")
+    def test_place_collection_queries_one_representative_keyword_per_pack(self, request_channel):
+        place = self.make_place(1)
+        request_channel.return_value = {
+            "items": [{
+                "title": "수집 테스트 1 서울 중구 카페",
+                "description": "분위기 좋고 콘센트 있음",
+                "link": "https://example.com/review",
+                "postdate": "20260816",
+            }],
+        }
+
+        result = collect_naver_place_evidence(
+            place,
+            requested_tags=["콘센트있음", "분위기좋음", "조용함"],
+        )
+
+        queries = [call.args[1] for call in request_channel.call_args_list]
+        self.assertEqual(len(queries), 2)
+        self.assertTrue(any(query.endswith("노트북") for query in queries))
+        self.assertTrue(any(query.endswith("분위기") for query in queries))
+        self.assertFalse(any("노트북 콘센트" in query for query in queries))
+        self.assertEqual({item["tag_name"] for item in result["evidences"]}, {
+            "콘센트있음",
+            "분위기좋음",
+        })
 
     def test_stale_processing_job_is_recovered_and_releases_reservation(self):
         place = self.make_place(1)

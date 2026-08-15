@@ -13,12 +13,12 @@ from recommendations.services.naver_tag_evidence_provider import (
 COLLECTION_PROFILES = {
     "cafe": (
         ("work", ("노트북작업", "콘센트있음", "무료와이파이", "작업하기좋음")),
-        ("ambience", ("조용함", "분위기좋음", "데이트좋음", "대화하기좋음")),
+        ("ambience", ("분위기좋음", "조용함", "데이트좋음", "대화하기좋음")),
         ("visit", ("전망좋음", "웨이팅적음")),
     ),
     "restaurant": (
         ("visit", ("혼밥좋음", "웨이팅적음", "데이트좋음", "대화하기좋음")),
-        ("ambience", ("조용함", "분위기좋음", "전망좋음")),
+        ("ambience", ("분위기좋음", "조용함", "전망좋음")),
     ),
     "tourism": (
         ("experience", ("전망좋음", "분위기좋음", "데이트좋음", "조용함")),
@@ -62,10 +62,14 @@ def collect_naver_place_evidence(place, requested_tags=None):
     """Collect multiple tag observations with one request per semantic pack."""
     requested = set(requested_tags or requested_tags_for_category(place.category))
     profiles = [
-        (pack_name, tuple(tag for tag in tags if tag in requested and tag in TAG_TERMS))
+        (
+            pack_name,
+            SEARCH_KEYWORDS.get(tags[0], tags[0]),
+            tuple(tag for tag in tags if tag in requested and tag in TAG_TERMS),
+        )
         for pack_name, tags in collection_profile(place.category)
     ]
-    profiles = [(name, tags) for name, tags in profiles if tags]
+    profiles = [(name, keyword, tags) for name, keyword, tags in profiles if tags]
     if not profiles:
         return {"executed": True, "requests": 0, "evidences": [], "error": "unsupported_category"}
 
@@ -73,9 +77,11 @@ def collect_naver_place_evidence(place, requested_tags=None):
     evidences = []
     seen = set()
     requests_made = 0
-    for pack_name, tag_names in profiles:
-        keywords = " ".join(SEARCH_KEYWORDS.get(tag, tag) for tag in tag_names)
-        query = "{} {} {}".format(place.name, location, keywords).strip()
+    for pack_name, keyword, tag_names in profiles:
+        # Naver treats a long list of semantic words as restrictive search terms.
+        # Search with one representative word, then extract every tag in the pack
+        # from the returned title/summary.
+        query = "{} {} {}".format(place.name, location, keyword).strip()
         try:
             payload = _request_channel("blog", query)
             requests_made += 1
