@@ -69,3 +69,39 @@ class TagEvidenceAggregationTests(TestCase):
         result = aggregate_tag_evidence(self.place, self.tag, now=self.now)
         self.assertEqual(result["status"], "candidate")
         self.assertFalse(PlaceTag.objects.filter(source="user_verified", is_verified=True).exists())
+
+    def test_official_negative_blocks_an_official_positive(self):
+        self.add_evidence(source="field_rule", reference="official:positive")
+        self.add_evidence(
+            source="field_rule",
+            reference="official:negative",
+            polarity="negative",
+        )
+
+        result = aggregate_tag_evidence(self.place, self.tag, now=self.now)
+
+        self.assertEqual(result["status"], "rejected")
+        rejected = PlaceTag.objects.get(source="field_rule")
+        self.assertEqual(rejected.status, "rejected")
+        self.assertFalse(rejected.is_verified)
+
+    def test_expiry_revokes_only_confirmation_created_by_evidence_aggregation(self):
+        web = [
+            self.add_evidence(source="ai_suggested", reference=f"https://blog/{index}")
+            for index in range(3)
+        ]
+        self.add_evidence(source="user_feedback", reference="interaction:1")
+        aggregate_tag_evidence(self.place, self.tag, now=self.now)
+        self.assertTrue(PlaceTag.objects.filter(
+            source="user_verified", is_verified=True
+        ).exists())
+
+        for evidence in web:
+            evidence.expires_at = self.now - timedelta(seconds=1)
+            evidence.save(update_fields=["expires_at"])
+        result = aggregate_tag_evidence(self.place, self.tag, now=self.now)
+
+        self.assertEqual(result["status"], "none")
+        self.assertFalse(PlaceTag.objects.filter(
+            source="user_verified", is_verified=True
+        ).exists())

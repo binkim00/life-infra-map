@@ -130,3 +130,7 @@ Three independent web URLs increase candidate confidence but never confirm a
 tag. Confirmation requires an official positive field, or web evidence combined
 with explicit user confirmation or an `admin_review` evidence row. Expired rows
 are ignored and active negative rows reduce confidence or block promotion.
+Re-aggregation also removes a confirmation previously created by this evidence
+path when its support expires; confirmations owned by the separate interaction
+aggregator are not deleted. Validation results are recorded in
+[`docs/02_data/tag-evidence-promotion-2026-08-15.md`](02_data/tag-evidence-promotion-2026-08-15.md).
