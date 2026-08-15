@@ -99,6 +99,37 @@ services:
       "
     restart: "no"
 
+  tag_scheduler:
+    profiles: ["tag-collection"]
+    build:
+      context: ./backend
+    container_name: life-infra-map-tag-scheduler
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+    depends_on:
+      db:
+        condition: service_healthy
+    command: python manage.py run_tag_collection_scheduler
+
+  tag_worker:
+    profiles: ["tag-collection"]
+    build:
+      context: ./backend
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+    depends_on:
+      db:
+        condition: service_healthy
+    command: python manage.py process_place_tag_collection_jobs --watch
+
 volumes:
   db_data:
   pgadmin_data:
