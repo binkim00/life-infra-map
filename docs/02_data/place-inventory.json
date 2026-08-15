@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-08-15 11:46:55.057080+00:00",
+  "generated_at": "2026-08-15 12:06:27.214141+00:00",
   "database_vendor": "postgresql",
   "places": {
     "total": 215398,
@@ -205,11 +205,99 @@
     ]
   },
   "source_records": {
-    "total": 0,
-    "active": 0,
+    "total": 861631,
+    "active": 861631,
     "normalized": 0,
-    "datasets": [],
-    "regions": []
+    "datasets": [
+      {
+        "source": "data_go_kr",
+        "dataset": "library_standard",
+        "count": 3526
+      },
+      {
+        "source": "semas",
+        "dataset": "commercial_store",
+        "count": 858105
+      }
+    ],
+    "regions": [
+      {
+        "sido_name": "강원특별자치도",
+        "count": 38352
+      },
+      {
+        "sido_name": "경기도",
+        "count": 191101
+      },
+      {
+        "sido_name": "경상남도",
+        "count": 64574
+      },
+      {
+        "sido_name": "경상북도",
+        "count": 53151
+      },
+      {
+        "sido_name": "광주광역시",
+        "count": 316
+      },
+      {
+        "sido_name": "대구광역시",
+        "count": 38998
+      },
+      {
+        "sido_name": "대전광역시",
+        "count": 24579
+      },
+      {
+        "sido_name": "부산광역시",
+        "count": 54838
+      },
+      {
+        "sido_name": "서울특별시",
+        "count": 145959
+      },
+      {
+        "sido_name": "세종특별자치시",
+        "count": 5258
+      },
+      {
+        "sido_name": "울산광역시",
+        "count": 20227
+      },
+      {
+        "sido_name": "인천광역시",
+        "count": 42216
+      },
+      {
+        "sido_name": "전남광주통합특별시",
+        "count": 56844
+      },
+      {
+        "sido_name": "전라남도",
+        "count": 154
+      },
+      {
+        "sido_name": "전라북도",
+        "count": 1
+      },
+      {
+        "sido_name": "전북특별자치도",
+        "count": 31818
+      },
+      {
+        "sido_name": "제주특별자치도",
+        "count": 20044
+      },
+      {
+        "sido_name": "충청남도",
+        "count": 41261
+      },
+      {
+        "sido_name": "충청북도",
+        "count": 31940
+      }
+    ]
   },
   "kakao_matches": {
     "total": 0,

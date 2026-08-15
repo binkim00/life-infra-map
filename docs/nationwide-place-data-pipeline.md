@@ -282,3 +282,8 @@ unrelated industries and then uses the same Kakao matching command with
 `--source semas --dataset commercial_store`. The source warns that store IDs can
 change when its classification system is rebuilt, so each quarterly snapshot
 must be rematched rather than assumed to preserve historical identity.
+
+The current development baseline was loaded on 2026-08-15 from the nationwide
+library standard snapshot and SEMAS 2026 Q2 files. Checksums, input counts,
+filtered counts, and the source's current first-level-region naming are recorded
+in [`docs/02_data/official-source-load-2026-08-15.md`](02_data/official-source-load-2026-08-15.md).

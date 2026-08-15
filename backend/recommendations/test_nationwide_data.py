@@ -10,6 +10,7 @@ from pyproj import Transformer
 from recommendations.management.commands.generate_objective_place_tags import generate_tags
 from recommendations.management.commands.import_localdata_records import (
     build_source_record,
+    detect_encoding,
     import_localdata_csv,
     parse_source_date,
 )
@@ -37,6 +38,14 @@ from recommendations.models import (
 
 
 class LocaldataImportTests(TestCase):
+    def test_detects_utf8_when_sample_ends_mid_character(self):
+        handle = tempfile.NamedTemporaryFile(mode="wb", suffix=".csv", delete=False)
+        self.addCleanup(lambda: Path(handle.name).unlink(missing_ok=True))
+        with handle:
+            handle.write(b"a" * 65535 + "가".encode("utf-8"))
+
+        self.assertEqual(detect_encoding(handle.name), "utf-8-sig")
+
     def write_csv(self, rows):
         handle = tempfile.NamedTemporaryFile(
             mode="w",

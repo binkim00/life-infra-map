@@ -1,3 +1,4 @@
+import codecs
 import csv
 import hashlib
 from pathlib import Path
@@ -403,7 +404,10 @@ def detect_encoding(path):
     sample = Path(path).read_bytes()[:65536]
     for encoding in ("utf-8-sig", "cp949"):
         try:
-            sample.decode(encoding)
+            # The fixed-size sample can end in the middle of a multibyte
+            # character.  An incremental decoder must therefore be told that
+            # more bytes may follow; otherwise a valid UTF-8 file is rejected.
+            codecs.getincrementaldecoder(encoding)().decode(sample, final=False)
             return encoding
         except UnicodeDecodeError:
             continue
