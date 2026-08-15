@@ -4,6 +4,7 @@ from pathlib import Path
 
 from django.core.management.base import BaseCommand
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from recommendations.models import PlaceTag, PlaceTagEvidence
@@ -53,6 +54,7 @@ def apply_freshness(queryset, *, dry_run=False, batch_size=1000, now=None):
     by_category = Counter()
     updates = []
     stale_pairs = set()
+    current_pairs = set()
     for evidence in queryset.iterator(chunk_size=batch_size):
         context = evidence.context or {}
         dataset = context.get("dataset", "")
@@ -73,6 +75,8 @@ def apply_freshness(queryset, *, dry_run=False, batch_size=1000, now=None):
         )
         if state == "stale":
             stale_pairs.add((evidence.place_id, evidence.tag_id, evidence.source))
+        elif state == "current":
+            current_pairs.add((evidence.place_id, evidence.tag_id, evidence.source))
         if evidence.expires_at != expected_expiry:
             counts["expiry_updates"] += 1
             evidence.expires_at = expected_expiry
@@ -91,14 +95,17 @@ def apply_freshness(queryset, *, dry_run=False, batch_size=1000, now=None):
         PlaceTagEvidence.objects.bulk_update(updates, ["expires_at", "context", "updated_at"], batch_size=batch_size)
 
     aggregate_updates = 0
-    if not dry_run and stale_pairs:
+    stale_only_pairs = stale_pairs - current_pairs
+    if not dry_run and stale_only_pairs:
         with transaction.atomic():
             for evidence_source, aggregate_source in (("field_rule", "field_rule"), ("external_data", "external_data")):
-                pair_subset = [(place_id, tag_id) for place_id, tag_id, source in stale_pairs if source == evidence_source]
-                for place_id, tag_id in pair_subset:
+                pair_subset = [(place_id, tag_id) for place_id, tag_id, source in stale_only_pairs if source == evidence_source]
+                for offset in range(0, len(pair_subset), batch_size):
+                    condition = Q()
+                    for place_id, tag_id in pair_subset[offset:offset + batch_size]:
+                        condition |= Q(place_id=place_id, tag_id=tag_id)
                     aggregate_updates += PlaceTag.objects.filter(
-                        place_id=place_id,
-                        tag_id=tag_id,
+                        condition,
                         source=aggregate_source,
                         status="confirmed",
                     ).update(status="needs_verification", is_verified=False, verified_at=None)

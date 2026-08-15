@@ -224,3 +224,50 @@ fallback으로 결합해 같은 유실을 방지한다.
 
 Identity, Evidence relevance, Tag, polarity 지표를 전체·Category·Source·confidence 구간별로
 출력하며 미입력과 애매 판정은 precision 분모에서 제외한다.
+
+## 2026-08-16 공식 Evidence Freshness와 shelter 확대
+
+공식 Evidence도 영구 신뢰하지 않는다. `structured_evidence_freshness.py`가 실제
+`observed_at`에서 Source별 TTL을 계산하며 날짜가 없으면 임의 날짜 대신 `unknown`을 유지한다.
+
+- 공중화장실·공영주차장: 400일
+- 도시공원: 730일
+- TourAPI: 365일
+- 무더위쉼터: 240일
+- 전국도서관표준데이터: 400일
+
+TTL은 `STRUCTURED_EVIDENCE_TTL_DAYS` 설정으로 조정할 수 있다. 다음 명령은 Evidence를
+삭제하지 않고 `expires_at`을 기록하며, stale만 `PlaceTag.status=needs_verification`으로 낮춘다.
+
+    python manage.py apply_structured_evidence_freshness --dry-run
+    python manage.py apply_structured_evidence_freshness --output tmp/structured_freshness.json
+
+적용 후 공식 Evidence 123,334건 중 current 79,851건, stale 43,483건이다. Source별 stale은
+공중화장실 29,955, 도시공원 1,314, 무더위쉼터 12,214이며 공영주차장은 0이다.
+
+TourAPI Place 8,760곳은 목록 raw에 수정일이 있으나 상세 필드가 0곳이어서
+`source_updated_at`만 보강하고 의미 Tag는 만들지 않았다. 무더위쉼터는 정제 원본 59,887행 중
+기존 Place 59,837곳을 ID로 연결해 raw와 기준일을 보강했다. 공식 필드에서 다음 69,620건을
+생성했다.
+
+- `냉방시설있음` 56,562
+- `주말휴일운영` 5,470
+- `야간운영` 5,115
+- `숙박가능` 2,473
+
+`24시간운영`은 평일과 주말·휴일 모두 전일 시각이 직접 기록된 경우만 허용했으며 이번 원본에는
+조건을 모두 만족하는 기존 Place가 없었다.
+
+`analyze_public_kakao_duplicates`는 Place를 변경하지 않고 같은 Category·지역, 250m 이내,
+이름·주소 유사도를 분석한다. 공공 Place 24,701곳 중 후보 317곳이 나왔지만, 이름 exact·50m
+이내·주소 지지·단일 후보를 모두 만족한 high-confidence 후보는 0곳이었다. 따라서 자동 merge는
+0건이며 317곳 모두 ambiguous 검토 후보로 남겼다.
+
+    python manage.py analyze_public_kakao_duplicates \
+      --output tmp/public_kakao_duplicate_report.json \
+      --csv-output tmp/public_kakao_duplicate_candidates.csv
+
+다음 공식 Source 후보 중 library는 3,526개 원본과 풍부한 운영시간·좌석 필드가 있지만 현재
+Kakao Place 연결이 10곳뿐이다. beach는 공식 Place 8곳의 raw가 이름·좌표뿐이라 직접 태그가
+없다. 따라서 즉시 Coverage 효과가 가장 큰 shelter를 먼저 적용했고, library는 정규화 확대 후
+적용 대상으로 남겼다.
