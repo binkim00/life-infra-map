@@ -1,4 +1,5 @@
 from collections import defaultdict
+import math
 
 from django.db.models import Count, Max, Q, Sum
 from django.utils import timezone
@@ -98,7 +99,7 @@ def priority_context(places, *, category_priorities=None, now=None):
     return results
 
 
-def weighted_tier_selection(candidates, *, limit, tier_weights):
+def weighted_tier_selection(candidates, *, limit, tier_weights, category_max_share=40):
     pools = defaultdict(list)
     for place, context in candidates:
         pools[context["tier"]].append((place, context))
@@ -113,14 +114,46 @@ def weighted_tier_selection(candidates, *, limit, tier_weights):
     while sum(quotas.values()) < limit:
         quotas[max(quotas, key=lambda tier: tier_weights[tier - 1])] += 1
     selected = []
+    category_counts = defaultdict(int)
+    category_cap = max(1, math.ceil(limit * category_max_share / 100))
     for tier in range(1, 5):
-        take = min(quotas[tier], len(pools[tier]))
-        selected.extend(pools[tier][:take])
-        pools[tier] = pools[tier][take:]
+        target = min(quotas[tier], len(pools[tier]))
+        kept = []
+        for item in pools[tier]:
+            if target <= 0:
+                kept.append(item)
+                continue
+            category = item[0].category
+            if category_counts[category] >= category_cap:
+                kept.append(item)
+                continue
+            selected.append(item)
+            category_counts[category] += 1
+            target -= 1
+        # Tier allocation is stronger than the category cap. If a tier only has
+        # one category, keep its nationwide share instead of silently collapsing
+        # the whole batch into Tier 1.
+        tier_fill = kept[:target]
+        for item in tier_fill:
+            category_counts[item[0].category] += 1
+        selected.extend(tier_fill)
+        pools[tier] = kept[target:]
     remaining = sorted(
         [item for rows in pools.values() for item in rows],
         key=lambda item: (-item[1]["score"], item[0].id),
     )
-    selected.extend(remaining[: max(0, limit - len(selected))])
+    for item in remaining:
+        if len(selected) >= limit:
+            break
+        category = item[0].category
+        if category_counts[category] >= category_cap:
+            continue
+        selected.append(item)
+        category_counts[category] += 1
+    if len(selected) < limit:
+        chosen_ids = {item[0].id for item in selected}
+        selected.extend(
+            item for item in remaining
+            if item[0].id not in chosen_ids
+        )
     return selected[:limit]
-

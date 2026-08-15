@@ -152,17 +152,20 @@ def plan_daily_jobs(*, cycle_date, place_limit, provider="naver_search", mode="b
 def plan_bootstrap_jobs(
     *, cycle_date, place_limit, provider, budget, recent_place_ids, categories, dry_run
 ):
-    location = Q()
+    per_stratum = max(20, math.ceil(place_limit / max(1, len(REGIONS) * len(categories))) * 10)
+    places_by_id = {}
     for _, aliases in REGIONS:
+        location = Q()
         for alias in aliases:
             location |= Q(address__startswith=alias)
             location |= Q(detail_location__startswith=alias)
-    candidate_limit = max(1000, place_limit * 20)
-    places = list(
-        Place.objects.filter(location, category__in=categories)
-        .exclude(id__in=recent_place_ids)
-        .order_by("id")[:candidate_limit]
-    )
+        for category in categories:
+            rows = Place.objects.filter(location, category=category).exclude(
+                id__in=recent_place_ids
+            ).order_by("id")[:per_stratum]
+            for place in rows:
+                places_by_id[place.id] = place
+    places = list(places_by_id.values())
     contexts = priority_context(
         places,
         category_priorities=settings.TAG_COLLECTION_CATEGORY_PRIORITIES,
@@ -171,6 +174,7 @@ def plan_bootstrap_jobs(
         [(place, contexts[place.id]) for place in places],
         limit=place_limit,
         tier_weights=parse_tier_weights(settings.TAG_COLLECTION_BOOTSTRAP_TIER_WEIGHTS),
+        category_max_share=settings.TAG_COLLECTION_BOOTSTRAP_CATEGORY_MAX_SHARE,
     )
     created = 0
     planned_requests = 0
