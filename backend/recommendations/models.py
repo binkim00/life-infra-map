@@ -48,6 +48,28 @@ class Place(models.Model):
         return self.name
 
 
+class PlaceFeatureDocument(models.Model):
+    """Fact-only retrieval document prepared for an optional embedding index."""
+
+    place = models.OneToOneField(
+        Place,
+        on_delete=models.CASCADE,
+        related_name="feature_document",
+    )
+    document = models.TextField()
+    features = models.JSONField(default=list, blank=True)
+    fingerprint = models.CharField(max_length=64, db_index=True)
+    embedding_provider = models.CharField(max_length=50, blank=True)
+    embedding_model = models.CharField(max_length=100, blank=True)
+    embedding = models.JSONField(default=list, blank=True)
+    embedding_dimensions = models.PositiveIntegerField(default=0)
+    indexed_at = models.DateTimeField(null=True, blank=True)
+    generated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.place.name} feature document"
+
+
 class Tag(models.Model):
     TAG_TYPE_CHOICES = [
         ("category", "카테고리"),

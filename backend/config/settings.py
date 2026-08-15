@@ -149,6 +149,17 @@ AI_SEARCH_MIN_STRONG_MEDIUM_CANDIDATES = _env_int("AI_SEARCH_MIN_STRONG_MEDIUM_C
 AI_SEARCH_MIN_RESULTS = _env_int("AI_SEARCH_MIN_RESULTS", 10, 1, 20)
 AI_SEARCH_RERANK_MAX_CANDIDATES = _env_int("AI_SEARCH_RERANK_MAX_CANDIDATES", 8, 5, 30)
 AI_SEARCH_RERANK_MAX_COMPLETION_TOKENS = _env_int("AI_SEARCH_RERANK_MAX_COMPLETION_TOKENS", 2500, 800, 4000)
+AI_SEARCH_HYBRID_WEIGHTS = {
+    "condition": _env_float("AI_SEARCH_WEIGHT_CONDITION", 0.20, 0, 1),
+    "tag": _env_float("AI_SEARCH_WEIGHT_TAG", 0.10, 0, 1),
+    "semantic": _env_float("AI_SEARCH_WEIGHT_SEMANTIC", 0.35, 0, 1),
+    "distance": _env_float("AI_SEARCH_WEIGHT_DISTANCE", 0.10, 0, 1),
+    "evidence": _env_float("AI_SEARCH_WEIGHT_EVIDENCE", 0.10, 0, 1),
+    "freshness": _env_float("AI_SEARCH_WEIGHT_FRESHNESS", 0.05, 0, 1),
+    "reliability": _env_float("AI_SEARCH_WEIGHT_RELIABILITY", 0.10, 0, 1),
+}
+SEMANTIC_RETRIEVAL_ENABLED = _env_bool("SEMANTIC_RETRIEVAL_ENABLED", False)
+SEMANTIC_EMBEDDING_PROVIDER = os.getenv("SEMANTIC_EMBEDDING_PROVIDER", "").strip().lower()
 # 같은 후보 묶음에 대한 AI 판정 재사용 시간(초). 0이면 캐시하지 않는다.
 # 테스트는 각 케이스가 실제 호출 경로를 그대로 타야 하므로 캐시를 쓰지 않는다.
 AI_RERANK_CACHE_TTL = (

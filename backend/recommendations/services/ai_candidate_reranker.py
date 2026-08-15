@@ -332,14 +332,68 @@ def _public_semantic_reason(candidate, decision, *, needs_verification=False):
 
 
 def _safe_semantic_reason(candidate, decision, *, needs_verification=False):
-    reason = _clean_text(decision.get("reason"), 300)
-    if _looks_internal_or_english_reason(reason):
-        return _public_semantic_reason(candidate, decision, needs_verification=needs_verification)
-    if _reason_conflicts_with_candidate_type(candidate, reason):
-        return _public_semantic_reason(candidate, decision, needs_verification=needs_verification)
-    if needs_verification and "확인" not in reason:
-        return f"{reason} 세부 정보는 방문 전에 확인해 주세요."
-    return reason
+    # The model may phrase a plausible qualitative claim that is absent from
+    # the supplied candidate facts.  User-facing reasons therefore come only
+    # from deterministic matched evidence/category/distance fields.
+    return _public_semantic_reason(candidate, decision, needs_verification=needs_verification)
+
+
+def _distance_score(candidate):
+    distance = _distance(candidate)
+    if distance >= 999999999.0:
+        return 50.0
+    if distance <= 300:
+        return 100.0
+    if distance <= 700:
+        return 85.0
+    if distance <= 1500:
+        return 70.0
+    if distance <= 3000:
+        return 50.0
+    if distance <= 5000:
+        return 30.0
+    return 10.0
+
+
+def _hybrid_score(candidate, decision):
+    weights = getattr(settings, "AI_SEARCH_HYBRID_WEIGHTS", {}) or {}
+    default_weights = {
+        "condition": 0.20, "tag": 0.10, "semantic": 0.35,
+        "distance": 0.10, "evidence": 0.10, "freshness": 0.05,
+        "reliability": 0.10,
+    }
+    resolved = {key: max(0.0, float(weights.get(key, value))) for key, value in default_weights.items()}
+    total_weight = sum(resolved.values()) or 1.0
+
+    condition_score = _score(candidate.get("score"))
+    matched = _as_list(candidate.get("matched_tags")) or _as_list(candidate.get("matched_tag_labels"))
+    tag_score = min(100.0, len(matched) * 25.0)
+    semantic_score = _score(decision.get("semantic_score"))
+    evidence_level = _clean_text(
+        candidate.get("pre_ai_evidence_level") or decision.get("evidence_level")
+    )
+    evidence_score = {"strong": 90.0, "medium": 65.0, "weak": 35.0}.get(evidence_level, 40.0)
+    source = _clean_text(candidate.get("candidate_source") or candidate.get("source")).lower()
+    has_verified = bool(_as_list(candidate.get("verified_tags")) or _as_list(candidate.get("verified_tag_labels")))
+    reliability_score = 90.0 if source == "db" and has_verified else 75.0 if source == "db" else 65.0 if source == "kakao" else 50.0
+    freshness_score = _score((candidate.get("score_breakdown") or {}).get("freshness_score")) or 50.0
+    penalty = min(100.0, len(_as_list(candidate.get("pre_ai_unmet_constraints"))) * 100.0)
+    components = {
+        "condition_score": condition_score,
+        "tag_score": tag_score,
+        "semantic_score": semantic_score,
+        "distance_score": _distance_score(candidate),
+        "evidence_score": evidence_score,
+        "freshness_score": freshness_score,
+        "reliability_score": reliability_score,
+        "penalty": penalty,
+    }
+    weighted = sum(
+        components[f"{key}_score"] * value
+        for key, value in resolved.items()
+    ) / total_weight
+    final_score = max(0.0, min(100.0, round(weighted - penalty, 2)))
+    return final_score, {**components, "final_score": final_score, "weights": resolved}
 
 
 def _is_ai_enabled():
@@ -545,7 +599,18 @@ def semantic_rerank_candidates(frame, candidates, *, ranking_policy="evidence_fi
         candidate = by_id.get(candidate_id)
         if not candidate:
             continue
+        hard_unmet = _as_list(candidate.get("pre_ai_unmet_constraints"))
+        if hard_unmet:
+            excluded.append({
+                **candidate,
+                "semantic_reranker": decision,
+                "compatibility_gate": "excluded",
+                "compatibility_gate_reason": "hard_condition_failed",
+                "hard_condition_failures": hard_unmet,
+            })
+            continue
         needs_verification = decision["decision"] == "needs_verification"
+        final_score, hybrid_breakdown = _hybrid_score(candidate, decision)
         semantic_reason = _safe_semantic_reason(
             candidate,
             decision,
@@ -573,7 +638,11 @@ def semantic_rerank_candidates(frame, candidates, *, ranking_policy="evidence_fi
                 if needs_verification
                 else ("" if decision["decision"] == "include" else "semantic_reranker_excluded")
             ),
-            "score": decision["semantic_score"],
+            "score": final_score,
+            "score_breakdown": {
+                **(candidate.get("score_breakdown") or {}),
+                **hybrid_breakdown,
+            },
         }
         if decision["decision"] in {"include", "needs_verification"}:
             ranked.append(updated)
@@ -584,13 +653,13 @@ def semantic_rerank_candidates(frame, candidates, *, ranking_policy="evidence_fi
         ranked = [candidate for candidate in ranked if candidate.get("semantic_score", 0) >= 40]
         ranked.sort(key=lambda candidate: (
             _distance(candidate),
-            -float(candidate.get("semantic_score") or 0),
+            -float(candidate.get("score") or 0),
             EVIDENCE_LEVEL_RANK.get(candidate.get("evidence_level"), 9),
             str(candidate.get("id")),
         ))
     else:
         ranked.sort(key=lambda candidate: (
-            -float(candidate.get("semantic_score") or 0),
+            -float(candidate.get("score") or 0),
             EVIDENCE_LEVEL_RANK.get(candidate.get("evidence_level"), 9),
             _distance(candidate),
             str(candidate.get("id")),

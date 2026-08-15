@@ -1,4 +1,5 @@
 import json
+import math
 import time
 from pathlib import Path
 
@@ -152,6 +153,7 @@ def _top_results(data, top_n):
         category = result.get("category") or ""
         rows.append({
             "rank": index,
+            "id": str(result.get("id") or result.get("place_id") or ""),
             "name": result.get("name") or "",
             "category": category,
             "category_display": get_category_display_name(category) or "",
@@ -595,6 +597,9 @@ def _case_summary(case, data, elapsed_ms, top_n):
             "limit": case.get("limit", 15),
         },
         "action": action,
+        "expected_action": case.get("expected_action"),
+        "expected_anchor_location": case.get("expected_anchor_location"),
+        "relevance_labels": case.get("relevance_labels") or {},
         "status": "needs_review" if issues else "ok",
         "issues": issues,
         "quality": quality,
@@ -636,6 +641,77 @@ def _case_summary(case, data, elapsed_ms, top_n):
             "retrieval": debug.get("retrieval_latency_ms"),
             "reranker": debug.get("reranker_latency_ms"),
         },
+    }
+
+
+def _metric(value, *, measured, numerator=None, denominator=None):
+    if not measured:
+        return "NOT_MEASURED"
+    result = {"value": value}
+    if numerator is not None:
+        result["numerator"] = numerator
+    if denominator is not None:
+        result["denominator"] = denominator
+    return result
+
+
+def _evaluation_metrics(rows):
+    intent_rows = [row for row in rows if row.get("expected_action")]
+    intent_hits = sum(row.get("action") == row.get("expected_action") for row in intent_rows)
+    region_rows = [row for row in rows if row.get("expected_anchor_location")]
+    region_hits = sum(
+        _compact(row.get("expected_anchor_location"))
+        in _compact((row.get("frame") or {}).get("anchor_location"))
+        for row in region_rows
+    )
+
+    result_rows = [item for row in rows for item in row.get("top_results") or []]
+    hard_violations = sum(bool(item.get("unmet_constraints")) for item in result_rows)
+    no_result = sum(
+        row.get("action") == "search" and not (row.get("top_results") or [])
+        for row in rows
+    )
+    fallback = sum(bool((row.get("location_resolution") or {}).get("fallback_used")) for row in rows)
+    latencies = sorted(
+        float((row.get("timing_ms") or {}).get("total_observed"))
+        for row in rows
+        if (row.get("timing_ms") or {}).get("total_observed") is not None
+    )
+
+    ranked_rows = [row for row in rows if isinstance(row.get("relevance_labels"), dict) and row.get("relevance_labels")]
+    reciprocal_ranks = []
+    ndcgs = []
+    recalls = []
+    for row in ranked_rows:
+        labels = row["relevance_labels"]
+        gains = []
+        for item in row.get("top_results") or []:
+            key = str(item.get("id") or item.get("name") or "")
+            gains.append(max(0, int(labels.get(key, 0) or 0)))
+        first = next((index + 1 for index, gain in enumerate(gains) if gain > 0), None)
+        reciprocal_ranks.append(0 if first is None else 1 / first)
+        relevant_total = sum(1 for value in labels.values() if int(value or 0) > 0)
+        recalls.append(0 if not relevant_total else sum(gain > 0 for gain in gains) / relevant_total)
+        dcg = sum((2 ** gain - 1) / math.log2(index + 2) for index, gain in enumerate(gains))
+        ideal = sorted((max(0, int(value or 0)) for value in labels.values()), reverse=True)[:len(gains)]
+        idcg = sum((2 ** gain - 1) / math.log2(index + 2) for index, gain in enumerate(ideal))
+        ndcgs.append(0 if not idcg else dcg / idcg)
+
+    return {
+        "intent_accuracy": _metric(round(intent_hits / len(intent_rows), 4) if intent_rows else 0, measured=bool(intent_rows), numerator=intent_hits, denominator=len(intent_rows)),
+        "region_accuracy": _metric(round(region_hits / len(region_rows), 4) if region_rows else 0, measured=bool(region_rows), numerator=region_hits, denominator=len(region_rows)),
+        "candidate_recall": "NOT_MEASURED",
+        "recall_at_k": _metric(round(sum(recalls) / len(recalls), 4) if recalls else 0, measured=bool(recalls)),
+        "mrr": _metric(round(sum(reciprocal_ranks) / len(reciprocal_ranks), 4) if reciprocal_ranks else 0, measured=bool(reciprocal_ranks)),
+        "ndcg_at_k": _metric(round(sum(ndcgs) / len(ndcgs), 4) if ndcgs else 0, measured=bool(ndcgs)),
+        "hard_violation_rate": _metric(round(hard_violations / len(result_rows), 4) if result_rows else 0, measured=bool(result_rows), numerator=hard_violations, denominator=len(result_rows)),
+        "unsupported_reason_rate": "NOT_MEASURED",
+        "no_result_rate": _metric(round(no_result / len(rows), 4) if rows else 0, measured=bool(rows), numerator=no_result, denominator=len(rows)),
+        "fallback_rate": _metric(round(fallback / len(rows), 4) if rows else 0, measured=bool(rows), numerator=fallback, denominator=len(rows)),
+        "latency_ms": _metric({
+            "average": round(sum(latencies) / len(latencies), 2),
+            "p95": round(latencies[min(len(latencies) - 1, math.ceil(len(latencies) * 0.95) - 1)], 2),
+        }, measured=bool(latencies)),
     }
 
 
@@ -974,6 +1050,7 @@ class Command(BaseCommand):
             "count": len(rows),
             "needs_review_count": sum(1 for row in rows if row["status"] != "ok"),
             "case_success_rates": _case_success_rates(rows),
+            "metrics": _evaluation_metrics(rows),
             "results": rows,
         }
 

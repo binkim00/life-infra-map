@@ -2379,6 +2379,63 @@ class RecommendationSearchTests(TestCase):
         GMS_API_URL="https://example.invalid/parser",
     )
     @patch("recommendations.services.ai_candidate_reranker._call_gms_chat_json")
+    def test_ai_candidate_reranker_keeps_hybrid_components_and_blocks_hard_failures(self, mock_ai):
+        from recommendations.services.ai_candidate_reranker import semantic_rerank_candidates
+
+        mock_ai.return_value = {"candidates": [
+            {
+                "candidate_id": "valid",
+                "decision": "include",
+                "semantic_score": 82,
+                "evidence_level": "strong",
+                "matched_fields": ["tag"],
+                "unmet_constraints": [],
+                "reason": "조용해서 추천합니다.",
+            },
+            {
+                "candidate_id": "hard-fail",
+                "decision": "include",
+                "semantic_score": 99,
+                "evidence_level": "strong",
+                "matched_fields": ["category"],
+                "unmet_constraints": [],
+                "reason": "추천합니다.",
+            },
+        ]}
+        candidates = [
+            {
+                "id": "valid", "candidate_source": "db", "name": "근거 카페",
+                "category": "카페", "distance": 250, "score": 70,
+                "matched_tags": ["조용함"], "verified_tags": ["조용함"],
+                "pre_ai_evidence_level": "strong",
+                "matched_evidence": [{"type": "verified_tag_direct", "value": "조용함"}],
+            },
+            {
+                "id": "hard-fail", "candidate_source": "kakao", "name": "유료 시설",
+                "category": "시설", "distance": 20, "score": 90,
+                "pre_ai_evidence_level": "strong",
+                "pre_ai_unmet_constraints": ["무료 조건 불충족"],
+            },
+        ]
+
+        ranked, debug = semantic_rerank_candidates(
+            {"target_objects": ["카페"], "constraints": ["무료"]}, candidates,
+        )
+
+        self.assertEqual([item["id"] for item in ranked], ["valid"])
+        self.assertEqual(debug["excluded_candidates"][0]["id"], "hard-fail")
+        breakdown = ranked[0]["score_breakdown"]
+        self.assertEqual(ranked[0]["score"], breakdown["final_score"])
+        self.assertIn("semantic_score", breakdown)
+        self.assertIn("evidence_score", breakdown)
+        self.assertIn("reliability_score", breakdown)
+
+    @override_settings(
+        CONVERSATIONAL_SEARCH_AI_ENABLED=True,
+        GMS_API_KEY="fake-gms",
+        GMS_API_URL="https://example.invalid/parser",
+    )
+    @patch("recommendations.services.ai_candidate_reranker._call_gms_chat_json")
     def test_ai_candidate_reranker_retries_missing_batch_once_after_timeout(self, mock_ai):
         from recommendations.services.ai_candidate_reranker import semantic_rerank_candidates
 
