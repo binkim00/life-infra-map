@@ -264,3 +264,43 @@ AI 파서는 실제 장소명, 주소, 좌표, 운영 여부, 시설 보유 여�
 - AI frame을 `conditions`, `fallbackTargets`, `resultPolicy`까지 명시적으로 확장
 - 사용자 입력과 Tag/Category 설명 간 임베딩 기반 의미 매칭
 - 하드코딩 키워드 매핑 축소
+
+---
+
+## 12. Evidence-grounded Hybrid Ranking
+
+AI reranker가 반환한 semantic score가 기존 점수를 덮어쓰지 않는다. 후보의 최종 점수는 다음
+구성 요소를 설정 가능한 가중치로 합산한다.
+
+- condition 0.20
+- tag 0.10
+- semantic 0.35
+- distance 0.10
+- evidence 0.10
+- freshness 0.05
+- reliability 0.10
+
+가중치는 `AI_SEARCH_WEIGHT_*` 환경변수로 조정한다. 결과의 `score_breakdown`에는 각 구성 점수,
+penalty, 최종 점수와 적용 가중치를 남긴다. `pre_ai_unmet_constraints`가 있는 후보는 AI가 include를
+반환해도 `hard_condition_failed`로 제외된다. 사용자에게 보이는 추천 이유는 LLM의 자유 문장이
+아니라 Candidate의 검증 태그, 일치 조건, Category, 거리로만 다시 구성해 Evidence에 없는
+정성 주장을 차단한다.
+
+## 13. Evaluation과 Semantic Retrieval 준비 상태
+
+`evaluate_ai_search`는 case file에 `expected_action`, `expected_anchor_location`,
+`relevance_labels`가 있을 때 Intent, Region, Recall@K, MRR, NDCG를 계산한다. 정답이 없으면
+숫자를 만들지 않고 `NOT_MEASURED`로 기록한다. Hard violation, no-result, fallback, latency는
+실행 결과만으로 측정한다.
+
+`PlaceFeatureDocument`는 Place 이름, Category, 주소와 활성 positive Feature만 조합한다.
+stale/rejected/needs_verification은 제외하고, candidate는 confidence 50 이상이면서 활성 positive
+Evidence가 있을 때만 포함한다. 다음 명령은 외부 호출 없이 문서를 멱등 생성한다.
+
+    python manage.py build_place_feature_documents --category cafe --limit 100 --dry-run
+    python manage.py build_place_feature_documents --category cafe --limit 100
+
+현재 PostgreSQL에는 PostGIS, pg_trgm, unaccent가 있지만 pgvector가 없고 로컬 Embedding Provider도
+설정되지 않았다. 따라서 `SEMANTIC_RETRIEVAL_ENABLED=false`가 기본이며 실제 vector 검색이나 대량
+embedding은 구현 완료로 간주하지 않는다. 가짜/random vector와 유료 API 대량 호출은 사용하지
+않는다.
