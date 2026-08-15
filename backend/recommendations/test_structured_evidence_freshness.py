@@ -9,6 +9,17 @@ from recommendations.services.structured_evidence_freshness import freshness_sta
 
 
 class StructuredEvidenceFreshnessTests(TestCase):
+    def test_freewifi_uses_structured_source_ttl(self):
+        now = timezone.now()
+        self.assertEqual(
+            freshness_state(now - timedelta(days=399), place_source="freewifi", now=now),
+            "current",
+        )
+        self.assertEqual(
+            freshness_state(now - timedelta(days=401), place_source="freewifi", now=now),
+            "stale",
+        )
+
     @override_settings(STRUCTURED_EVIDENCE_TTL_DAYS={"public_test": 30})
     def test_source_ttl_distinguishes_current_stale_and_unknown(self):
         now = timezone.now()

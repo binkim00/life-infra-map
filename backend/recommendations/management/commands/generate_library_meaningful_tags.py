@@ -18,7 +18,10 @@ class Command(BaseCommand):
         parser.add_argument("--after-id", type=int, default=0)
         parser.add_argument("--limit", type=int)
         parser.add_argument("--batch-size", type=int, default=500)
-        parser.add_argument("--large-seat-threshold", type=int, default=100)
+        # 150 is the 75th percentile of positive seat counts in the 3,526-row
+        # nationwide snapshot imported in 2026.  Keep it configurable so a
+        # later official snapshot can be re-profiled without changing code.
+        parser.add_argument("--large-seat-threshold", type=int, default=150)
         parser.add_argument("--dry-run", action="store_true")
 
     def handle(self, *args, **options):

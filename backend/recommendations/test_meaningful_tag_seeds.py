@@ -41,6 +41,11 @@ class MeaningfulTagRuleTests(TestCase):
             {"무료이용", "놀이시설"},
         )
 
+    def test_extracts_free_wifi_only_from_official_ssid_field(self):
+        matches = extract_meaningful_tags({"와이파이SSID": "PublicWiFi@Seoul"})
+        self.assertEqual({match["tag"] for match in matches}, {"무료와이파이"})
+        self.assertEqual(extract_meaningful_tags({"category": "freewifi"}), [])
+
     def test_extracts_direct_toilet_accessibility_and_all_day_facts(self):
         matches = extract_meaningful_tags({
             "남성용-장애인용대변기수": "1",

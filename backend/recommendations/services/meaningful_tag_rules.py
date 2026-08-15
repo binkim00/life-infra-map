@@ -63,7 +63,7 @@ MEANINGFUL_TAG_RULES = (
         "요금정보", "fee", "usefee", "이용요금", "입장료",
     ), "공식 이용요금 필드가 무료로 명시됨", 95),
     MeaningfulTagRule("무료와이파이", (
-        "wifi", "무료wifi", "무료와이파이", "무선인터넷",
+        "wifi", "무료wifi", "무료와이파이", "무선인터넷", "와이파이SSID",
     ), "무료 무선인터넷 제공이 공식 원문에 명시됨", 95),
     MeaningfulTagRule("카드결제가능", (
         "chkcreditcard", "chkcreditcardfood", "creditcard",

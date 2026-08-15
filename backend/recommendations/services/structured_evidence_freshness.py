@@ -11,6 +11,7 @@ DEFAULT_TTL_DAYS = {
     "tour_api": 365,
     "heat_shelter_api": 240,
     "library_standard": 400,
+    "freewifi": 400,
 }
 
 

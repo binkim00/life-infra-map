@@ -25,6 +25,7 @@ PLACE_FILE_CONFIGS = {
         "kind": "db_ready",
         "default_category": "freewifi",
         "default_source": "freewifi",
+        "raw_fallback": PROJECT_DIR / "ExData" / "Cleaned" / "freewifi_places.json",
     },
     "shelter": {
         "filename": "shelter_db_ready.json",

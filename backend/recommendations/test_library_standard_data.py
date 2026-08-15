@@ -33,7 +33,7 @@ class LibraryStandardDataTests(TestCase):
                 "토요일운영종료시각": "18:00",
                 "공휴일운영시작시각": "09:00",
                 "공휴일운영종료시각": "17:00",
-                "열람좌석수": "120",
+                "열람좌석수": "200",
                 "소재지도로명주소": "서울특별시 중구 테스트로 1",
                 "운영기관명": "서울특별시 중구청",
                 "도서관전화번호": "02-1234-5678",
@@ -52,7 +52,7 @@ class LibraryStandardDataTests(TestCase):
         record = SourcePlaceRecord.objects.get()
         self.assertEqual(record.category, "library")
         self.assertEqual(record.coordinate_reference_system, "EPSG:4326")
-        self.assertEqual(record.raw["seat_count"], 120)
+        self.assertEqual(record.raw["seat_count"], 200)
         place = Place.objects.create(
             name=record.name, category="library", address=record.road_address,
             lat=37.5, lng=127, source="kakao_local", external_id="library-1",

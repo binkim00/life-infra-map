@@ -619,6 +619,8 @@ class SourcePlacePromotionTests(TestCase):
 
     def test_promotes_epsg5174_record_to_wgs84_place(self):
         record = self.make_source_record()
+        record.raw = {"weekday_close": "22:00", "seat_count": 200}
+        record.save(update_fields=["raw"])
 
         stats = promote_records(SourcePlaceRecord.objects.all())
 
@@ -628,6 +630,9 @@ class SourcePlacePromotionTests(TestCase):
         self.assertAlmostEqual(record.normalized_place.lat, 35.1796, places=4)
         self.assertAlmostEqual(record.normalized_place.lng, 129.0756, places=4)
         self.assertEqual(record.normalized_place.category, "cafe")
+        self.assertEqual(record.normalized_place.raw["weekday_close"], "22:00")
+        self.assertEqual(record.normalized_place.raw["seat_count"], 200)
+        self.assertEqual(record.normalized_place.raw["source_record_id"], "PROMOTE-1")
 
     def test_generates_idempotent_objective_and_candidate_evidence(self):
         self.make_source_record()

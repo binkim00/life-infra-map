@@ -37,6 +37,11 @@ SOURCE_CONFIG = {
         "path": "ExData/Cleaned/shelter_places.json",
         "container": None,
     },
+    "freewifi": {
+        "source": "freewifi",
+        "path": "ExData/Cleaned/freewifi_places.json",
+        "container": None,
+    },
 }
 
 

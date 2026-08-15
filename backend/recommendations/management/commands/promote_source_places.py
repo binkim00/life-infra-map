@@ -113,6 +113,7 @@ def save_promotion_batch(batch, stats, *, dry_run=False):
                 data_quality_status="official_source",
                 data_quality_score=80,
                 raw={
+                    **(record.raw if isinstance(record.raw, dict) else {}),
                     "dataset": record.dataset,
                     "source_record_id": record.source_record_id,
                     "business_type": record.business_type,
