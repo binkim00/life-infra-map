@@ -25,20 +25,23 @@ class Command(BaseCommand):
         parser.add_argument("--output", default="tmp/identity_mismatch_analysis.json")
         parser.add_argument("--csv", default="tmp/identity_mismatch_analysis.csv")
         parser.add_argument("--limit", type=int, default=0)
+        parser.add_argument("--category", default="")
 
     def handle(self, *args, **options):
         job_ids = PlaceTagCollectionJob.objects.order_by("-id").values_list("id", flat=True)[:options["latest"]]
-        jobs = list(
-            PlaceTagCollectionJob.objects.filter(
+        queryset = PlaceTagCollectionJob.objects.filter(
                 id__in=job_ids,
                 stats__miss_reason="IDENTITY_MISMATCH",
-            ).select_related("place").order_by("id")
-        )
+            ).select_related("place").order_by("-id")
+        if options["category"]:
+            queryset = queryset.filter(place__category=options["category"])
+        jobs = list(queryset)
         if options["limit"]:
             jobs = jobs[:options["limit"]]
         rows = []
         reason_counts = Counter()
         category_counts = defaultdict(Counter)
+        industry_counts = defaultdict(Counter)
         requests = failures = 0
         for job in jobs:
             results = []
@@ -69,6 +72,14 @@ class Command(BaseCommand):
             outcome = choose_place_failure(job.place, results)
             reason_counts[outcome["reason"]] += 1
             category_counts[job.place.category][outcome["reason"]] += 1
+            raw = job.place.raw if isinstance(job.place.raw, dict) else {}
+            industry = str(
+                raw.get("industry_middle_name")
+                or raw.get("industry_minor_name")
+                or raw.get("business_type")
+                or "UNKNOWN"
+            ).strip()
+            industry_counts[industry][outcome["reason"]] += 1
             best = outcome["best"] or {}
             identity = best.get("identity") or {}
             rows.append({
@@ -76,6 +87,8 @@ class Command(BaseCommand):
                 "place_id": job.place_id,
                 "category": job.place.category,
                 "source": job.place.source,
+                "industry_middle": raw.get("industry_middle_name", ""),
+                "industry_minor": raw.get("industry_minor_name", ""),
                 "place_name": job.place.name,
                 "place_address": job.place.address,
                 "reason": outcome["reason"],
@@ -95,6 +108,7 @@ class Command(BaseCommand):
             "request_failures": failures,
             "reasons": dict(reason_counts),
             "by_category": {key: dict(value) for key, value in sorted(category_counts.items())},
+            "by_industry": {key: dict(value) for key, value in sorted(industry_counts.items())},
             "examples": examples_by_reason(rows),
         }
         path = Path(options["output"]).resolve()
