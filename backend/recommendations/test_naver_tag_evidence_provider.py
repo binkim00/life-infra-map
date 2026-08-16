@@ -82,6 +82,23 @@ class NaverTagEvidenceProviderTests(SimpleTestCase):
             with self.subTest(tag_name=tag_name):
                 self.assertEqual(evidence_polarity(tag_name, snippet), 'positive')
 
+    def test_recovered_cafe_phrases_stay_grounded_in_existing_tags(self):
+        cases = {
+            '콘센트있음': '좌석 옆에 콘센트가 있어 충전하기 편하다',
+            '혼자이용좋음': '1인석이 많아 혼카페 이용자가 많다',
+            '대화하기좋음': '친구와 수다떨기도 좋은 좌석이다',
+            '장기체류좋음': '노트북으로 오래 작업하기 편한 공간이다',
+        }
+        for tag_name, snippet in cases.items():
+            with self.subTest(tag_name=tag_name):
+                self.assertEqual(evidence_polarity(tag_name, snippet), 'positive')
+
+    def test_long_stay_restriction_is_negative_not_positive(self):
+        self.assertEqual(
+            evidence_polarity('장기체류좋음', '장시간 노트북 사용 제한 안내가 있다'),
+            'negative',
+        )
+
     @patch('recommendations.services.naver_tag_evidence_provider._request_channel')
     def test_collects_positive_and_negative_identity_matched_snippets(self, request_channel):
         request_channel.return_value = {'items': [
