@@ -157,8 +157,9 @@ The request ledger, queued reservations, and 90% safety reserve now bound the
 planner directly. Configurable initial bucket weights are Seoul cafe 45%, Busan
 cafe 15%, high-quality restaurant 10%, sparse-targeted 15%, stale refresh 10%,
 and exploration 5%. Unused shares spill to other buckets. After a bucket has at
-least 200 calls, its Evidence/call yield adjusts its next allocation within a
-0.5–1.5 multiplier; small samples do not affect weights.
+least 200 calls with the new worker metrics, its active-Evidence/call yield
+adjusts its next allocation within a 0.5–1.5 multiplier; small samples and old
+jobs without active-yield metrics do not affect weights.
 
 Current candidate hints provide 2,164 canonical Place–Tag targets across 1,585
 Seoul/Busan cafe/restaurant Places without active Evidence. There are 800 prior
@@ -177,3 +178,50 @@ https://developers.openai.com/api/docs/models/gpt-5-nano
 The final 11-query AI-off regression returned ten results each, no results in
 zero cases, and zero hard violations among 55 inspected results. Average / p95
 latency was 847.16 / 3,061.84 ms, with DB 840.07 ms and Kakao 10.98 ms average.
+
+## 2026-08-17 yield run
+
+The new quota cycle started with 240 requests already consumed by the previous
+container image. After rebuilding scheduler and worker from the current branch,
+a same-Place 50-row A/B used 250 requests. Discovery produced 0.06 Evidence per
+call; WORK_INFRA 0.14; SOLO 0.06; LONG_STAY 0.02; TALK 0.06. Only WORK_INFRA is
+adopted by default. Unadopted packs remain available to the bounded evaluation
+command and cannot silently enter the daily collector.
+
+The adaptive 500 run used 528 requests (1.056 calls/Place), returned 181 raw
+Evidence observations, created 123 Evidence rows and 21 PlaceTag rows, and added
+23 net active Evidence rows. The following 2,000-row discovery run used exactly
+2,000 calls but its raw yield fell to 0.1175 Evidence/call, so no 5,000-row
+expansion was attempted. A NO_TAG_EXPRESSION WORK_INFRA pass then used 612 calls
+over all 612 available distinct Seoul cafe targets and created 248 Evidence rows
+(31 net active) and 28 PlaceTag rows. Its two cohorts yielded 0.614 and 0.337
+Evidence/call.
+
+A stale WORK_INFRA test used 200 calls and created 130 Evidence rows, but only
+two were current; old blog posts dominated. This is why dynamic budget history
+now stores `new_evidences`, `active_evidences`, and `new_active_evidences` and
+optimizes the active metric instead of rewarding stale volume. Existing stale
+rows are preserved.
+
+Stored-snippet context analysis added only repeated grounded aliases: explicit
+outlet presence, 1-person seating/solo-cafe wording, long laptop work, and
+positive conversation wording. Generic `장시간` was rejected because sampled
+uses frequently described limits or bans. API-free re-extraction created 214
+additional rows across 200 Place–Tag pairs; 49 inherited current expiry and 165
+remained stale. A second dry-run returned zero.
+
+Final warm AI-off regression remained healthy: 11/11 queries returned ten
+results, hard violations were 0/55, and no-result/fallback were both zero.
+Average / median / p95(max) latency was 718.67 / 413.09 / 2,427.26 ms. Average
+DB/evidence loading was 712.14 ms and Kakao was 15.53 ms.
+
+Official brand pages are a possible next source, but no bulk adapter was added.
+The official Hollys store finder states that Wi-Fi is available at all stores
+except rest-area and special stores and exposes store-specific parking,
+terrace, and 24-hour filters. The official Starbucks finder exposes parking
+and store-type/service filters, but not outlet availability. Neither inspected
+page provided a clear bulk-reuse/API license, and the Hollys exception requires
+store-level exclusion data, so treating every matched brand Place as having the
+feature would be unsafe. Sources inspected:
+`https://www.hollys.co.kr/store/korea/korStore.do` and
+`https://www.starbucks.co.kr/store/store_map.do?disp=locale`.
