@@ -252,9 +252,12 @@ def plan_bootstrap_jobs(
         status="completed",
     ).order_by("-id").values_list("context", "stats")[:5000]:
         bucket = (context or {}).get("budget_bucket")
-        row = history.setdefault(bucket, {"calls": 0, "evidence": 0})
+        if "active_evidences" not in (stats or {}):
+            continue
+        row = history.setdefault(bucket, {"calls": 0, "evidence": 0, "active_evidence": 0})
         row["calls"] += int((stats or {}).get("requests") or 0)
         row["evidence"] += int((stats or {}).get("evidences") or 0)
+        row["active_evidence"] += int((stats or {}).get("active_evidences") or 0)
     weights = yield_adjusted_weights(settings.TAG_COLLECTION_BUDGET_WEIGHTS, history)
     selected, bucket_requests = allocate_by_request_budget(
         selected,

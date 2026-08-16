@@ -29,7 +29,7 @@ def yield_adjusted_weights(base_weights, history, *, minimum_calls=200):
     """Adjust only after a bucket has enough calls; sparse history stays neutral."""
     weights = dict(base_weights or DEFAULT_WEIGHTS)
     measured = {
-        key: values["evidence"] / values["calls"]
+        key: values.get("active_evidence", values["evidence"]) / values["calls"]
         for key, values in history.items()
         if values.get("calls", 0) >= minimum_calls
     }

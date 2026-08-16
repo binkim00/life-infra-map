@@ -96,14 +96,21 @@ def process_jobs(*, limit=10, worker_id="worker", collector=None):
             rate_limited=result.get("error") == "rate_limited",
         )
         evidences = result.get("evidences") or []
+        new_evidences = 0
+        active_evidences = 0
+        new_active_evidences = 0
         for evidence in evidences:
             observed_at = _observed_at(evidence.get("observed_date"))
-            save_place_candidate_evidence(
+            saved, created = save_place_candidate_evidence(
                 job.place,
                 evidence["tag_name"],
                 evidence,
                 observed_at=observed_at,
             )
+            is_active = saved.expires_at is None or saved.expires_at > timezone.now()
+            new_evidences += int(created)
+            active_evidences += int(is_active)
+            new_active_evidences += int(created and is_active)
         stats["evidences"] += len(evidences)
         error = str(result.get("error") or "")
         if error in {"", "insufficient_evidence"}:
@@ -125,6 +132,9 @@ def process_jobs(*, limit=10, worker_id="worker", collector=None):
         job.stats = {
             "requests": requests_made,
             "evidences": len(evidences),
+            "new_evidences": new_evidences,
+            "active_evidences": active_evidences,
+            "new_active_evidences": new_active_evidences,
             "structured_evidences": structured_evidences,
             "ai_calls": int(result.get("ai_calls") or 0),
             "miss_reason": result.get("miss_reason") or "",

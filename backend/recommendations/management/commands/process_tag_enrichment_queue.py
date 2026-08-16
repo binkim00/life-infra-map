@@ -101,7 +101,7 @@ def save_place_candidate_evidence(place, tag_name, result, *, observed_at):
         polarity,
     )
     ttl = evidence_ttl(tag_name, evidence_source)
-    PlaceTagEvidence.objects.update_or_create(
+    evidence, created = PlaceTagEvidence.objects.update_or_create(
         evidence_key=hashlib.sha256(key_value.encode('utf-8')).hexdigest(),
         defaults={
             'place': place,
@@ -124,6 +124,7 @@ def save_place_candidate_evidence(place, tag_name, result, *, observed_at):
         },
     )
     refresh_candidate_aggregate(place, tag)
+    return evidence, created
 
 
 def refresh_candidate_aggregate(place, tag):

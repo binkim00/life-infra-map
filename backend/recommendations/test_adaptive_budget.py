@@ -17,6 +17,13 @@ class AdaptiveBudgetTests(SimpleTestCase):
         })
         self.assertGreater(adjusted["a"], adjusted["b"])
 
+    def test_yield_adjustment_prefers_active_evidence_when_recorded(self):
+        adjusted = yield_adjusted_weights({"fresh": 50, "stale": 50}, {
+            "fresh": {"calls": 200, "evidence": 40, "active_evidence": 30},
+            "stale": {"calls": 200, "evidence": 200, "active_evidence": 2},
+        })
+        self.assertGreater(adjusted["fresh"], adjusted["stale"])
+
     def test_allocation_respects_total_request_budget_and_spills_unused_share(self):
         rows = [
             (object(), {"budget_bucket": "a", "calls": 2}),
