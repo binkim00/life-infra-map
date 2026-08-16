@@ -77,6 +77,8 @@ def process_jobs(*, limit=10, worker_id="worker", collector=None):
                 result = collector(
                     job.place,
                     job.requested_tags,
+                    strategy="adaptive" if job.context.get("adaptive") else "standard",
+                    targeted_tags=job.context.get("targeted_tags") or (),
                     allow_ai=(
                         getattr(settings, "TAG_COLLECTION_AI_EXTRACTOR_ENABLED", False)
                         and job.priority >= settings.TAG_COLLECTION_AI_PRIORITY_THRESHOLD

@@ -3,10 +3,10 @@ from datetime import date, timedelta
 
 from django.conf import settings
 from django.core.management.base import BaseCommand
-from django.db.models import Q
+from django.db.models import Q, Sum
 from django.utils import timezone
 
-from recommendations.models import Place, PlaceTagCollectionJob
+from recommendations.models import Place, PlaceTagCollectionJob, ProviderQuotaUsage
 from recommendations.models import PlaceTagEvidence
 from recommendations.services.place_tag_collection import (
     COLLECTION_PROFILES,
@@ -19,6 +19,11 @@ from recommendations.services.bootstrap_priority import (
     weighted_tier_selection,
 )
 from recommendations.services.tag_source_policy import WEB_EVIDENCE_SOURCES
+from recommendations.services.adaptive_tag_collection import adaptive_planned_requests
+from recommendations.services.adaptive_budget import (
+    allocate_by_request_budget,
+    yield_adjusted_weights,
+)
 
 
 REGIONS = (
@@ -95,10 +100,24 @@ def plan_daily_jobs(
     categories=None, regions=None, dry_run=False,
 ):
     place_limit = max(1, int(place_limit))
-    budget = math.floor(
+    safe_limit = math.floor(
         settings.TAG_COLLECTION_DAILY_API_LIMIT
         * settings.TAG_COLLECTION_QUOTA_PERCENT
         / 100
+    )
+    usage = ProviderQuotaUsage.objects.filter(
+        provider=provider, usage_date=cycle_date,
+    ).values("request_count", "reserved_count").first() or {}
+    queued_requests = PlaceTagCollectionJob.objects.filter(
+        provider=provider,
+        status__in=("queued", "retry"),
+    ).aggregate(total=Sum("planned_requests"))["total"] or 0
+    budget = max(
+        0,
+        safe_limit
+        - int(usage.get("request_count") or 0)
+        - int(usage.get("reserved_count") or 0)
+        - int(queued_requests),
     )
     recent_cutoff = cycle_date - timedelta(days=settings.TAG_COLLECTION_REVISIT_DAYS)
     stale_place_ids = PlaceTagEvidence.objects.filter(
@@ -227,11 +246,27 @@ def plan_bootstrap_jobs(
         tier_weights=parse_tier_weights(settings.TAG_COLLECTION_BOOTSTRAP_TIER_WEIGHTS),
         category_max_share=effective_category_share,
     )
+    history = {}
+    for context, stats in PlaceTagCollectionJob.objects.filter(
+        context__budget_bucket__isnull=False,
+        status="completed",
+    ).order_by("-id").values_list("context", "stats")[:5000]:
+        bucket = (context or {}).get("budget_bucket")
+        row = history.setdefault(bucket, {"calls": 0, "evidence": 0})
+        row["calls"] += int((stats or {}).get("requests") or 0)
+        row["evidence"] += int((stats or {}).get("evidences") or 0)
+    weights = yield_adjusted_weights(settings.TAG_COLLECTION_BUDGET_WEIGHTS, history)
+    selected, bucket_requests = allocate_by_request_budget(
+        selected,
+        budget=budget,
+        weights=weights,
+        request_count=lambda context: adaptive_planned_requests(context["targeted_tags"]),
+    )
     created = 0
     planned_requests = 0
     covered = set()
     for place, priority in selected:
-        requests = planned_requests_for_category(place.category)
+        requests = adaptive_planned_requests(priority["targeted_tags"])
         if planned_requests + requests > budget:
             break
         if not dry_run:
@@ -248,6 +283,11 @@ def plan_bootstrap_jobs(
                         "tier": priority["tier"],
                         "priority": priority,
                         "category": place.category,
+                        "adaptive": True,
+                        "targeted_tags": priority["targeted_tags"],
+                        "adaptive_reason": priority["adaptive_reason"],
+                        "budget_bucket": priority["budget_bucket"],
+                        "budget_weights": weights,
                         "source": "daily_bootstrap_plan",
                     },
                 },

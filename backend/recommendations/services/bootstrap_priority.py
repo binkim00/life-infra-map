@@ -8,12 +8,18 @@ from recommendations.models import PlaceTag, PlaceTagCollectionJob, PlaceTagEvid
 from recommendations.services.place_tag_collection import requested_tags_for_category
 from recommendations.services.restaurant_collection_quality import restaurant_collection_quality
 from recommendations.services.tag_source_policy import OFFICIAL_EVIDENCE_SOURCES, WEB_EVIDENCE_SOURCES
+from recommendations.services.adaptive_budget import collection_bucket
 
 
 VOLATILE_REFRESH_TAGS = frozenset({
     "웨이팅적음", "24시간운영", "야간운영", "콘센트있음", "무료와이파이",
     "작업하기좋음", "노트북작업", "장기체류좋음",
 })
+TARGET_TAG_ORDER = (
+    "콘센트있음", "무료와이파이", "혼자이용좋음", "장기체류좋음",
+    "대화하기좋음", "노트북작업", "작업하기좋음", "웨이팅적음",
+    "혼밥좋음", "분위기좋음", "데이트좋음", "조용함",
+)
 
 
 TIER_1_PREFIXES = ("서울", "부산")
@@ -79,6 +85,26 @@ def priority_context(places, *, category_priorities=None, now=None):
             status="needs_verification",
         ).values_list("place_id").annotate(n=Count("id"))
     )
+    active_tag_names = defaultdict(set)
+    for place_id, tag_name in PlaceTagEvidence.objects.filter(
+        place_id__in=place_ids,
+    ).filter(Q(expires_at__isnull=True) | Q(expires_at__gt=now)).values_list(
+        "place_id", "tag__name",
+    ).distinct():
+        active_tag_names[place_id].add(tag_name)
+    candidate_tag_names = defaultdict(set)
+    for place_id, tag_name in PlaceTag.objects.filter(
+        place_id__in=place_ids,
+        status__in=("candidate", "needs_verification"),
+    ).values_list("place_id", "tag__name").distinct():
+        candidate_tag_names[place_id].add(tag_name)
+    stale_web_tag_names = defaultdict(set)
+    for place_id, tag_name in PlaceTagEvidence.objects.filter(
+        place_id__in=place_ids,
+        source__in=WEB_EVIDENCE_SOURCES,
+        expires_at__lte=now,
+    ).values_list("place_id", "tag__name").distinct():
+        stale_web_tag_names[place_id].add(tag_name)
     demands = dict(
         TagEnrichmentRequest.objects.filter(place_id__in=place_ids).values_list("place_id").annotate(
             n=Sum("demand_count")
@@ -89,6 +115,9 @@ def priority_context(places, *, category_priorities=None, now=None):
         for row in PlaceTagCollectionJob.objects.filter(place_id__in=place_ids).values("place_id").annotate(
             identity_misses=Count("id", filter=Q(stats__miss_reason="IDENTITY_MISMATCH")),
             successful_jobs=Count("id", filter=Q(stats__evidences__gt=0)),
+            no_tag_expression=Count("id", filter=Q(stats__miss_reason="NO_TAG_EXPRESSION")),
+            no_search_result=Count("id", filter=Q(stats__miss_reason="NO_SEARCH_RESULT")),
+            identity_passes=Count("id", filter=Q(stats__diagnostics__identity_matches__gt=0)),
         )
     }
     category_priorities = category_priorities or {}
@@ -119,6 +148,21 @@ def priority_context(places, *, category_priorities=None, now=None):
             identity_misses=int(job_stats.get("identity_misses") or 0),
             successful_jobs=int(job_stats.get("successful_jobs") or 0),
         )
+        relevant_tags = requested_tags_for_category(place.category)
+        active_names = active_tag_names[place.id]
+        candidate_hints = candidate_tag_names[place.id] - active_names
+        stale_hints = stale_web_tag_names[place.id]
+        no_tag_count = int(job_stats.get("no_tag_expression") or 0)
+        target_pool = candidate_hints | stale_hints
+        if no_tag_count:
+            target_pool |= set(relevant_tags) - active_names
+        targeted_tags = [tag for tag in TARGET_TAG_ORDER if tag in target_pool and tag in relevant_tags]
+        history_score = (
+            min(12, int(job_stats.get("successful_jobs") or 0) * 6)
+            + min(8, int(job_stats.get("identity_passes") or 0) * 2)
+            + min(10, no_tag_count * 5)
+            - min(16, int(job_stats.get("no_search_result") or 0) * 8)
+        )
         components = {
             "region": {1: 30, 2: 20, 3: 12, 4: 5}[place_region_tier(place)],
             "category": int(category_priorities.get(place.category, 10)),
@@ -129,6 +173,7 @@ def priority_context(places, *, category_priorities=None, now=None):
             "search_demand": search_demand,
             "data_quality_need": data_quality_need,
             "restaurant_collection_quality": restaurant_quality["score"],
+            "collection_history": history_score,
         }
         results[place.id] = {
             "score": sum(components.values()),
@@ -141,7 +186,17 @@ def priority_context(places, *, category_priorities=None, now=None):
             "expired_structured_evidence_count": int(stats.get("expired_structured_count") or 0),
             "volatile_expired_tag_count": volatile_expired,
             "restaurant_quality_flags": restaurant_quality["flags"],
+            "candidate_hint_tags": [tag for tag in TARGET_TAG_ORDER if tag in candidate_hints],
+            "stale_refresh_tags": [tag for tag in TARGET_TAG_ORDER if tag in stale_hints],
+            "targeted_tags": targeted_tags,
+            "adaptive_reason": (
+                "no_tag_expression" if no_tag_count else
+                "candidate_hint" if candidate_hints else
+                "stale_refresh" if stale_hints else
+                "discovery"
+            ),
         }
+        results[place.id]["budget_bucket"] = collection_bucket(place, results[place.id])
     return results
 
 

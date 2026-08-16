@@ -14,6 +14,7 @@ from recommendations.services.naver_tag_evidence_provider import (
 from recommendations.services.evidence_scoring import evidence_confidence, parse_observed_date
 from recommendations.services.tag_source_policy import NAVER_BLOG_SEARCH
 from recommendations.services.provider_rate_limit import acquire_provider_slot
+from recommendations.services.adaptive_tag_collection import targeted_profiles
 
 
 COLLECTION_PROFILES = {
@@ -85,7 +86,9 @@ def build_collection_query(place, keyword):
     return "{} {} {}".format(place.name, location, keyword).strip()
 
 
-def collect_naver_place_evidence(place, requested_tags=None, *, allow_ai=False):
+def collect_naver_place_evidence(
+    place, requested_tags=None, *, allow_ai=False, strategy="standard", targeted_tags=None,
+):
     """Collect multiple tag observations with one request per semantic pack."""
     requested = set(requested_tags or requested_tags_for_category(place.category))
     profiles = [
@@ -100,12 +103,22 @@ def collect_naver_place_evidence(place, requested_tags=None, *, allow_ai=False):
     if not profiles:
         return {"executed": True, "requests": 0, "evidences": [], "error": "unsupported_category"}
 
+    if strategy == "adaptive":
+        discovery = profiles[:1]
+        all_allowed_tags = tuple(dict.fromkeys(tag for _, _, tags in profiles for tag in tags))
+        additions = targeted_profiles(targeted_tags, all_allowed_tags)[:2]
+        seen_keywords = {keyword for _, keyword, _ in discovery}
+        profiles = discovery + [row for row in additions if row[1] not in seen_keywords]
+
     evidences = []
     seen = set()
     requests_made = 0
     diagnostics = {"search_results": 0, "identity_matches": 0, "tag_expressions": 0, "short_snippets": 0}
     ai_calls = 0
-    for pack_name, keyword, tag_names in profiles:
+    discovery_identity_matches = None
+    for profile_index, (pack_name, keyword, tag_names) in enumerate(profiles):
+        if strategy == "adaptive" and profile_index > 0 and not discovery_identity_matches:
+            break
         # Naver treats a long list of semantic words as restrictive search terms.
         # Search with one representative word, then extract every tag in the pack
         # from the returned title/summary.
@@ -203,6 +216,9 @@ def collect_naver_place_evidence(place, requested_tags=None, *, allow_ai=False):
                         "confidence_factors": confidence_factors,
                         "raw": {"channel": "naver_blog", "query": query, "pack": pack_name},
                     })
+
+        if profile_index == 0:
+            discovery_identity_matches = diagnostics["identity_matches"]
 
     miss_reason = ""
     if not evidences:

@@ -258,6 +258,36 @@ class DailyTagCollectionTests(TestCase):
         })
 
     @patch("recommendations.services.place_tag_collection._request_channel")
+    def test_adaptive_collection_stops_after_discovery_identity_mismatch(self, request_channel):
+        request_channel.return_value = {"items": [{
+            "title": "전혀 다른 장소", "description": "다른 지역 카페 후기",
+            "link": "https://example.com/wrong-adaptive",
+        }]}
+        result = collect_naver_place_evidence(
+            self.make_place(71), strategy="adaptive",
+            targeted_tags=["콘센트있음", "혼자이용좋음"],
+        )
+        self.assertEqual(result["requests"], 1)
+        self.assertEqual(result["miss_reason"], "IDENTITY_MISMATCH")
+
+    @patch("recommendations.services.place_tag_collection._request_channel")
+    def test_adaptive_collection_runs_targeted_pack_only_after_identity_pass(self, request_channel):
+        request_channel.return_value = {"items": [{
+            "title": "수집 테스트 72 서울 중구 카페",
+            "description": "혼자 책 읽기 좋고 자리마다 콘센트가 있다",
+            "link": "https://example.com/adaptive", "postdate": "20260816",
+        }]}
+        result = collect_naver_place_evidence(
+            self.make_place(72), strategy="adaptive",
+            targeted_tags=["콘센트있음", "혼자이용좋음"],
+        )
+        self.assertEqual(result["requests"], 3)
+        self.assertEqual(
+            {row["tag_name"] for row in result["evidences"]},
+            {"콘센트있음", "혼자이용좋음"},
+        )
+
+    @patch("recommendations.services.place_tag_collection._request_channel")
     def test_collection_reports_no_search_result(self, request_channel):
         request_channel.return_value = {"items": []}
         result = collect_naver_place_evidence(self.make_place(1))
