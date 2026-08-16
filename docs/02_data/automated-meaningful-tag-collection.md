@@ -302,3 +302,11 @@ Naver 4,499회, 857.48초, 실패/429/retry 0으로 끝났고 413곳(20.65%)에�
 cafe 55.51%, toilet 11.90%, city_park 5.83%였다. 5,000곳 추가 실행은 예상 호출량을 합치면
 일일 25,000회의 90% 안전선에 근접하므로 실행하지 않았다. 실제 운영 `.env`의 일일 Place 목표는
 100으로 유지하며 `.env.sample`도 안전한 초기값 100을 사용한다.
+
+## 2026-08-16 서울·부산 음식점 원장 Bootstrap
+
+다음 병목은 Naver 추출기가 아니라 검색 가능한 cafe/restaurant 원장이었다. 이미 적재된 SEMAS
+2026 Q2 SourcePlaceRecord를 보수적으로 서울·부산 Place로 materialize한 뒤 cafe/restaurant 전용
+2,500곳 Evidence 배치를 실행했다. 업종 제외, 중복 정책, source별 증가량, quota/RPS 결과,
+화장실 최신 파일 refresh와 검색 검증 수치는
+[`city-food-bootstrap-2026-08-16.md`](city-food-bootstrap-2026-08-16.md)에 기록했다.
