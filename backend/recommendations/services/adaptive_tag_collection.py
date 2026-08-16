@@ -1,5 +1,7 @@
 """Low-cost discovery followed by evidence-driven feature queries."""
 
+from django.conf import settings
+
 from recommendations.services.naver_tag_evidence_provider import SEARCH_KEYWORDS
 
 
@@ -12,11 +14,18 @@ FEATURE_QUERY_CLUSTERS = (
 )
 
 
-def targeted_profiles(targeted_tags, allowed_tags):
+def targeted_profiles(targeted_tags, allowed_tags, *, adopted_only=True):
     targets = set(targeted_tags or ())
     allowed = tuple(allowed_tags or ())
+    adopted = set(getattr(
+        settings,
+        "TAG_COLLECTION_ADOPTED_TARGET_CLUSTERS",
+        ("work_sparse",),
+    ))
     rows = []
     for cluster_name, cluster_tags in FEATURE_QUERY_CLUSTERS:
+        if adopted_only and cluster_name not in adopted:
+            continue
         matched = [tag for tag in cluster_tags if tag in targets and tag in allowed]
         if not matched:
             continue
@@ -26,8 +35,13 @@ def targeted_profiles(targeted_tags, allowed_tags):
 
 
 def adaptive_planned_requests(targeted_tags):
+    adopted = set(getattr(
+        settings,
+        "TAG_COLLECTION_ADOPTED_TARGET_CLUSTERS",
+        ("work_sparse",),
+    ))
     clusters = sum(
-        bool(set(tags) & set(targeted_tags or ()))
-        for _, tags in FEATURE_QUERY_CLUSTERS
+        cluster_name in adopted and bool(set(tags) & set(targeted_tags or ()))
+        for cluster_name, tags in FEATURE_QUERY_CLUSTERS
     )
     return 1 + min(2, clusters)

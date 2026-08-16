@@ -270,6 +270,7 @@ class DailyTagCollectionTests(TestCase):
         self.assertEqual(result["requests"], 1)
         self.assertEqual(result["miss_reason"], "IDENTITY_MISMATCH")
 
+    @override_settings(TAG_COLLECTION_ADOPTED_TARGET_CLUSTERS=("work_sparse", "solo"))
     @patch("recommendations.services.place_tag_collection._request_channel")
     def test_adaptive_collection_runs_targeted_pack_only_after_identity_pass(self, request_channel):
         request_channel.return_value = {"items": [{
@@ -286,6 +287,17 @@ class DailyTagCollectionTests(TestCase):
             {row["tag_name"] for row in result["evidences"]},
             {"콘센트있음", "혼자이용좋음"},
         )
+
+    @override_settings(TAG_COLLECTION_ADOPTED_TARGET_CLUSTERS=("work_sparse",))
+    @patch("recommendations.services.place_tag_collection._request_channel")
+    def test_targeted_only_collection_uses_one_sparse_pack(self, request_channel):
+        request_channel.return_value = {"items": []}
+        result = collect_naver_place_evidence(
+            self.make_place(73), strategy="targeted_only",
+            targeted_tags=["콘센트있음", "무료와이파이", "노트북작업"],
+        )
+        self.assertEqual(result["requests"], 1)
+        self.assertTrue(request_channel.call_args.args[1].endswith("콘센트"))
 
     @patch("recommendations.services.place_tag_collection._request_channel")
     def test_collection_reports_no_search_result(self, request_channel):

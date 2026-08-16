@@ -103,12 +103,19 @@ def collect_naver_place_evidence(
     if not profiles:
         return {"executed": True, "requests": 0, "evidences": [], "error": "unsupported_category"}
 
-    if strategy == "adaptive":
+    if strategy in {"adaptive", "targeted_only"}:
         discovery = profiles[:1]
         all_allowed_tags = tuple(dict.fromkeys(tag for _, _, tags in profiles for tag in tags))
-        additions = targeted_profiles(targeted_tags, all_allowed_tags)[:2]
-        seen_keywords = {keyword for _, keyword, _ in discovery}
-        profiles = discovery + [row for row in additions if row[1] not in seen_keywords]
+        additions = targeted_profiles(
+            targeted_tags,
+            all_allowed_tags,
+            adopted_only=strategy != "targeted_only",
+        )[:2]
+        if strategy == "targeted_only":
+            profiles = additions
+        else:
+            seen_keywords = {keyword for _, keyword, _ in discovery}
+            profiles = discovery + [row for row in additions if row[1] not in seen_keywords]
 
     evidences = []
     seen = set()
