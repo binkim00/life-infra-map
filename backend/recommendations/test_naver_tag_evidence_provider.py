@@ -8,6 +8,7 @@ from recommendations.services.naver_tag_evidence_provider import (
     evidence_polarity,
     identity_assessment,
     identity_matches,
+    place_search_location_terms,
 )
 
 
@@ -26,6 +27,32 @@ class NaverTagEvidenceProviderTests(SimpleTestCase):
         text = '스타벅스 샌드위치 후기 중 강서 녹산 DT점 방문 기록'
 
         self.assertTrue(identity_matches(branch, text))
+
+    def test_semas_query_location_prefers_official_district_and_neighborhood(self):
+        place = SimpleNamespace(
+            address='서울특별시 송파구 송파대로28길 27',
+            raw={
+                'source_address': '서울특별시 송파구 가락동 100-1',
+                'source_road_address': '서울특별시 송파구 송파대로28길 27',
+            },
+        )
+        self.assertEqual(place_search_location_terms(place), ['송파구', '가락동'])
+
+    def test_semas_food_name_in_summary_is_not_enough_when_title_is_another_place(self):
+        place = SimpleNamespace(
+            name='아비꼬 강남역점',
+            address='서울특별시 강남구 봉은사로6길 38',
+            category='restaurant',
+            source='semas',
+        )
+        result = identity_assessment(
+            place,
+            '분위기 좋은 이름없는파스타 후기. 오른편에는 아비꼬 강남역점이 있다. '
+            '서울 강남구 봉은사로6길 38',
+            title='강남 혼밥 맛집 이름없는파스타 강남역점',
+        )
+        self.assertFalse(result['matched'])
+        self.assertTrue(result['signals']['semas_food_title_required'])
 
     def test_conflicting_sentiment_is_not_automatically_classified(self):
         self.assertEqual(

@@ -49,6 +49,8 @@ def classify_rejected_result(place, text, *, title=""):
 
     if assessment["matched"]:
         reason = "REPRODUCED_AS_MATCH"
+    elif signals.get("semas_food_title_required"):
+        reason = "INCIDENTAL_SUMMARY_MENTION"
     elif expected_branches and parts and parts[0] in compact_text and not all(
         branch in compact_text for branch in expected_branches
     ):
@@ -62,7 +64,9 @@ def classify_rejected_result(place, text, *, title=""):
     elif matched_parts:
         reason = "INSUFFICIENT_IDENTITY_INFO"
     elif address_matches:
-        reason = "NAME_MISMATCH"
+        # A city/district token alone is not a name mismatch signal. Search
+        # snippets commonly mention Seoul while describing an unrelated place.
+        reason = "WRONG_SEARCH_RESULT"
     else:
         reason = "WRONG_SEARCH_RESULT"
     return {

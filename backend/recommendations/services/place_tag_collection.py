@@ -8,6 +8,7 @@ from recommendations.services.naver_tag_evidence_provider import (
     TAG_TERMS,
     identity_assessment,
     polarity_assessment,
+    place_search_location_terms,
     search_location_terms,
 )
 from recommendations.services.evidence_scoring import evidence_confidence, parse_observed_date
@@ -80,7 +81,7 @@ def planned_requests_for_category(category):
 
 
 def build_collection_query(place, keyword):
-    location = " ".join(search_location_terms(place.address))
+    location = " ".join(place_search_location_terms(place))
     return "{} {} {}".format(place.name, location, keyword).strip()
 
 

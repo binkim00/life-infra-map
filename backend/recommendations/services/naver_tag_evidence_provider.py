@@ -162,6 +162,31 @@ def search_location_terms(address):
     return selected
 
 
+def place_search_location_terms(place):
+    """Prefer district/neighborhood terms already present in source raw data.
+
+    SEMAS service addresses are usually road addresses without a neighborhood,
+    while `raw.source_address` retains the official lot address.  Using the
+    district and neighborhood narrows search results without relaxing identity.
+    """
+    raw = getattr(place, "raw", {})
+    raw = raw if isinstance(raw, dict) else {}
+    candidates = []
+    for value in (
+        raw.get("source_address"),
+        raw.get("source_road_address"),
+        getattr(place, "address", ""),
+    ):
+        for term in address_identity_terms(value):
+            if term not in candidates:
+                candidates.append(term)
+    administrative = [
+        term for term in candidates
+        if term.endswith(("구", "군", "동", "읍", "면"))
+    ]
+    return administrative[:2] or search_location_terms(getattr(place, "address", ""))
+
+
 REGION_PREFIXES = {
     "서울": ("서울특별시", "서울 "),
     "부산": ("부산광역시", "부산 "),
@@ -238,7 +263,18 @@ def identity_assessment(place, text, *, title=""):
     )
     contextual_score = 15 if distinctive_title or multi_term_region or tour_region_match else 0
     score = min(100, name_score + address_score + branch_score + contextual_score)
-    matched = score >= 65 and not explicit_region_mismatch
+    source = getattr(place, "source", "")
+    category = getattr(place, "category", "")
+    semas_food_title_required = (
+        source == "semas"
+        and category in {"cafe", "restaurant"}
+        and not exact_in_title
+    )
+    matched = (
+        score >= 65
+        and not explicit_region_mismatch
+        and not semas_food_title_required
+    )
     return {
         "matched": matched,
         "score": score,
@@ -254,6 +290,7 @@ def identity_assessment(place, text, *, title=""):
             "explicit_region_mismatch": explicit_region_mismatch,
             "contextual_score": contextual_score,
             "distinctive_name_terms": distinctive_terms,
+            "semas_food_title_required": semas_food_title_required,
         },
     }
 

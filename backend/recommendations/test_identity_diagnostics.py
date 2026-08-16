@@ -23,3 +23,10 @@ class IdentityDiagnosticsTests(SimpleTestCase):
     def test_classifies_unrelated_result(self):
         result = classify_rejected_result(self.place(), "서울 전혀 다른 카페 후기")
         self.assertEqual(result["reason"], "REGION_MISMATCH")
+
+    def test_city_or_district_without_name_is_a_wrong_result(self):
+        result = classify_rejected_result(
+            self.place(name="마늘은약이다보쌈족발 송파점", address="서울특별시 송파구 송파대로28길 27"),
+            "서울 송파구의 전혀 다른 보쌈 식당 후기",
+        )
+        self.assertEqual(result["reason"], "WRONG_SEARCH_RESULT")

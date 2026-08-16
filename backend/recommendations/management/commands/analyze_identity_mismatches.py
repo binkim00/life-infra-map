@@ -113,8 +113,12 @@ class Command(BaseCommand):
         }
         path = Path(options["output"]).resolve()
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-        self.stdout.write(json.dumps(report, ensure_ascii=False, indent=2))
+        rendered = json.dumps(report, ensure_ascii=False, indent=2)
+        path.write_text(rendered, encoding="utf-8")
+        output_encoding = getattr(getattr(self.stdout, "_out", None), "encoding", None) or "utf-8"
+        self.stdout.write(
+            rendered.encode(output_encoding, errors="backslashreplace").decode(output_encoding)
+        )
 
 
 def reserve_request():
