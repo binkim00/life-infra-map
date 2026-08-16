@@ -126,6 +126,29 @@ class DailyTagCollectionTests(TestCase):
             {"cafe", "restaurant"},
         )
 
+    @override_settings(
+        TAG_COLLECTION_DAILY_API_LIMIT=1000,
+        TAG_COLLECTION_BOOTSTRAP_CATEGORY_MAX_SHARE=100,
+        TAG_COLLECTION_CATEGORY_PRIORITIES={"cafe": 20},
+    )
+    def test_bootstrap_can_target_one_region_without_leaking_to_another(self):
+        for index in range(20):
+            self.make_place(index, category="cafe", region="서울특별시")
+            self.make_place(100 + index, category="cafe", region="부산광역시")
+
+        stats = plan_daily_jobs(
+            cycle_date=timezone.localdate(),
+            place_limit=10,
+            mode="bootstrap",
+            categories=("cafe",),
+            regions=("서울특별시",),
+        )
+
+        self.assertEqual(stats["places"], 10)
+        self.assertFalse(
+            PlaceTagCollectionJob.objects.exclude(place__address__startswith="서울특별시").exists()
+        )
+
     def test_scheduler_refills_a_partial_daily_plan(self):
         places = [self.make_place(index) for index in range(1, 5)]
         PlaceTagCollectionJob.objects.create(

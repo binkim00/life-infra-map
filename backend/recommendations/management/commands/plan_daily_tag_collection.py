@@ -54,6 +54,11 @@ class Command(BaseCommand):
             default="",
             help="Optional comma-separated subset of configured collection profiles.",
         )
+        parser.add_argument(
+            "--regions",
+            default="",
+            help="Optional comma-separated subset of the configured nationwide regions.",
+        )
         parser.add_argument("--dry-run", action="store_true")
 
     def handle(self, *args, **options):
@@ -68,6 +73,9 @@ class Command(BaseCommand):
             categories=tuple(
                 value.strip() for value in options["categories"].split(",") if value.strip()
             ) or None,
+            regions=tuple(
+                value.strip() for value in options["regions"].split(",") if value.strip()
+            ) or None,
             dry_run=options["dry_run"],
         )
         self.stdout.write(self.style.SUCCESS(
@@ -81,7 +89,10 @@ class Command(BaseCommand):
         ))
 
 
-def plan_daily_jobs(*, cycle_date, place_limit, provider="naver_search", mode="balanced", categories=None, dry_run=False):
+def plan_daily_jobs(
+    *, cycle_date, place_limit, provider="naver_search", mode="balanced",
+    categories=None, regions=None, dry_run=False,
+):
     place_limit = max(1, int(place_limit))
     budget = math.floor(
         settings.TAG_COLLECTION_DAILY_API_LIMIT
@@ -103,6 +114,12 @@ def plan_daily_jobs(*, cycle_date, place_limit, provider="naver_search", mode="b
     unknown_categories = set(categories) - set(COLLECTION_PROFILES)
     if unknown_categories:
         raise ValueError("Unknown collection categories: " + ", ".join(sorted(unknown_categories)))
+    configured_regions = {name for name, _ in REGIONS}
+    regions = tuple(regions or configured_regions)
+    unknown_regions = set(regions) - configured_regions
+    if unknown_regions:
+        raise ValueError("Unknown collection regions: " + ", ".join(sorted(unknown_regions)))
+    selected_regions = tuple(row for row in REGIONS if row[0] in regions)
     if mode == "bootstrap":
         return plan_bootstrap_jobs(
             cycle_date=cycle_date,
@@ -111,11 +128,12 @@ def plan_daily_jobs(*, cycle_date, place_limit, provider="naver_search", mode="b
             budget=budget,
             recent_place_ids=recent_place_ids,
             categories=categories,
+            regions=selected_regions,
             dry_run=dry_run,
         )
     per_stratum = max(2, math.ceil(place_limit / (len(REGIONS) * len(categories))) * 2)
     pools = []
-    for region, aliases in REGIONS:
+    for region, aliases in selected_regions:
         location = Q()
         for alias in aliases:
             location |= Q(address__startswith=alias)
@@ -167,7 +185,8 @@ def plan_daily_jobs(*, cycle_date, place_limit, provider="naver_search", mode="b
 
 
 def plan_bootstrap_jobs(
-    *, cycle_date, place_limit, provider, budget, recent_place_ids, categories, dry_run
+    *, cycle_date, place_limit, provider, budget, recent_place_ids,
+    categories, regions=REGIONS, dry_run,
 ):
     # A nationally even pool can starve a high-value category when its records
     # are concentrated in one city (the current cafe registry is mostly Busan).
@@ -178,9 +197,13 @@ def plan_bootstrap_jobs(
         math.ceil(100 / max(1, len(categories))),
     )
     category_share = effective_category_share / 100
-    per_stratum = max(100, min(500, math.ceil(place_limit * category_share)))
+    # A deliberate one-region/one-category bootstrap is a bounded operational
+    # batch, so its single stratum must be allowed to fill the requested limit.
+    # Nationwide plans keep the 500-row cap to bound priority scoring work.
+    stratum_cap = place_limit if len(regions) == 1 and len(categories) == 1 else 500
+    per_stratum = max(100, min(stratum_cap, math.ceil(place_limit * category_share)))
     places_by_id = {}
-    for _, aliases in REGIONS:
+    for _, aliases in regions:
         location = Q()
         for alias in aliases:
             location |= Q(address__startswith=alias)
