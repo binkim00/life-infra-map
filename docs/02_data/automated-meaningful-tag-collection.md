@@ -310,3 +310,7 @@ cafe 55.51%, toilet 11.90%, city_park 5.83%였다. 5,000곳 추가 실행은 예
 2,500곳 Evidence 배치를 실행했다. 업종 제외, 중복 정책, source별 증가량, quota/RPS 결과,
 화장실 최신 파일 refresh와 검색 검증 수치는
 [`city-food-bootstrap-2026-08-16.md`](city-food-bootstrap-2026-08-16.md)에 기록했다.
+
+같은 날 남은 quota로 수행한 서울 cafe 1,300곳 보강, restaurant identity 진단,
+희소 Feature alias, 위치 해석과 검색 latency 개선 결과는
+[`evidence-density-search-performance-2026-08-16.md`](evidence-density-search-performance-2026-08-16.md)에 기록했다.
