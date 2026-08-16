@@ -559,6 +559,25 @@ def _local_rule_anchor_location(raw_query):
         "주변",
         "인근",
     }
+    administrative_aliases = (
+        "서울특별시", "부산광역시", "대구광역시", "인천광역시",
+        "광주광역시", "대전광역시", "울산광역시", "세종특별자치시",
+        "서울", "부산", "대구", "인천", "광주", "대전", "울산", "세종",
+    )
+    for alias in administrative_aliases:
+        if re.match(rf"^{re.escape(alias)}(?:에서|으로|의)?(?:\s+|$)", text):
+            return alias
+    category_followers = (
+        "카페", "커피", "식당", "맛집", "음식점", "공원", "관광지",
+        "도서관", "화장실", "주차장", "쉼터", "약국",
+    )
+    follower_pattern = "|".join(re.escape(value) for value in category_followers)
+    for alias in administrative_aliases:
+        if re.search(
+            rf"(?:^|\s){re.escape(alias)}(?:에서|으로|의)?\s+(?:{follower_pattern})(?:\s|$)",
+            text,
+        ):
+            return alias
     location_markers = (
         "근처에서",
         "주변에서",

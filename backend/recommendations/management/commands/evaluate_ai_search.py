@@ -638,8 +638,16 @@ def _case_summary(case, data, elapsed_ms, top_n):
             "total_observed": elapsed_ms,
             "pipeline_total": debug.get("total_latency_ms"),
             "planner": debug.get("planner_latency_ms"),
+            "intent_parsing": debug.get("intent_parsing_latency_ms"),
+            "location_resolution": debug.get("location_resolution_latency_ms"),
+            "db_candidate_retrieval": debug.get("db_candidate_retrieval_latency_ms"),
+            "kakao_search": debug.get("kakao_search_latency_ms"),
+            "evidence_tag_loading": debug.get("evidence_tag_loading_latency_ms"),
+            "filtering": debug.get("filtering_latency_ms"),
+            "ranking": debug.get("ranking_latency_ms"),
             "retrieval": debug.get("retrieval_latency_ms"),
             "reranker": debug.get("reranker_latency_ms"),
+            "serialization": debug.get("serialization_latency_ms"),
         },
     }
 

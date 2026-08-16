@@ -2241,21 +2241,26 @@ def collect_db_candidates(frame, *, lat=None, lng=None, limit=50, radius=None):
     if not search_terms and not db_first_category_codes and not direct_category_codes:
         return []
 
-    query = Q()
-    for term in search_terms[:8]:
-        query |= (
-            Q(name__icontains=term)
-            | Q(category__icontains=term)
-            | Q(address__icontains=term)
-            | Q(detail_location__icontains=term)
-            | Q(source_name__icontains=term)
-            | Q(place_tags__tag__name__icontains=term)
-            | Q(place_tags__evidence__icontains=term)
-        )
-    if db_first_category_codes:
-        query |= Q(category__in=db_first_category_codes)
     if direct_category_codes:
-        query |= Q(category__in=direct_category_codes)
+        # The requested category is already a deterministic constraint. An OR
+        # against PlaceTag evidence here forces a wide DISTINCT join before the
+        # spatial/category cut, while tag suitability is evaluated below from
+        # the prefetched PlaceTags. Keep the candidate universe category-safe.
+        query = Q(category__in=direct_category_codes)
+    else:
+        query = Q()
+        for term in search_terms[:8]:
+            query |= (
+                Q(name__icontains=term)
+                | Q(category__icontains=term)
+                | Q(address__icontains=term)
+                | Q(detail_location__icontains=term)
+                | Q(source_name__icontains=term)
+                | Q(place_tags__tag__name__icontains=term)
+                | Q(place_tags__evidence__icontains=term)
+            )
+        if db_first_category_codes:
+            query |= Q(category__in=db_first_category_codes)
 
     radius = _radius(radius)
     bounds = _nearby_bounds(lat, lng, radius)
@@ -3251,6 +3256,14 @@ def _debug_pipeline(
             "execution_mode": search_plan.get("execution_mode"),
         },
         "planner_latency_ms": (timings or {}).get("planner_latency_ms"),
+        "intent_parsing_latency_ms": (timings or {}).get("intent_parsing_latency_ms"),
+        "location_resolution_latency_ms": (timings or {}).get("location_resolution_latency_ms"),
+        "db_candidate_retrieval_latency_ms": (timings or {}).get("db_candidate_retrieval_latency_ms"),
+        "kakao_search_latency_ms": (timings or {}).get("kakao_search_latency_ms"),
+        "evidence_tag_loading_latency_ms": (timings or {}).get("evidence_tag_loading_latency_ms"),
+        "filtering_latency_ms": (timings or {}).get("filtering_latency_ms"),
+        "ranking_latency_ms": (timings or {}).get("ranking_latency_ms"),
+        "serialization_latency_ms": (timings or {}).get("serialization_latency_ms"),
         "retrieval_latency_ms": (timings or {}).get("retrieval_latency_ms"),
         "query_repair_latency_ms": (timings or {}).get("query_repair_latency_ms"),
         "web_latency_ms": (timings or {}).get("web_latency_ms"),
@@ -3555,6 +3568,14 @@ def run_ai_search(request_data, *, user=None):
     total_started = time.perf_counter()
     timings = {
         "planner_latency_ms": None,
+        "intent_parsing_latency_ms": None,
+        "location_resolution_latency_ms": 0.0,
+        "db_candidate_retrieval_latency_ms": None,
+        "kakao_search_latency_ms": None,
+        "evidence_tag_loading_latency_ms": None,
+        "filtering_latency_ms": None,
+        "ranking_latency_ms": None,
+        "serialization_latency_ms": None,
         "retrieval_latency_ms": None,
         "query_repair_latency_ms": None,
         "web_latency_ms": None,
@@ -3585,6 +3606,7 @@ def run_ai_search(request_data, *, user=None):
         previous_context=previous_context,
     )
     timings["planner_latency_ms"] = round((time.perf_counter() - planner_started) * 1000, 2)
+    timings["intent_parsing_latency_ms"] = timings["planner_latency_ms"]
     ai_call_count += _as_int(
         ((intent_plan.get("ai_debug") or {}).get("planner") or {}).get("call_count"),
         0,
@@ -3714,10 +3736,15 @@ def run_ai_search(request_data, *, user=None):
         "source": context_source or "current_context",
     }
     if frame.get("location_mode") == "explicit":
+        location_started = time.perf_counter()
         location_resolution = _resolve_anchor_location(
             frame.get("anchor_location"),
             lat=context_lat,
             lng=context_lng,
+        )
+        timings["location_resolution_latency_ms"] = round(
+            (time.perf_counter() - location_started) * 1000,
+            2,
         )
         if location_resolution.get("status") != "resolved":
             intent_plan = {
@@ -3761,24 +3788,34 @@ def run_ai_search(request_data, *, user=None):
     }
 
     retrieval_started = time.perf_counter()
+
+    def timed_collect(collector, *args, **kwargs):
+        started = time.perf_counter()
+        value = collector(*args, **kwargs)
+        return value, round((time.perf_counter() - started) * 1000, 2)
+
     if getattr(settings, "IS_TESTING", False):
-        db_candidates = collect_db_candidates(
+        db_candidates, db_latency_ms = timed_collect(
+            collect_db_candidates,
             frame,
             lat=search_lat,
             lng=search_lng,
             limit=max(limit * 3, 30),
             radius=radius,
         )
-        kakao_candidates, query_counts = collect_kakao_candidates(
+        kakao_result, kakao_latency_ms = timed_collect(
+            collect_kakao_candidates,
             frame,
             primary_queries,
             lat=search_lat,
             lng=search_lng,
             radius=radius,
         )
+        kakao_candidates, query_counts = kakao_result
     else:
         with ThreadPoolExecutor(max_workers=2) as executor:
             db_future = executor.submit(
+                timed_collect,
                 collect_db_candidates,
                 frame,
                 lat=search_lat,
@@ -3787,6 +3824,7 @@ def run_ai_search(request_data, *, user=None):
                 radius=radius,
             )
             kakao_future = executor.submit(
+                timed_collect,
                 collect_kakao_candidates,
                 frame,
                 primary_queries,
@@ -3794,8 +3832,12 @@ def run_ai_search(request_data, *, user=None):
                 lng=search_lng,
                 radius=radius,
             )
-            db_candidates = db_future.result()
-            kakao_candidates, query_counts = kakao_future.result()
+            db_candidates, db_latency_ms = db_future.result()
+            kakao_result, kakao_latency_ms = kakao_future.result()
+            kakao_candidates, query_counts = kakao_result
+    timings["db_candidate_retrieval_latency_ms"] = db_latency_ms
+    timings["evidence_tag_loading_latency_ms"] = db_latency_ms
+    timings["kakao_search_latency_ms"] = kakao_latency_ms
     timings["retrieval_latency_ms"] = round((time.perf_counter() - retrieval_started) * 1000, 2)
 
     initial_candidates = _dedupe_candidates([*db_candidates, *kakao_candidates])
@@ -3837,10 +3879,12 @@ def run_ai_search(request_data, *, user=None):
                 lng=search_lng,
                 radius=radius,
             )
+            fallback_latency_ms = round((time.perf_counter() - fallback_retrieval_started) * 1000, 2)
             timings["retrieval_latency_ms"] = round(
-                (timings["retrieval_latency_ms"] or 0)
-                + ((time.perf_counter() - fallback_retrieval_started) * 1000),
-                2,
+                (timings["retrieval_latency_ms"] or 0) + fallback_latency_ms, 2
+            )
+            timings["kakao_search_latency_ms"] = round(
+                (timings["kakao_search_latency_ms"] or 0) + fallback_latency_ms, 2
             )
             query_generation["fallback_queries"] = deterministic_fallback_queries
             query_counts.extend(fallback_counts)
@@ -3880,12 +3924,25 @@ def run_ai_search(request_data, *, user=None):
             if item not in [*primary_queries, *deterministic_fallback_queries]
         ]
         if repaired_queries:
+            repaired_kakao_started = time.perf_counter()
             repaired_kakao, repaired_counts = collect_kakao_candidates(
                 frame,
                 repaired_queries,
                 lat=search_lat,
                 lng=search_lng,
                 radius=radius,
+            )
+            repaired_kakao_latency_ms = round(
+                (time.perf_counter() - repaired_kakao_started) * 1000,
+                2,
+            )
+            timings["kakao_search_latency_ms"] = round(
+                (timings["kakao_search_latency_ms"] or 0) + repaired_kakao_latency_ms,
+                2,
+            )
+            timings["retrieval_latency_ms"] = round(
+                (timings["retrieval_latency_ms"] or 0) + repaired_kakao_latency_ms,
+                2,
             )
             query_generation["fallback_queries"] = [
                 *deterministic_fallback_queries,
@@ -3915,6 +3972,7 @@ def run_ai_search(request_data, *, user=None):
         timings["web_latency_ms"] = round((time.perf_counter() - web_started) * 1000, 2)
         candidate_counts["web"] = len(web_candidates)
 
+    filtering_started = time.perf_counter()
     candidate_pool = _dedupe_candidates([*db_candidates, *kakao_candidates, *web_candidates])
     invalid_display_candidates = [
         candidate
@@ -3962,6 +4020,11 @@ def run_ai_search(request_data, *, user=None):
         if deterministic_codes
         else []
     )
+    timings["filtering_latency_ms"] = round(
+        (time.perf_counter() - filtering_started) * 1000,
+        2,
+    )
+    ranking_started = time.perf_counter()
 
     if deterministic_results:
         ranked_candidates = deterministic_results
@@ -4108,6 +4171,10 @@ def run_ai_search(request_data, *, user=None):
         }
     ranked_candidates = _prioritize_direct_specific_targets(ranked_candidates, frame)
     results = ranked_candidates[:limit]
+    timings["ranking_latency_ms"] = round(
+        max(0.0, (time.perf_counter() - ranking_started) * 1000 - (timings["reranker_latency_ms"] or 0)),
+        2,
+    )
     candidate_counts.update({
         "top_results": len(results),
         "hidden_weak": len(hidden_weak),
@@ -4115,6 +4182,7 @@ def run_ai_search(request_data, *, user=None):
         "unresolved": len(unresolved_candidates),
     })
 
+    serialization_started = time.perf_counter()
     debug_pipeline = _debug_pipeline(
         intent_plan=intent_plan,
         search_plan=search_plan,
@@ -4139,6 +4207,11 @@ def run_ai_search(request_data, *, user=None):
         timings=finish_timings(),
         ai_call_count=ai_call_count,
     )
+    timings["serialization_latency_ms"] = round(
+        (time.perf_counter() - serialization_started) * 1000,
+        2,
+    )
+    debug_pipeline["serialization_latency_ms"] = timings["serialization_latency_ms"]
 
     parsed = {
         "scenario": "ai_place_search",

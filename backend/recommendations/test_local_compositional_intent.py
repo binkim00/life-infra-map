@@ -43,3 +43,15 @@ class LocalCompositionalIntentTests(SimpleTestCase):
             categories={"tourism"},
             tags={"주차가능"},
         )
+
+    def test_bare_metropolitan_names_override_current_coordinates(self):
+        for query, anchor in (
+            ("서울 노트북 작업 가능한 카페", "서울"),
+            ("혼자 가기 좋은 서울 카페", "서울"),
+            ("부산 조용한 카페", "부산"),
+            ("서울 데이트하기 좋은 식당", "서울"),
+        ):
+            with self.subTest(query=query):
+                plan = build_ai_intent_plan(query)
+                self.assertEqual(plan["frame"]["location_mode"], "explicit")
+                self.assertEqual(plan["frame"]["anchor_location"], anchor)

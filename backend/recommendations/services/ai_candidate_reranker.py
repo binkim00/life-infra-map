@@ -397,6 +397,8 @@ def _hybrid_score(candidate, decision):
 
 
 def _is_ai_enabled():
+    if getattr(settings, "AI_RERANK_ENABLED", True) is not True:
+        return False, "ai_reranker_disabled"
     if getattr(settings, "CONVERSATIONAL_SEARCH_AI_ENABLED", False) is not True:
         return False, "conversational_search_ai_disabled"
     reason = get_ai_json_unavailable_reason()
