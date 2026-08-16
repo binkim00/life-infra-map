@@ -6,6 +6,7 @@ from django.conf import settings
 import requests
 
 from recommendations.services.map_search import get_matching_categories
+from recommendations.services.canonical_tag_policy import CANONICAL_TAG_ALIASES
 
 from recommendations.services.ai_situation_parser import _call_ai_chat_json as _shared_call_ai_chat_json
 from recommendations.services.ai_json_client import get_ai_json_unavailable_reason
@@ -1591,7 +1592,86 @@ def _local_rule_plan_for_known_intent(raw_query):
     if utility_plan:
         return utility_plan
 
+    compositional_plan = _local_rule_compositional_feature_plan(text)
+    if compositional_plan:
+        return compositional_plan
+
     return None
+
+
+COMPOSITIONAL_CATEGORY_TERMS = {
+    "cafe": ("카페", "커피전문점"),
+    "restaurant": ("식당", "음식점", "레스토랑", "맛집"),
+    "tourism": ("관광지", "관광 명소", "명소"),
+    "city_park": ("공원", "산책로"),
+    "library": ("도서관",),
+    "parking": ("주차장",),
+    "toilet": ("화장실",),
+}
+FEATURE_DEFAULT_CATEGORIES = {
+    "작업하기좋음": ("cafe", "library"),
+    "노트북작업": ("cafe", "library"),
+    "콘센트있음": ("cafe", "library"),
+    "조용함": ("cafe", "library", "city_park"),
+    "무료이용": ("library", "city_park", "tourism"),
+    "야간운영": ("cafe", "restaurant", "library", "parking", "toilet", "tourism"),
+    "24시간운영": ("parking", "toilet", "cafe", "restaurant"),
+    "주차가능": ("tourism", "restaurant", "cafe"),
+}
+CATEGORY_LABELS = {
+    "cafe": "카페",
+    "restaurant": "식당",
+    "tourism": "관광지",
+    "city_park": "공원",
+    "library": "도서관",
+    "parking": "주차장",
+    "toilet": "화장실",
+}
+
+
+def _local_rule_compositional_feature_plan(text):
+    """Compose category and canonical-feature rules without sentence templates."""
+    compact = _compact(text)
+    matched_tags = []
+    for canonical, aliases in CANONICAL_TAG_ALIASES.items():
+        terms = (canonical, *aliases)
+        if any(_compact(term) in compact for term in terms):
+            matched_tags.append(canonical)
+    # Common morphology is represented as aliases, not as whole-query cases.
+    if "작업" in compact and "작업하기좋음" not in matched_tags:
+        matched_tags.append("작업하기좋음")
+    if not matched_tags:
+        return None
+
+    explicit_categories = []
+    for category, terms in COMPOSITIONAL_CATEGORY_TERMS.items():
+        if any(_compact(term) in compact for term in terms):
+            explicit_categories.append(category)
+    categories = list(explicit_categories)
+    if not categories:
+        for tag in matched_tags:
+            categories.extend(FEATURE_DEFAULT_CATEGORIES.get(tag, ()))
+    categories = _dedupe(categories)
+    if not categories:
+        return None
+
+    labels = [CATEGORY_LABELS[category] for category in categories]
+    primary_queries = _dedupe([
+        f"{tag} {label}"
+        for tag in matched_tags[:3]
+        for label in labels[:3]
+    ])
+    return _local_rule_search_plan(
+        text,
+        normalized_query=" ".join([*matched_tags, *labels[:2]]),
+        target_objects=labels,
+        candidate_place_types=labels,
+        result_match_terms=[*labels, *matched_tags],
+        primary_search_queries=primary_queries or labels,
+        constraints=matched_tags,
+        candidate_category_codes=categories,
+        ranking_policy="evidence_first",
+    )
 
 
 def _local_rule_utility_category_plan(text):
