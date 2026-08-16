@@ -10,12 +10,15 @@ from recommendations.management.commands.recover_tag_collection_jobs import reco
 from recommendations.management.commands.run_tag_collection_scheduler import scheduler_tick
 from recommendations.models import (
     Place,
+    Tag,
     PlaceTagCollectionJob,
     PlaceTagEvidence,
     ProviderQuotaUsage,
 )
 from recommendations.services.place_tag_collection import collect_naver_place_evidence
 from recommendations.services.place_tag_collection import requested_tags_for_category
+from recommendations.services.bootstrap_priority import priority_context
+from recommendations.services.restaurant_collection_quality import restaurant_collection_quality
 
 
 @override_settings(
@@ -43,6 +46,29 @@ class DailyTagCollectionTests(TestCase):
         for category in ("cafe", "tourism", "city_park", "library"):
             with self.subTest(category=category):
                 self.assertIn("혼자이용좋음", requested_tags_for_category(category))
+
+    def test_restaurant_quality_only_lowers_collection_priority(self):
+        place = self.make_place(91, category="restaurant")
+        place.name = "주식회사 푸디스트 본사 직원식당"
+        place.save(update_fields=["name"])
+        result = restaurant_collection_quality(place, identity_misses=2)
+        self.assertLess(result["score"], 0)
+        self.assertIn("institutional_food_service", result["flags"])
+        self.assertTrue(Place.objects.filter(pk=place.pk).exists())
+
+    def test_volatile_stale_web_evidence_gets_refresh_priority(self):
+        place = self.make_place(92)
+        tag = Tag.objects.create(name="콘센트있음")
+        PlaceTagEvidence.objects.create(
+            place=place, tag=tag, source="naver_blog_search",
+            observed_at=timezone.now() - timedelta(days=200),
+            expires_at=timezone.now() - timedelta(days=20),
+        )
+        context = priority_context([place])[place.id]
+        self.assertEqual(context["expired_web_evidence_count"], 1)
+        self.assertEqual(context["expired_structured_evidence_count"], 0)
+        self.assertEqual(context["volatile_expired_tag_count"], 1)
+        self.assertGreaterEqual(context["components"]["freshness_gap"], 7)
 
     def test_plans_balanced_idempotent_jobs_within_request_budget(self):
         self.make_place(1, category="cafe", region="서울특별시")

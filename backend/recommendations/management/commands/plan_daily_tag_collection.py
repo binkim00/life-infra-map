@@ -18,6 +18,7 @@ from recommendations.services.bootstrap_priority import (
     priority_context,
     weighted_tier_selection,
 )
+from recommendations.services.tag_source_policy import WEB_EVIDENCE_SOURCES
 
 
 REGIONS = (
@@ -102,6 +103,7 @@ def plan_daily_jobs(
     recent_cutoff = cycle_date - timedelta(days=settings.TAG_COLLECTION_REVISIT_DAYS)
     stale_place_ids = PlaceTagEvidence.objects.filter(
         expires_at__lte=timezone.now(),
+        source__in=WEB_EVIDENCE_SOURCES,
     ).values_list("place_id", flat=True)
     recent_place_ids = PlaceTagCollectionJob.objects.filter(
         provider=provider,

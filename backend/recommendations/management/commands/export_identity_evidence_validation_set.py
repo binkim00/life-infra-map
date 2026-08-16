@@ -26,11 +26,15 @@ class Command(BaseCommand):
         parser.add_argument("--diagnostics", default="tmp/identity_mismatch_before.csv")
         parser.add_argument("--output", default="tmp/identity_evidence_validation_150.csv")
         parser.add_argument("--size", type=int, default=150)
+        parser.add_argument("--category", default="")
 
     def handle(self, *args, **options):
         size = max(100, min(200, options["size"]))
         job_ids = PlaceTagCollectionJob.objects.order_by("-id").values_list("id", flat=True)[:options["latest"]]
-        place_ids = PlaceTagCollectionJob.objects.filter(id__in=job_ids).values_list("place_id", flat=True)
+        job_queryset = PlaceTagCollectionJob.objects.filter(id__in=job_ids)
+        if options["category"]:
+            job_queryset = job_queryset.filter(place__category=options["category"])
+        place_ids = job_queryset.values_list("place_id", flat=True)
         evidence_rows = []
         for evidence in PlaceTagEvidence.objects.filter(
             place_id__in=place_ids,
@@ -72,7 +76,7 @@ class Command(BaseCommand):
                 "identity_score": row["identity_score"],
                 "evidence_confidence": "",
                 "diagnostic_reason": row["reason"],
-            } for row in csv.DictReader(handle)]
+            } for row in csv.DictReader(handle) if not options["category"] or row["category"] == options["category"]]
         evidence_target = min(len(evidence_rows), size // 2)
         selected = stratified(evidence_rows, evidence_target, key=lambda row: row["category"])
         selected += stratified(
