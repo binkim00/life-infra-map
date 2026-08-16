@@ -203,6 +203,15 @@ now stores `new_evidences`, `active_evidences`, and `new_active_evidences` and
 optimizes the active metric instead of rewarding stale volume. Existing stale
 rows are preserved.
 
+After API-free re-extraction, the remaining active-gap WORK Candidate hints
+were entirely in Busan cafe (97 distinct Places; Seoul had zero). Candidate
+values were used only as query hints. One targeted call per Place found 224
+observations, created 199 Evidence rows, 19 active Evidence rows, and 19
+PlaceTag rows: 2.309 Evidence/call and 0.196 new-active/call. The Candidate rows
+themselves were never treated as proof or promoted without the fetched source.
+One further API-free pass recovered one grounded `조용함` row and was then
+idempotent.
+
 Stored-snippet context analysis added only repeated grounded aliases: explicit
 outlet presence, 1-person seating/solo-cafe wording, long laptop work, and
 positive conversation wording. Generic `장시간` was rejected because sampled
