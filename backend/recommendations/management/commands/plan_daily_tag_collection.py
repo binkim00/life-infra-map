@@ -49,6 +49,11 @@ class Command(BaseCommand):
         parser.add_argument("--limit", type=int)
         parser.add_argument("--provider", default="naver_search")
         parser.add_argument("--mode", choices=("balanced", "bootstrap"), default=None)
+        parser.add_argument(
+            "--categories",
+            default="",
+            help="Optional comma-separated subset of configured collection profiles.",
+        )
         parser.add_argument("--dry-run", action="store_true")
 
     def handle(self, *args, **options):
@@ -60,6 +65,9 @@ class Command(BaseCommand):
             place_limit=options["limit"] or settings.TAG_COLLECTION_DAILY_PLACE_LIMIT,
             provider=options["provider"],
             mode=options["mode"] or settings.TAG_COLLECTION_MODE,
+            categories=tuple(
+                value.strip() for value in options["categories"].split(",") if value.strip()
+            ) or None,
             dry_run=options["dry_run"],
         )
         self.stdout.write(self.style.SUCCESS(
@@ -73,7 +81,7 @@ class Command(BaseCommand):
         ))
 
 
-def plan_daily_jobs(*, cycle_date, place_limit, provider="naver_search", mode="balanced", dry_run=False):
+def plan_daily_jobs(*, cycle_date, place_limit, provider="naver_search", mode="balanced", categories=None, dry_run=False):
     place_limit = max(1, int(place_limit))
     budget = math.floor(
         settings.TAG_COLLECTION_DAILY_API_LIMIT
@@ -91,7 +99,10 @@ def plan_daily_jobs(*, cycle_date, place_limit, provider="naver_search", mode="b
     ).filter(
         Q(cycle_date=cycle_date) | ~Q(place_id__in=stale_place_ids)
     ).values_list("place_id", flat=True)
-    categories = tuple(COLLECTION_PROFILES)
+    categories = tuple(categories or COLLECTION_PROFILES)
+    unknown_categories = set(categories) - set(COLLECTION_PROFILES)
+    if unknown_categories:
+        raise ValueError("Unknown collection categories: " + ", ".join(sorted(unknown_categories)))
     if mode == "bootstrap":
         return plan_bootstrap_jobs(
             cycle_date=cycle_date,
@@ -162,7 +173,11 @@ def plan_bootstrap_jobs(
     # are concentrated in one city (the current cafe registry is mostly Busan).
     # Fetch enough rows from one stratum to reach the configured category share,
     # while bounding the candidate pool used by priority scoring.
-    category_share = settings.TAG_COLLECTION_BOOTSTRAP_CATEGORY_MAX_SHARE / 100
+    effective_category_share = max(
+        settings.TAG_COLLECTION_BOOTSTRAP_CATEGORY_MAX_SHARE,
+        math.ceil(100 / max(1, len(categories))),
+    )
+    category_share = effective_category_share / 100
     per_stratum = max(100, min(500, math.ceil(place_limit * category_share)))
     places_by_id = {}
     for _, aliases in REGIONS:
@@ -185,7 +200,7 @@ def plan_bootstrap_jobs(
         [(place, contexts[place.id]) for place in places],
         limit=place_limit,
         tier_weights=parse_tier_weights(settings.TAG_COLLECTION_BOOTSTRAP_TIER_WEIGHTS),
-        category_max_share=settings.TAG_COLLECTION_BOOTSTRAP_CATEGORY_MAX_SHARE,
+        category_max_share=effective_category_share,
     )
     created = 0
     planned_requests = 0

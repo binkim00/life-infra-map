@@ -102,6 +102,30 @@ class DailyTagCollectionTests(TestCase):
         self.assertEqual(stats["places"], 100)
         self.assertGreaterEqual(cafe_jobs, 40)
 
+    @override_settings(
+        TAG_COLLECTION_DAILY_API_LIMIT=1000,
+        TAG_COLLECTION_BOOTSTRAP_CATEGORY_MAX_SHARE=40,
+        TAG_COLLECTION_CATEGORY_PRIORITIES={"cafe": 20, "restaurant": 20},
+    )
+    def test_bootstrap_can_target_only_food_registry_categories(self):
+        for index in range(20):
+            self.make_place(index, category="cafe", region="서울특별시")
+            self.make_place(100 + index, category="restaurant", region="부산광역시")
+            self.make_place(200 + index, category="city_park", region="서울특별시")
+
+        stats = plan_daily_jobs(
+            cycle_date=timezone.localdate(),
+            place_limit=30,
+            mode="bootstrap",
+            categories=("cafe", "restaurant"),
+        )
+
+        self.assertEqual(stats["places"], 30)
+        self.assertEqual(
+            set(PlaceTagCollectionJob.objects.values_list("place__category", flat=True)),
+            {"cafe", "restaurant"},
+        )
+
     def test_scheduler_refills_a_partial_daily_plan(self):
         places = [self.make_place(index) for index in range(1, 5)]
         PlaceTagCollectionJob.objects.create(
