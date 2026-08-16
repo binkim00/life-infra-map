@@ -2227,7 +2227,7 @@ def _order_by_distance(queryset, lat, lng):
 
     return queryset.annotate(
         collect_distance=RawSQL(
-            "ST_Distance(geog, ST_SetSRID(ST_MakePoint(%s, %s), 4326)::geography)",
+            "geog <-> ST_SetSRID(ST_MakePoint(%s, %s), 4326)::geography",
             (lng, lat),
         ),
     ).order_by("collect_distance")
@@ -2264,12 +2264,12 @@ def collect_db_candidates(frame, *, lat=None, lng=None, limit=50, radius=None):
 
     radius = _radius(radius)
     bounds = _nearby_bounds(lat, lng, radius)
-    queryset = (
-        Place.objects
-        .filter(query)
-        .distinct()
-        .prefetch_related("place_tags__tag")
-    )
+    queryset = Place.objects.filter(query)
+    # Direct category lookup has no multiplying join, so DISTINCT only forces a
+    # wide sort of Place.raw. Lexical lookup still joins PlaceTag and needs it.
+    if not direct_category_codes:
+        queryset = queryset.distinct()
+    queryset = queryset.prefetch_related("place_tags__tag")
     if bounds:
         queryset = queryset.filter(
             lat__gte=bounds["lat_min"],
