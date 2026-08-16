@@ -127,3 +127,53 @@ hard violations. A warm run changed average / median / p95 / max latency to
 p95 4,075.13 ms. Average DB/evidence retrieval was 698.30 ms and Kakao 15.53 ms;
 the two retrieval branches run concurrently. The remaining outliers are broad
 semantic queries whose direct category set spans multiple categories.
+
+## API-yield adaptive collection
+
+Before spending another provider request, `reextract_web_evidence_tags` ran the
+current canonical rules over 3,134 stored web title/snippet rows. Dry-run found
+328 new Evidence rows across 295 Place–Tag pairs; apply created all 328 and a
+second dry-run found zero. The rows inherit source URL, source, observed time,
+expiry, polarity context, and raw metadata. Of these, 92 are current and 236
+remain stale; 59 new aggregate PlaceTag rows materialized. No external or AI
+call was made.
+
+The Bootstrap collector now uses two stages. Discovery issues one category-
+appropriate high-yield query. It stops immediately when identity does not pass.
+Only candidate hints, NO_TAG_EXPRESSION, stale web tags, or prior successful
+identity/evidence trigger up to two targeted cluster queries. The current
+22,368-request ledger left 132 safe requests; a 5,000-Place dry-run therefore
+planned 125 Places with 132 requests (1.056 calls/Place), versus the historical
+3.0 for cafe and 2.0 for restaurant.
+
+Historical yield explains the discovery choice. Cafe work / ambience / visit
+packs produced 827 / 1,688 / 149 Evidence rows from approximately 3,205 calls
+each (0.258 / 0.527 / 0.046 Evidence per call). Restaurant visit / ambience
+produced 326 / 93 from approximately 1,271 calls each (0.257 / 0.073). Targeted
+clusters use one keyword per call and never concatenate multiple keywords as
+AND-like search terms.
+
+The request ledger, queued reservations, and 90% safety reserve now bound the
+planner directly. Configurable initial bucket weights are Seoul cafe 45%, Busan
+cafe 15%, high-quality restaurant 10%, sparse-targeted 15%, stale refresh 10%,
+and exploration 5%. Unused shares spill to other buckets. After a bucket has at
+least 200 calls, its Evidence/call yield adjusts its next allocation within a
+0.5–1.5 multiplier; small samples do not affect weights.
+
+Current candidate hints provide 2,164 canonical Place–Tag targets across 1,585
+Seoul/Busan cafe/restaurant Places without active Evidence. There are 800 prior
+NO_TAG_EXPRESSION jobs with identity matches and 1,333 Places with stale web
+Evidence. Replaying the historical mismatch/no-result mix with one-call
+discovery would avoid an estimated 3,768 calls without lowering identity rules.
+
+The optional AI extractor remains disabled. At most 800 current
+NO_TAG_EXPRESSION rows meet the first eligibility screen. With the configured
+`gpt-5-nano`, an illustrative 500–1,500 input and 100–300 output token request
+costs about $0.000065–$0.000195 at the official $0.05/$0.40 per-million token
+rates, or roughly $0.052–$0.156 for 800 calls. This is only a token-assumption
+estimate, not an authorization to enable calls. Pricing source:
+https://developers.openai.com/api/docs/models/gpt-5-nano
+
+The final 11-query AI-off regression returned ten results each, no results in
+zero cases, and zero hard violations among 55 inspected results. Average / p95
+latency was 847.16 / 3,061.84 ms, with DB 840.07 ms and Kakao 10.98 ms average.
