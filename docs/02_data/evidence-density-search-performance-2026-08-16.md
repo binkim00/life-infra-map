@@ -234,3 +234,48 @@ store-level exclusion data, so treating every matched brand Place as having the
 feature would be unsafe. Sources inspected:
 `https://www.hollys.co.kr/store/korea/korStore.do` and
 `https://www.starbucks.co.kr/store/store_map.do?disp=locale`.
+
+## 2026-08-17 Candidate-first coverage run
+
+The sparse-pack evaluator now records idempotent per-place checkpoints in
+`PlaceTagCollectionJob.context.targeted_attempts`. Candidate hints choose the
+query feature but never become Evidence. Candidate rows use the existing
+bootstrap priority score, and same-day NO_TAG runs exclude already targeted
+places.
+
+| bucket | calls | new Evidence | new active | new PlaceTag | active/call |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Busan cafe Candidate ambience/date (first) | 500 | 615 | 211 | 171 | 0.422 |
+| Busan cafe Candidate ambience/date (remainder) | 1,052 | 725 | 275 | 195 | 0.261 |
+| Busan cafe Candidate solo | 89 | 82 | 10 | 5 | 0.112 |
+| Seoul cafe NO_TAG work | 500 | 45 | 9 | 7 | 0.018 |
+| Seoul restaurant ambience | 67 | 12 | 3 | 3 | 0.045 |
+| Seoul restaurant solo | 67 | 3 | 0 | 0 | 0.000 |
+| Seoul cafe stale work | 50 | 8 | 0 | 0 | 0.000 |
+
+Candidate ambience/date was exhausted instead of filling the requested batch
+with general Discovery. The final Naver ledger was 6,380 requests, 6,375
+successes, five pre-existing failures and zero 429 responses.
+
+An explicitly bounded AI experiment covered 100 NO_TAG discovery places.
+`gpt-5-nano` was called 28 times; 21 rows passed the canonical-tag, polarity,
+identity and verbatim-span validators (18 laptop-work, 3 work-friendly), and
+four were current at the final snapshot. The daily AI extractor remains off.
+At the official $0.05/M input and $0.40/M output token rates, even the configured
+500-output-token ceiling keeps these 28 calls below $0.01; the current JSON
+client does not expose exact token usage.
+
+Final changes from the start snapshot:
+
+- Busan cafe active Evidence places 296 -> 540; atmosphere 159 -> 313,
+  quiet 118 -> 205, date 20 -> 56, solo 6 -> 11.
+- Seoul cafe active Evidence places 140 -> 147; laptop 86 -> 92,
+  outlet 15 -> 17, quiet 42 -> 44.
+- Seoul restaurant active Evidence places 8 -> 9. Its measured yield did not
+  justify a larger budget share.
+- API-free re-extraction scanned 6,076 web rows and created four grounded rows
+  (quiet 2, date 1, atmosphere 1).
+
+The final warm 11-query AI-off regression returned ten results per query, zero
+hard violations and zero no-result cases. Average/p95 latency was
+670.55/1,865.96 ms.
