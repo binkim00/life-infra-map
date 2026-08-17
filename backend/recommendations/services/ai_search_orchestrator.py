@@ -10,7 +10,7 @@ from django.db.models import Q
 from django.db.models.expressions import RawSQL
 
 from recommendations.models import Place
-from recommendations.services.ai_candidate_reranker import semantic_rerank_candidates
+from recommendations.services.ai_candidate_reranker import _hybrid_score, semantic_rerank_candidates
 from recommendations.services.ai_intent_planner import (
     build_ai_intent_plan,
     repair_search_queries,
@@ -29,6 +29,7 @@ from recommendations.services.map_search import get_matching_categories, support
 from recommendations.services.place_urls import get_kakao_place_url
 from recommendations.services.smoking_area_data import calculate_distance_m
 from recommendations.services.tag_utils import get_category_display_name
+from recommendations.services.semantic_retrieval import attach_semantic_scores, retrieve_semantic_places
 
 
 logger = logging.getLogger(__name__)
@@ -2366,6 +2367,129 @@ def collect_db_candidates(frame, *, lat=None, lng=None, limit=50, radius=None):
     return candidates
 
 
+def collect_semantic_candidates(query, frame, *, lat=None, lng=None, radius=None):
+    """Build ordinary DB candidates from existing, fact-only semantic documents."""
+    if not getattr(settings, "SEMANTIC_RETRIEVAL_ENABLED", False):
+        return [], {"status": "disabled", "results": []}
+    if not getattr(settings, "SEMANTIC_CANDIDATE_INJECTION_ENABLED", False):
+        return [], {"status": "injection_disabled", "results": []}
+    try:
+        retrieval = retrieve_semantic_places(
+            query, top_k=getattr(settings, "SEMANTIC_TOP_K", 10),
+        )
+    except Exception as exc:  # Keep the established search path available if the optional pilot fails.
+        logger.warning("semantic retrieval unavailable: %s", exc.__class__.__name__)
+        return [], {
+            "status": "unavailable",
+            "reason": f"semantic_retrieval_failed:{exc.__class__.__name__}",
+            "results": [],
+        }
+    radius = _radius(radius)
+    # Explicit category words in the user's query are stronger than a broad or
+    # mistaken local intent frame. They gate semantic-only candidates rather
+    # than expanding the frame's categories.
+    explicit_category_codes = _explicit_semantic_query_categories(query)
+    direct_category_codes = explicit_category_codes or _direct_db_category_codes(frame)
+    candidates = []
+    required_feature_groups = _semantic_required_feature_groups(frame)
+    for row in retrieval["results"]:
+        place = row["place"]
+        if direct_category_codes and place.category not in direct_category_codes:
+            continue
+        distance = _distance(lat, lng, place.lat, place.lng)
+        if distance is not None and distance > radius:
+            continue
+        tag_lists = _db_tag_lists(place)
+        level, matched, policy_unmet, policy_verification_needed = _db_evidence(place, tag_lists, frame)
+        # Semantic similarity cannot satisfy a required structured policy.
+        # UNKNOWN is safe for soft ranking, but a semantic-only candidate with
+        # an unverified hard facility/time condition must not be injected.
+        if policy_unmet or policy_verification_needed:
+            continue
+        actual_features = list(row.get("features") or [])
+        if any(not (choices & set(actual_features)) for choices in required_feature_groups):
+            continue
+        matched = [*matched, {
+            "type": "semantic_feature_document", "field": "active_features",
+            "value": actual_features, "source_strength": "suggested",
+            "document_id": row.get("document_id"),
+        }]
+        level = "medium" if level == "weak" else level
+        candidate = {
+            **_candidate_base(
+                f"db:{place.id}", "db", place.name, place.category,
+                place.address or place.detail_location, lat=place.lat, lng=place.lng, distance=distance,
+            ),
+            "place_id": place.id, "external_id": place.external_id,
+            "source_name": place.source_name, "kakao_place_url": get_kakao_place_url(place),
+            "place_url": get_kakao_place_url(place), "verified_tags": tag_lists["verified"],
+            "verified_tag_labels": tag_lists["verified"], "suggested_tags": tag_lists["suggested"],
+            "suggested_tag_labels": tag_lists["suggested"], "candidate_tags": tag_lists["candidate"],
+            "candidate_tag_labels": tag_lists["candidate"], "warning_tags": tag_lists["warning"],
+            "matched_evidence": matched, "matched_tags": actual_features,
+            "matched_tag_labels": actual_features, "policy_matched_constraints": [
+                item["value"] for item in matched if item.get("type") == "policy_constraint"
+            ],
+            "pre_ai_unmet_constraints": [],
+            "policy_verification_needed": policy_verification_needed,
+            "pre_ai_evidence_level": level, "evidence_level": level, "frame_match_strength": level,
+            "recommendation_confidence": "high" if level == "strong" else "medium",
+            "confidence": "high" if level == "strong" else "medium",
+            "score": 80 if level == "strong" else 55,
+            "retrieval_semantic_score": row["semantic_score"],
+            "semantic_document": row["document"],
+            "score_breakdown": {"collector": "semantic", "semantic_similarity": row["semantic_similarity"]},
+        }
+        candidates.append(candidate)
+        if len(candidates) >= int(getattr(settings, "SEMANTIC_CANDIDATE_LIMIT", 5)):
+            break
+    retrieval["status"] = "executed"
+    retrieval["injected_count"] = len(candidates)
+    return candidates, retrieval
+
+
+def _semantic_required_feature_groups(frame):
+    """Map explicit required conditions to existing canonical facts only."""
+    values = [*_frame_terms(frame, "constraints")]
+    for condition in frame.get("structured_conditions") or frame.get("structuredConditions") or []:
+        if isinstance(condition, dict) and condition.get("required"):
+            values.append(condition.get("label") or "")
+    aliases = (
+        (("무료",), {"무료이용"}),
+        (("24시간", "야간운영", "운영시간확인필요", "밤늦게"), {"24시간운영", "야간운영"}),
+        (("장애인",), {"장애인시설"}),
+        (("주차",), {"주차가능"}),
+        (("조용",), {"조용함"}),
+        (("노트북", "작업", "공부"), {"노트북작업", "작업하기좋음"}),
+        (("혼자",), {"혼자이용좋음", "혼밥좋음"}),
+        (("대화", "이야기", "수다"), {"대화하기좋음"}),
+        (("데이트",), {"데이트좋음"}),
+    )
+    groups = []
+    for value in values:
+        compact = _compact(value)
+        for terms, tags in aliases:
+            if any(term in compact for term in terms) and tags not in groups:
+                groups.append(tags)
+    return groups
+
+
+def _explicit_semantic_query_categories(query):
+    """Conservative lexical category gates for semantic-only candidates."""
+    text = _compact(query)
+    if any(term in text for term in ("카페", "커피")):
+        return ["cafe"]
+    if any(term in text for term in ("식당", "음식점", "혼밥", "밥먹")):
+        return ["restaurant"]
+    if any(term in text for term in ("관광지", "관광명소")):
+        return ["tourism"]
+    if "공원" in text:
+        return ["city_park"]
+    if "도서관" in text:
+        return ["library"]
+    return []
+
+
 def _candidate_text(candidate):
     return " ".join(
         _clean_text(candidate.get(key))
@@ -3014,6 +3138,32 @@ def _deterministic_ranked_candidates(evidence_candidates, category_codes, *, lim
     ]
 
 
+def _semantic_hybrid_pilot_rank(candidates, *, limit=15):
+    """Rank existing candidates with the configured hybrid components, without an LLM call."""
+    ranked = []
+    for candidate in candidates:
+        if _blocking_unmet_constraints(candidate):
+            continue
+        decision = {
+            "semantic_score": candidate.get("retrieval_semantic_score") or 0,
+            "evidence_level": candidate.get("pre_ai_evidence_level") or "weak",
+        }
+        final_score, breakdown = _hybrid_score(candidate, decision)
+        ranked.append({
+            **candidate, "score": final_score, "score_breakdown": breakdown,
+            "semantic_score": breakdown["semantic_score"],
+            "semantic_reason": "저장된 장소 Feature와 검색 의미의 유사도를 기존 조건·근거 점수와 함께 반영했어요.",
+            "recommendation_reason": "저장된 장소 Feature와 검색 조건이 함께 맞는 후보예요.",
+            "recommend_reason": "저장된 장소 Feature와 검색 조건이 함께 맞는 후보예요.",
+            "unified_ranker_applied": True,
+        })
+    ranked.sort(key=lambda row: (-row["score"], _candidate_sort_key(row)))
+    return [
+        {**row, "backend_rank": index + 1, "unified_rank": index + 1}
+        for index, row in enumerate(ranked[:max(1, int(limit))])
+    ]
+
+
 def _top_up_ranked_candidates(ranked_candidates, candidate_pool, excluded_candidates, *, limit=15):
     desired_count = _minimum_result_count(limit)
     ranked_candidates = list(ranked_candidates or [])
@@ -3515,6 +3665,9 @@ def run_ai_search_candidates(request_data, *, user=None):
         "retrieval_latency_ms": retrieval_latency_ms,
         "query_repair_latency_ms": None,
         "web_latency_ms": None,
+        "semantic_query_embedding_latency_ms": 0.0,
+        "semantic_vector_search_latency_ms": 0.0,
+        "semantic_merge_latency_ms": 0.0,
         "reranker_latency_ms": None,
         "total_latency_ms": total_latency_ms,
     }
@@ -3972,8 +4125,34 @@ def run_ai_search(request_data, *, user=None):
         timings["web_latency_ms"] = round((time.perf_counter() - web_started) * 1000, 2)
         candidate_counts["web"] = len(web_candidates)
 
+    semantic_candidates = []
+    semantic_debug = {"status": "disabled", "results": []}
+    if (
+        getattr(settings, "SEMANTIC_RETRIEVAL_ENABLED", False)
+        and getattr(settings, "SEMANTIC_CANDIDATE_INJECTION_ENABLED", False)
+    ):
+        semantic_started = time.perf_counter()
+        semantic_candidates, semantic_debug = collect_semantic_candidates(
+            original_query or query, frame, lat=search_lat, lng=search_lng, radius=radius,
+        )
+        timings["semantic_query_embedding_latency_ms"] = semantic_debug.get("query_embedding_latency_ms", 0.0)
+        timings["semantic_vector_search_latency_ms"] = semantic_debug.get("vector_search_latency_ms", 0.0)
+        attach_semantic_scores(
+            db_candidates,
+            semantic_debug.get("results") or [],
+        )
+        timings["semantic_merge_latency_ms"] = round(
+            (time.perf_counter() - semantic_started) * 1000
+            - float(timings["semantic_query_embedding_latency_ms"] or 0)
+            - float(timings["semantic_vector_search_latency_ms"] or 0),
+            2,
+        )
+        candidate_counts["semantic"] = len(semantic_candidates)
+
     filtering_started = time.perf_counter()
-    candidate_pool = _dedupe_candidates([*db_candidates, *kakao_candidates, *web_candidates])
+    candidate_pool = _dedupe_candidates([
+        *db_candidates, *kakao_candidates, *web_candidates, *semantic_candidates,
+    ])
     invalid_display_candidates = [
         candidate
         for candidate in candidate_pool
@@ -4015,9 +4194,14 @@ def run_ai_search(request_data, *, user=None):
     # 카테고리 + 거리로 답이 정해지는 요청은 AI 후보 평가를 건너뛴다.
     # 평가해도 순서가 그대로라서 응답 시간과 토큰만 쓰게 된다.
     deterministic_codes = _deterministic_category_codes(frame)
+    semantic_hybrid_results = (
+        _semantic_hybrid_pilot_rank(evidence_candidates, limit=limit)
+        if semantic_debug.get("status") == "executed" and semantic_candidates
+        else []
+    )
     deterministic_results = (
         _deterministic_ranked_candidates(evidence_candidates, deterministic_codes, limit=limit)
-        if deterministic_codes
+        if deterministic_codes and not semantic_hybrid_results
         else []
     )
     timings["filtering_latency_ms"] = round(
@@ -4026,7 +4210,16 @@ def run_ai_search(request_data, *, user=None):
     )
     ranking_started = time.perf_counter()
 
-    if deterministic_results:
+    if semantic_hybrid_results:
+        ranked_candidates = semantic_hybrid_results
+        reranker_debug = {
+            "status": "skipped", "reason": "semantic_hybrid_pilot",
+            "input_count": len(candidate_pool), "included_count": len(ranked_candidates),
+            "excluded_count": len(candidate_pool) - len(ranked_candidates),
+            "excluded_candidates": [], "call_count": 0,
+        }
+        timings["reranker_latency_ms"] = 0.0
+    elif deterministic_results:
         ranked_candidates = deterministic_results
         reranker_debug = {
             "status": "skipped",
@@ -4191,6 +4384,9 @@ def run_ai_search(request_data, *, user=None):
         candidate_counts=candidate_counts,
         reranker_debug={
             **reranker_debug,
+            "semantic_retrieval": {
+                key: value for key, value in semantic_debug.items() if key != "results"
+            },
             "query_repair": query_repair_debug,
             "kakao_query_result_counts": query_counts,
             "retrieval_only_filtered_count": len(retrieval_only_candidates),
@@ -4242,11 +4438,12 @@ def run_ai_search(request_data, *, user=None):
             "allow_ai_web_search_auto": False,
             "merge_ai_web_results": False,
         },
-        "collector_names": ["db", "kakao", "web"],
+        "collector_names": ["db", "kakao", "web", "semantic"],
         "candidate_source_counts": {
             "db": len(db_candidates),
             "kakao": len(kakao_candidates),
             "web": len(web_candidates),
+            "semantic": len(semantic_candidates),
         },
         "external_search_triggered": bool(kakao_candidates or web_candidates),
         "external_query_count": len(primary_queries),
@@ -4268,6 +4465,7 @@ def run_ai_search(request_data, *, user=None):
         "ai_web_search": get_ai_web_search_status(),
         "execution_mode": "ai_first_orchestrator",
         "plan_source": "ai",
+        "timings": timings,
         "debug_pipeline": debug_pipeline,
         "ai_debug": {
             **(intent_plan.get("ai_debug") or {}),

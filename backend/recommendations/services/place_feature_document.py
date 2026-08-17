@@ -35,6 +35,12 @@ def active_feature_names(place, *, now=None):
 
 def build_place_feature_document(place, *, now=None):
     features = active_feature_names(place, now=now)
+    return feature_document_payload(place, features)
+
+
+def feature_document_payload(place, features):
+    """Build a retrieval document from pre-validated, stored feature names."""
+    features = sorted(set(features or []))
     parts = [place.name, place.category]
     if place.address:
         parts.append(place.address)

@@ -363,6 +363,8 @@ def _hybrid_score(candidate, decision):
         "reliability": 0.10,
     }
     resolved = {key: max(0.0, float(weights.get(key, value))) for key, value in default_weights.items()}
+    if candidate.get("retrieval_semantic_score") is not None:
+        resolved["semantic"] = max(0.0, float(getattr(settings, "SEMANTIC_RETRIEVAL_WEIGHT", 0.15)))
     total_weight = sum(resolved.values()) or 1.0
 
     condition_score = _score(candidate.get("score"))

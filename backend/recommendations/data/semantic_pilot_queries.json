@@ -18,5 +18,15 @@
   {"query": "부산에서 무료로 이용하면서 쉬기 좋은 곳", "type": "hard_semantic"},
   {"query": "밤 늦게 이용할 수 있고 조용한 곳", "type": "hard_semantic"},
   {"query": "서울에서 주차 가능한 분위기 좋은 곳", "type": "hard_semantic"},
-  {"query": "부산에서 장애인시설이 있고 이용하기 편한 곳", "type": "hard_semantic"}
+  {"query": "부산에서 장애인시설이 있고 이용하기 편한 곳", "type": "hard_semantic"},
+  {"query": "눈치 안 보고 시간 보내기 좋은 곳", "type": "indirect"},
+  {"query": "사람 적고 편하게 있을 곳", "type": "indirect"},
+  {"query": "잠깐 쉬고 싶어", "type": "category_ambiguity"},
+  {"query": "혼자 시간 보내고 싶어", "type": "category_ambiguity"},
+  {"query": "산책하면서 머리 식힐 곳", "type": "category_ambiguity"},
+  {"query": "주차 가능한 분위기 좋은 관광지", "type": "hard_semantic"},
+  {"query": "대전에서 노트북 작업할 카페", "type": "hard_semantic"},
+  {"query": "인천에서 조용히 혼자 있을 카페", "type": "hard_semantic"},
+  {"query": "광주에서 분위기 좋은 데이트 장소", "type": "hard_semantic"},
+  {"query": "울산에서 운동하고 산책할 공원", "type": "hard_semantic"}
 ]

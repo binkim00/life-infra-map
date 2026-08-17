@@ -5,6 +5,7 @@ from django.conf import settings
 
 from recommendations.models import PlaceFeatureDocument
 from recommendations.services.semantic_embeddings import embed_openai_texts
+from recommendations.services.pgvector_pilot import connect_pilot, sql_vector_search
 
 
 class SemanticRetrievalUnavailable(RuntimeError):
@@ -23,12 +24,13 @@ def semantic_retrieval_status():
     indexed = PlaceFeatureDocument.objects.exclude(embedding=[]).count()
     if not indexed:
         return {"available": False, "reason": "embedding_index_empty", "provider": provider}
+    backend = "pgvector_pilot" if getattr(settings, "SEMANTIC_PGVECTOR_DSN", "") else "python_cosine_pilot"
     return {
         "available": True,
-        "reason": "python_cosine_pilot",
+        "reason": backend,
         "provider": provider,
         "indexed_documents": indexed,
-        "backend": "python_cosine_pilot",
+        "backend": backend,
     }
 
 
@@ -52,10 +54,28 @@ def retrieve_semantic_places(query, *, top_k=10, query_embedding=None):
         query_embedding = embedded["vectors"][0]
         embedding_latency_ms = embedded["latency_ms"]
     rows = []
-    documents = PlaceFeatureDocument.objects.exclude(embedding=[]).select_related("place")
-    for document in documents:
-        similarity = _cosine(query_embedding, document.embedding)
+    dsn = getattr(settings, "SEMANTIC_PGVECTOR_DSN", "")
+    if dsn:
+        connection = connect_pilot(dsn)
+        try:
+            sql_rows, vector_latency_ms = sql_vector_search(connection, query_embedding, top_k=top_k)
+        finally:
+            connection.close()
+        document_ids = [row[0] for row in sql_rows]
+        by_id = {
+            row.id: row for row in PlaceFeatureDocument.objects.filter(id__in=document_ids).select_related("place")
+        }
+        documents = [(by_id[row[0]], float(row[2])) for row in sql_rows if row[0] in by_id]
+    else:
+        documents = [
+            (document, _cosine(query_embedding, document.embedding))
+            for document in PlaceFeatureDocument.objects.exclude(embedding=[]).select_related("place")
+        ]
+        documents.sort(key=lambda item: (-item[1], item[0].place_id))
+        vector_latency_ms = round((time.perf_counter() - started) * 1000 - embedding_latency_ms, 2)
+    for document, similarity in documents[:max(1, min(int(top_k), 50))]:
         rows.append({
+            "document_id": document.id,
             "place_id": document.place_id,
             "place": document.place,
             "document": document.document,
@@ -63,11 +83,10 @@ def retrieve_semantic_places(query, *, top_k=10, query_embedding=None):
             "semantic_similarity": round(similarity, 6),
             "semantic_score": round(max(0.0, similarity) * 100, 2),
         })
-    rows.sort(key=lambda row: (-row["semantic_similarity"], row["place_id"]))
     return {
-        "results": rows[:max(1, min(int(top_k), 20))],
+        "results": rows,
         "query_embedding_latency_ms": embedding_latency_ms,
-        "vector_search_latency_ms": round((time.perf_counter() - started) * 1000 - embedding_latency_ms, 2),
+        "vector_search_latency_ms": vector_latency_ms,
         "backend": status["backend"],
     }
 

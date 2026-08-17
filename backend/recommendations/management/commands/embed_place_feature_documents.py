@@ -16,21 +16,29 @@ from recommendations.services.semantic_embeddings import EmbeddingProviderError,
 
 
 class Command(BaseCommand):
-    help = "Embed at most 100 fact-only feature documents for the semantic pilot."
+    help = "Embed at most 1,000 selected fact-only feature documents for the semantic pilot."
 
     def add_arguments(self, parser):
         parser.add_argument("--limit", type=int, default=100)
         parser.add_argument("--strategy", choices=sorted(DOCUMENT_STRATEGIES), default="contextual")
         parser.add_argument("--dry-run", action="store_true")
         parser.add_argument("--report", default="")
+        parser.add_argument("--sample", default="", help="JSON report containing an ordered place_ids list.")
+        parser.add_argument("--batch-size", type=int, default=100)
 
     def handle(self, *args, **options):
-        limit = min(max(1, options["limit"]), int(getattr(settings, "SEMANTIC_PILOT_MAX_DOCUMENTS", 100)), 100)
+        limit = min(max(1, options["limit"]), int(getattr(settings, "SEMANTIC_PILOT_MAX_DOCUMENTS", 1000)), 1000)
         strategy = options["strategy"]
         model = getattr(settings, "SEMANTIC_EMBEDDING_MODEL", "text-embedding-3-small")
         dimensions = int(getattr(settings, "SEMANTIC_EMBEDDING_DIMENSIONS", 512))
-        queryset = PlaceFeatureDocument.objects.exclude(features=[]).select_related("place").order_by("id")
-        selected = list(queryset[:limit])
+        queryset = PlaceFeatureDocument.objects.exclude(features=[]).select_related("place")
+        if options["sample"]:
+            sample = json.loads(Path(options["sample"]).resolve().read_text(encoding="utf-8"))
+            place_ids = [int(value) for value in (sample.get("place_ids") or [])[:limit]]
+            by_place = {row.place_id: row for row in queryset.filter(place_id__in=place_ids)}
+            selected = [by_place[place_id] for place_id in place_ids if place_id in by_place]
+        else:
+            selected = list(queryset.order_by("id")[:limit])
         pending = []
         skipped = 0
         for document in selected:
@@ -51,24 +59,33 @@ class Command(BaseCommand):
             "success": 0, "failed": 0, "provider": "openai", "model": model,
             "dimensions": dimensions, "strategy": strategy, "input_tokens": 0,
             "estimated_cost_usd": 0.0, "embedding_latency_ms": 0.0,
-            "storage_latency_ms": 0.0,
+            "storage_latency_ms": 0.0, "api_calls": 0,
         }
         if options["dry_run"] or not pending:
             self._finish(report, options["report"])
             return
+        batch_size = max(1, min(int(options["batch_size"]), 100))
+        vectors = []
+        aggregate = {"input_tokens": 0, "estimated_cost_usd": 0.0, "latency_ms": 0.0}
         try:
-            result = embed_openai_texts(
-                [text for _, _, text in pending], model=model, dimensions=dimensions,
-            )
+            for offset in range(0, len(pending), batch_size):
+                batch = pending[offset:offset + batch_size]
+                result = embed_openai_texts(
+                    [text for _, _, text in batch], model=model, dimensions=dimensions,
+                )
+                vectors.extend(result["vectors"])
+                report["api_calls"] += 1
+                for key in aggregate:
+                    aggregate[key] += result[key]
         except EmbeddingProviderError as exc:
             raise CommandError(str(exc)) from exc
         storage_started = time.perf_counter()
         now = timezone.now()
-        for (document, source_hash, _), vector in zip(pending, result["vectors"]):
+        for (document, source_hash, _), vector in zip(pending, vectors):
             document.embedding = vector
             document.embedding_provider = "openai"
-            document.embedding_model = result["model"]
-            document.embedding_dimensions = result["dimensions"]
+            document.embedding_model = model
+            document.embedding_dimensions = dimensions
             document.embedding_strategy = strategy
             document.embedding_source_hash = source_hash
             document.indexed_at = now
@@ -80,9 +97,9 @@ class Command(BaseCommand):
         )
         report.update({
             "success": len(pending),
-            "input_tokens": result["input_tokens"],
-            "estimated_cost_usd": result["estimated_cost_usd"],
-            "embedding_latency_ms": result["latency_ms"],
+            "input_tokens": aggregate["input_tokens"],
+            "estimated_cost_usd": aggregate["estimated_cost_usd"],
+            "embedding_latency_ms": round(aggregate["latency_ms"], 2),
             "storage_latency_ms": round((time.perf_counter() - storage_started) * 1000, 2),
         })
         self._finish(report, options["report"])
