@@ -164,7 +164,10 @@ def priority_context(places, *, category_priorities=None, now=None):
         )
         relevant_tags = requested_tags_for_category(place.category)
         active_names = active_tag_names[place.id]
-        candidate_hints = candidate_tag_names[place.id] - active_names
+        candidate_hints = {
+            tag for tag in (candidate_tag_names[place.id] - active_names)
+            if tag in relevant_tags and tag in TARGET_TAG_ORDER
+        }
         stale_hints = stale_web_tag_names[place.id]
         no_tag_count = int(job_stats.get("no_tag_expression") or 0)
         target_pool = candidate_hints | stale_hints

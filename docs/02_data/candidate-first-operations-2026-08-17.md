@@ -1,5 +1,16 @@
 # Candidate-first evidence operations (2026-08-17)
 
+## Additional operating-cycle verification
+
+- Candidate/target packs now discard a Place before reserving Provider quota when that Place has no hint for the current pack. This closes a reserved-quota leak.
+- A Candidate bucket now requires a Canonical hint present in both the Category profile and `TARGET_TAG_ORDER`; legacy non-canonical candidates remain seeds but are not treated as facts or query hints.
+- The runtime AI extractor is limited to 50 calls/day, identity score 70+, and one call per Place. On 2026-08-17 it used only the three calls remaining after the earlier 47-call experiment and stopped at the limit.
+- The Tier 2 cafe registry itself contains only 11 Places: Incheon 1, Daegu 6, Daejeon 2, Gwangju 0, Ulsan 2. Three Places passed revisit/cooldown and produced 5 new Evidence rows and 3 new active rows from 4 Naver calls.
+- A subsequent 100-Place Seoul/Busan cafe cycle used 109 calls and produced 14 new Evidence rows and 1 new active row with no 429 or worker failure. Only 72 of the 100 Candidate-labelled contexts had an actual targeted tag; placeholder classification was corrected afterward.
+- A 105-call host-side targeted diagnostic encountered sandbox network failures and was stopped. It is reported separately and excluded from Docker worker yield.
+
+The dashboard and CLI share the metric service described in [admin-operations-dashboard.md](admin-operations-dashboard.md).
+
 ## Operating policy
 
 Daily bootstrap planning now separates request-budget buckets instead of treating

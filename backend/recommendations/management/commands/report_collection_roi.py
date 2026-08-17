@@ -12,7 +12,7 @@ from recommendations.services.adaptive_budget import recommend_scaled_budget
 from recommendations.services.place_tag_collection import requested_tags_for_category
 
 
-REGIONS = ("서울", "부산")
+REGIONS = ("서울", "부산", "인천", "대구", "대전", "광주", "울산")
 CATEGORIES = ("cafe", "restaurant")
 
 

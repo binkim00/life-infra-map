@@ -185,6 +185,14 @@ class Command(BaseCommand):
             for place in places:
                 place_new_evidence = 0
                 place_new_active = 0
+                place_target_tags = pack_tags
+                if pack_name != "discovery" and options["pool"] == "candidate":
+                    place_target_tags = tuple(
+                        tag for tag in pack_tags
+                        if tag in hint_tags_by_place.get(place.id, ())
+                    )
+                    if not place_target_tags:
+                        continue
                 if not _reserve_request():
                     raise CommandError("Naver safe quota exhausted during A/B evaluation.")
                 if pack_name == "discovery":
@@ -196,14 +204,6 @@ class Command(BaseCommand):
                         allow_ai=options["allow_ai"],
                     )
                 else:
-                    place_target_tags = pack_tags
-                    if options["pool"] == "candidate":
-                        place_target_tags = tuple(
-                            tag for tag in pack_tags
-                            if tag in hint_tags_by_place.get(place.id, ())
-                        )
-                        if not place_target_tags:
-                            continue
                     result = collect_naver_place_evidence(
                         place,
                         requested_tags_for_category(place.category),

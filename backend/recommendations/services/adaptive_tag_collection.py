@@ -14,6 +14,8 @@ FEATURE_QUERY_CLUSTERS = (
     ("long_stay", ("장기체류좋음",)),
     ("talk", ("대화하기좋음",)),
     ("waiting", ("웨이팅적음",)),
+    # Candidate-only verification path; it is not adopted for daily discovery.
+    ("visit", ("전망좋음",)),
 )
 
 
