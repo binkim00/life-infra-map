@@ -168,6 +168,7 @@ class PlaceTag(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
+        indexes = [models.Index(fields=["created_at"], name="pt_created_idx")]
         constraints = [
             models.UniqueConstraint(
                 fields=["place", "tag", "source"],
@@ -380,6 +381,7 @@ class PlaceTagEvidence(models.Model):
             models.Index(fields=["place", "tag", "polarity"]),
             models.Index(fields=["source", "-observed_at"]),
             models.Index(fields=["expires_at"]),
+            models.Index(fields=["created_at"], name="pte_created_idx"),
         ]
 
     def __str__(self):
@@ -648,6 +650,22 @@ class ProviderQuotaUsage(models.Model):
         return '{} {}: {}/{}'.format(
             self.provider, self.usage_date, self.request_count, self.daily_limit,
         )
+
+
+class OperationsDashboardSnapshot(models.Model):
+    """Precomputed heavyweight coverage dimensions for the read-only admin dashboard."""
+
+    snapshot_date = models.DateField(unique=True)
+    payload = models.JSONField(default=dict)
+    generated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["-snapshot_date"], name="ops_snapshot_date_idx"),
+        ]
+
+    def __str__(self):
+        return f"operations dashboard {self.snapshot_date}"
 
 
 class UserPreference(models.Model):

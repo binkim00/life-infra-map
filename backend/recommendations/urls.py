@@ -33,6 +33,7 @@ urlpatterns = [
     # 장소 제보 (승인이 Place/PlaceTag 를 만들므로 Django 소유)
     path("place-reports/", views.place_reports),
     path("admin/place-reports/", views.admin_place_reports),
+    path("admin/operations/", views.admin_operations_dashboard),
     path("admin/place-reports/<int:report_id>/", views.admin_place_report_detail),
     path("admin/place-reports/<int:report_id>/approve/", views.admin_place_report_approve),
     path("admin/place-reports/<int:report_id>/reject/", views.admin_place_report_reject),

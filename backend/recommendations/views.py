@@ -32,6 +32,7 @@ from .services.map_search import (
     load_places_by_ids,
     search_saved_places,
 )
+from .services.operations_dashboard import build_operations_dashboard
 from .services.place_mapper import (
     get_saved_tag_data,
     map_kakao_place_to_recommendation,
@@ -488,6 +489,21 @@ def admin_place_reports(request):
         default_page_size=10,
         max_page_size=50,
     )
+
+
+@api_view(["GET"])
+@permission_classes([IsAdminUser])
+def admin_operations_dashboard(request):
+    try:
+        days = int(request.GET.get("days", 1))
+        payload = build_operations_dashboard(
+            days=days,
+            region=request.GET.get("region", "").strip(),
+            category=request.GET.get("category", "").strip(),
+        )
+    except (TypeError, ValueError) as exc:
+        return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+    return Response(payload)
 
 
 @api_view(["GET"])
