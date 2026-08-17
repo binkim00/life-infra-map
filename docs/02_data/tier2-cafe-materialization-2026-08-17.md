@@ -27,3 +27,24 @@ in 10, 100, 1,000 and remaining-record stages.
 No subjective Tag was inferred from the SEMAS category. The new Places enter
 the existing Candidate-first enrichment planner; FeatureDocuments are generated
 only after qualifying Tag/Evidence exists.
+
+## Candidate-first evidence pilot (2026-08-18)
+
+The daily planner now distributes an explicit Tier-2 cafe batch by registry
+size multiplied by active-coverage gap instead of selecting only the first
+region in the tier. A 500-call batch completed without 429 or worker errors:
+
+| Region | Places processed | Calls | New Evidence | New active Evidence | Evidence/API | Active/API |
+|---|---:|---:|---:|---:|---:|---:|
+| Incheon | 136 | 136 | 7 | 3 | 0.051 | 0.022 |
+| Daegu | 130 | 130 | 7 | 2 | 0.054 | 0.015 |
+| Daejeon | 91 | 91 | 8 | 2 | 0.088 | 0.022 |
+| Gwangju | 82 | 82 | 4 | 0 | 0.049 | 0.000 |
+| Ulsan | 61 | 61 | 5 | 1 | 0.082 | 0.016 |
+
+Overall yield was 31 Evidence and 8 active Evidence from 500 calls
+(`Evidence/API=0.062`, `active/API=0.016`). Identity mismatch remained the
+dominant miss. Because this is substantially below the established
+Candidate-first Seoul/Busan ROI, the optional 2,000-call expansion was not run.
+No Place was deleted and the scheduler/worker operating defaults were not
+raised.
