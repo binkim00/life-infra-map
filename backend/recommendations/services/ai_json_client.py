@@ -202,6 +202,7 @@ def _call_openai_responses_json(
     response_schema=None,
     schema_name="ai_response",
     reasoning_effort=None,
+    include_usage=False,
 ):
     api_key = getattr(settings, "OPENAI_API_KEY", "")
     if not api_key:
@@ -240,17 +241,33 @@ def _call_openai_responses_json(
     response.raise_for_status()
     data = response.json()
 
+    parsed = None
     if isinstance(data.get("output_parsed"), dict):
-        return data["output_parsed"]
-    if isinstance(data.get("parsed"), dict):
-        return data["parsed"]
-
-    output = _extract_openai_output_text(data)
-    if isinstance(output, dict):
-        return output
-    if output:
-        return extract_json_object(output)
-    return None
+        parsed = data["output_parsed"]
+    elif isinstance(data.get("parsed"), dict):
+        parsed = data["parsed"]
+    else:
+        output = _extract_openai_output_text(data)
+        if isinstance(output, dict):
+            parsed = output
+        elif output:
+            parsed = extract_json_object(output)
+    if not include_usage:
+        return parsed
+    usage = data.get("usage") if isinstance(data.get("usage"), dict) else {}
+    return {
+        "data": parsed or {},
+        "usage": {
+            "input_tokens": int(usage.get("input_tokens") or 0),
+            "output_tokens": int(usage.get("output_tokens") or 0),
+            "total_tokens": int(usage.get("total_tokens") or 0),
+            "cached_input_tokens": int(
+                ((usage.get("input_tokens_details") or {}).get("cached_tokens") or 0)
+            ),
+        },
+        "model": str(data.get("model") or model),
+        "response_id": str(data.get("id") or ""),
+    }
 
 
 def call_ai_json(
@@ -288,3 +305,13 @@ def call_ai_json(
             reasoning_effort=reasoning_effort,
         )
     raise ValueError(f"Unsupported AI provider: {selected}")
+
+
+def call_ai_json_with_usage(*args, **kwargs):
+    """Return parsed data and exact provider usage without changing legacy callers."""
+    selected = _provider(kwargs.get("provider"))
+    if selected != "openai":
+        return {"data": call_ai_json(*args, **kwargs) or {}, "usage": {}, "model": ""}
+    kwargs = dict(kwargs)
+    kwargs.pop("provider", None)
+    return _call_openai_responses_json(*args, include_usage=True, **kwargs)

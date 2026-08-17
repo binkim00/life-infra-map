@@ -122,6 +122,11 @@ def collect_naver_place_evidence(
     requests_made = 0
     diagnostics = {"search_results": 0, "identity_matches": 0, "tag_expressions": 0, "short_snippets": 0}
     ai_calls = 0
+    ai_attempts = 0
+    ai_metrics = {
+        "grounded": 0, "invalid": 0, "input_tokens": 0, "output_tokens": 0,
+        "total_tokens": 0, "cached_input_tokens": 0, "estimated_cost_usd": 0,
+    }
     discovery_identity_matches = None
     for profile_index, (pack_name, keyword, tag_names) in enumerate(profiles):
         if strategy == "adaptive" and profile_index > 0 and not discovery_identity_matches:
@@ -192,13 +197,27 @@ def collect_naver_place_evidence(
             if (
                 allow_ai
                 and snippet_evidences == 0
-                and ai_calls < getattr(settings, "TAG_COLLECTION_AI_MAX_CALLS_PER_PLACE", 1)
+                and identity["score"] >= getattr(settings, "TAG_COLLECTION_AI_MIN_IDENTITY_SCORE", 70)
+                and ai_attempts < getattr(settings, "TAG_COLLECTION_AI_MAX_CALLS_PER_PLACE", 1)
             ):
                 from recommendations.services.canonical_ai_evidence_extractor import (
-                    extract_canonical_tags_from_evidence,
+                    extract_canonical_tags_from_evidence_detailed,
                 )
-                ai_calls += 1
-                for extracted in extract_canonical_tags_from_evidence(combined, tag_names):
+                ai_attempts += 1
+                extraction_result = extract_canonical_tags_from_evidence_detailed(combined, tag_names)
+                metrics = extraction_result.get("metrics") or {}
+                ai_calls += int(metrics.get("attempted") or 0)
+                for key in (
+                    "grounded", "invalid", "input_tokens", "output_tokens",
+                    "total_tokens", "cached_input_tokens",
+                ):
+                    ai_metrics[key] += int(metrics.get(key) or 0)
+                ai_metrics["estimated_cost_usd"] = round(
+                    ai_metrics["estimated_cost_usd"] + float(metrics.get("estimated_cost_usd") or 0), 8,
+                )
+                if metrics.get("model"):
+                    ai_metrics["model"] = metrics["model"]
+                for extracted in extraction_result.get("matches") or []:
                     key = (extracted["tag_name"], source_url, extracted["polarity"])
                     if key in seen:
                         continue
@@ -247,4 +266,5 @@ def collect_naver_place_evidence(
         "miss_reason": miss_reason,
         "diagnostics": diagnostics,
         "ai_calls": ai_calls,
+        "ai_metrics": ai_metrics,
     }

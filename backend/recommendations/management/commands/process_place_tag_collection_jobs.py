@@ -137,6 +137,7 @@ def process_jobs(*, limit=10, worker_id="worker", collector=None):
             "new_active_evidences": new_active_evidences,
             "structured_evidences": structured_evidences,
             "ai_calls": int(result.get("ai_calls") or 0),
+            "ai_metrics": result.get("ai_metrics") or {},
             "miss_reason": result.get("miss_reason") or "",
             "diagnostics": result.get("diagnostics") or {},
         }
