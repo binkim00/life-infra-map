@@ -96,12 +96,12 @@ TAG_COLLECTION_BOOTSTRAP_CATEGORY_MAX_SHARE = _env_int(
     "TAG_COLLECTION_BOOTSTRAP_CATEGORY_MAX_SHARE", 40, 5, 100
 )
 TAG_COLLECTION_BUDGET_WEIGHTS = {
-    "seoul_cafe": _env_int("TAG_COLLECTION_BUDGET_SEOUL_CAFE", 45, 0, 100),
-    "busan_cafe": _env_int("TAG_COLLECTION_BUDGET_BUSAN_CAFE", 15, 0, 100),
-    "high_quality_restaurant": _env_int("TAG_COLLECTION_BUDGET_RESTAURANT", 10, 0, 100),
-    "targeted_sparse": _env_int("TAG_COLLECTION_BUDGET_TARGETED", 15, 0, 100),
-    "stale_refresh": _env_int("TAG_COLLECTION_BUDGET_REFRESH", 10, 0, 100),
-    "exploration": _env_int("TAG_COLLECTION_BUDGET_EXPLORATION", 5, 0, 100),
+    "candidate_hint": _env_int("TAG_COLLECTION_BUDGET_CANDIDATE", 45, 0, 100),
+    "cafe_discovery": _env_int("TAG_COLLECTION_BUDGET_CAFE_DISCOVERY", 25, 0, 100),
+    "no_tag_targeted": _env_int("TAG_COLLECTION_BUDGET_NO_TAG", 15, 0, 100),
+    "high_quality_restaurant": _env_int("TAG_COLLECTION_BUDGET_RESTAURANT", 5, 0, 100),
+    "stale_refresh": _env_int("TAG_COLLECTION_BUDGET_REFRESH", 1, 0, 100),
+    "exploration": _env_int("TAG_COLLECTION_BUDGET_EXPLORATION", 9, 0, 100),
 }
 TAG_COLLECTION_CATEGORY_PRIORITIES = {
     "cafe": _env_int("TAG_COLLECTION_PRIORITY_CAFE", 20, 0, 100),
@@ -123,6 +123,15 @@ TAG_COLLECTION_AI_PRIORITY_THRESHOLD = _env_int("TAG_COLLECTION_AI_PRIORITY_THRE
 TAG_COLLECTION_AI_MAX_CALLS_PER_PLACE = _env_int("TAG_COLLECTION_AI_MAX_CALLS_PER_PLACE", 1, 0, 10)
 TAG_COLLECTION_AI_MODEL = os.getenv("TAG_COLLECTION_AI_MODEL", "gpt-5-nano").strip()
 TAG_COLLECTION_AI_DAILY_LIMIT = _env_int("TAG_COLLECTION_AI_DAILY_LIMIT", 100, 0, 10000)
+TAG_COLLECTION_AI_MIN_IDENTITY_SCORE = _env_int("TAG_COLLECTION_AI_MIN_IDENTITY_SCORE", 70, 0, 100)
+TAG_COLLECTION_AI_ALLOWED_TAGS = tuple(
+    value.strip()
+    for value in os.getenv(
+        "TAG_COLLECTION_AI_ALLOWED_TAGS",
+        "조용함,작업하기좋음,노트북작업,콘센트있음,무료와이파이,혼자이용좋음,혼밥좋음,분위기좋음,데이트좋음,대화하기좋음,웨이팅적음,장기체류좋음",
+    ).split(",")
+    if value.strip()
+)
 TAG_COLLECTION_ADOPTED_TARGET_CLUSTERS = tuple(
     value.strip()
     for value in os.getenv(

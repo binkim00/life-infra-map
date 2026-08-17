@@ -2,26 +2,36 @@ from collections import defaultdict
 
 
 DEFAULT_WEIGHTS = {
-    "seoul_cafe": 45,
-    "busan_cafe": 15,
-    "high_quality_restaurant": 10,
-    "targeted_sparse": 15,
-    "stale_refresh": 10,
-    "exploration": 5,
+    "candidate_hint": 45,
+    "cafe_discovery": 25,
+    "no_tag_targeted": 15,
+    "high_quality_restaurant": 5,
+    "stale_refresh": 1,
+    "exploration": 9,
 }
+
+BUCKET_FALLBACK_ORDER = (
+    "candidate_hint",
+    "cafe_discovery",
+    "no_tag_targeted",
+    "high_quality_restaurant",
+    "exploration",
+    "stale_refresh",
+)
 
 
 def collection_bucket(place, context):
-    if context.get("stale_refresh_tags"):
+    reason = context.get("adaptive_reason")
+    if reason == "candidate_hint":
+        return "candidate_hint"
+    if reason == "no_tag_expression":
+        return "no_tag_targeted"
+    if reason == "stale_refresh":
         return "stale_refresh"
-    if context.get("targeted_tags"):
-        return "targeted_sparse"
     if place.category == "restaurant":
         return "high_quality_restaurant"
-    if place.category == "cafe" and str(place.address or "").startswith("서울"):
-        return "seoul_cafe"
-    if place.category == "cafe" and str(place.address or "").startswith("부산"):
-        return "busan_cafe"
+    if place.category == "cafe":
+        return "cafe_discovery"
     return "exploration"
 
 
@@ -60,6 +70,12 @@ def allocate_by_request_budget(candidates, *, budget, weights, request_count):
         else:
             deferred.append(item)
     total = sum(used.values())
+    fallback_rank = {key: index for index, key in enumerate(BUCKET_FALLBACK_ORDER)}
+    deferred.sort(key=lambda item: (
+        fallback_rank.get(item[1]["budget_bucket"], len(fallback_rank)),
+        -int(item[1].get("score") or 0),
+        item[0].id,
+    ))
     for item in deferred:
         calls = request_count(item[1])
         if total + calls > budget:
@@ -68,3 +84,29 @@ def allocate_by_request_budget(candidates, *, budget, weights, request_count):
         used[item[1]["budget_bucket"]] += calls
         total += calls
     return selected, dict(used)
+
+
+def recommend_scaled_budget(cycles, *, current_budget, minimum_yield=0.05):
+    """Recommend a conservative next-cycle request budget from three real cycles."""
+    rows = list(cycles or [])[:3]
+    if len(rows) < 3:
+        return {"recommended_budget": current_budget, "action": "hold", "reason": "insufficient_history"}
+    calls = sum(max(0, int(row.get("calls") or 0)) for row in rows)
+    active = sum(max(0, int(row.get("active_evidence") or 0)) for row in rows)
+    failures = sum(max(0, int(row.get("failures") or 0)) for row in rows)
+    rate_limited = sum(max(0, int(row.get("rate_limited") or 0)) for row in rows)
+    active_yield = active / calls if calls else 0
+    failure_rate = failures / calls if calls else 0
+    if rate_limited or failure_rate > 0.02 or active_yield < minimum_yield:
+        return {
+            "recommended_budget": max(100, round(current_budget * 0.75)),
+            "action": "decrease",
+            "reason": "rate_limit_or_low_yield",
+            "active_per_call": round(active_yield, 4),
+        }
+    return {
+        "recommended_budget": round(current_budget * 1.2),
+        "action": "increase",
+        "reason": "three_stable_cycles",
+        "active_per_call": round(active_yield, 4),
+    }

@@ -3,10 +3,10 @@ from datetime import date, timedelta
 
 from django.conf import settings
 from django.core.management.base import BaseCommand
-from django.db.models import Q, Sum
+from django.db.models import Exists, OuterRef, Q, Sum
 from django.utils import timezone
 
-from recommendations.models import Place, PlaceTagCollectionJob, ProviderQuotaUsage
+from recommendations.models import Place, PlaceTag, PlaceTagCollectionJob, ProviderQuotaUsage
 from recommendations.models import PlaceTagEvidence
 from recommendations.services.place_tag_collection import (
     COLLECTION_PROFILES,
@@ -230,10 +230,22 @@ def plan_bootstrap_jobs(
             location |= Q(address__startswith=alias)
             location |= Q(detail_location__startswith=alias)
         for category in categories:
-            rows = Place.objects.filter(location, category=category).exclude(
+            base = Place.objects.filter(location, category=category).exclude(
                 id__in=recent_place_ids
-            ).order_by("id")[:per_stratum]
-            for place in rows:
+            )
+            active_same_tag = PlaceTagEvidence.objects.filter(
+                place_id=OuterRef("place_id"), tag_id=OuterRef("tag_id"),
+            ).filter(Q(expires_at__isnull=True) | Q(expires_at__gt=timezone.now()))
+            candidate_place_ids = PlaceTag.objects.filter(
+                place__in=base,
+                status__in=("candidate", "needs_verification"),
+                tag__name__in=requested_tags_for_category(category),
+            ).annotate(has_active=Exists(active_same_tag)).filter(
+                has_active=False,
+            ).order_by("-confidence", "place_id").values_list("place_id", flat=True)[:per_stratum]
+            candidate_rows = Place.objects.filter(id__in=candidate_place_ids)
+            discovery_rows = base.order_by("id")[:per_stratum]
+            for place in list(candidate_rows) + list(discovery_rows):
                 places_by_id[place.id] = place
     places = list(places_by_id.values())
     contexts = priority_context(
@@ -258,6 +270,14 @@ def plan_bootstrap_jobs(
         row["calls"] += int((stats or {}).get("requests") or 0)
         row["evidence"] += int((stats or {}).get("evidences") or 0)
         row["active_evidence"] += int((stats or {}).get("active_evidences") or 0)
+    for context in PlaceTagCollectionJob.objects.filter(
+        context__targeted_metrics__isnull=False,
+    ).order_by("-id").values_list("context", flat=True)[:5000]:
+        for bucket, metrics in ((context or {}).get("targeted_metrics") or {}).items():
+            row = history.setdefault(bucket, {"calls": 0, "evidence": 0, "active_evidence": 0})
+            row["calls"] += int((metrics or {}).get("calls") or 0)
+            row["evidence"] += int((metrics or {}).get("evidence") or 0)
+            row["active_evidence"] += int((metrics or {}).get("active_evidence") or 0)
     weights = yield_adjusted_weights(settings.TAG_COLLECTION_BUDGET_WEIGHTS, history)
     selected, bucket_requests = allocate_by_request_budget(
         selected,

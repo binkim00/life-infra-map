@@ -183,6 +183,8 @@ class Command(BaseCommand):
             ).count()
             before_tags = PlaceTag.objects.count()
             for place in places:
+                place_new_evidence = 0
+                place_new_active = 0
                 if not _reserve_request():
                     raise CommandError("Naver safe quota exhausted during A/B evaluation.")
                 if pack_name == "discovery":
@@ -215,6 +217,15 @@ class Command(BaseCommand):
                 stats["calls"] += made
                 stats["places"] += 1
                 stats["ai_calls"] += int(result.get("ai_calls") or 0)
+                ai_metrics = result.get("ai_metrics") or {}
+                for metric in (
+                    "grounded", "invalid", "input_tokens", "output_tokens",
+                    "total_tokens", "cached_input_tokens",
+                ):
+                    stats["ai_{}".format(metric)] += int(ai_metrics.get(metric) or 0)
+                stats["ai_cost_micro_usd"] += round(
+                    float(ai_metrics.get("estimated_cost_usd") or 0) * 1_000_000,
+                )
                 stats["failures"] += int(error not in {"", "insufficient_evidence"})
                 stats["rate_limited"] += int(error == "rate_limited")
                 diagnostics = result.get("diagnostics") or {}
@@ -228,8 +239,12 @@ class Command(BaseCommand):
                 if options["apply"]:
                     for evidence in evidences:
                         observed_at = parse_observed_date(evidence.get("observed_date")) or timezone.now()
-                        save_place_candidate_evidence(
+                        saved, created = save_place_candidate_evidence(
                             place, evidence["tag_name"], evidence, observed_at=observed_at,
+                        )
+                        place_new_evidence += int(created)
+                        place_new_active += int(
+                            created and (saved.expires_at is None or saved.expires_at > timezone.now())
                         )
                         if (evidence.get("extraction") or {}).get("method") == "ai":
                             validation_rows.append({
@@ -241,8 +256,14 @@ class Command(BaseCommand):
                                 "polarity": evidence["polarity"],
                                 "evidence_span": (evidence.get("extraction") or {}).get("evidence_span", ""),
                                 "source_title": evidence.get("source_title", ""),
+                                "evidence_snippet": evidence.get("evidence_summary", ""),
                                 "source_url": evidence.get("source_url", ""),
+                                "published_at": evidence.get("observed_date", ""),
+                                "confidence": evidence.get("confidence", ""),
                                 "identity_confidence": (evidence.get("identity") or {}).get("score", ""),
+                                "tag_correct": "",
+                                "span_correct": "",
+                                "polarity_correct": "",
                                 "review_notes": "",
                             })
                     record_targeted_attempt(
@@ -250,7 +271,11 @@ class Command(BaseCommand):
                         "{}:{}{}".format(
                             options["pool"], pack_name, ":ai" if options["allow_ai"] else "",
                         ),
-                        result,
+                        {
+                            **result,
+                            "new_evidences": place_new_evidence,
+                            "new_active_evidences": place_new_active,
+                        },
                     )
             calls = stats["calls"]
             report["packs"][pack_name] = {
@@ -263,6 +288,7 @@ class Command(BaseCommand):
                     expires_at__gt=timezone.now(),
                 ).count() - before_active_evidence,
                 "new_place_tags": PlaceTag.objects.count() - before_tags,
+                "ai_estimated_cost_usd": round(stats["ai_cost_micro_usd"] / 1_000_000, 8),
             }
             report["api_calls"] += calls
         report["elapsed_seconds"] = round(time.perf_counter() - started, 3)
@@ -274,7 +300,9 @@ class Command(BaseCommand):
             validation_path.parent.mkdir(parents=True, exist_ok=True)
             fieldnames = list(validation_rows[0]) if validation_rows else [
                 "place_id", "place_name", "address", "category", "tag", "polarity",
-                "evidence_span", "source_title", "source_url", "identity_confidence", "review_notes",
+                "evidence_span", "source_title", "evidence_snippet", "source_url",
+                "published_at", "confidence", "identity_confidence", "tag_correct",
+                "span_correct", "polarity_correct", "review_notes",
             ]
             with validation_path.open("w", encoding="utf-8-sig", newline="") as handle:
                 writer = csv.DictWriter(handle, fieldnames=fieldnames)
@@ -336,6 +364,34 @@ def record_targeted_attempt(place, attempt_key, result):
     attempts = dict(context.get("targeted_attempts") or {})
     attempts[attempt_key] = timezone.now().isoformat()
     context["targeted_attempts"] = attempts
+    results = dict(context.get("targeted_attempt_results") or {})
+    diagnostics = result.get("diagnostics") or {}
+    results[attempt_key] = {
+        "attempted_at": attempts[attempt_key],
+        "requests": int(result.get("requests") or 0),
+        "evidences": len(result.get("evidences") or []),
+        "miss_reason": result.get("miss_reason") or "",
+        "identity_matches": int(diagnostics.get("identity_matches") or 0),
+        "search_results": int(diagnostics.get("search_results") or 0),
+    }
+    context["targeted_attempt_results"] = results
+    bucket = {
+        "candidate": "candidate_hint",
+        "no_tag": "no_tag_targeted",
+        "stale": "stale_refresh",
+    }.get(attempt_key.split(":", 1)[0], "exploration")
+    metrics = dict(context.get("targeted_metrics") or {})
+    bucket_metrics = dict(metrics.get(bucket) or {})
+    for key, value in {
+        "calls": int(result.get("requests") or 0),
+        "evidence": int(result.get("new_evidences") or 0),
+        "active_evidence": int(result.get("new_active_evidences") or 0),
+        "failures": int(bool(result.get("error") not in {"", "insufficient_evidence"})),
+        "rate_limited": int(result.get("error") == "rate_limited"),
+    }.items():
+        bucket_metrics[key] = int(bucket_metrics.get(key) or 0) + value
+    metrics[bucket] = bucket_metrics
+    context["targeted_metrics"] = metrics
     job.context = context
     if created:
         job.status = "completed"

@@ -11,6 +11,7 @@ from recommendations.management.commands.evaluate_sparse_query_packs import reco
 from recommendations.management.commands.run_tag_collection_scheduler import scheduler_tick
 from recommendations.models import (
     Place,
+    PlaceTag,
     Tag,
     PlaceTagCollectionJob,
     PlaceTagEvidence,
@@ -20,6 +21,7 @@ from recommendations.services.place_tag_collection import collect_naver_place_ev
 from recommendations.services.place_tag_collection import requested_tags_for_category
 from recommendations.services.bootstrap_priority import priority_context
 from recommendations.services.restaurant_collection_quality import restaurant_collection_quality
+from recommendations.services.adaptive_budget import collection_bucket, recommend_scaled_budget
 
 
 @override_settings(
@@ -176,6 +178,27 @@ class DailyTagCollectionTests(TestCase):
             PlaceTagCollectionJob.objects.exclude(place__address__startswith="서울특별시").exists()
         )
 
+    @override_settings(
+        TAG_COLLECTION_DAILY_API_LIMIT=100,
+        TAG_COLLECTION_BOOTSTRAP_CATEGORY_MAX_SHARE=100,
+        TAG_COLLECTION_CATEGORY_PRIORITIES={"cafe": 20},
+    )
+    def test_bootstrap_prefers_unverified_candidate_hint_over_plain_discovery(self):
+        self.make_place(501, category="cafe", region="서울특별시")
+        candidate = self.make_place(502, category="cafe", region="서울특별시")
+        tag = Tag.objects.create(name="분위기좋음")
+        PlaceTag.objects.create(place=candidate, tag=tag, status="candidate", confidence=50)
+
+        stats = plan_daily_jobs(
+            cycle_date=timezone.localdate(), place_limit=1, mode="bootstrap",
+            categories=("cafe",), regions=("서울특별시",),
+        )
+
+        self.assertEqual(stats["places"], 1)
+        job = PlaceTagCollectionJob.objects.get()
+        self.assertEqual(job.place_id, candidate.id)
+        self.assertEqual(job.context["budget_bucket"], "candidate_hint")
+
     def test_scheduler_refills_a_partial_daily_plan(self):
         places = [self.make_place(index) for index in range(1, 5)]
         PlaceTagCollectionJob.objects.create(
@@ -321,6 +344,29 @@ class DailyTagCollectionTests(TestCase):
             "candidate:ambience",
             jobs.get().context["targeted_attempts"],
         )
+        self.assertEqual(
+            jobs.get().context["targeted_attempt_results"]["candidate:ambience"]["requests"],
+            1,
+        )
+        self.assertEqual(
+            jobs.get().context["targeted_metrics"]["candidate_hint"]["calls"],
+            2,
+        )
+
+    def test_collection_bucket_prefers_candidate_and_limits_stale(self):
+        place = self.make_place(76)
+        self.assertEqual(collection_bucket(place, {"adaptive_reason": "candidate_hint"}), "candidate_hint")
+        self.assertEqual(collection_bucket(place, {"adaptive_reason": "no_tag_expression"}), "no_tag_targeted")
+        self.assertEqual(collection_bucket(place, {"adaptive_reason": "stale_refresh"}), "stale_refresh")
+        self.assertEqual(collection_bucket(place, {"adaptive_reason": "discovery"}), "cafe_discovery")
+
+    def test_scaling_increases_only_after_three_stable_cycles(self):
+        result = recommend_scaled_budget(
+            [{"calls": 500, "active_evidence": 100, "failures": 0, "rate_limited": 0}] * 3,
+            current_budget=1000,
+        )
+        self.assertEqual(result["action"], "increase")
+        self.assertEqual(result["recommended_budget"], 1200)
 
     @patch("recommendations.services.place_tag_collection._request_channel")
     def test_collection_reports_no_search_result(self, request_channel):

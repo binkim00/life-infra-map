@@ -21,6 +21,20 @@ TARGET_TAG_ORDER = (
     "혼밥좋음", "분위기좋음", "데이트좋음", "조용함",
 )
 
+# Conservative priors from the measured candidate-validation batches. They
+# only order searches; a hint never becomes Evidence without a sourced hit.
+CANDIDATE_ACTIVE_YIELD_PRIOR = {
+    "분위기좋음": 0.35,
+    "데이트좋음": 0.30,
+    "혼자이용좋음": 0.11,
+    "노트북작업": 0.08,
+    "작업하기좋음": 0.08,
+    "콘센트있음": 0.06,
+    "무료와이파이": 0.02,
+    "장기체류좋음": 0.02,
+    "대화하기좋음": 0.02,
+}
+
 
 TIER_1_PREFIXES = ("서울", "부산")
 TIER_2_PREFIXES = ("인천", "대구", "대전", "광주", "울산")
@@ -162,6 +176,11 @@ def priority_context(places, *, category_priorities=None, now=None):
             + min(8, int(job_stats.get("identity_passes") or 0) * 2)
             + min(10, no_tag_count * 5)
             - min(16, int(job_stats.get("no_search_result") or 0) * 8)
+            - min(24, int(job_stats.get("identity_misses") or 0) * 6)
+        )
+        candidate_yield = max(
+            (CANDIDATE_ACTIVE_YIELD_PRIOR.get(tag, 0) for tag in candidate_hints),
+            default=0,
         )
         components = {
             "region": {1: 30, 2: 20, 3: 12, 4: 5}[place_region_tier(place)],
@@ -174,6 +193,8 @@ def priority_context(places, *, category_priorities=None, now=None):
             "data_quality_need": data_quality_need,
             "restaurant_collection_quality": restaurant_quality["score"],
             "collection_history": history_score,
+            "candidate_hint": min(30, len(candidate_hints) * 5) if candidate_hints else 0,
+            "expected_active_yield": round(candidate_yield * 60),
         }
         results[place.id] = {
             "score": sum(components.values()),
