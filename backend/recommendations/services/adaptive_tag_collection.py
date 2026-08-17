@@ -7,6 +7,9 @@ from recommendations.services.naver_tag_evidence_provider import SEARCH_KEYWORDS
 
 FEATURE_QUERY_CLUSTERS = (
     ("work_sparse", ("콘센트있음", "무료와이파이", "노트북작업", "작업하기좋음")),
+    # Candidate hints may justify a one-off targeted validation even though this
+    # cluster is not part of the adopted daily packs by default.
+    ("ambience", ("분위기좋음", "조용함", "데이트좋음", "대화하기좋음")),
     ("solo", ("혼자이용좋음", "혼밥좋음")),
     ("long_stay", ("장기체류좋음",)),
     ("talk", ("대화하기좋음",)),

@@ -7,6 +7,7 @@ from django.utils import timezone
 from recommendations.management.commands.plan_daily_tag_collection import plan_daily_jobs
 from recommendations.management.commands.process_place_tag_collection_jobs import process_jobs
 from recommendations.management.commands.recover_tag_collection_jobs import recover_stale_jobs
+from recommendations.management.commands.evaluate_sparse_query_packs import record_targeted_attempt
 from recommendations.management.commands.run_tag_collection_scheduler import scheduler_tick
 from recommendations.models import (
     Place,
@@ -298,6 +299,28 @@ class DailyTagCollectionTests(TestCase):
         )
         self.assertEqual(result["requests"], 1)
         self.assertTrue(request_channel.call_args.args[1].endswith("콘센트"))
+
+    @patch("recommendations.services.place_tag_collection._request_channel")
+    def test_targeted_only_candidate_ambience_uses_candidate_tag_keyword(self, request_channel):
+        request_channel.return_value = {"items": []}
+        result = collect_naver_place_evidence(
+            self.make_place(74), strategy="targeted_only",
+            targeted_tags=["데이트좋음"],
+        )
+        self.assertEqual(result["requests"], 1)
+        self.assertTrue(request_channel.call_args.args[1].endswith("데이트"))
+
+    def test_targeted_attempt_checkpoint_is_idempotently_recorded(self):
+        place = self.make_place(75)
+        result = {"requests": 1}
+        record_targeted_attempt(place, "candidate:ambience", result)
+        record_targeted_attempt(place, "candidate:ambience", result)
+        jobs = PlaceTagCollectionJob.objects.filter(place=place)
+        self.assertEqual(jobs.count(), 1)
+        self.assertIn(
+            "candidate:ambience",
+            jobs.get().context["targeted_attempts"],
+        )
 
     @patch("recommendations.services.place_tag_collection._request_channel")
     def test_collection_reports_no_search_result(self, request_channel):
