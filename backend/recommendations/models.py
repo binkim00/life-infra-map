@@ -61,6 +61,8 @@ class PlaceFeatureDocument(models.Model):
     fingerprint = models.CharField(max_length=64, db_index=True)
     embedding_provider = models.CharField(max_length=50, blank=True)
     embedding_model = models.CharField(max_length=100, blank=True)
+    embedding_strategy = models.CharField(max_length=30, blank=True)
+    embedding_source_hash = models.CharField(max_length=64, blank=True, db_index=True)
     embedding = models.JSONField(default=list, blank=True)
     embedding_dimensions = models.PositiveIntegerField(default=0)
     indexed_at = models.DateTimeField(null=True, blank=True)

@@ -13,18 +13,28 @@ class Command(BaseCommand):
         parser.add_argument("--category", action="append")
         parser.add_argument("--batch-size", type=int, default=500)
         parser.add_argument("--dry-run", action="store_true")
+        parser.add_argument("--require-features", action="store_true")
 
     def handle(self, *args, **options):
         queryset = Place.objects.filter(id__gt=max(0, options["after_id"])).order_by("id")
         if options["category"]:
             queryset = queryset.filter(category__in=options["category"])
-        if options["limit"] is not None:
+        if options["require_features"]:
+            queryset = queryset.filter(
+                place_tags__status__in=("candidate", "confirmed")
+            ).distinct()
+        if options["limit"] is not None and not options["require_features"]:
             queryset = queryset[:max(1, options["limit"])]
-        stats = {"read": 0, "created": 0, "updated": 0, "unchanged": 0, "last_id": options["after_id"]}
+        stats = {"read": 0, "selected": 0, "created": 0, "updated": 0, "unchanged": 0, "last_id": options["after_id"]}
         for place in queryset.iterator(chunk_size=max(1, options["batch_size"])):
             stats["read"] += 1
             stats["last_id"] = place.id
             payload = build_place_feature_document(place)
+            if options["require_features"] and not payload["features"]:
+                continue
+            if options["limit"] is not None and stats["selected"] >= max(1, options["limit"]):
+                break
+            stats["selected"] += 1
             existing = PlaceFeatureDocument.objects.filter(place=place).first()
             if existing and existing.fingerprint == payload["fingerprint"]:
                 stats["unchanged"] += 1
@@ -37,6 +47,6 @@ class Command(BaseCommand):
                 )
         prefix = "[dry-run] " if options["dry_run"] else ""
         self.stdout.write(self.style.SUCCESS(
-            f"{prefix}Feature documents: read={stats['read']} created={stats['created']} "
+            f"{prefix}Feature documents: read={stats['read']} selected={stats['selected']} created={stats['created']} "
             f"updated={stats['updated']} unchanged={stats['unchanged']} last_id={stats['last_id']}"
         ))

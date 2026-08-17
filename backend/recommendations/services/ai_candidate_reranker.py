@@ -368,7 +368,11 @@ def _hybrid_score(candidate, decision):
     condition_score = _score(candidate.get("score"))
     matched = _as_list(candidate.get("matched_tags")) or _as_list(candidate.get("matched_tag_labels"))
     tag_score = min(100.0, len(matched) * 25.0)
-    semantic_score = _score(decision.get("semantic_score"))
+    semantic_score = _score(
+        candidate.get("retrieval_semantic_score")
+        if candidate.get("retrieval_semantic_score") is not None
+        else decision.get("semantic_score")
+    )
     evidence_level = _clean_text(
         candidate.get("pre_ai_evidence_level") or decision.get("evidence_level")
     )

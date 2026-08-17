@@ -1,0 +1,22 @@
+[
+  {"query": "조용한 카페", "type": "direct"},
+  {"query": "노트북 작업 가능한 곳", "type": "direct"},
+  {"query": "콘센트 있는 카페", "type": "direct"},
+  {"query": "무료 와이파이 되는 곳", "type": "direct"},
+  {"query": "혼밥하기 좋은 식당", "type": "direct"},
+  {"query": "데이트하기 좋은 곳", "type": "direct"},
+  {"query": "혼자 멍때릴 곳", "type": "indirect"},
+  {"query": "오래 앉아서 할 일 하기 좋은 곳", "type": "indirect"},
+  {"query": "사람 방해 안 받고 시간 보낼 곳", "type": "indirect"},
+  {"query": "혼자 편하게 머무를 곳", "type": "indirect"},
+  {"query": "친구와 이야기 나누기 편한 곳", "type": "indirect"},
+  {"query": "기다리지 않고 밥 먹을 곳", "type": "indirect"},
+  {"query": "혼자 조용히 노트북 할 곳", "type": "compound"},
+  {"query": "분위기 있으면서 대화하기 좋은 곳", "type": "compound"},
+  {"query": "조용하고 분위기 좋은 카페", "type": "compound"},
+  {"query": "공부하거나 작업하기 좋은 곳", "type": "compound"},
+  {"query": "부산에서 무료로 이용하면서 쉬기 좋은 곳", "type": "hard_semantic"},
+  {"query": "밤 늦게 이용할 수 있고 조용한 곳", "type": "hard_semantic"},
+  {"query": "서울에서 주차 가능한 분위기 좋은 곳", "type": "hard_semantic"},
+  {"query": "부산에서 장애인시설이 있고 이용하기 편한 곳", "type": "hard_semantic"}
+]
