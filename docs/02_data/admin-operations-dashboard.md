@@ -34,3 +34,9 @@ Scheduler는 당일 queue/processing이 모두 끝났고 마지막 완료 Job이
 `GET /api/recommendations/admin/operations/?days=7&region=부산&category=cafe`
 
 지원 기간은 1/7/30일, 지역은 서울·부산·인천·대구·대전·광주·울산, Category는 cafe/restaurant/toilet/parking/city_park/shelter/library/tourism/freewifi다. 필터는 Backend query와 snapshot dimension에 적용되며 전체 raw row를 브라우저로 보내지 않는다.
+
+## 성장 지표 스냅샷 성능
+
+일일 스냅샷에는 최근 30일 일별 성장량, 1/7/30일 합계와 기간별 active Tag 상위 10개도 저장한다. Region/Category 필터가 없는 요청은 이 값을 재사용하므로 Evidence와 PlaceTag 전체를 매번 다시 스캔하지 않는다. 필터가 있는 요청은 선택한 차원의 정확한 값을 위해 실시간 집계를 유지한다.
+
+2026-08-17 개발 DB에서 스냅샷 갱신은 scheduler의 오프라인 작업으로 약 31.3초가 걸렸다. 스냅샷 갱신 후 서비스 함수의 실측 시간은 1일 약 1.13초, 7일 약 1.75초, 30일 약 1.87초였다.

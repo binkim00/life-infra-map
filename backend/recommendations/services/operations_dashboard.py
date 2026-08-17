@@ -337,6 +337,12 @@ def _tag_coverage(regions, category, start, now):
 
 def build_coverage_snapshot(*, now=None):
     now = now or timezone.now()
+    snapshot_end = timezone.make_aware(
+        timezone.datetime.combine(
+            timezone.localdate(now) + timedelta(days=1), timezone.datetime.min.time()
+        )
+    )
+    growth_start = snapshot_end - timedelta(days=30)
     places = Place.objects.filter(category__in=CATEGORIES).annotate(region=_region_case())
     evidence = PlaceTagEvidence.objects.filter(place__category__in=CATEGORIES).annotate(region=_region_case("place__"))
     place_tags = PlaceTag.objects.filter(place__category__in=CATEGORIES).annotate(region=_region_case("place__"))
@@ -428,12 +434,46 @@ def build_coverage_snapshot(*, now=None):
         "stale_evidence": PlaceTagEvidence.objects.filter(expires_at__lte=now).count(),
         "evidence_places": PlaceTagEvidence.objects.values("place_id").distinct().count(),
     }
+    growth_30 = _growth_rows(
+        growth_start, snapshot_end, now,
+        PlaceTagEvidence.objects.all(), PlaceTag.objects.all(),
+    )
+    active_tag_daily = list(
+        PlaceTagEvidence.objects.filter(
+            _active_filter(now), polarity="positive", created_at__gte=growth_start,
+        ).annotate(day=TruncDate("created_at")).values("day", "tag__name").annotate(count=Count("id"))
+    )
+    period_summaries = {}
+    top_tags_by_days = {}
+    for days in (1, 7, 30):
+        start_date = timezone.localdate(snapshot_end - timedelta(days=days))
+        rows = [row for row in growth_30 if row["date"] >= start_date.isoformat()]
+        period_summaries[str(days)] = {
+            "new_evidence": sum(row["new_evidence"] for row in rows),
+            "new_active_evidence": sum(row["new_active_evidence"] for row in rows),
+            "new_place_tags": sum(row["new_place_tags"] for row in rows),
+            "evidence_places": PlaceTagEvidence.objects.filter(
+                created_at__gte=snapshot_end - timedelta(days=days),
+                created_at__lt=snapshot_end,
+            ).values("place_id").distinct().count(),
+        }
+        tag_counter = Counter()
+        for row in active_tag_daily:
+            if row["day"] >= start_date:
+                tag_counter[row["tag__name"]] += row["count"]
+        top_tags_by_days[str(days)] = [
+            {"tag": tag, "count": count}
+            for tag, count in tag_counter.most_common(10)
+        ]
     return {
         "generated_at": now.isoformat(),
         "cells": cells,
         "tag_counts": {"|".join(key): count for key, count in tag_counts.items()},
         "source_freshness": source_freshness,
         "global_totals": global_totals,
+        "growth_30": growth_30,
+        "period_summaries": period_summaries,
+        "top_tags_by_days": top_tags_by_days,
     }
 
 
@@ -531,23 +571,36 @@ def build_operations_dashboard(*, days=1, region="", category="", now=None):
     period_evidence = evidence.filter(created_at__gte=start, created_at__lt=end)
     period_tags = place_tags.filter(created_at__gte=start, created_at__lt=end)
 
-    period = {
-        "processed_places": PlaceTagCollectionJob.objects.filter(
+    processed_places = PlaceTagCollectionJob.objects.filter(
             cycle_date__gte=start_date, cycle_date__lte=end_date, status="completed",
-        ).values("place_id").distinct().count(),
-        "new_evidence": period_evidence.count(),
-        "new_active_evidence": period_evidence.filter(_active_filter(now)).count(),
-        "new_place_tags": period_tags.count(),
-        "evidence_places": period_evidence.values("place_id").distinct().count(),
-    }
-    top_tags = list(
-        period_evidence.filter(_active_filter(now), polarity="positive")
-        .values("tag__name").annotate(count=Count("id"))
-        .order_by("-count", "tag__name")[:10]
-    )
-
+        ).values("place_id").distinct().count()
     snapshot_row = OperationsDashboardSnapshot.objects.order_by("-snapshot_date").first()
     snapshot = snapshot_row.payload if snapshot_row else build_coverage_snapshot(now=now)
+    if not region and not category and snapshot.get("period_summaries"):
+        period = {
+            "processed_places": processed_places,
+            **snapshot["period_summaries"][str(days)],
+        }
+        growth = [
+            row for row in snapshot.get("growth_30", [])
+            if row["date"] >= start_date.isoformat()
+        ]
+        top_tags = snapshot.get("top_tags_by_days", {}).get(str(days), [])
+    else:
+        period = {
+            "processed_places": processed_places,
+            "new_evidence": period_evidence.count(),
+            "new_active_evidence": period_evidence.filter(_active_filter(now)).count(),
+            "new_place_tags": period_tags.count(),
+            "evidence_places": period_evidence.values("place_id").distinct().count(),
+        }
+        growth = _growth_rows(start, end, now, evidence, place_tags)
+        top_tags = [
+            {"tag": row["tag__name"], "count": row["count"]}
+            for row in period_evidence.filter(_active_filter(now), polarity="positive")
+            .values("tag__name").annotate(count=Count("id"))
+            .order_by("-count", "tag__name")[:10]
+        ]
     regions, categories = _summary_from_snapshot(snapshot, region=region, category=category)
     scoped_cells = list((snapshot.get("cells") or {}).values())
     if region:
@@ -581,8 +634,8 @@ def build_operations_dashboard(*, days=1, region="", category="", now=None):
         "filters": {"days": days, "region": region, "category": category},
         "period": period,
         "cumulative": cumulative,
-        "growth": _growth_rows(start, end, now, evidence, place_tags),
-        "top_active_tags": [{"tag": row["tag__name"], "count": row["count"]} for row in top_tags],
+        "growth": growth,
+        "top_active_tags": top_tags,
         "providers": _provider_rows(start_date, end_date),
         "strategies": _job_strategy_rows(start_date, end_date),
         "regions": regions,
