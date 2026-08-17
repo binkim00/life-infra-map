@@ -133,6 +133,12 @@ const AdminOperationsView = () => {
 
           <section className={styles.panel}><h2>공식 Source Freshness</h2><div className={styles.tableWrap}><table><thead><tr><th>Source</th><th>최신 기준일</th><th>Current</th><th>Stale</th><th>Stale 비율</th><th>Refresh</th></tr></thead><tbody>{data.source_freshness.map((row) => <tr key={row.source}><td>{row.source}</td><td>{row.latest_source_date || 'UNKNOWN'}</td><td>{number(row.current_evidence)}</td><td>{number(row.stale_evidence)}</td><td>{percent(row.stale_ratio)}</td><td>{row.refresh_needed ? '필요' : '정상'}</td></tr>)}</tbody></table></div></section>
           <section className={styles.panel}><h2>검색 성능</h2><p className={styles.note}>{data.search_performance.status}: {data.search_performance.reason}</p></section>
+          <section className={styles.panel}><h2>Semantic Pilot</h2><div className={styles.providerRow}>
+            <strong>{data.semantic_pilot?.model || 'NOT_CONFIGURED'}</strong>
+            <span>문서 {number(data.semantic_pilot?.feature_documents)}</span>
+            <span>Embedding {number(data.semantic_pilot?.embedded_documents)} · {metric(data.semantic_pilot?.dimensions, 'D')}</span>
+            <span>Retrieval {data.semantic_pilot?.retrieval_enabled ? 'ON' : 'OFF'} / Injection {data.semantic_pilot?.candidate_injection_enabled ? 'ON' : 'OFF'}</span>
+          </div></section>
         </> : null}
       </div>
     </main>

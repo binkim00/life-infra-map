@@ -10,6 +10,7 @@ from django.utils import timezone
 
 from recommendations.models import (
     Place,
+    PlaceFeatureDocument,
     PlaceTag,
     PlaceTagCollectionJob,
     PlaceTagEvidence,
@@ -650,4 +651,14 @@ def build_operations_dashboard(*, days=1, region="", category="", now=None):
         },
         "source_freshness": snapshot.get("source_freshness") or [],
         "search_performance": {"status": "NOT_AVAILABLE", "reason": "search latency is not persisted"},
+        "semantic_pilot": {
+            "feature_documents": PlaceFeatureDocument.objects.count(),
+            "embedded_documents": PlaceFeatureDocument.objects.exclude(embedding=[]).count(),
+            "model": getattr(settings, "SEMANTIC_EMBEDDING_MODEL", ""),
+            "dimensions": getattr(settings, "SEMANTIC_EMBEDDING_DIMENSIONS", None),
+            "retrieval_enabled": bool(getattr(settings, "SEMANTIC_RETRIEVAL_ENABLED", False)),
+            "candidate_injection_enabled": bool(
+                getattr(settings, "SEMANTIC_CANDIDATE_INJECTION_ENABLED", False)
+            ),
+        },
     }
