@@ -74,7 +74,7 @@ def allocate_by_request_budget(candidates, *, budget, weights, request_count):
     deferred.sort(key=lambda item: (
         fallback_rank.get(item[1]["budget_bucket"], len(fallback_rank)),
         -int(item[1].get("score") or 0),
-        item[0].id,
+        getattr(item[0], "id", 0),
     ))
     for item in deferred:
         calls = request_count(item[1])
