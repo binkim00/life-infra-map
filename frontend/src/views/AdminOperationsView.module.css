@@ -1,0 +1,62 @@
+.page { min-height: 100vh; padding: 36px 24px 64px; background: #fff8ed; color: #1f2937; }
+.container { max-width: 1440px; margin: 0 auto; }
+.header { display: flex; justify-content: space-between; align-items: flex-end; gap: 24px; margin-bottom: 22px; }
+.header h1 { margin: 0; font-size: 32px; color: #111827; }
+.header p { margin: 8px 0 0; color: #667085; }
+.eyebrow { color: #f59e0b !important; font-size: 12px; font-weight: 900; letter-spacing: .12em; }
+.tabs { display: flex; flex-wrap: wrap; gap: 7px; justify-content: flex-end; }
+.tabs a { padding: 9px 12px; border: 1px solid #d0d5dd; border-radius: 999px; background: white; color: #475467; font-size: 13px; font-weight: 800; text-decoration: none; }
+.tabs .activeTab { border-color: #f59e0b; background: #fff7ed; color: #d97706; }
+.filters { display: flex; gap: 12px; padding: 14px; margin-bottom: 18px; border: 1px solid #eadcc5; border-radius: 16px; background: white; }
+.filters label { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 800; }
+.filters select { padding: 9px 32px 9px 10px; border: 1px solid #d0d5dd; border-radius: 10px; background: white; }
+.kpiGrid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+.kpiCard, .panel { border: 1px solid #eadcc5; border-radius: 18px; background: white; box-shadow: 0 8px 24px rgba(146,64,14,.06); }
+.kpiCard { display: flex; flex-direction: column; min-height: 112px; padding: 16px; }
+.kpiCard span { color: #667085; font-size: 12px; font-weight: 800; }
+.kpiCard strong { margin-top: 10px; font-size: 25px; color: #111827; }
+.kpiCard small { margin-top: auto; color: #98a2b3; }
+.panelGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-bottom: 16px; }
+.panel { padding: 18px; margin-bottom: 16px; overflow: hidden; }
+.panelGrid .panel { margin-bottom: 0; }
+.panel h2 { margin: 0 0 16px; font-size: 17px; }
+.panel h3 { margin: 10px 0; font-size: 14px; }
+.tableWrap { overflow-x: auto; }
+.tableWrap table { width: 100%; border-collapse: collapse; min-width: 650px; }
+.tableWrap th, .tableWrap td { padding: 10px; border-bottom: 1px solid #f1e6d5; text-align: left; font-size: 12px; }
+.tableWrap th { color: #667085; background: #fffbf5; }
+.chart { display: flex; align-items: flex-end; height: 190px; gap: 6px; padding-top: 10px; }
+.barColumn { display: flex; flex: 1; height: 100%; min-width: 12px; flex-direction: column; justify-content: flex-end; align-items: stretch; }
+.bar { min-height: 3px; border-radius: 5px 5px 0 0; background: linear-gradient(#f59e0b, #fb923c); }
+.barColumn small { margin-top: 5px; color: #98a2b3; font-size: 9px; text-align: center; transform: rotate(-30deg); }
+.rankList { margin: 0; padding-left: 25px; }
+.rankList li { display: flex; justify-content: space-between; padding: 7px 4px; border-bottom: 1px solid #f2f4f7; }
+.rankList strong { color: #d97706; }
+.tagSection + .tagSection { margin-top: 18px; padding-top: 14px; border-top: 1px solid #eee1ce; }
+.tagGrid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 9px; }
+.tagGrid > div { display: flex; flex-direction: column; padding: 11px; border-radius: 12px; background: #fff9ee; }
+.tagGrid span { font-size: 12px; color: #667085; }
+.tagGrid strong { margin: 5px 0; font-size: 18px; }
+.tagGrid small { color: #98a2b3; }
+.providerRow { display: grid; grid-template-columns: 1.3fr repeat(3, 1fr); gap: 8px; padding: 10px 0; border-bottom: 1px solid #f2f4f7; font-size: 12px; }
+.definitionList { margin: 0; }
+.definitionList > div { display: flex; justify-content: space-between; padding: 7px 0; border-bottom: 1px solid #f2f4f7; }
+.definitionList dt { color: #667085; }
+.definitionList dd { margin: 0; font-weight: 900; }
+.note { color: #667085; font-size: 12px; }
+.state, .error { padding: 30px; border-radius: 16px; background: white; text-align: center; }
+.error { color: #b42318; background: #fff1f0; }
+
+@media (max-width: 1100px) {
+  .kpiGrid { grid-template-columns: repeat(3, 1fr); }
+  .tagGrid { grid-template-columns: repeat(3, 1fr); }
+  .header { align-items: flex-start; flex-direction: column; }
+}
+@media (max-width: 720px) {
+  .page { padding: 20px 12px 48px; }
+  .filters, .panelGrid { flex-direction: column; grid-template-columns: 1fr; }
+  .filters { display: grid; }
+  .kpiGrid { grid-template-columns: repeat(2, 1fr); }
+  .tagGrid { grid-template-columns: repeat(2, 1fr); }
+  .providerRow { grid-template-columns: 1fr 1fr; }
+}

@@ -2,6 +2,7 @@ import { createBrowserRouter, Navigate } from 'react-router-dom'
 
 import App from '@/App'
 import AdminInquiryView from '@/views/AdminInquiryView'
+import AdminOperationsView from '@/views/AdminOperationsView'
 import AdminPlaceReportsView from '@/views/AdminPlaceReportsView'
 import AdminUserProfileView from '@/views/AdminUserProfileView'
 import AdminUserView from '@/views/AdminUserView'
@@ -39,6 +40,7 @@ const router = createBrowserRouter([
       { path: 'admin/users', element: <AdminUserView /> },
       { path: 'admin/users/:userId', element: <AdminUserProfileView /> },
       { path: 'admin/inquiries', element: <AdminInquiryView /> },
+      { path: 'admin/operations', element: <AdminOperationsView /> },
       { path: 'mypage', element: <MypageView /> },
       { path: 'mypage/preferences', element: <PreferenceSettingsView /> },
       { path: 'mypage/search-history', element: <SearchHistoryView /> },

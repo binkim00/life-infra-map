@@ -133,6 +133,12 @@ const AppHeader = ({
         ) : null}
 
         {isStaff ? (
+          <NavLink to="/admin/operations" className={navLinkClassName}>
+            <span className="nav-text">운영 현황</span>
+          </NavLink>
+        ) : null}
+
+        {isStaff ? (
           <NavLink to="/admin/reports" className={navLinkClassName}>
             <span className="nav-text">신고 내역</span>
           </NavLink>

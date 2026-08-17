@@ -320,3 +320,14 @@ export const rejectPlaceReport = async (reportId, payload = {}) => {
 
   return response.data
 }
+
+export const fetchAdminOperations = async ({ days = 1, region = '', category = '' } = {}) => {
+  const response = await api.get('/recommendations/admin/operations/', {
+    params: {
+      days,
+      ...(region ? { region } : {}),
+      ...(category ? { category } : {}),
+    },
+  })
+  return response.data
+}

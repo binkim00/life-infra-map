@@ -11,6 +11,7 @@ export const ROUTE_DEFINITIONS = [
   { path: '/admin/users', name: 'admin-users' },
   { path: '/admin/users/:userId', name: 'admin-user-profile' },
   { path: '/admin/inquiries', name: 'admin-inquiries' },
+  { path: '/admin/operations', name: 'admin-operations' },
   { path: '/mypage', name: 'mypage' },
   { path: '/mypage/preferences', name: 'mypage-preferences' },
   { path: '/mypage/search-history', name: 'mypage-search-history' },
