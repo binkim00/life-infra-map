@@ -4,7 +4,7 @@ import time
 from django.conf import settings
 
 from recommendations.models import PlaceFeatureDocument
-from recommendations.services.semantic_embeddings import embed_openai_texts
+from recommendations.services.semantic_embeddings import embed_openai_query_cached
 from recommendations.services.pgvector_pilot import connect_pilot, sql_vector_search
 
 
@@ -49,10 +49,16 @@ def retrieve_semantic_places(query, *, top_k=10, query_embedding=None):
         raise SemanticRetrievalUnavailable(status["reason"])
     started = time.perf_counter()
     embedding_latency_ms = 0.0
+    query_cache_hit = query_embedding is not None
+    query_embedding_api_calls = 0
+    query_embedding_input_tokens = 0
     if query_embedding is None:
-        embedded = embed_openai_texts([query])
-        query_embedding = embedded["vectors"][0]
+        embedded = embed_openai_query_cached(query)
+        query_embedding = embedded["vector"]
         embedding_latency_ms = embedded["latency_ms"]
+        query_cache_hit = embedded["cache_hit"]
+        query_embedding_api_calls = embedded["api_calls"]
+        query_embedding_input_tokens = embedded["input_tokens"]
     rows = []
     dsn = getattr(settings, "SEMANTIC_PGVECTOR_DSN", "")
     if dsn:
@@ -86,6 +92,9 @@ def retrieve_semantic_places(query, *, top_k=10, query_embedding=None):
     return {
         "results": rows,
         "query_embedding_latency_ms": embedding_latency_ms,
+        "query_embedding_cache_hit": query_cache_hit,
+        "query_embedding_api_calls": query_embedding_api_calls,
+        "query_embedding_input_tokens": query_embedding_input_tokens,
         "vector_search_latency_ms": vector_latency_ms,
         "backend": status["backend"],
     }
@@ -93,9 +102,11 @@ def retrieve_semantic_places(query, *, top_k=10, query_embedding=None):
 
 def attach_semantic_scores(candidates, semantic_results):
     """Attach a component score only; hard filtering remains upstream."""
-    scores = {row["place_id"]: row["semantic_score"] for row in semantic_results}
+    rows = {row["place_id"]: row for row in semantic_results}
     for candidate in candidates:
         place_id = candidate.get("place_id")
-        if place_id in scores:
-            candidate["retrieval_semantic_score"] = scores[place_id]
+        if place_id in rows:
+            candidate["retrieval_semantic_score"] = rows[place_id]["semantic_score"]
+            candidate["retrieval_semantic_features"] = list(rows[place_id].get("features") or [])
+            candidate["retrieval_semantic_document_id"] = rows[place_id].get("document_id")
     return candidates

@@ -30,6 +30,7 @@ from recommendations.services.place_urls import get_kakao_place_url
 from recommendations.services.smoking_area_data import calculate_distance_m
 from recommendations.services.tag_utils import get_category_display_name
 from recommendations.services.semantic_retrieval import attach_semantic_scores, retrieve_semantic_places
+from recommendations.services.search_hard_gate import apply_common_hard_gate
 
 
 logger = logging.getLogger(__name__)
@@ -2437,6 +2438,8 @@ def collect_semantic_candidates(query, frame, *, lat=None, lng=None, radius=None
             "confidence": "high" if level == "strong" else "medium",
             "score": 80 if level == "strong" else 55,
             "retrieval_semantic_score": row["semantic_score"],
+            "retrieval_semantic_features": actual_features,
+            "retrieval_semantic_document_id": row.get("document_id"),
             "semantic_document": row["document"],
             "score_breakdown": {"collector": "semantic", "semantic_similarity": row["semantic_similarity"]},
         }
@@ -3041,6 +3044,11 @@ def _blocking_unmet_constraints(candidate):
     if not isinstance(candidate, dict):
         return []
     unmet = []
+    unmet.extend(
+        violation.get("label") or violation.get("required") or violation.get("type")
+        for violation in candidate.get("hard_gate_violations") or []
+        if isinstance(violation, dict)
+    )
     unmet.extend(_as_list(candidate.get("pre_ai_unmet_constraints")))
     semantic = candidate.get("semantic_reranker") if isinstance(candidate.get("semantic_reranker"), dict) else {}
     unmet.extend(_as_list(semantic.get("unmet_constraints")))
@@ -3138,6 +3146,19 @@ def _deterministic_ranked_candidates(evidence_candidates, category_codes, *, lim
     ]
 
 
+def _grounded_semantic_reason(candidate):
+    current_features = set(candidate.get("hard_gate_active_tags") or [])
+    features = [
+        _clean_text(value, 50)
+        for value in candidate.get("retrieval_semantic_features") or []
+        if _clean_text(value, 50) and value in current_features
+    ]
+    if features:
+        return f"{', '.join(features[:2])} 근거가 있는 후보예요."
+    category = get_category_display_name(candidate.get("category")) or "장소"
+    return f"요청한 지역과 {category} 분류에 맞는 후보예요."
+
+
 def _semantic_hybrid_pilot_rank(candidates, *, limit=15):
     """Rank existing candidates with the configured hybrid components, without an LLM call."""
     ranked = []
@@ -3149,12 +3170,13 @@ def _semantic_hybrid_pilot_rank(candidates, *, limit=15):
             "evidence_level": candidate.get("pre_ai_evidence_level") or "weak",
         }
         final_score, breakdown = _hybrid_score(candidate, decision)
+        grounded_reason = _grounded_semantic_reason(candidate)
         ranked.append({
             **candidate, "score": final_score, "score_breakdown": breakdown,
             "semantic_score": breakdown["semantic_score"],
-            "semantic_reason": "저장된 장소 Feature와 검색 의미의 유사도를 기존 조건·근거 점수와 함께 반영했어요.",
-            "recommendation_reason": "저장된 장소 Feature와 검색 조건이 함께 맞는 후보예요.",
-            "recommend_reason": "저장된 장소 Feature와 검색 조건이 함께 맞는 후보예요.",
+            "semantic_reason": grounded_reason,
+            "recommendation_reason": grounded_reason,
+            "recommend_reason": grounded_reason,
             "unified_ranker_applied": True,
         })
     ranked.sort(key=lambda row: (-row["score"], _candidate_sort_key(row)))
@@ -3733,6 +3755,11 @@ def run_ai_search(request_data, *, user=None):
         "query_repair_latency_ms": None,
         "web_latency_ms": None,
         "reranker_latency_ms": None,
+        "semantic_query_embedding_latency_ms": 0.0,
+        "semantic_query_embedding_cache_hit": None,
+        "semantic_query_embedding_api_calls": 0,
+        "semantic_vector_search_latency_ms": 0.0,
+        "semantic_merge_latency_ms": 0.0,
         "total_latency_ms": None,
     }
     ai_call_count = 0
@@ -4136,6 +4163,8 @@ def run_ai_search(request_data, *, user=None):
             original_query or query, frame, lat=search_lat, lng=search_lng, radius=radius,
         )
         timings["semantic_query_embedding_latency_ms"] = semantic_debug.get("query_embedding_latency_ms", 0.0)
+        timings["semantic_query_embedding_cache_hit"] = semantic_debug.get("query_embedding_cache_hit")
+        timings["semantic_query_embedding_api_calls"] = semantic_debug.get("query_embedding_api_calls", 0)
         timings["semantic_vector_search_latency_ms"] = semantic_debug.get("vector_search_latency_ms", 0.0)
         attach_semantic_scores(
             db_candidates,
@@ -4170,6 +4199,12 @@ def run_ai_search(request_data, *, user=None):
             if _clean_text(candidate.get("id")) not in invalid_display_ids
         ]
         candidate_counts["removed_invalid_display"] = len(invalid_display_candidates)
+    candidate_pool, common_hard_gate_removed, common_hard_gate_debug = apply_common_hard_gate(
+        candidate_pool,
+        original_query or query,
+        frame,
+    )
+    candidate_counts["removed_common_hard_gate"] = len(common_hard_gate_removed)
     retrieval_only_candidates = [
         candidate
         for candidate in candidate_pool
@@ -4387,6 +4422,7 @@ def run_ai_search(request_data, *, user=None):
             "semantic_retrieval": {
                 key: value for key, value in semantic_debug.items() if key != "results"
             },
+            "common_hard_gate": common_hard_gate_debug,
             "query_repair": query_repair_debug,
             "kakao_query_result_counts": query_counts,
             "retrieval_only_filtered_count": len(retrieval_only_candidates),

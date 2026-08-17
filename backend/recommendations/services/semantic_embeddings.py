@@ -1,7 +1,11 @@
+import hashlib
+import re
 import time
+import unicodedata
 
 import requests
 from django.conf import settings
+from django.core.cache import cache
 
 
 OPENAI_EMBEDDING_PRICE_PER_MILLION_TOKENS = 0.02
@@ -9,6 +13,51 @@ OPENAI_EMBEDDING_PRICE_PER_MILLION_TOKENS = 0.02
 
 class EmbeddingProviderError(RuntimeError):
     pass
+
+
+def _normalized_query(value):
+    return re.sub(r"\s+", " ", unicodedata.normalize("NFKC", str(value or "")).strip().casefold())
+
+
+def embed_openai_query_cached(query, *, model=None, dimensions=None, timeout=30):
+    """Cache only the vector in the process cache; raw user queries are never persisted."""
+    model = model or getattr(settings, "SEMANTIC_EMBEDDING_MODEL", "text-embedding-3-small")
+    dimensions = dimensions or int(getattr(settings, "SEMANTIC_EMBEDDING_DIMENSIONS", 512))
+    version = str(getattr(settings, "SEMANTIC_QUERY_EMBEDDING_CACHE_VERSION", "v1"))
+    normalized = _normalized_query(query)
+    if not normalized:
+        raise EmbeddingProviderError("embedding_input_is_empty")
+    digest = hashlib.sha256(
+        f"{version}\n{model}\n{dimensions}\n{normalized}".encode("utf-8")
+    ).hexdigest()
+    key = f"semantic-query:{digest}"
+    started = time.perf_counter()
+    cached = cache.get(key)
+    if isinstance(cached, list) and len(cached) == dimensions:
+        return {
+            "vector": cached,
+            "model": model,
+            "dimensions": dimensions,
+            "input_tokens": 0,
+            "estimated_cost_usd": 0.0,
+            "latency_ms": round((time.perf_counter() - started) * 1000, 2),
+            "cache_hit": True,
+            "api_calls": 0,
+        }
+    embedded = embed_openai_texts([normalized], model=model, dimensions=dimensions, timeout=timeout)
+    ttl = int(getattr(settings, "SEMANTIC_QUERY_EMBEDDING_CACHE_TTL", 900))
+    if ttl > 0:
+        cache.set(key, embedded["vectors"][0], timeout=ttl)
+    return {
+        "vector": embedded["vectors"][0],
+        "model": embedded["model"],
+        "dimensions": embedded["dimensions"],
+        "input_tokens": embedded["input_tokens"],
+        "estimated_cost_usd": embedded["estimated_cost_usd"],
+        "latency_ms": embedded["latency_ms"],
+        "cache_hit": False,
+        "api_calls": 1,
+    }
 
 
 def embed_openai_texts(texts, *, model=None, dimensions=None, timeout=30):
