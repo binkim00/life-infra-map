@@ -224,7 +224,9 @@ def plan_bootstrap_jobs(
     stratum_cap = place_limit if len(regions) == 1 and len(categories) == 1 else 500
     per_stratum = max(100, min(stratum_cap, math.ceil(place_limit * category_share)))
     places_by_id = {}
-    for _, aliases in regions:
+    region_by_place_id = {}
+    region_weights = {}
+    for region_name, aliases in regions:
         location = Q()
         for alias in aliases:
             location |= Q(address__startswith=alias)
@@ -233,6 +235,14 @@ def plan_bootstrap_jobs(
             base = Place.objects.filter(location, category=category).exclude(
                 id__in=recent_place_ids
             )
+            total_places = Place.objects.filter(location, category=category).count()
+            active_places = PlaceTagEvidence.objects.filter(
+                place__in=Place.objects.filter(location, category=category),
+            ).filter(Q(expires_at__isnull=True) | Q(expires_at__gt=timezone.now())).values(
+                "place_id"
+            ).distinct().count()
+            coverage_gap = 1 - (active_places / total_places if total_places else 0)
+            region_weights[region_name] = region_weights.get(region_name, 0) + total_places * coverage_gap
             active_same_tag = PlaceTagEvidence.objects.filter(
                 place_id=OuterRef("place_id"), tag_id=OuterRef("tag_id"),
             ).filter(Q(expires_at__isnull=True) | Q(expires_at__gt=timezone.now()))
@@ -247,17 +257,23 @@ def plan_bootstrap_jobs(
             discovery_rows = base.order_by("id")[:per_stratum]
             for place in list(candidate_rows) + list(discovery_rows):
                 places_by_id[place.id] = place
+                region_by_place_id[place.id] = region_name
     places = list(places_by_id.values())
     contexts = priority_context(
         places,
         category_priorities=settings.TAG_COLLECTION_CATEGORY_PRIORITIES,
     )
-    selected = weighted_tier_selection(
-        [(place, contexts[place.id]) for place in places],
-        limit=place_limit,
-        tier_weights=parse_tier_weights(settings.TAG_COLLECTION_BOOTSTRAP_TIER_WEIGHTS),
-        category_max_share=effective_category_share,
-    )
+    for place in places:
+        contexts[place.id]["region"] = region_by_place_id.get(place.id, "")
+    candidates = [(place, contexts[place.id]) for place in places]
+    if len(regions) > 1 and len({contexts[place.id]["tier"] for place in places}) == 1:
+        selected = weighted_region_selection(candidates, limit=place_limit, region_weights=region_weights)
+    else:
+        selected = weighted_tier_selection(
+            candidates, limit=place_limit,
+            tier_weights=parse_tier_weights(settings.TAG_COLLECTION_BOOTSTRAP_TIER_WEIGHTS),
+            category_max_share=effective_category_share,
+        )
     history = {}
     for context, stats in PlaceTagCollectionJob.objects.filter(
         context__budget_bucket__isnull=False,
@@ -321,3 +337,30 @@ def plan_bootstrap_jobs(
         planned_requests += requests
         covered.add((priority["tier"], place.category))
     return {"places": created, "planned_requests": planned_requests, "covered_strata": len(covered)}
+
+
+def weighted_region_selection(candidates, *, limit, region_weights):
+    """Allocate an explicit same-tier batch by coverage gap and registry size."""
+    pools = {}
+    for place, context in candidates:
+        pools.setdefault(context.get("region") or "unknown", []).append((place, context))
+    for rows in pools.values():
+        rows.sort(key=lambda item: (-item[1]["score"], item[0].id))
+    weights = {region: max(0.0, float(region_weights.get(region, 0))) for region in pools}
+    total_weight = sum(weights.values()) or float(len(weights) or 1)
+    quotas = {region: int(limit * (weight or 1) / total_weight) for region, weight in weights.items()}
+    while sum(quotas.values()) < limit:
+        region = max(
+            quotas,
+            key=lambda key: (weights[key] / max(1, quotas[key] + 1), len(pools[key])),
+        )
+        quotas[region] += 1
+    selected = []
+    leftovers = []
+    for region, rows in pools.items():
+        take = min(quotas[region], len(rows))
+        selected.extend(rows[:take])
+        leftovers.extend(rows[take:])
+    leftovers.sort(key=lambda item: (-item[1]["score"], item[0].id))
+    selected.extend(leftovers[:max(0, limit - len(selected))])
+    return selected[:limit]
