@@ -54,3 +54,26 @@ class CommercialPlaceRegistryTests(TestCase):
         self.assertEqual(stats["new_place"], 1)
         self.assertEqual(record.normalized_place.source, "semas")
         self.assertEqual(record.normalized_place.raw["source_record_id"], "cafe-3")
+
+    def test_materializes_legacy_combined_gwangju_row_with_canonical_address(self):
+        record = self.record(
+            source_id="gwangju-cafe-1",
+            address="전남광주통합특별시 북구 테스트로 1",
+            lng="126.91",
+            lat="35.17",
+        )
+        record.sido_name = "전남광주통합특별시"
+        record.sigungu_name = "북구"
+        record.save(update_fields=["sido_name", "sigungu_name"])
+
+        stats, _ = materialize_records(
+            SourcePlaceRecord.objects.filter(id=record.id),
+            regions=("광주광역시",),
+            categories=("cafe",),
+            batch_size=10,
+        )
+
+        record.refresh_from_db()
+        self.assertEqual(stats["new_place"], 1)
+        self.assertEqual(record.normalized_place.address, "광주광역시 북구 테스트로 1")
+        self.assertEqual(record.normalized_place.raw["normalized_sido_name"], "광주광역시")

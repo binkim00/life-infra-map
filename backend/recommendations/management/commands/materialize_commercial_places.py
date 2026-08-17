@@ -4,6 +4,7 @@ from pathlib import Path
 
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
+from django.db.models import Q
 
 from recommendations.management.commands.promote_source_places import canonical_external_id
 from recommendations.models import Place, SourcePlaceRecord
@@ -35,10 +36,16 @@ class Command(BaseCommand):
         unknown = set(categories) - {"cafe", "restaurant"}
         if unknown:
             raise CommandError("Unknown categories: " + ", ".join(sorted(unknown)))
+        region_filter = Q(sido_name__in=regions)
+        if "광주광역시" in regions:
+            region_filter |= Q(
+                sido_name="전남광주통합특별시",
+                sigungu_name__in=GWANGJU_DISTRICTS,
+            )
         queryset = SourcePlaceRecord.objects.filter(
+            region_filter,
             source="semas",
             dataset="commercial_store",
-            sido_name__in=regions,
             category__in=categories,
             is_active=True,
             normalized_place__isnull=True,
@@ -86,7 +93,7 @@ def materialize_records(records, *, regions, categories, dry_run=False, batch_si
 
     def remember(kind, record, detail=""):
         stats[kind] += 1
-        stats_by_stratum[(record.sido_name, record.category, kind)] += 1
+        stats_by_stratum[(effective_region(record), record.category, kind)] += 1
         if len(examples[kind]) < 10:
             examples[kind].append({
                 "record_id": record.id,
@@ -130,21 +137,22 @@ def materialize_records(records, *, regions, categories, dry_run=False, batch_si
     for record in records.iterator(chunk_size=batch_size):
         stats["read"] += 1
         stats["last_id"] = record.id
-        if record.sido_name not in regions or record.category not in categories or not is_service_category(record):
+        region = effective_region(record)
+        if region not in regions or record.category not in categories or not is_service_category(record):
             remember("rejected_category", record, record.business_type)
             continue
         coordinates = valid_coordinates(record)
         if coordinates is None:
             remember("rejected_coordinates", record)
             continue
-        address = record.road_address or record.address
+        address = canonical_address(record.road_address or record.address, region=region)
         if not address or not any(address.startswith(region[:2]) for region in regions):
             remember("rejected_region", record)
             continue
 
         keys = [
-            exact_identity_key(record.name, record.road_address),
-            exact_identity_key(record.name, record.address),
+            exact_identity_key(record.name, canonical_address(record.road_address, region=region)),
+            exact_identity_key(record.name, canonical_address(record.address, region=region)),
         ]
         exact_candidates = []
         for key in {key for key in keys if key}:
@@ -208,6 +216,7 @@ def materialize_records(records, *, regions, categories, dry_run=False, batch_si
                 "business_type": record.business_type,
                 "source_address": record.address,
                 "source_road_address": record.road_address,
+                "normalized_sido_name": region,
             },
         )
         pending.append(place)
@@ -224,6 +233,24 @@ def materialize_records(records, *, regions, categories, dry_run=False, batch_si
     return dict(stats), dict(examples)
 
 
+GWANGJU_DISTRICTS = {"광산구", "남구", "동구", "북구", "서구"}
+
+
+def effective_region(record):
+    if (
+        record.sido_name == "전남광주통합특별시"
+        and record.sigungu_name in GWANGJU_DISTRICTS
+    ):
+        return "광주광역시"
+    return record.sido_name
+
+
+def canonical_address(address, *, region):
+    value = str(address or "").strip()
+    if region == "광주광역시" and value.startswith("전남광주통합특별시"):
+        return "광주광역시" + value[len("전남광주통합특별시"):]
+    return value
+
+
 def pending_records_to_unique(pending_records):
     return list({record.id: record for record, _ in pending_records}.values())
-
