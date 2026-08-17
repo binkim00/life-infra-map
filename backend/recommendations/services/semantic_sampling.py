@@ -70,7 +70,7 @@ def eligible_feature_rows(*, regions=None, categories=None, now=None):
     )
 
 
-def stratified_feature_sample(*, limit=1000, regions=None, categories=None, now=None):
+def stratified_feature_sample(*, limit=1000, regions=None, categories=None, now=None, hard_limit=1000):
     by_place = {}
     for row in eligible_feature_rows(regions=regions, categories=categories, now=now).iterator():
         item = by_place.setdefault(row["place_id"], {
@@ -98,7 +98,7 @@ def stratified_feature_sample(*, limit=1000, regions=None, categories=None, now=
     for key, rows in ordered_strata:
         cluster_queues[key[2]].append((key, deque(rows)))
     selected, selected_ids = [], set()
-    maximum = max(1, min(int(limit), 1000))
+    maximum = max(1, min(int(limit), int(hard_limit)))
     region_cap = max(1, int(maximum * 0.25))
     region_counts = Counter()
     cluster_cursor = Counter()
