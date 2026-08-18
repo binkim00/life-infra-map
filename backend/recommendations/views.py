@@ -54,6 +54,7 @@ from .services.smoking_area_data import (
     search_nearby_smoking_areas,
     map_smoking_area_to_recommendation,
 )
+from .services.smoking_metadata import derive_smoking_metadata, matches_smoking_filters
 from .services.tag_utils import get_category_display_name
 from .services.user_preferences import (
     USER_SELECTED_SOURCE,
@@ -760,6 +761,10 @@ def serialize_place(place, distance=None):
     if distance is not None:
         data["distance"] = distance
 
+    smoking = derive_smoking_metadata(place)
+    if smoking:
+        data["smoking"] = smoking
+
     return data
 
 
@@ -935,8 +940,15 @@ def place_list(request):
     category = request.GET.get("category", "").strip()
     source = request.GET.get("source", "").strip()
     status = request.GET.get("status", "").strip()
+    facility_type = request.GET.get("facility_type", "").strip()
+    verification = request.GET.get("verification", "").strip()
+    include_stale = request.GET.get("include_stale", "").strip().lower() in {"1", "true", "yes"}
     lat = request.GET.get("lat")
     lng = request.GET.get("lng")
+    bounds = {
+        key: parse_optional_float(request.GET.get(key))
+        for key in ("min_lat", "min_lng", "max_lat", "max_lng")
+    }
 
     try:
         limit = int(request.GET.get("limit", 100))
@@ -968,43 +980,74 @@ def place_list(request):
     if status:
         places = places.filter(data_quality_status=status)
 
-    results, total_count, query_info = search_saved_map_places(
-        keyword=keyword,
-        lat=lat,
-        lng=lng,
-        radius=radius,
-        limit=limit,
-        queryset=places,
-    )
+    if all(value is not None for value in bounds.values()):
+        places = places.filter(
+            lat__gte=bounds["min_lat"], lat__lte=bounds["max_lat"],
+            lng__gte=bounds["min_lng"], lng__lte=bounds["max_lng"],
+        )
+
+    # Smoking-specific fields are evidence-derived. Fetch extra candidates before
+    # applying them so stale/ashtray filters do not truncate the requested limit.
+    search_limit = min(limit * 3, 300) if category == "smoking_area" else limit
+
+    if all(value is not None for value in bounds.values()) and not keyword and lat is None and lng is None:
+        # Marker-only viewport requests do not need relevance scoring or radius
+        # expansion. Keep this path bounded and use the existing coordinate index.
+        viewport_places = list(
+            places.prefetch_related("place_tags__tag", "tag_evidence")
+            .order_by("-data_quality_score", "-updated_at", "-id")[:300]
+        )
+        results = []
+        index_by_key = {}
+        for place in viewport_places:
+            key = ("".join(place.name.lower().split()), round(place.lat, 3), round(place.lng, 3))
+            if key in index_by_key:
+                results[index_by_key[key]]["duplicate_count"] += 1
+                continue
+            index_by_key[key] = len(results)
+            results.append({**serialize_place(place), "duplicate_count": 1})
+        total_count = places.count()
+        query_info = {"matched_categories": [category] if category else [], "bounds_fast_path": True}
+    else:
+        results, total_count, query_info = search_saved_map_places(
+            keyword=keyword,
+            lat=lat,
+            lng=lng,
+            radius=radius,
+            limit=search_limit,
+            queryset=places,
+        )
+    if category == "smoking_area":
+        results = [
+            row for row in results
+            if matches_smoking_filters(
+                row.get("smoking"), facility_type=facility_type,
+                verification=verification, include_stale=include_stale,
+            )
+        ]
+        priority = {"VERIFIED": 0, "VERIFIED_OFFICIAL": 0, "VERIFIED_FACILITY": 1, "PUBLIC_DATA": 2, "WEB_VERIFIED": 3, "ASHTRAY_ONLY": 4, "UNVERIFIED": 5}
+        results.sort(key=lambda row: (
+            priority.get(row["smoking"]["verification_level"], 9),
+            row.get("distance") is None,
+            row.get("distance", 999999999),
+        ))
+        results = results[:limit]
+        total_count = len(results)
+
+    viewport_request = all(value is not None for value in bounds.values())
+    options = {}
+    if not viewport_request:
+        options = {
+            "categories": list(Place.objects.filter(category__in=DB_MARKER_ALLOWED_CATEGORIES).exclude(category="").order_by("category").values_list("category", flat=True).distinct()),
+            "sources": list(Place.objects.exclude(source="").order_by("source").values_list("source", flat=True).distinct()),
+            "statuses": list(Place.objects.exclude(data_quality_status="").order_by("data_quality_status").values_list("data_quality_status", flat=True).distinct()),
+        }
 
     return Response({
         "total_count": total_count,
         "count": len(results),
         "limit": limit,
-        "options": {
-            "categories": list(
-                Place.objects
-                .filter(category__in=DB_MARKER_ALLOWED_CATEGORIES)
-                .exclude(category="")
-                .order_by("category")
-                .values_list("category", flat=True)
-                .distinct()
-            ),
-            "sources": list(
-                Place.objects
-                .exclude(source="")
-                .order_by("source")
-                .values_list("source", flat=True)
-                .distinct()
-            ),
-            "statuses": list(
-                Place.objects
-                .exclude(data_quality_status="")
-                .order_by("data_quality_status")
-                .values_list("data_quality_status", flat=True)
-                .distinct()
-            ),
-        },
+        "options": options,
         "filters": {
             "q": keyword,
             "category": category,
@@ -1013,6 +1056,10 @@ def place_list(request):
             "lat": lat,
             "lng": lng,
             "radius": radius,
+            **bounds,
+            "facility_type": facility_type,
+            "verification": verification,
+            "include_stale": include_stale,
         },
         "query_info": query_info,
         "results": results,

@@ -201,7 +201,7 @@ PLACE_TYPE_KEYWORDS = {
 SCENARIO_RULES = [
     (
         "smoking_area",
-        ["흡연구역", "흡연장", "흡연", "담배필", "담배 필", "담배피", "담배 피", "담배", "피울 수 있는 곳", "피울수있는곳"],
+        ["흡연구역", "흡연장", "흡연실", "흡연부스", "흡연", "담배필", "담배 필", "담배피", "담배 피", "담배", "피울 수 있는 곳", "피울수있는곳", "재떨이"],
         ["smoking_area"],
         ["흡연구역"],
         ["실외흡연구역"],
@@ -919,13 +919,17 @@ def _build_rule_plan(query, lat=None, lng=None, map_center=None, previous_contex
             categories=categories,
             menu_keywords=menu_keywords,
             place_type_keywords=place_type_keywords,
-            required_tags=[],
+            required_tags=["재떨이위치"] if scenario == "smoking_area" and "재떨이" in query else [],
             preferred_tags=preferred_tags,
             requested_conditions=conditions,
             kakao_keyword_candidates=_unique([*kakao_keywords, target_query, *place_type_keywords]),
             ),
             "excluded_categories": _extract_excluded_categories(query),
             "intent_group": intent_group,
+            "smoking_filters": {
+                "facility_type": "ashtray_only" if "재떨이" in query else ("smoking_booth" if "흡연부스" in query else ("smoking_room" if "흡연실" in query else "")),
+                "verification": "VERIFIED_OFFICIAL" if "공식" in query else "",
+            } if scenario == "smoking_area" else {},
         },
         "execution_policy": _execution_policy(True, has_explicit_location),
         "needs_clarification": False,
@@ -3642,7 +3646,7 @@ def _enrich_plan_with_intent_group(plan):
 
 def _classify_intent_group(query, target_query="", scenario=""):
     text = f"{query or ''} {target_query or ''}"
-    if _has_any(text, ["흡연구역", "흡연장", "흡연", "담배필", "담배 필", "담배피", "담배 피", "담배"]):
+    if _has_any(text, ["흡연구역", "흡연장", "흡연실", "흡연부스", "흡연", "담배필", "담배 필", "담배피", "담배 피", "담배", "재떨이"]):
         return "smoking_area"
     if _has_urgent_toilet_intent(text):
         return "urgent_toilet"

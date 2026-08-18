@@ -99,6 +99,13 @@ export const getSavedPlaces = async ({
   lat = null,
   lng = null,
   radius = null,
+  minLat = null,
+  minLng = null,
+  maxLat = null,
+  maxLng = null,
+  facilityType = '',
+  verification = '',
+  includeStale = false,
   limit = 100,
 } = {}) => {
   const response = await api.get('/recommendations/places/', {
@@ -110,6 +117,13 @@ export const getSavedPlaces = async ({
       lat,
       lng,
       radius,
+      min_lat: minLat,
+      min_lng: minLng,
+      max_lat: maxLat,
+      max_lng: maxLng,
+      facility_type: facilityType,
+      verification,
+      include_stale: includeStale,
       limit,
     },
   })

@@ -144,7 +144,7 @@ export const CATEGORY_KAKAO_KEYWORDS = {
 export const CATEGORY_KEYWORD_MAP = [
   { category: 'toilet', keyword: '화장실', aliases: ['화장실', '공중화장실'] },
   { category: 'parking', keyword: '주차장', aliases: ['주차장', '주차'] },
-  { category: 'smoking_area', keyword: '흡연구역', aliases: ['흡연구역', '흡연장', '흡연'] },
+  { category: 'smoking_area', keyword: '흡연구역', aliases: ['흡연구역', '흡연장', '흡연장소', '흡연실', '흡연부스', '흡연', '담배 피울 곳', '담배필곳', '재떨이'] },
   { category: 'freewifi', keyword: '와이파이', aliases: ['와이파이', '무료와이파이', 'wifi', 'wi-fi'] },
   { category: 'city_park', keyword: '공원', aliases: ['공원'] },
   { category: 'shelter', keyword: '쉼터', aliases: ['쉼터', '쉴 곳', '쉴곳', '휴식'] },

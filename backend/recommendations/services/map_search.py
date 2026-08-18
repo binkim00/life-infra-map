@@ -23,7 +23,7 @@ from recommendations.models import Place, PlaceTag, Tag
 PLACE_CATEGORY_ALIASES = {
     "toilet": ["toilet", "화장실", "공중화장실", "공용화장실", "변소"],
     "freewifi": ["freewifi", "wifi", "wi-fi", "와이파이", "무료와이파이", "무선인터넷"],
-    "smoking_area": ["smoking", "smoking_area", "흡연", "흡연구역", "흡연실"],
+    "smoking_area": ["smoking", "smoking_area", "흡연", "흡연구역", "흡연장소", "흡연실", "흡연부스", "담배피울곳", "담배필곳", "재떨이"],
     "beach": ["beach", "해수욕장", "해변", "바다"],
     "parking": ["parking", "주차", "주차장"],
     "city_park": ["city_park", "citypark", "공원", "도시공원"],
@@ -727,7 +727,7 @@ def load_places_by_ids(place_ids):
         for place in (
             Place.objects
             .filter(id__in=place_ids)
-            .prefetch_related("place_tags__tag")
+            .prefetch_related("place_tags__tag", "tag_evidence")
         )
     }
 
