@@ -51,7 +51,7 @@ def _cluster_for(tag_name):
 
 def eligible_feature_rows(*, regions=None, categories=None, now=None):
     regions = tuple(regions or REGION_PREFIXES)
-    categories = tuple(categories or PILOT_CATEGORIES)
+    categories = tuple(categories) if categories else ()
     now = now or timezone.now()
     positive = PlaceTagEvidence.objects.filter(
         place_id=OuterRef("place_id"), tag_id=OuterRef("tag_id"), polarity="positive",
@@ -59,8 +59,11 @@ def eligible_feature_rows(*, regions=None, categories=None, now=None):
     negative = PlaceTagEvidence.objects.filter(
         place_id=OuterRef("place_id"), tag_id=OuterRef("tag_id"), polarity="negative",
     ).filter(Q(expires_at__isnull=True) | Q(expires_at__gt=now))
+    queryset = PlaceTag.objects.filter(_region_filter(regions))
+    if categories:
+        queryset = queryset.filter(place__category__in=categories)
     return (
-        PlaceTag.objects.filter(_region_filter(regions), place__category__in=categories)
+        queryset
         .filter(Q(status="confirmed") | Q(status="candidate", confidence__gte=50))
         .annotate(has_positive=Exists(positive), has_negative=Exists(negative))
         .filter(has_positive=True, has_negative=False)

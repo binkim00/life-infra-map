@@ -6,6 +6,7 @@ from django.utils import timezone
 
 from recommendations.models import Place, PlaceTag, PlaceTagEvidence, Tag
 from recommendations.services.ai_candidate_reranker import _hybrid_score
+from recommendations.services.ai_intent_planner import build_ai_intent_plan
 from recommendations.services.ai_search_orchestrator import (
     _semantic_activation_context,
     collect_semantic_candidates,
@@ -186,6 +187,11 @@ class SemanticCandidateInjectionTests(TestCase):
 
 
 class SemanticActivationContextTests(SimpleTestCase):
+    @staticmethod
+    def _activation(query):
+        plan = build_ai_intent_plan(query)
+        return plan, _semantic_activation_context(plan.get("frame") or {}, query)
+
     def test_plain_region_category_query_not_required(self):
         frame = {
             "anchor_location": "부산역",
@@ -215,3 +221,37 @@ class SemanticActivationContextTests(SimpleTestCase):
         activation = _semantic_activation_context(frame, "혼자 쉬기 좋은 카페")
         self.assertTrue(activation["semantic_required"])
         self.assertTrue(activation["semantic_reason_flags"])
+
+    @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=False)
+    def test_plain_region_category_queries_remain_disabled(self):
+        queries = [
+            "서울 카페", "부산역 근처 식당", "부산 주차장", "강남구 식당", "대구 공원",
+        ]
+        for query in queries:
+            with self.subTest(query=query):
+                plan, activation = self._activation(query)
+                self.assertFalse(activation["semantic_required"])
+
+    @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=False)
+    def test_semantic_purpose_queries_are_enabled_generically(self):
+        queries = [
+            "서울 조용한 카페",
+            "혼밥하기 좋은 식당",
+            "데이트하기 좋은 카페",
+            "혼자 시간 보내기 좋은 곳",
+            "대화하기 좋은 곳",
+            "오래 머물기 좋은 카페",
+            "노트북 작업하기 좋은 곳",
+            "분위기 좋은 식당",
+            "산책하면서 머리 식힐 곳",
+            "혼자 조용히 쉬기 좋은 장소",
+            "혼자 멍때릴 곳",
+            "사람 적고 편하게 있을 곳",
+            "잠깐 쉬고 싶어",
+            "부산에서 장애인시설이 있고 이용하기 편한 곳",
+        ]
+        for query in queries:
+            with self.subTest(query=query):
+                plan, activation = self._activation(query)
+                self.assertEqual(plan["action"], "search")
+                self.assertTrue(activation["semantic_required"])

@@ -7,7 +7,7 @@ from django.core.cache import cache
 from django.core.management.base import BaseCommand
 from django.test.utils import override_settings
 
-from recommendations.services.ai_search_orchestrator import run_ai_search
+from recommendations.services.ai_search_orchestrator import _semantic_activation_context, run_ai_search
 
 
 WEIGHTS = (0.10, 0.15, 0.20)
@@ -23,6 +23,11 @@ SATISFACTION_FEATURES = {
     "노트북작업/작업하기좋음": ({"노트북", "작업"}, {"노트북작업", "작업하기좋음"}),
     "혼밥좋음": ({"혼밥"}, {"혼밥좋음"}),
     "분위기좋음": ({"분위기"}, {"분위기좋음"}),
+    "혼자이용좋음": ({"혼자", "눈치", "멍때"}, {"혼자이용좋음"}),
+    "데이트좋음": ({"데이트"}, {"데이트좋음"}),
+    "대화하기좋음": ({"대화", "이야기", "얘기"}, {"대화하기좋음"}),
+    "장기체류좋음": ({"오래", "시간 보내", "머무"}, {"장기체류좋음"}),
+    "잠깐쉬기좋음": ({"잠깐 쉬", "잠시 쉬", "쉬고 싶"}, {"잠깐쉬기좋음"}),
 }
 
 
@@ -122,11 +127,22 @@ class Command(BaseCommand):
                 })
                 timings = response.get("timings") or {}
                 debug = response.get("debug_pipeline") or {}
-                activation = debug.get("semantic_activation") or {}
+                frame = response.get("place_intent_frame") or {}
+                activation = debug.get("semantic_activation") or _semantic_activation_context(
+                    frame, query_row["query"],
+                )
+                conditions = frame.get("structured_conditions") or []
                 results = response.get("results") or []
                 rows.append({
                     "query": query_row["query"],
                     "type": query_row.get("type", ""),
+                    "planner_action": response.get("action") or response.get("decision_action") or "",
+                    "parsed_categories": frame.get("candidate_category_codes") or [],
+                    "parsed_canonical_features": activation.get("parsed_features") or [],
+                    "semantic_conditions": conditions,
+                    "hard_conditions": activation.get("hard_conditions") or [],
+                    "soft_conditions": [item for item in conditions if not item.get("required")],
+                    "semantic_reason_flags": activation.get("semantic_reason_flags") or [],
                     "results": [self._result(row, rank) for rank, row in enumerate(results[:result_limit], 1)],
                     "latency_ms": timings.get("total_latency_ms"),
                     "semantic_required": bool(activation.get("semantic_required")),

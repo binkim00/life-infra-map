@@ -1023,6 +1023,11 @@ def _local_rule_plan_for_known_intent(raw_query):
         )
 
     if broad_place_request and not broad_place_has_specific_target:
+        # A canonical purpose is a concrete target even when the user says
+        # only "곳". Specific category/activity rules still keep precedence.
+        compositional_plan = _local_rule_compositional_feature_plan(text)
+        if compositional_plan:
+            return compositional_plan
         return _local_rule_clarification_plan(
             text,
             question="\uc5b4\ub5a4 \ubaa9\uc801\uc758 \uc7a5\uc18c\ub97c \ucc3e\uc744\uae4c\uc694?",
@@ -1636,6 +1641,16 @@ FEATURE_DEFAULT_CATEGORIES = {
     "야간운영": ("cafe", "restaurant", "library", "parking", "toilet", "tourism"),
     "24시간운영": ("parking", "toilet", "cafe", "restaurant"),
     "주차가능": ("tourism", "restaurant", "cafe"),
+    "혼밥좋음": ("restaurant",),
+    "혼자이용좋음": ("cafe", "library", "city_park", "tourism"),
+    "데이트좋음": ("cafe", "restaurant", "tourism", "city_park"),
+    "대화하기좋음": ("cafe", "restaurant"),
+    "장기체류좋음": ("cafe", "library"),
+    "잠깐쉬기좋음": ("cafe", "library", "city_park", "shelter"),
+    "분위기좋음": ("cafe", "restaurant", "tourism"),
+    "산책좋음": ("city_park", "tourism"),
+    "장애인시설": ("toilet", "parking", "tourism", "library"),
+    "휠체어접근": ("toilet", "parking", "tourism", "library"),
 }
 CATEGORY_LABELS = {
     "cafe": "카페",
@@ -1645,6 +1660,7 @@ CATEGORY_LABELS = {
     "library": "도서관",
     "parking": "주차장",
     "toilet": "화장실",
+    "shelter": "쉼터",
 }
 
 

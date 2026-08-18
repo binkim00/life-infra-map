@@ -746,7 +746,7 @@ def _semantic_feature_from_text(value):
     if not text:
         return ''
     compact_text = _compact(text)
-    canonical = canonical_tag_name(compact_text)
+    canonical = canonical_tag_name(text) or canonical_tag_name(compact_text)
     if canonical:
         return canonical
     if "\ucf54\uc13c\ud2b8" in compact_text:
@@ -832,6 +832,9 @@ def _semantic_activation_context(frame, raw_query):
         compact_frame = f"{compact_frame} {compact_query}".strip()
 
     parsed_features = _extract_semantic_features(frame)
+    raw_feature = _semantic_feature_from_text(raw_query)
+    if raw_feature and raw_feature not in parsed_features:
+        parsed_features.append(raw_feature)
     intent_markers = _extract_semantic_intent_markers(frame)
     has_multiple_semantic_signals = len(set([*parsed_features, *intent_markers])) >= 2
     category_codes = list(dict.fromkeys([
@@ -2367,7 +2370,7 @@ def _candidate_has_invalid_display(candidate):
     return "검증 태그" in name or "테스트로" in address
 
 
-def _order_by_distance(queryset, lat, lng):
+def _order_by_distance(queryset, lat, lng, *, use_knn=True):
     """
     후보를 가까운 순으로 정렬한다.
 
@@ -2377,9 +2380,14 @@ def _order_by_distance(queryset, lat, lng):
     if lat is None or lng is None or not supports_postgis():
         return queryset.order_by("-data_quality_score", "-updated_at")
 
+    distance_sql = (
+        "geog <-> ST_SetSRID(ST_MakePoint(%s, %s), 4326)::geography"
+        if use_knn
+        else "ST_Distance(geog, ST_SetSRID(ST_MakePoint(%s, %s), 4326)::geography)"
+    )
     return queryset.annotate(
         collect_distance=RawSQL(
-            "geog <-> ST_SetSRID(ST_MakePoint(%s, %s), 4326)::geography",
+            distance_sql,
             (lng, lat),
         ),
     ).order_by("collect_distance")
@@ -2421,7 +2429,6 @@ def collect_db_candidates(frame, *, lat=None, lng=None, limit=50, radius=None):
     # wide sort of Place.raw. Lexical lookup still joins PlaceTag and needs it.
     if not direct_category_codes:
         queryset = queryset.distinct()
-    queryset = queryset.prefetch_related("place_tags__tag")
     if bounds:
         queryset = queryset.filter(
             lat__gte=bounds["lat_min"],
@@ -2430,14 +2437,42 @@ def collect_db_candidates(frame, *, lat=None, lng=None, limit=50, radius=None):
             lng__lte=bounds["lng_max"],
         )
 
-    # 좌표가 있으면 가까운 순으로 뽑습니다.
-    #
-    # 예전에는 데이터 품질순으로 정렬한 뒤 앞부분만 잘라 썼는데, 카테고리가 큰 경우
-    # (freewifi 83,145건) 반경 안에서도 가까운 곳이 잘려나가 3~5km 떨어진 결과만 남았습니다.
-    # 이름으로 걸리는 카테고리(쉼터 등)는 우연히 가까운 게 잡혔을 뿐입니다.
-    queryset = _order_by_distance(queryset, lat, lng)
+    candidate_limit = max(limit * 5, 100)
+    if direct_category_codes and bounds and lat is not None and lng is not None:
+        bounded_count = queryset.count()
+        category_count = Place.objects.filter(category__in=direct_category_codes).count()
+        total_place_count = Place.objects.count()
+        use_knn = (
+            bounded_count >= candidate_limit
+            and category_count >= candidate_limit * 20
+            and category_count * 10 >= total_place_count
+        )
+        if use_knn:
+            candidate_places = _order_by_distance(
+                queryset, lat, lng, use_knn=True,
+            ).prefetch_related("place_tags__tag")[:candidate_limit]
+        else:
+        # Read only the indexed coordinates first. Category-filtered KNN can
+        # scan the global GiST order almost completely because category is not
+        # part of that index. Sorting the bounded slim rows in Python preserves
+        # exact nearest-N selection without loading Place.raw or joining tags.
+            coordinate_rows = list(queryset.values_list("id", "lat", "lng"))
+            coordinate_rows.sort(
+                key=lambda row: _distance(lat, lng, row[1], row[2])
+                if row[1] is not None and row[2] is not None else float("inf")
+            )
+            ordered_ids = [row[0] for row in coordinate_rows[:candidate_limit]]
+            places_by_id = {
+                place.id: place
+                for place in Place.objects.filter(id__in=ordered_ids).prefetch_related("place_tags__tag")
+            }
+            candidate_places = [places_by_id[place_id] for place_id in ordered_ids if place_id in places_by_id]
+    else:
+        queryset = _order_by_distance(queryset, lat, lng).prefetch_related("place_tags__tag")
+        candidate_places = queryset[:candidate_limit]
+
     candidates = []
-    for place in queryset[: max(limit * 5, 100)]:
+    for place in candidate_places:
         distance = _distance(lat, lng, place.lat, place.lng)
         if distance is not None and distance > radius:
             continue
