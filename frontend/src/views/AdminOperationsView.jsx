@@ -85,6 +85,15 @@ const AdminOperationsView = () => {
         {!loading && !error && !data ? <section className={styles.state}>표시할 운영 데이터가 없습니다.</section> : null}
 
         {data ? <>
+          <section className={styles.panel} aria-label="현재 집중 지역">
+            <h2>현재 집중 지역: {data.focus_region?.region || '미설정'}</h2>
+            <div className={styles.providerRow}>
+              <strong>{data.focus_region?.state || 'UNKNOWN'}</strong>
+              {Object.entries(data.focus_region?.categories || {}).map(([name, row]) => <span key={name}>
+                {name} {number(row.active_evidence_places)} / {number(row.places)} ({percent(row.place_coverage)}) · 오늘 처리 {number(row.processed_period)}
+              </span>)}
+            </div>
+          </section>
           <section className={styles.kpiGrid} aria-label="핵심 지표">
             <KpiCard label="신규 Evidence" value={number(data.period.new_evidence)} note={`${filters.days}일 범위`} />
             <KpiCard label="신규 Active" value={number(data.period.new_active_evidence)} />

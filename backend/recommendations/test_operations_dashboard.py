@@ -96,6 +96,8 @@ class OperationsDashboardTests(TestCase):
         self.assertEqual(payload["search_performance"]["status"], "NOT_AVAILABLE")
         self.assertIn("feature_documents", payload["semantic_pilot"])
         self.assertFalse(payload["semantic_pilot"]["candidate_injection_enabled"])
+        self.assertEqual(payload["focus_region"]["region"], "부산")
+        self.assertIn("cafe", payload["focus_region"]["categories"])
 
     def test_invalid_filter_is_rejected(self):
         response = self.client.get(

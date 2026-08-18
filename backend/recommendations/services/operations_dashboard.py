@@ -619,6 +619,20 @@ def build_operations_dashboard(*, days=1, region="", category="", now=None):
     tag_category = category if category in {"cafe", "restaurant"} else "cafe"
     tag_regions = (region,) if region else REGIONS
     tag_coverage = _snapshot_tag_coverage(snapshot, tag_regions, tag_category, start, now)
+    focus_full = getattr(settings, "TAG_COLLECTION_FOCUS_REGION", "부산광역시")
+    focus_region = next((item for item in REGIONS if focus_full.startswith(item)), "부산")
+    focus_categories = {}
+    for focus_category in ("cafe", "restaurant"):
+        cell = (snapshot.get("cells") or {}).get(f"{focus_region}/{focus_category}", {})
+        focus_categories[focus_category] = {
+            "places": _int(cell.get("places")),
+            "active_evidence_places": _int(cell.get("active_evidence_places")),
+            "place_coverage": _ratio(_int(cell.get("active_evidence_places")), _int(cell.get("places"))),
+            "processed_period": PlaceTagCollectionJob.objects.filter(
+                cycle_date__gte=start_date, cycle_date__lte=end_date,
+                status="completed", place__category=focus_category,
+            ).filter(_region_filter(focus_region, "place__")).values("place_id").distinct().count(),
+        }
 
     queue = {
         status: PlaceTagCollectionJob.objects.filter(status=status).count()
@@ -648,6 +662,12 @@ def build_operations_dashboard(*, days=1, region="", category="", now=None):
             "scheduler_last_planned_at": latest_created,
             "worker_last_success_at": latest_success,
             "process_health": "INFERRED_FROM_DATABASE",
+        },
+        "focus_region": {
+            "region": focus_region,
+            "region_full": focus_full,
+            "state": "KEEP_ENRICHING",
+            "categories": focus_categories,
         },
         "source_freshness": snapshot.get("source_freshness") or [],
         "search_performance": {"status": "NOT_AVAILABLE", "reason": "search latency is not persisted"},
