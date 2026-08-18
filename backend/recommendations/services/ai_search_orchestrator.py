@@ -30,6 +30,7 @@ from recommendations.services.place_urls import get_kakao_place_url
 from recommendations.services.smoking_area_data import calculate_distance_m
 from recommendations.services.tag_utils import get_category_display_name
 from recommendations.services.semantic_retrieval import attach_semantic_scores, retrieve_semantic_places
+from recommendations.services.canonical_tag_policy import canonical_tag_name
 from recommendations.services.search_hard_gate import apply_common_hard_gate
 
 
@@ -734,6 +735,155 @@ def _frame_terms(frame, *names):
     for name in names:
         values.extend(_as_list(frame.get(name)))
     return values
+
+
+
+
+
+
+def _semantic_feature_from_text(value):
+    text = _clean_text(value, 80)
+    if not text:
+        return ''
+    compact_text = _compact(text)
+    canonical = canonical_tag_name(compact_text)
+    if canonical:
+        return canonical
+    if "\ucf54\uc13c\ud2b8" in compact_text:
+        return "\ucf54\uc13c\ud2b8\uc788\uc74c"
+    return ''
+
+
+def _extract_semantic_intent_markers(frame):
+    compact_condition_text = _compact(" ".join(
+        [
+            _clean_text(item.get('label') or item.get('value') or '', 80)
+            for item in (
+                frame.get('structured_conditions', [])
+                or frame.get('structuredConditions', [])
+            )
+            if isinstance(item, dict)
+        ]
+    ))
+    matched = []
+    for item in frame.get('structured_conditions', []) or frame.get('structuredConditions', []):
+        if not isinstance(item, dict):
+            continue
+        condition_type = _clean_text(item.get('type'), 40).lower()
+        condition_label = _clean_text(item.get('label') or item.get('value'), 120)
+        semantic_feature = _semantic_feature_from_text(condition_label)
+        if semantic_feature:
+            matched.append(semantic_feature)
+            continue
+        if condition_type in {'situation', 'experience'}:
+            matched.append(condition_type)
+        elif condition_type == 'environment' and any(
+            word in compact_condition_text
+            for word in ('walk', 'outdoor', 'park')
+        ):
+            matched.append('walk')
+    return list(dict.fromkeys(matched))
+
+
+def _extract_semantic_features(frame):
+    raw_values = [
+        *_frame_terms(frame, 'target_objects', 'targetObjects'),
+        *_frame_terms(frame, 'result_match_terms', 'resultMatchTerms'),
+        *_frame_terms(frame, 'constraints'),
+        *_frame_terms(frame, 'primary_search_queries', 'search_queries', 'searchQueries'),
+    ]
+    condition_values = []
+    for item in frame.get('structured_conditions') or frame.get('structuredConditions') or []:
+        if isinstance(item, dict) and item.get('label'):
+            condition_values.append(item.get('label'))
+    raw_values.extend(condition_values)
+
+    features = []
+    seen = set()
+    for raw_value in raw_values:
+        text = _clean_text(raw_value)
+        if not text:
+            continue
+        compact_text = _compact(text)
+        if not compact_text:
+            continue
+        canonical = _semantic_feature_from_text(compact_text)
+        if canonical and canonical not in seen:
+            features.append(canonical)
+            seen.add(canonical)
+            continue
+        for alias in _split_specific_evidence_terms(text, frame=frame):
+            alias_canonical = _semantic_feature_from_text(alias)
+            if alias_canonical and alias_canonical not in seen:
+                features.append(alias_canonical)
+                seen.add(alias_canonical)
+    return features
+
+def _semantic_hard_conditions(frame):
+    requirements = _frame_policy_requirements(frame) or {"desired": [], "excluded": []}
+    return list(dict.fromkeys([*requirements.get("desired", []), *requirements.get("excluded", [])]))
+
+
+def _semantic_activation_context(frame, raw_query):
+    frame_text = _frame_semantic_text(frame)
+    compact_query = _compact(raw_query)
+    compact_frame = _compact(frame_text)
+    if compact_query and compact_query not in compact_frame:
+        compact_frame = f"{compact_frame} {compact_query}".strip()
+
+    parsed_features = _extract_semantic_features(frame)
+    intent_markers = _extract_semantic_intent_markers(frame)
+    has_multiple_semantic_signals = len(set([*parsed_features, *intent_markers])) >= 2
+    category_codes = list(dict.fromkeys([
+        *_direct_db_category_codes(frame),
+        *_frame_category_codes(frame),
+    ]))
+    hard_conditions = _semantic_hard_conditions(frame)
+
+    anchor_location = _clean_text(frame.get("anchor_location"), 100)
+    location_mode = _clean_text(frame.get("location_mode") or frame.get("locationMode"))
+    region = anchor_location if location_mode == "explicit" else (
+        _clean_text(frame.get("location_query") or frame.get("base_location_query"), 100)
+    )
+
+    needs_semantic = bool(parsed_features or intent_markers or has_multiple_semantic_signals)
+    if not needs_semantic and (
+        category_codes or anchor_location
+        or _frame_terms(frame, "target_objects", "result_match_terms", "candidate_place_types")
+    ):
+        return {
+            "semantic_required": False,
+            "activation_reason": "category_or_place_reference_only",
+            "parsed_features": parsed_features,
+            "hard_conditions": hard_conditions,
+            "category": category_codes,
+            "region": region,
+            "semantic_reason_flags": intent_markers,
+            "query_compact": compact_query,
+        }
+
+    if parsed_features:
+        if has_multiple_semantic_signals:
+            reason = "composite_feature_query"
+        else:
+            reason = f"semantic_feature: {parsed_features[0]}"
+    elif intent_markers:
+        reason = f"semantic_intent: {', '.join(sorted(intent_markers))}"
+    elif has_multiple_semantic_signals:
+        reason = "composite_feature_query"
+    else:
+        reason = "no_explicit_semantic_signal"
+
+    return {
+        "semantic_required": needs_semantic,
+        "activation_reason": reason,
+        "parsed_features": parsed_features,
+        "hard_conditions": hard_conditions,
+        "category": category_codes,
+        "region": region,
+        "semantic_reason_flags": intent_markers,
+        "query_compact": compact_query,
+    }
 
 
 def _frame_category_codes(frame):
@@ -2368,8 +2518,18 @@ def collect_db_candidates(frame, *, lat=None, lng=None, limit=50, radius=None):
     return candidates
 
 
-def collect_semantic_candidates(query, frame, *, lat=None, lng=None, radius=None):
+def collect_semantic_candidates(
+    query,
+    frame,
+    *,
+    semantic_required=False,
+    lat=None,
+    lng=None,
+    radius=None,
+):
     """Build ordinary DB candidates from existing, fact-only semantic documents."""
+    if not semantic_required:
+        return [], {"status": "skipped", "reason": "semantic_not_required", "results": []}
     if not getattr(settings, "SEMANTIC_RETRIEVAL_ENABLED", False):
         return [], {"status": "disabled", "results": []}
     if not getattr(settings, "SEMANTIC_CANDIDATE_INJECTION_ENABLED", False):
@@ -2451,47 +2611,75 @@ def collect_semantic_candidates(query, frame, *, lat=None, lng=None, radius=None
     return candidates, retrieval
 
 
+
 def _semantic_required_feature_groups(frame):
     """Map explicit required conditions to existing canonical facts only."""
-    values = [*_frame_terms(frame, "constraints")]
-    for condition in frame.get("structured_conditions") or frame.get("structuredConditions") or []:
-        if isinstance(condition, dict) and condition.get("required"):
-            values.append(condition.get("label") or "")
-    aliases = (
-        (("무료",), {"무료이용"}),
-        (("24시간", "야간운영", "운영시간확인필요", "밤늦게"), {"24시간운영", "야간운영"}),
-        (("장애인",), {"장애인시설"}),
-        (("주차",), {"주차가능"}),
-        (("조용",), {"조용함"}),
-        (("노트북", "작업", "공부"), {"노트북작업", "작업하기좋음"}),
-        (("혼자",), {"혼자이용좋음", "혼밥좋음"}),
-        (("대화", "이야기", "수다"), {"대화하기좋음"}),
-        (("데이트",), {"데이트좋음"}),
-    )
+    values = [*_frame_terms(frame, 'constraints')]
+    for condition in frame.get('structured_conditions', []) or frame.get('structuredConditions', []) or []:
+        if isinstance(condition, dict) and condition.get('required'):
+            condition_value = condition.get('label') or condition.get('value')
+            if condition_value:
+                values.append(condition_value)
     groups = []
+    seen = set()
     for value in values:
         compact = _compact(value)
-        for terms, tags in aliases:
-            if any(term in compact for term in terms) and tags not in groups:
-                groups.append(tags)
+        if not compact:
+            continue
+        canonical = canonical_tag_name(compact)
+        if canonical and canonical not in seen:
+            groups.append({canonical})
+            seen.add(canonical)
+            continue
+        for alias in _split_specific_evidence_terms(value, frame=frame):
+            canonical = canonical_tag_name(_compact(alias))
+            if canonical and canonical not in seen:
+                groups.append({canonical})
+                seen.add(canonical)
     return groups
+
+
+
 
 
 def _explicit_semantic_query_categories(query):
     """Conservative lexical category gates for semantic-only candidates."""
     text = _compact(query)
-    if any(term in text for term in ("카페", "커피")):
-        return ["cafe"]
-    if any(term in text for term in ("식당", "음식점", "혼밥", "밥먹")):
-        return ["restaurant"]
-    if any(term in text for term in ("관광지", "관광명소")):
-        return ["tourism"]
-    if "공원" in text:
-        return ["city_park"]
-    if "도서관" in text:
-        return ["library"]
+    if any(
+        term in text
+        for term in (
+            "cafe",
+            "coffee",
+            "카페",
+            "커피",
+        )
+    ):
+        return ['cafe']
+    if any(
+        term in text
+        for term in (
+            "restaurant",
+            "food",
+            "식당",
+            "음식점",
+            "밥",
+            "혼밥",
+        )
+    ):
+        return ['restaurant']
+    if any(term in text for term in ('tourism', 'tour', 'sight', '관광', '관광지')):
+        return ['tourism']
+    if 'park' in text or '공원' in text:
+        return ['city_park']
+    if 'library' in text or '도서관' in text:
+        return ['library']
+    if 'parking' in text or '주차' in text:
+        return ['parking']
+    if 'toilet' in text or '화장실' in text:
+        return ['toilet']
+    if 'shelter' in text or '대피소' in text or '쉼터' in text:
+        return ['shelter']
     return []
-
 
 def _candidate_text(candidate):
     return " ".join(
@@ -3318,14 +3506,15 @@ def _search_origin_debug(frame, location_resolution, top_results):
 
 
 def _debug_pipeline(
-    *,
-    intent_plan,
-    search_plan,
-    frame,
-    query_generation=None,
-    candidate_counts=None,
-    reranker_debug=None,
-    top_results=None,
+        *,
+        intent_plan,
+        search_plan,
+        frame,
+        query_generation=None,
+        semantic_activation=None,
+        candidate_counts=None,
+        reranker_debug=None,
+        top_results=None,
     hidden_weak=None,
     candidate_pool=None,
     location_resolution=None,
@@ -3378,10 +3567,20 @@ def _debug_pipeline(
             "db": _as_int(candidate_counts.get("db"), 0),
             "kakao": _as_int(candidate_counts.get("kakao"), 0),
             "web": _as_int(candidate_counts.get("web"), 0),
+            "semantic": _as_int(candidate_counts.get("semantic"), 0),
             "top_results": _as_int(candidate_counts.get("top_results"), len(top_results)),
             "hidden_weak": _as_int(candidate_counts.get("hidden_weak"), len(hidden_weak)),
             "removed_incompatible": _as_int(candidate_counts.get("removed_incompatible"), len(hidden_weak)),
             "unresolved": _as_int(candidate_counts.get("unresolved"), 0),
+        },
+        "semantic_activation": {
+            "semantic_required": bool((semantic_activation or {}).get("semantic_required")),
+            "activation_reason": (semantic_activation or {}).get("activation_reason") or "",
+            "parsed_features": (semantic_activation or {}).get("parsed_features") or [],
+            "hard_conditions": (semantic_activation or {}).get("hard_conditions") or [],
+            "category": (semantic_activation or {}).get("category") or [],
+            "region": (semantic_activation or {}).get("region") or "",
+            "semantic_reason_flags": (semantic_activation or {}).get("semantic_reason_flags") or [],
         },
         "reranker": reranker_debug or {},
         "ai_included_count": _as_int((reranker_debug or {}).get("ai_included_count"), 0),
@@ -3798,6 +3997,7 @@ def run_ai_search(request_data, *, user=None):
     if frame is not intent_plan.get("frame"):
         intent_plan = {**intent_plan, "frame": frame}
     search_plan = to_search_plan(intent_plan, raw_query=original_query or query)
+    semantic_activation = _semantic_activation_context(frame, original_query or query)
 
     if action in {"ai_unavailable", "ask_clarification", "out_of_scope", "blocked"}:
         message = ""
@@ -4025,6 +4225,7 @@ def run_ai_search(request_data, *, user=None):
         "db": len(db_candidates),
         "kakao": len(kakao_candidates),
         "web": 0,
+        "semantic": 0,
     }
 
     min_strong_medium_candidates = _as_int(
@@ -4157,10 +4358,16 @@ def run_ai_search(request_data, *, user=None):
     if (
         getattr(settings, "SEMANTIC_RETRIEVAL_ENABLED", False)
         and getattr(settings, "SEMANTIC_CANDIDATE_INJECTION_ENABLED", False)
+        and semantic_activation.get("semantic_required")
     ):
         semantic_started = time.perf_counter()
         semantic_candidates, semantic_debug = collect_semantic_candidates(
-            original_query or query, frame, lat=search_lat, lng=search_lng, radius=radius,
+            original_query or query,
+            frame,
+            semantic_required=semantic_activation.get("semantic_required"),
+            lat=search_lat,
+            lng=search_lng,
+            radius=radius,
         )
         timings["semantic_query_embedding_latency_ms"] = semantic_debug.get("query_embedding_latency_ms", 0.0)
         timings["semantic_query_embedding_cache_hit"] = semantic_debug.get("query_embedding_cache_hit")
@@ -4177,6 +4384,12 @@ def run_ai_search(request_data, *, user=None):
             2,
         )
         candidate_counts["semantic"] = len(semantic_candidates)
+    elif not semantic_activation.get("semantic_required"):
+        semantic_debug = {
+            "status": "skipped",
+            "reason": "semantic_not_required",
+            "results": [],
+        }
 
     filtering_started = time.perf_counter()
     candidate_pool = _dedupe_candidates([
@@ -4416,6 +4629,7 @@ def run_ai_search(request_data, *, user=None):
         search_plan=search_plan,
         frame=frame,
         query_generation=query_generation,
+        semantic_activation=semantic_activation,
         candidate_counts=candidate_counts,
         reranker_debug={
             **reranker_debug,
