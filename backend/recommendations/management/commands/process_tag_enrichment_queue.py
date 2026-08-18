@@ -101,6 +101,7 @@ def save_place_candidate_evidence(place, tag_name, result, *, observed_at):
         polarity,
     )
     ttl = evidence_ttl(tag_name, evidence_source)
+    freshness_anchor = observed_at or timezone.now()
     evidence, created = PlaceTagEvidence.objects.update_or_create(
         evidence_key=hashlib.sha256(key_value.encode('utf-8')).hexdigest(),
         defaults={
@@ -120,7 +121,10 @@ def save_place_candidate_evidence(place, tag_name, result, *, observed_at):
             },
             'raw': raw,
             'observed_at': observed_at,
-            'expires_at': observed_at + ttl if ttl else None,
+            # A retrieval timestamp is not a publication timestamp. Evidence
+            # with an unknown publication date keeps observed_at NULL while
+            # still receiving the normal bounded TTL from retrieval time.
+            'expires_at': freshness_anchor + ttl if ttl else None,
         },
     )
     refresh_candidate_aggregate(place, tag)

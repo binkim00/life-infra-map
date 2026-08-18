@@ -122,7 +122,7 @@ def _job_strategy_rows(start_date, end_date):
 
 def _provider_rows(start_date, end_date):
     rows = []
-    for provider in ("naver_search", "openai_evidence"):
+    for provider in ("naver_search", "openai_web_search", "openai_evidence"):
         items = list(ProviderQuotaUsage.objects.filter(
             provider=provider,
             usage_date__gte=start_date,
@@ -188,6 +188,17 @@ def _provider_rows(start_date, end_date):
             "invalid": invalid,
             "stored": stored,
             "active": active,
+            "enabled": (
+                getattr(settings, "WEB_EVIDENCE_SEARCH_ENABLED", False)
+                if provider == "openai_web_search" else True
+            ),
+            "disabled_reason": (
+                "NO_FINAL_OUTPUT pilot hold"
+                if provider == "openai_web_search"
+                and not getattr(settings, "WEB_EVIDENCE_SEARCH_ENABLED", False)
+                else ""
+            ),
+            "tool_actions": _int((today_item or {}).get("metadata", {}).get("web_search_calls")),
         })
     return rows
 
