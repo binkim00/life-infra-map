@@ -37,12 +37,22 @@ def ensure_pilot_schema(connection, *, dimensions):
                 embedded_at timestamptz NOT NULL
             )
         """)
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS semantic_pilot_embedding_hnsw
-            ON place_feature_embedding USING hnsw (embedding vector_cosine_ops)
-        """)
         cursor.execute("CREATE INDEX IF NOT EXISTS semantic_pilot_place_idx ON place_feature_embedding(place_id)")
     connection.commit()
+
+
+def rebuild_hnsw_index(connection):
+    with connection.cursor() as cursor:
+        cursor.execute("DROP INDEX IF EXISTS semantic_pilot_embedding_hnsw")
+    connection.commit()
+    started = time.perf_counter()
+    with connection.cursor() as cursor:
+        cursor.execute("""
+            CREATE INDEX semantic_pilot_embedding_hnsw
+            ON place_feature_embedding USING hnsw (embedding vector_cosine_ops)
+        """)
+    connection.commit()
+    return round((time.perf_counter() - started) * 1000, 2)
 
 
 def upsert_documents(connection, documents):

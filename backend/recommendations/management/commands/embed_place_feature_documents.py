@@ -16,18 +16,24 @@ from recommendations.services.semantic_embeddings import EmbeddingProviderError,
 
 
 class Command(BaseCommand):
-    help = "Embed at most 1,000 selected fact-only feature documents for the semantic pilot."
+    help = "Embed fact-only feature documents for semantic retrieval up to the pilot cap."
 
     def add_arguments(self, parser):
         parser.add_argument("--limit", type=int, default=100)
         parser.add_argument("--strategy", choices=sorted(DOCUMENT_STRATEGIES), default="contextual")
+        parser.add_argument("--max-documents", type=int, default=None, help="Override SEMANTIC_PILOT_MAX_DOCUMENTS for this run.")
         parser.add_argument("--dry-run", action="store_true")
         parser.add_argument("--report", default="")
         parser.add_argument("--sample", default="", help="JSON report containing an ordered place_ids list.")
         parser.add_argument("--batch-size", type=int, default=100)
 
     def handle(self, *args, **options):
-        limit = min(max(1, options["limit"]), int(getattr(settings, "SEMANTIC_PILOT_MAX_DOCUMENTS", 1000)), 1000)
+        effective_max = int(
+            options.get("max_documents")
+            if options.get("max_documents") not in (None, 0, "")
+            else getattr(settings, "SEMANTIC_PILOT_MAX_DOCUMENTS", 10000)
+        )
+        limit = min(max(1, options["limit"]), effective_max)
         strategy = options["strategy"]
         model = getattr(settings, "SEMANTIC_EMBEDDING_MODEL", "text-embedding-3-small")
         dimensions = int(getattr(settings, "SEMANTIC_EMBEDDING_DIMENSIONS", 512))

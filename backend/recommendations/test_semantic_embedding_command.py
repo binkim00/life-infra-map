@@ -36,3 +36,17 @@ class SemanticEmbeddingCommandTests(TestCase):
         self.document.refresh_from_db()
         self.assertEqual(self.document.embedding, [1.0, 0.0])
         self.assertEqual(mocked_embed.call_count, 1)
+
+    @patch("recommendations.management.commands.embed_place_feature_documents.embed_openai_texts")
+    def test_only_changed_source_hash_is_reembedded(self, mocked_embed):
+        mocked_embed.return_value = {
+            "vectors": [[1.0, 0.0]], "model": "text-embedding-3-small",
+            "dimensions": 2, "input_tokens": 5, "estimated_cost_usd": 0.000001,
+            "latency_ms": 10.0,
+        }
+        call_command("embed_place_feature_documents", limit=1, stdout=StringIO())
+        self.document.features = ["조용함", "콘센트있음"]
+        self.document.save(update_fields=["features"])
+        call_command("embed_place_feature_documents", limit=1, stdout=StringIO())
+
+        self.assertEqual(mocked_embed.call_count, 2)

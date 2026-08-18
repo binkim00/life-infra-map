@@ -1,0 +1,30 @@
+services:
+  semantic_pgvector_staging:
+    build:
+      context: ./docker/pgvector-staging
+    container_name: life-infra-map-semantic-pgvector-staging
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: semantic_pilot
+      POSTGRES_USER: semantic_pilot
+      POSTGRES_PASSWORD: semantic_pilot
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    ports:
+      - "55433:5432"
+    volumes:
+      - semantic_pgvector_staging_data:/var/lib/postgresql/data
+    networks:
+      - semantic_pgvector_staging_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U semantic_pilot -d semantic_pilot"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  semantic_pgvector_staging_data:
+    name: life_infra_map_semantic_pgvector_staging_data
+
+networks:
+  semantic_pgvector_staging_network:
+    name: life_infra_map_semantic_pgvector_staging_network

@@ -1,5 +1,9 @@
 # Semantic Retrieval 100-document pilot
 
+> 2026-08-18의 실제 10K 실행과 Conditional ON 최종 판단은
+> [semantic-10k-conditional-rollout.md](semantic-10k-conditional-rollout.md)가
+> 이 문서의 이전 dry-run 계획과 HOLD 근거를 대체한다.
+
 ## Scope and safety
 
 The pilot is feature-flagged and remains disabled by default. It never creates a

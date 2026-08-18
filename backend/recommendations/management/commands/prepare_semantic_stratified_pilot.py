@@ -14,12 +14,14 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument("--limit", type=int, default=1000)
+        parser.add_argument("--hard-limit", type=int, default=None, help="Override fixed stratum cap.")
         parser.add_argument("--dry-run", action="store_true")
         parser.add_argument("--json", default="tmp/semantic_stratified_1000.json")
         parser.add_argument("--csv", default="tmp/semantic_stratified_1000.csv")
 
     def handle(self, *args, **options):
-        rows = stratified_feature_sample(limit=options["limit"])
+        hard_limit = options["hard_limit"] or options["limit"]
+        rows = stratified_feature_sample(limit=options["limit"], hard_limit=hard_limit)
         places = Place.objects.in_bulk(row["place_id"] for row in rows)
         stats = {"new": 0, "updated": 0, "unchanged": 0, "skipped": 0}
         for row in rows:
