@@ -1,4 +1,5 @@
 from datetime import timedelta
+from io import StringIO
 from unittest.mock import patch
 
 from django.test import TestCase, override_settings
@@ -21,7 +22,7 @@ from recommendations.services.place_tag_collection import collect_naver_place_ev
 from recommendations.services.place_tag_collection import requested_tags_for_category
 from recommendations.services.bootstrap_priority import priority_context
 from recommendations.services.restaurant_collection_quality import restaurant_collection_quality
-from recommendations.services.adaptive_budget import collection_bucket, recommend_scaled_budget
+from recommendations.services.adaptive_budget import allocate_by_request_budget, collection_bucket, recommend_scaled_budget
 
 
 @override_settings(
@@ -213,6 +214,41 @@ class DailyTagCollectionTests(TestCase):
 
         self.assertEqual(stats["planned"], 2)
         self.assertEqual(PlaceTagCollectionJob.objects.count(), 3)
+
+    @override_settings(
+        TAG_COLLECTION_MODE="bootstrap",
+        TAG_COLLECTION_FOCUS_REGION="부산광역시",
+        TAG_COLLECTION_FOCUS_CATEGORIES=("cafe", "restaurant"),
+        TAG_COLLECTION_DAILY_API_LIMIT=100,
+        TAG_COLLECTION_DAILY_PLACE_LIMIT=2,
+    )
+    def test_scheduler_keeps_bootstrap_collection_in_focus_region(self):
+        self.make_place(801, category="cafe", region="부산광역시")
+        self.make_place(802, category="restaurant", region="부산광역시")
+        self.make_place(803, category="cafe", region="서울특별시")
+        scheduler_tick()
+        self.assertFalse(PlaceTagCollectionJob.objects.exclude(place__address__startswith="부산").exists())
+
+    def test_stale_budget_is_a_hard_cap_during_fallback(self):
+        candidates = [
+            (self.make_place(820 + index), {"budget_bucket": "stale_refresh", "score": 10, "targeted_tags": []})
+            for index in range(5)
+        ]
+        selected, used = allocate_by_request_budget(
+            candidates, budget=100,
+            weights={"stale_refresh": 1, "candidate_hint": 99},
+            request_count=lambda context: 1,
+        )
+        self.assertLessEqual(used.get("stale_refresh", 0), 1)
+        self.assertEqual(len(selected), 1)
+
+    def test_region_enrichment_command_reports_focus_state(self):
+        self.make_place(840, category="cafe", region="부산광역시")
+        output = StringIO()
+        from django.core.management import call_command
+        call_command("report_region_enrichment", "부산", stdout=output)
+        self.assertIn("Focus Region: 부산", output.getvalue())
+        self.assertIn("Recommendation:", output.getvalue())
 
     def test_worker_collects_multiple_tags_and_accounts_for_quota(self):
         place = self.make_place(1)

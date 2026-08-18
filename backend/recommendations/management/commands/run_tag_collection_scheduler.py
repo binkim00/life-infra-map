@@ -37,11 +37,17 @@ def scheduler_tick():
     existing = PlaceTagCollectionJob.objects.filter(cycle_date=today).count()
     remaining = max(0, settings.TAG_COLLECTION_DAILY_PLACE_LIMIT - existing)
     if remaining:
+        focus_region = getattr(settings, "TAG_COLLECTION_FOCUS_REGION", "").strip()
+        focus_categories = tuple(
+            getattr(settings, "TAG_COLLECTION_FOCUS_CATEGORIES", ()) or ()
+        )
         result = plan_daily_jobs(
             cycle_date=today,
             place_limit=remaining,
             provider=settings.TAG_ENRICHMENT_PROVIDER,
             mode=settings.TAG_COLLECTION_MODE,
+            regions=(focus_region,) if settings.TAG_COLLECTION_MODE == "bootstrap" and focus_region else None,
+            categories=focus_categories if settings.TAG_COLLECTION_MODE == "bootstrap" and focus_categories else None,
         )
         planned = result["places"]
     counts = {

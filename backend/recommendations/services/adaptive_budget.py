@@ -19,6 +19,8 @@ BUCKET_FALLBACK_ORDER = (
     "stale_refresh",
 )
 
+HARD_CAPPED_BUCKETS = frozenset({"stale_refresh"})
+
 
 def collection_bucket(place, context):
     reason = context.get("adaptive_reason")
@@ -78,10 +80,13 @@ def allocate_by_request_budget(candidates, *, budget, weights, request_count):
     ))
     for item in deferred:
         calls = request_count(item[1])
+        bucket = item[1]["budget_bucket"]
+        if bucket in HARD_CAPPED_BUCKETS and used[bucket] + calls > caps.get(bucket, 0):
+            continue
         if total + calls > budget:
             continue
         selected.append(item)
-        used[item[1]["budget_bucket"]] += calls
+        used[bucket] += calls
         total += calls
     return selected, dict(used)
 

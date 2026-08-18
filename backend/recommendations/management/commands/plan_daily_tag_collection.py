@@ -295,9 +295,13 @@ def plan_bootstrap_jobs(
             row["evidence"] += int((metrics or {}).get("evidence") or 0)
             row["active_evidence"] += int((metrics or {}).get("active_evidence") or 0)
     weights = yield_adjusted_weights(settings.TAG_COLLECTION_BUDGET_WEIGHTS, history)
+    cycle_request_budget = min(
+        budget,
+        sum(adaptive_planned_requests(context["targeted_tags"]) for _, context in selected),
+    )
     selected, bucket_requests = allocate_by_request_budget(
         selected,
-        budget=budget,
+        budget=cycle_request_budget,
         weights=weights,
         request_count=lambda context: adaptive_planned_requests(context["targeted_tags"]),
     )
@@ -319,6 +323,7 @@ def plan_bootstrap_jobs(
                     "planned_requests": requests,
                     "context": {
                         "mode": "bootstrap",
+                        "region": priority.get("region", ""),
                         "tier": priority["tier"],
                         "priority": priority,
                         "category": place.category,
