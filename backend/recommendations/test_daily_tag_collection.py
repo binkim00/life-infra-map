@@ -342,7 +342,9 @@ class DailyTagCollectionTests(TestCase):
             self.make_place(72), strategy="adaptive",
             targeted_tags=["콘센트있음", "혼자이용좋음"],
         )
-        self.assertEqual(result["requests"], 3)
+        # Discovery passed identity and the first expanded targeted query found
+        # evidence, so the final supporting stage is skipped.
+        self.assertEqual(result["requests"], 2)
         self.assertEqual(
             {row["tag_name"] for row in result["evidences"]},
             {"콘센트있음", "혼자이용좋음"},
@@ -356,8 +358,8 @@ class DailyTagCollectionTests(TestCase):
             self.make_place(73), strategy="targeted_only",
             targeted_tags=["콘센트있음", "무료와이파이", "노트북작업"],
         )
-        self.assertEqual(result["requests"], 1)
-        self.assertTrue(request_channel.call_args.args[1].endswith("콘센트"))
+        self.assertEqual(result["requests"], 2)
+        self.assertTrue(request_channel.call_args_list[0].args[1].endswith("콘센트"))
 
     @patch("recommendations.services.place_tag_collection._request_channel")
     def test_targeted_only_candidate_ambience_uses_candidate_tag_keyword(self, request_channel):
@@ -366,8 +368,8 @@ class DailyTagCollectionTests(TestCase):
             self.make_place(74), strategy="targeted_only",
             targeted_tags=["데이트좋음"],
         )
-        self.assertEqual(result["requests"], 1)
-        self.assertTrue(request_channel.call_args.args[1].endswith("데이트"))
+        self.assertEqual(result["requests"], 3)
+        self.assertTrue(request_channel.call_args_list[0].args[1].endswith("데이트"))
 
     def test_targeted_attempt_checkpoint_is_idempotently_recorded(self):
         place = self.make_place(75)

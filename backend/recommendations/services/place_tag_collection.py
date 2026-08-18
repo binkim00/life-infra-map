@@ -110,7 +110,8 @@ def collect_naver_place_evidence(
             targeted_tags,
             all_allowed_tags,
             adopted_only=strategy != "targeted_only",
-        )[:2]
+            max_stages=3 if strategy == "targeted_only" else 2,
+        )
         if strategy == "targeted_only":
             profiles = additions
         else:
@@ -120,7 +121,11 @@ def collect_naver_place_evidence(
     evidences = []
     seen = set()
     requests_made = 0
-    diagnostics = {"search_results": 0, "identity_matches": 0, "tag_expressions": 0, "short_snippets": 0}
+    diagnostics = {
+        "search_results": 0, "identity_matches": 0, "tag_expressions": 0,
+        "short_snippets": 0, "strengths": {},
+    }
+    search_attempts = []
     ai_calls = 0
     ai_attempts = 0
     ai_metrics = {
@@ -135,6 +140,19 @@ def collect_naver_place_evidence(
         # Search with one representative word, then extract every tag in the pack
         # from the returned title/summary.
         query = build_collection_query(place, keyword)
+        profile_evidence_start = len(evidences)
+        query_stage = pack_name.rsplit("_", 1)[-1] if pack_name.startswith("target_") else "direct"
+        attempt = {
+            "place_id": place.id,
+            "place_name": place.name,
+            "category": place.category,
+            "region": str(place.address or "").split(" ", 1)[0],
+            "target_cluster": pack_name,
+            "query_stage": query_stage,
+            "actual_query": query,
+            "results": [],
+        }
+        search_attempts.append(attempt)
         try:
             acquire_provider_slot("naver_search")
             payload = _request_channel("blog", query)
@@ -148,31 +166,57 @@ def collect_naver_place_evidence(
                 "error": "rate_limited" if status_code == 429 else "request_failed",
                 "miss_reason": "OTHER",
                 "diagnostics": diagnostics,
+                "search_attempts": search_attempts,
             }
 
-        for item in (payload or {}).get("items") or []:
+        for result_rank, item in enumerate((payload or {}).get("items") or [], start=1):
             diagnostics["search_results"] += 1
             title = _clean_html(item.get("title"), 180)
             summary = _clean_html(item.get("description"), 500)
             combined = "{} {}".format(title, summary)
             identity = identity_assessment(place, combined, title=title)
+            result_audit = {
+                "result_rank": result_rank,
+                "title": title,
+                "description": summary,
+                "url": _safe_text(item.get("link"), 500),
+                "identity_score": identity["score"],
+                "identity_matched": identity["matched"],
+                "extractions": [],
+                "evidence_candidate": False,
+                "rejection_reason": "",
+            }
+            attempt["results"].append(result_audit)
             if not identity["matched"]:
+                result_audit["rejection_reason"] = "IDENTITY_MISMATCH"
                 continue
             diagnostics["identity_matches"] += 1
             if len(combined.strip()) < 60:
                 diagnostics["short_snippets"] += 1
             source_url = _safe_text(item.get("link"), 500)
             if not source_url.startswith(("http://", "https://")):
+                result_audit["rejection_reason"] = "SOURCE_REJECT"
                 continue
             snippet_evidences = 0
             for tag_name in tag_names:
                 extraction = polarity_assessment(tag_name, combined, category=place.category)
                 polarity = extraction["polarity"]
+                result_audit["extractions"].append({
+                    "tag": tag_name,
+                    "polarity": polarity,
+                    "strength": extraction.get("strength", "UNKNOWN"),
+                    "positive_terms": extraction.get("positive_terms") or [],
+                    "supporting_terms": extraction.get("supporting_terms") or [],
+                    "weak_terms": extraction.get("weak_terms") or [],
+                })
                 key = (tag_name, source_url, polarity)
                 if polarity == "unknown" or key in seen:
                     continue
                 diagnostics["tag_expressions"] += 1
+                strength = extraction.get("strength", "UNKNOWN")
+                diagnostics["strengths"][strength] = int(diagnostics["strengths"].get(strength) or 0) + 1
                 snippet_evidences += 1
+                result_audit["evidence_candidate"] = True
                 seen.add(key)
                 observed_at = parse_observed_date(item.get("postdate"))
                 confidence, confidence_factors = evidence_confidence(
@@ -192,7 +236,7 @@ def collect_naver_place_evidence(
                     "identity": identity,
                     "extraction": extraction,
                     "confidence_factors": confidence_factors,
-                    "raw": {"channel": "naver_blog", "query": query, "pack": pack_name},
+                    "raw": {"channel": "naver_blog", "query": query, "pack": pack_name, "query_stage": query_stage},
                 })
             if (
                 allow_ai
@@ -238,13 +282,27 @@ def collect_naver_place_evidence(
                         "observed_date": item.get("postdate") or None,
                         "confidence": confidence,
                         "identity": identity,
-                        "extraction": {"method": "ai", "evidence_span": extracted["evidence_span"]},
+                        "extraction": {"method": "ai", "strength": "SUPPORTING", "evidence_span": extracted["evidence_span"]},
                         "confidence_factors": confidence_factors,
-                        "raw": {"channel": "naver_blog", "query": query, "pack": pack_name},
+                        "raw": {"channel": "naver_blog", "query": query, "pack": pack_name, "query_stage": query_stage},
                     })
+                    result_audit["evidence_candidate"] = True
+                    result_audit["extractions"].append({
+                        "tag": extracted["tag_name"], "polarity": extracted["polarity"],
+                        "strength": "SUPPORTING", "method": "ai",
+                    })
+
+            if result_audit["evidence_candidate"]:
+                result_audit["rejection_reason"] = ""
+            elif any(row.get("strength") == "WEAK" for row in result_audit["extractions"]):
+                result_audit["rejection_reason"] = "WEAK_FEATURE"
+            else:
+                result_audit["rejection_reason"] = "NO_FEATURE"
 
         if profile_index == 0:
             discovery_identity_matches = diagnostics["identity_matches"]
+        if pack_name.startswith("target_") and len(evidences) > profile_evidence_start:
+            break
 
     miss_reason = ""
     if not evidences:
@@ -267,4 +325,5 @@ def collect_naver_place_evidence(
         "diagnostics": diagnostics,
         "ai_calls": ai_calls,
         "ai_metrics": ai_metrics,
+        "search_attempts": search_attempts,
     }

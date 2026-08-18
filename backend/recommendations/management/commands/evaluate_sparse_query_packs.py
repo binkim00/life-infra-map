@@ -193,7 +193,8 @@ class Command(BaseCommand):
                     )
                     if not place_target_tags:
                         continue
-                if not _reserve_request():
+                planned_requests = 1 if pack_name == "discovery" else 3
+                if not _reserve_request(planned_requests):
                     raise CommandError("Naver safe quota exhausted during A/B evaluation.")
                 if pack_name == "discovery":
                     result = collect_naver_place_evidence(
@@ -211,9 +212,9 @@ class Command(BaseCommand):
                         targeted_tags=place_target_tags,
                         allow_ai=options["allow_ai"],
                     )
-                made = min(1, int(result.get("requests") or 0))
+                made = min(planned_requests, int(result.get("requests") or 0))
                 error = result.get("error") or ""
-                _settle_request(made, error)
+                _settle_request(planned_requests, made, error)
                 stats["calls"] += made
                 stats["places"] += 1
                 stats["ai_calls"] += int(result.get("ai_calls") or 0)
@@ -311,7 +312,7 @@ class Command(BaseCommand):
         self.stdout.write(json.dumps(report, ensure_ascii=False, indent=2))
 
 
-def _reserve_request():
+def _reserve_request(requests=1):
     with transaction.atomic():
         quota, _ = ProviderQuotaUsage.objects.select_for_update().get_or_create(
             provider="naver_search",
@@ -319,19 +320,19 @@ def _reserve_request():
             defaults={"daily_limit": settings.TAG_COLLECTION_DAILY_API_LIMIT},
         )
         safe_limit = quota.daily_limit * settings.TAG_COLLECTION_QUOTA_PERCENT // 100
-        if quota.request_count + quota.reserved_count + 1 > safe_limit:
+        if quota.request_count + quota.reserved_count + requests > safe_limit:
             return False
-        quota.reserved_count += 1
+        quota.reserved_count += requests
         quota.save(update_fields=["reserved_count", "updated_at"])
     return True
 
 
-def _settle_request(made, error):
+def _settle_request(reserved, made, error):
     succeeded = error in {"", "insufficient_evidence"}
     ProviderQuotaUsage.objects.filter(
         provider="naver_search", usage_date=timezone.localdate(),
     ).update(
-        reserved_count=F("reserved_count") - 1,
+        reserved_count=F("reserved_count") - reserved,
         request_count=F("request_count") + made,
         success_count=F("success_count") + (made if succeeded else 0),
         failed_count=F("failed_count") + (0 if succeeded else made),
@@ -373,6 +374,9 @@ def record_targeted_attempt(place, attempt_key, result):
         "miss_reason": result.get("miss_reason") or "",
         "identity_matches": int(diagnostics.get("identity_matches") or 0),
         "search_results": int(diagnostics.get("search_results") or 0),
+        "search_attempts": result.get("search_attempts") or [],
+        "evidence_strengths": diagnostics.get("strengths") or {},
+        "ai_metrics": result.get("ai_metrics") or {},
     }
     context["targeted_attempt_results"] = results
     bucket = {

@@ -162,7 +162,7 @@ TAG_COLLECTION_AI_ALLOWED_TAGS = tuple(
 TAG_COLLECTION_ADOPTED_TARGET_CLUSTERS = tuple(
     value.strip()
     for value in os.getenv(
-        "TAG_COLLECTION_ADOPTED_TARGET_CLUSTERS", "work_sparse"
+        "TAG_COLLECTION_ADOPTED_TARGET_CLUSTERS", "work_sparse,solo,ambience,long_stay,talk,waiting"
     ).split(",")
     if value.strip()
 )

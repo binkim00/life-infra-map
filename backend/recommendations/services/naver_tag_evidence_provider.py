@@ -12,11 +12,17 @@ TAG_TERMS = {
         'negative': ('시끄럽', '소음', '혼잡', '북적', '사람이 많'),
     },
     '작업하기좋음': {
-        'positive': ('작업하기 좋', '공부하기 좋', '오래 작업'),
+        'positive': (
+            '작업하기 좋', '공부하기 좋', '오래 작업', '작업하기 편',
+            '공부하기 편', '카공하기 좋', '카공하기 편',
+        ),
         'negative': ('작업하기 어렵', '공부하기 어렵', '장시간 이용 불가'),
     },
     '노트북작업': {
-        'positive': ('노트북 사용', '노트북 작업', '카공', '랩탑'),
+        'positive': (
+            '노트북 사용', '노트북 작업', '노트북을 켜', '노트북 하는',
+            '노트북 하러', '노트북을 가지고', '카공', '랩탑',
+        ),
         'negative': ('노트북 금지', '노트북 사용 불가', '카공 금지'),
     },
     '콘센트있음': {
@@ -36,30 +42,40 @@ TAG_TERMS = {
         'negative': ('와이파이 없', 'wifi 없'),
     },
     '분위기좋음': {
-        'positive': ('분위기 좋', '감성적', '감성 카페', '아늑', '무드 있'),
+        'positive': (
+            '분위기 좋', '감성적', '감성 카페', '아늑', '무드 있',
+            '감각적인 인테리어', '인테리어가 좋',
+        ),
         'negative': ('분위기 별로', '어수선', '정신없'),
     },
     '혼밥좋음': {
-        'positive': ('혼밥', '혼자 먹기 좋', '혼자 가기 좋', '1인석', '일인석'),
+        'positive': (
+            '혼밥', '혼자 먹기 좋', '혼자 먹기 편', '혼자 식사하기 좋',
+            '혼자 식사하기 편', '혼자 가기 좋', '1인석', '일인석',
+            '1인 메뉴', '일인 메뉴', '바 좌석',
+        ),
         'negative': ('혼밥 어렵', '혼자 가기 부담', '1인 주문 불가'),
     },
     '혼자이용좋음': {
         'positive': (
             '혼자 이용하기 좋', '혼자 가기 편', '혼자 머물기 좋', '혼자 쉬기 좋',
             '혼자 책 읽기 좋', '혼자 공부하기 좋', '혼자 시간 보내기 좋',
-            '혼자 와도 부담 없', '혼자 커피 한잔', '1인석', '일인석', '혼카페',
+            '혼자 와도 부담 없', '혼자 커피 한잔', '혼자 온 손님',
+            '혼자 방문', '혼자 오셔', '혼자 앉', '1인석', '일인석',
+            '1인 메뉴', '일인 메뉴', '바 좌석', '혼카페',
         ),
         'negative': ('혼자 이용하기 어렵', '혼자 가기 부담', '혼자 머물기 어렵'),
     },
     '데이트좋음': {
-        'positive': ('데이트하기 좋', '데이트 코스', '커플'),
+        'positive': ('데이트하기 좋', '데이트 코스', '데이트 장소', '둘이 가기 좋', '커플'),
         'negative': ('데이트 비추천',),
     },
     '대화하기좋음': {
         'positive': (
             '대화하기 좋', '이야기하기 좋', '얘기하기 좋',
             '이야기 나누기 좋', '대화 나누기 좋', '수다 떨기 좋',
-            '대화나누기도 좋', '수다떨기도 좋',
+            '대화나누기도 좋', '수다떨기도 좋', '한적해서 이야기',
+            '좌석 간격이 넓고 한적',
         ),
         'negative': ('대화하기 어렵', '말소리 안 들'),
     },
@@ -75,6 +91,7 @@ TAG_TERMS = {
         'positive': (
             '오래 머물', '오래 있기 좋', '오래 앉아', '장시간 이용',
             '오래 작업', '시간 보내기 좋', '시간 보내기 편', '머물기 좋',
+            '오래 있어도 편', '장시간 머물',
         ),
         'negative': (
             '장시간 이용 불가', '장시간 노트북 사용 제한', '장시간 노트북 사용 금지',
@@ -117,6 +134,56 @@ TAG_TERMS = {
         'positive': ('관리 잘', '깨끗', '청결'),
         'negative': ('관리 안', '더럽', '불결'),
     },
+}
+
+QUALITATIVE_TAGS = frozenset({
+    '조용함', '작업하기좋음', '혼자이용좋음', '혼밥좋음',
+    '분위기좋음', '데이트좋음', '대화하기좋음', '장기체류좋음',
+})
+
+SUPPORTING_TERMS = {
+    '작업하기좋음': (
+        '작업이나 공부하러 가기도 괜찮', '공부하러 가기 괜찮',
+        '작업하러 가기 괜찮', '노트북 하기 괜찮', '카공하기 괜찮',
+    ),
+    '혼자이용좋음': (
+        '혼자 온 손님', '혼자 방문', '혼자 오셔', '혼자 앉',
+        '혼자 와도', '1인석', '일인석', '바 좌석',
+    ),
+    '혼밥좋음': (
+        '혼자 온 손님', '혼자 방문', '혼자 오셔', '혼자 먹기 편',
+        '혼자 식사', '1인 메뉴', '일인 메뉴', '1인석', '바 좌석',
+    ),
+    '분위기좋음': ('감각적인 인테리어', '편안한 분위기', '따뜻한 분위기'),
+    '데이트좋음': ('데이트 장소로 추천', '둘이 방문하기 좋', '커플이 가기 좋'),
+    '대화하기좋음': ('좌석 간격이 넓', '한적해서 이야기', '이야기 나누기 편'),
+    '장기체류좋음': ('오래 있어도 편', '오래 앉아 있기 편', '장시간 머물'),
+    '조용함': ('조용한 편', '한적한 편', '북적이지 않', '시끄럽지 않', '집중하기 좋'),
+}
+
+WEAK_TERMS = {
+    '작업하기좋음': ('테이블 넓', '좌석 넓', '콘센트',),
+    '혼자이용좋음': ('혼자', '1인',),
+    '혼밥좋음': ('혼자', '1인',),
+    '분위기좋음': ('인테리어', '분위기', '감성',),
+    '데이트좋음': ('커플', '둘이',),
+    '대화하기좋음': ('좌석 간격', '한적',),
+    '장기체류좋음': ('장시간', '오래',),
+}
+
+SEARCH_QUERY_VOCABULARY = {
+    '조용함': {'direct': ('조용',), 'synonym': ('한적', '차분'), 'situational': ('북적이지 않음', '집중하기 좋음'), 'supporting_signal': ('시끄럽지 않음',)},
+    '노트북작업': {'direct': ('노트북', '랩탑'), 'synonym': ('카공', '공부', '작업'), 'situational': ('노트북 공부',), 'supporting_signal': ('콘센트', '충전', '전원', '테이블', '좌석')},
+    '작업하기좋음': {'direct': ('작업', '공부'), 'synonym': ('카공', '노트북'), 'situational': ('오래 작업', '테이블 넓은', '좌석 넓은'), 'supporting_signal': ('콘센트',)},
+    '콘센트있음': {'direct': ('콘센트',), 'synonym': ('충전', '전원', '플러그'), 'situational': (), 'supporting_signal': ()},
+    '무료와이파이': {'direct': ('와이파이', 'WiFi', 'Wi-Fi'), 'synonym': ('무선인터넷', '무료 인터넷'), 'situational': (), 'supporting_signal': ()},
+    '혼자이용좋음': {'direct': ('혼자', '혼카페'), 'synonym': ('혼자 방문', '1인', '1인석'), 'situational': ('혼자 가기', '혼자 앉기'), 'supporting_signal': ('바 좌석',)},
+    '혼밥좋음': {'direct': ('혼밥',), 'synonym': ('혼자 식사', '혼자 먹기', '1인'), 'situational': ('혼자 방문', '1인 메뉴'), 'supporting_signal': ('1인석', '바 좌석')},
+    '분위기좋음': {'direct': ('분위기',), 'synonym': ('감성', '아늑', '무드'), 'situational': ('분위기 있는',), 'supporting_signal': ('인테리어',)},
+    '데이트좋음': {'direct': ('데이트',), 'synonym': ('커플', '데이트 코스'), 'situational': ('데이트 장소', '둘이 가기 좋은'), 'supporting_signal': ()},
+    '대화하기좋음': {'direct': ('대화', '이야기'), 'synonym': ('수다', '이야기 나누기'), 'situational': ('좌석 간격',), 'supporting_signal': ('한적',)},
+    '장기체류좋음': {'direct': ('오래 앉아', '오래 머물'), 'synonym': ('장시간', '오래 있기'), 'situational': ('시간 보내기', '오래 작업'), 'supporting_signal': ()},
+    '웨이팅적음': {'direct': ('웨이팅 없음', '대기 없음'), 'synonym': ('바로 입장',), 'situational': ('기다리지 않고', '웨이팅 적음'), 'supporting_signal': ()},
 }
 
 SEARCH_KEYWORDS = {
@@ -275,10 +342,16 @@ def identity_assessment(place, text, *, title=""):
         and category in {"cafe", "restaurant"}
         and not exact_in_title
     )
+    short_food_title_required = (
+        category in {"cafe", "restaurant"}
+        and full_length <= 4
+        and not exact_in_title
+    )
     matched = (
         score >= 65
         and not explicit_region_mismatch
         and not semas_food_title_required
+        and not short_food_title_required
     )
     return {
         "matched": matched,
@@ -296,6 +369,7 @@ def identity_assessment(place, text, *, title=""):
             "contextual_score": contextual_score,
             "distinctive_name_terms": distinctive_terms,
             "semas_food_title_required": semas_food_title_required,
+            "short_food_title_required": short_food_title_required,
         },
     }
 
@@ -309,8 +383,12 @@ def polarity_assessment(tag_name, text, *, category=""):
     compact_text = compact(text)
     positive_terms = [term for term in terms.get('positive', ()) if compact(term) in compact_text]
     negative_terms = [term for term in terms.get('negative', ()) if compact(term) in compact_text]
+    supporting_terms = [
+        term for term in SUPPORTING_TERMS.get(tag_name, ()) if compact(term) in compact_text
+    ]
+    weak_terms = [term for term in WEAK_TERMS.get(tag_name, ()) if compact(term) in compact_text]
     has_negative = bool(negative_terms)
-    has_positive = bool(positive_terms)
+    has_positive = bool(positive_terms or supporting_terms)
     contextual_exclusion = (
         tag_name == "웨이팅적음"
         and category in {"tourism", "city_park"}
@@ -319,22 +397,34 @@ def polarity_assessment(tag_name, text, *, category=""):
     if contextual_exclusion:
         polarity = 'unknown'
         clarity = 0
+        strength = 'UNKNOWN'
     elif has_negative and has_positive:
         polarity = 'unknown'
         clarity = 20
+        strength = 'UNKNOWN'
     elif has_negative:
         polarity = 'negative'
         clarity = min(100, 75 + len(negative_terms) * 8)
+        strength = 'CONTRADICTING'
     elif has_positive:
         polarity = 'positive'
-        clarity = min(100, 75 + len(positive_terms) * 8)
+        strength = 'DIRECT' if positive_terms else 'SUPPORTING'
+        clarity = min(100, 75 + len(positive_terms) * 8) if positive_terms else min(74, 58 + len(supporting_terms) * 6)
+    elif weak_terms and tag_name in QUALITATIVE_TAGS:
+        polarity = 'unknown'
+        clarity = 25
+        strength = 'WEAK'
     else:
         polarity = 'unknown'
         clarity = 0
+        strength = 'UNKNOWN'
     return {
         "polarity": polarity,
         "clarity_score": clarity,
         "positive_terms": positive_terms,
+        "supporting_terms": supporting_terms,
+        "weak_terms": weak_terms,
+        "strength": strength,
         "negative_terms": negative_terms,
         "contextual_exclusion": contextual_exclusion,
     }

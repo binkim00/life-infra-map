@@ -12,7 +12,7 @@ from recommendations.management.commands.process_tag_enrichment_queue import (
     save_place_candidate_evidence,
 )
 from recommendations.management.commands.generate_meaningful_place_tags import generate_meaningful_tags
-from recommendations.models import Place, PlaceTagCollectionJob, ProviderQuotaUsage
+from recommendations.models import Place, PlaceTag, PlaceTagCollectionJob, ProviderQuotaUsage
 from recommendations.services.place_tag_collection import collect_naver_place_evidence
 
 
@@ -99,6 +99,10 @@ def process_jobs(*, limit=10, worker_id="worker", collector=None):
         new_evidences = 0
         active_evidences = 0
         new_active_evidences = 0
+        ai_saved_evidences = 0
+        ai_new_evidences = 0
+        ai_active_evidences = 0
+        strength_counts = {}
         for evidence in evidences:
             observed_at = _observed_at(evidence.get("observed_date"))
             saved, created = save_place_candidate_evidence(
@@ -111,6 +115,13 @@ def process_jobs(*, limit=10, worker_id="worker", collector=None):
             new_evidences += int(created)
             active_evidences += int(is_active)
             new_active_evidences += int(created and is_active)
+            extraction = evidence.get("extraction") or {}
+            strength = extraction.get("strength") or "UNKNOWN"
+            strength_counts[strength] = int(strength_counts.get(strength) or 0) + 1
+            if extraction.get("method") == "ai":
+                ai_saved_evidences += 1
+                ai_new_evidences += int(created)
+                ai_active_evidences += int(is_active)
         stats["evidences"] += len(evidences)
         error = str(result.get("error") or "")
         if error in {"", "insufficient_evidence"}:
@@ -138,8 +149,15 @@ def process_jobs(*, limit=10, worker_id="worker", collector=None):
             "structured_evidences": structured_evidences,
             "ai_calls": int(result.get("ai_calls") or 0),
             "ai_metrics": result.get("ai_metrics") or {},
+            "ai_attribution": {
+                "saved_evidences": ai_saved_evidences,
+                "new_evidences": ai_new_evidences,
+                "active_evidences": ai_active_evidences,
+            },
+            "evidence_strengths": strength_counts,
             "miss_reason": result.get("miss_reason") or "",
             "diagnostics": result.get("diagnostics") or {},
+            "search_attempts": result.get("search_attempts") or [],
         }
         job.error_message = error[:1000]
         job.locked_at = None
@@ -208,4 +226,4 @@ def _observed_at(value):
             return timezone.make_aware(datetime.strptime(text, fmt))
         except ValueError:
             continue
-    return timezone.now()
+    return None
