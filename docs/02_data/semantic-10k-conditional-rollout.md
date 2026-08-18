@@ -1,7 +1,7 @@
 # Conditional Semantic 10K 결과와 운영 전환 Runbook
 
 기준일은 2026-08-18이다. 기존 Structured Intent 기반 `semantic_required`
-구현은 변경하지 않았으며, 운영 PostgreSQL에는 pgvector extension이나 vector
+구현의 누락 blocker를 일반화했으며, 운영 PostgreSQL에는 pgvector extension이나 vector
 migration을 적용하지 않았다. 운영 기본값은 Retrieval OFF, Candidate Injection
 OFF, Semantic weight 0.10이다.
 
@@ -11,15 +11,17 @@ OFF, Semantic weight 0.10이다.
 결정적 층화 방식으로 선택했다. current active positive Evidence가 있고 negative
 Evidence가 없는 Canonical Feature만 사용했다.
 
-- Region: 서울 1,846, 부산 1,791, 인천 1,835, 대구 1,762, 대전 1,103,
-  광주 700, 울산 963.
+- Region: 서울 1,822, 부산 1,927, 인천 1,890, 대구 1,558, 대전 1,296,
+  광주 615, 울산 892.
 - Category: cafe 442, restaurant 3, city_park 500, library 842, parking
-  1,496, shelter 3,001, toilet 3,682, tourism 34.
-- Feature cluster: work 63, solo/social 298, outdoor 584, facility 4,528,
-  other 4,527.
-- 부족 cell: restaurant 3, tourism 34, work 63. 공급 부족을 가짜 데이터로
+  1,295, shelter 1,695, toilet 2,206, tourism 34, freewifi 2,983.
+- Feature cluster: work 3,036, solo/social 307, outdoor 585, facility 3,036,
+  other 3,036.
+- 부족 cell: restaurant 3, tourism 34. 공급 부족을 가짜 데이터로
   보충하지 않았다.
-- 같은 범위의 eligible Place는 19,257개이며 표본은 51.93%다.
+- 같은 범위의 eligible Place는 27,536개이며 표본은 36.32%다. 실제 eligible
+  Category는 기존 8개와 `freewifi`이며, `freewifi` eligible Place는 8,279개다.
+- 기존 고정 10K 대비 7,017 Place는 유지되고 2,983 Place가 바뀐다.
 
 ## FeatureDocument와 embedding
 
@@ -34,6 +36,10 @@ AI 설명과 추천 이유는 포함하지 않는다.
 - embedding 107,598.95ms, 운영 JSON DB 저장 24,600.75ms.
 - 즉시 재실행: unchanged 10,000, API calls 0, tokens 0, cost 0.
 - source hash가 달라질 때만 다시 호출되는 경로를 회귀 테스트로 검증했다.
+
+이번 blocker 수정에서는 embedding을 다시 실행하지 않았다. Dynamic sample의
+변경 예상 2,983문서는 약 104,703 input tokens, USD 0.00209406, batch 30회다.
+이는 dry-run 추정치이며 실제 API 호출과 staging import는 하지 않았다.
 
 가격 기준: https://developers.openai.com/api/docs/models/text-embedding-3-small
 
@@ -62,17 +68,19 @@ dimensions, strategy, source hash, embedded timestamp를 분리 저장한다. �
 실제 실행은 OFF, weight 0.10 cache miss, weight 0.10 cache hit만 비교했다.
 0.15와 0.20은 재실행하지 않았다.
 
-- semantic_required 27, skipped 23. skipped embedding API calls 0.
-- 결과 변경 10, no-result OFF/ON 모두 22.
+- semantic_required 48, skipped 2. skipped embedding API calls 0.
+- skip은 `부산역 근처 식당`, `부산 주차장` 두 단순 Query뿐이다.
+- 결과 변경 15, no-result OFF/ON 모두 9.
 - Hard/Category/Region violation 0/0/0.
 - duplicate 0, unsupported reason 0.
 - 기존 변경 14 Query 중 9개가 변경되고 5개가 동일했다.
 - 잘못 활성화된 단순 Region+Category Query는 발견되지 않았다.
-- 명확한 의미 Query 누락은 16개다. 혼밥, 데이트, 대화, 장기체류/작업,
-  혼자 이용 표현이 포함된다.
+- 명확한 의미 Query 누락 16개는 0개로 줄었다. 단순 Query 오활성도 0이다.
 
-따라서 activation은 안전하지만 recall이 불완전하다. 완료된 정책 구현을 이번
-작업에서 다시 수정하지 않았으며 운영 활성화 판단은 HOLD다.
+원인은 broad clarification과 generic 식당/카페 분기가 Canonical composition보다
+먼저 반환하고, 목적형 Feature의 기본 Category가 없던 것이었다. Canonical alias,
+semantic intent와 condition 구조를 먼저 합성하도록 일반화했으며 문장 전체를
+하드코딩하지 않았다.
 
 ## Explicit Feature Satisfaction
 
@@ -83,27 +91,34 @@ dimensions, strategy, source hash, embedded timestamp를 분리 저장한다. �
 | --- | ---: | ---: | ---: | ---: | ---: |
 | 콘센트있음 | 0% | 0% | 0%p | 0% | 0% |
 | 조용함 | 0% | 31.43% | +31.43%p | 0% | 17.14% |
-| 노트북작업/작업하기좋음 | 0% | 36.00% | +36.00%p | 0% | 20.00% |
+| 노트북작업/작업하기좋음 | 0% | 30.00% | +30.00%p | 0% | 16.67% |
 | 혼밥좋음 | 0% | 0% | 0%p | 0% | 0% |
-| 분위기좋음 | 0% | 40.00% | +40.00%p | 0% | 20.00% |
+| 분위기좋음 | 0% | 20.00% | +20.00%p | 0% | 10.00% |
+| 혼자이용좋음 | 0% | 0% | 0%p | 0% | 0% |
+| 데이트좋음 | 0% | 33.33% | +33.33%p | 0% | 16.67% |
+| 대화하기좋음 | 0% | 0% | 0%p | 0% | 0% |
+| 장기체류좋음 | 0% | 0% | 0%p | 0% | 0% |
+| 잠깐쉬기좋음 | 0% | 0% | 0%p | 0% | 0% |
 
 Hard Feature 결과는 공통 Hard Gate를 통과한 경우에만 반환되어 위반 0을
 유지했다. UNKNOWN은 TRUE로 처리하지 않았다.
 
 ## Latency와 outlier
 
-- OFF 평균/median/p95: 2,073.52 / 739.28 / 1,872.87ms.
-- Conditional miss 평균/median/p95: 3,072.57 / 1,797.82 / 4,833.10ms.
-- Conditional hit 평균/median/p95: 2,510.14 / 1,189.54 / 2,417.04ms.
-- 활성 Query miss: embedding 678.20ms, vector 178.93ms, merge 373.25ms.
-- 활성 Query hit: embedding 0.12ms, vector 120.28ms, merge 371.01ms.
+- OFF 평균/median/p95/max: 1,201.19 / 1,010.50 / 2,122.39 / 3,383.22ms.
+- Conditional miss 평균/median/p95/max: 2,451.65 / 2,151.45 / 3,831.05 / 6,803.05ms.
+- Conditional hit 평균/median/p95/max: 1,571.41 / 1,416.76 / 2,486.43 / 3,064.66ms.
+- 활성 Query miss: embedding 평균 703.78ms, vector 평균 156.58ms.
+- 활성 Query hit: embedding 평균 0.13ms, vector 평균 88.85ms.
 - skipped Query embedding calls는 0이다.
 
-최대 약 40초 outlier는 `광주 혼밥하기 좋은 식당`이다. 세 variant에서 DB
-후보 조회가 38.87--39.17초, Kakao가 0.63--0.66초였다. Semantic embedding과
-vector 검색은 이 Query에서 실행되지 않았다. 원인은 external provider가 아니라
-기존 DB retrieval이며 안전한 국소 수정이 명확하지 않아 timeout 로직을 바꾸지
-않았다.
+변경 전 `광주 혼밥하기 좋은 식당` collector는 50,911ms였다. EXPLAIN은 KNN
+GiST가 반경 내 식당 3개로 LIMIT 150을 채우지 못해 393,777행을 filter에서
+제거하고 36,826ms를 사용한 것을 보였다. 직접 Category 검색은 bounded count와
+Category 밀도에 따라 dense cell은 KNN, sparse cell/category는 indexed 좌표
+Top-N 후 Place fetch를 사용한다. 대표 재측정은 광주 혼밥 713ms, 서울 혼밥
+338ms, 부산 혼밥 198ms, 대구 혼밥 75ms, 광주 분위기 식당 83ms, 서울 공원
+439ms이며 결과 수와 Category 안전성을 유지했다. 새 인덱스 migration은 없다.
 
 ## 사람 검수
 
@@ -114,9 +129,9 @@ OFF와 ON Top-5를 비교하며 `preferred_variant`, `relevant_places`, `notes`�
 
 ## Tier 2와 Dashboard
 
-기존 scheduler/worker를 유지했다. 오늘 100 places를 처리해 Evidence 44,
-active Evidence 2, PlaceTag 2가 증가했다. Naver calls는 111이며 신규 대량
-budget을 추가하지 않았다. Dashboard는 운영 JSON document registry와
+기존 scheduler/worker는 각각 21시간 이상 실행 중이다. 오늘 Evidence 44,
+누적 current active positive Evidence 139,133, PlaceTag 706,811이다. 신규 대량
+Naver budget은 추가하지 않았다. Dashboard는 운영 JSON document registry와
 `ISOLATED_NOT_OPERATING` pgvector staging을 구분하고 flags OFF를 표시한다.
 
 ## 운영 pgvector 전환 Runbook
@@ -142,7 +157,11 @@ current negative Evidence가 없는 Place는 105,693개다. Feature가 없는 28
 현재 문서에 검색 의미 정보가 거의 없어 embedding 비용보다 품질 이득 근거가
 부족하다. 다음 확대 대상은 105,693개 전체가 아니라 10K 제외 eligible Feature
 Place를 Category/Region/Feature 희소성과 실제 Query 수요로 다시 층화한 묶음이다.
+현재 7개 Region Dynamic 정책의 eligible은 27,536개이고, 다음 직접 후보군은
+기존 Dynamic 10K를 제외한 17,536개다.
 
-10K embedding과 staging 저장은 성공했다. 안전성과 일부 Feature Satisfaction도
-개선됐지만 activation 누락 16개, 콘센트/혼밥 gain 0, 사람 label 미완료 때문에
-운영 pgvector 전환과 Conditional Candidate Injection 운영 ON은 아직 HOLD다.
+10K embedding과 staging 저장은 성공했고 activation 누락 및 39초 DB blocker는
+해결됐다. 안전성과 조용함/작업/분위기/데이트 Satisfaction도 개선됐지만
+콘센트/혼밥/혼자이용/대화/장기체류 gain은 0이며 사람 label 4개가 미완료다.
+따라서 운영 pgvector 전환 준비는 가능하지만 Conditional Candidate Injection
+운영 ON은 사람 검수와 0-gain Feature 판단이 끝날 때까지 HOLD다.
