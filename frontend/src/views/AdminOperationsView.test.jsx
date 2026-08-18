@@ -26,7 +26,7 @@ const payload = {
   runtime: { worker_last_success_at: '2026-08-17T00:00:00Z' },
   source_freshness: [{ source: 'toilet', latest_source_date: '2026-08-15', current_evidence: 10, stale_evidence: 1, stale_ratio: 0.09, refresh_needed: false }],
   search_performance: { status: 'NOT_AVAILABLE', reason: 'search latency is not persisted' },
-  semantic_pilot: { feature_documents: 1000, embedded_documents: 1000, model: 'text-embedding-3-small', dimensions: 512, retrieval_enabled: false, candidate_injection_enabled: false },
+  semantic_pilot: { feature_documents: 1000, embedded_documents: 1000, model: 'text-embedding-3-small', dimensions: 512, retrieval_enabled: false, candidate_injection_enabled: false, operating_scope: 'OPERATING_JSON_DOCUMENT_REGISTRY', pgvector_staging_scope: 'ISOLATED_NOT_OPERATING' },
 }
 
 describe('AdminOperationsView', () => {
@@ -43,6 +43,7 @@ describe('AdminOperationsView', () => {
     expect(screen.getAllByText('12').length).toBeGreaterThan(0)
     expect(screen.getAllByText('NOT_MEASURED').length).toBeGreaterThan(0)
     expect(screen.getByText('text-embedding-3-small')).toBeInTheDocument()
+    expect(screen.getByText(/ISOLATED_NOT_OPERATING/)).toBeInTheDocument()
   })
 
   it('sends selected filters to the backend', async () => {

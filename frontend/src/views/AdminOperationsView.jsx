@@ -138,6 +138,7 @@ const AdminOperationsView = () => {
             <span>문서 {number(data.semantic_pilot?.feature_documents)}</span>
             <span>Embedding {number(data.semantic_pilot?.embedded_documents)} · {metric(data.semantic_pilot?.dimensions, 'D')}</span>
             <span>Retrieval {data.semantic_pilot?.retrieval_enabled ? 'ON' : 'OFF'} / Injection {data.semantic_pilot?.candidate_injection_enabled ? 'ON' : 'OFF'}</span>
+            <span>운영 저장소 {data.semantic_pilot?.operating_scope || 'UNKNOWN'} / pgvector staging {data.semantic_pilot?.pgvector_staging_scope || 'UNKNOWN'}</span>
           </div></section>
         </> : null}
       </div>

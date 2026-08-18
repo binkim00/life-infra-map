@@ -652,6 +652,8 @@ def build_operations_dashboard(*, days=1, region="", category="", now=None):
         "source_freshness": snapshot.get("source_freshness") or [],
         "search_performance": {"status": "NOT_AVAILABLE", "reason": "search latency is not persisted"},
         "semantic_pilot": {
+            "operating_scope": "OPERATING_JSON_DOCUMENT_REGISTRY",
+            "pgvector_staging_scope": "ISOLATED_NOT_OPERATING",
             "feature_documents": PlaceFeatureDocument.objects.count(),
             "embedded_documents": PlaceFeatureDocument.objects.exclude(embedding=[]).count(),
             "model": getattr(settings, "SEMANTIC_EMBEDDING_MODEL", ""),
@@ -660,5 +662,9 @@ def build_operations_dashboard(*, days=1, region="", category="", now=None):
             "candidate_injection_enabled": bool(
                 getattr(settings, "SEMANTIC_CANDIDATE_INJECTION_ENABLED", False)
             ),
+            "pilot_max_documents": getattr(settings, "SEMANTIC_PILOT_MAX_DOCUMENTS", 10000),
+            "semantic_top_k": getattr(settings, "SEMANTIC_TOP_K", 10),
+            "semantic_candidate_limit": getattr(settings, "SEMANTIC_CANDIDATE_LIMIT", 5),
+            "semantic_retrieval_weight": getattr(settings, "SEMANTIC_RETRIEVAL_WEIGHT", 0.0),
         },
     }

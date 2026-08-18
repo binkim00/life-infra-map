@@ -16,6 +16,10 @@
 
 검색 latency는 현재 요청별로 영속 저장하지 않는다. 정적 benchmark를 운영 수치처럼 표시하지 않고 `NOT_AVAILABLE`로 반환한다. Scheduler/worker 상태도 Docker를 제어하지 않으며 DB의 최근 계획/성공 시각으로 추론한 값임을 명시한다.
 
+Semantic 영역은 운영 JSON FeatureDocument registry의 count와 실제 feature flags를
+표시한다. 별도 10K pgvector staging은 `ISOLATED_NOT_OPERATING`으로 표시해 staging
+row가 운영 Retrieval/Candidate Injection ON처럼 보이지 않게 한다.
+
 ## 집계 성능과 갱신
 
 지역·카테고리 Coverage를 매 API 요청마다 계산하면 대형 DISTINCT/GROUP BY가 반복된다. `OperationsDashboardSnapshot`에 `Region × Category × Tag` Coverage와 공식 Source freshness를 일일 materialization하고, 오늘/7일/30일 성장과 Provider/Queue 지표만 실시간 계산한다.
