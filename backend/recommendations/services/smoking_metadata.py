@@ -34,7 +34,9 @@ def derive_smoking_metadata(place):
         raw_type = raw.get("facility_type")
         raw_type_text = " ".join(str(value) for value in raw_type.values()) if isinstance(raw_type, dict) else str(raw_type or "")
         indoor_outdoor = str(raw.get("indoor_outdoor") or "")
-        if raw.get("흡연실여부") == "Y" or "room" in raw_type_text.lower():
+        if raw_type in {"designated_smoking_area", "smoking_booth", "smoking_room", "ashtray_only", "smoking_area_candidate"}:
+            facility_type = raw_type
+        elif raw.get("흡연실여부") == "Y" or "room" in raw_type_text.lower():
             facility_type = "smoking_room"
         elif indoor_outdoor == "booth" or "booth" in raw_type_text.lower() or "부스" in raw_type_text:
             facility_type = "smoking_booth"
@@ -46,7 +48,10 @@ def derive_smoking_metadata(place):
     if facility_type == "ashtray_only":
         verification_level, permission = "ASHTRAY_ONLY", "unknown"
     elif explicit_statuses:
-        verification_level = explicit_statuses[0]
+        verification_level = {
+            "HIGH_CONFIDENCE_WEB": "WEB_VERIFIED",
+            "NEEDS_VERIFICATION": "UNVERIFIED",
+        }.get(explicit_statuses[0], explicit_statuses[0])
         permission = "confirmed" if verification_level in {"VERIFIED", "VERIFIED_OFFICIAL", "VERIFIED_FACILITY"} else "unverified"
     elif "연제구_흡연실" in place.source:
         verification_level, permission = "PUBLIC_DATA", "confirmed"
@@ -72,6 +77,12 @@ def derive_smoking_metadata(place):
         "evidence_confidence": confidence,
         "source_summary": source_summary,
         "default_visible": verification_level not in HIDDEN_BY_DEFAULT,
+        "location_description": raw.get("location_description") or place.detail_location,
+        "location_landmark": raw.get("location_landmark", ""),
+        "location_directions": raw.get("location_directions", ""),
+        "location_accuracy": raw.get("location_accuracy") or raw.get("coordinate_accuracy") or "UNKNOWN",
+        "location_source_url": raw.get("location_source_url", ""),
+        "location_evidence_span": raw.get("location_evidence_span", ""),
     }
 
 

@@ -2,6 +2,8 @@
 
 ## 데이터 의미
 
+공식 여부는 DB 저장 조건이 아니다. 웹에서 발견한 장소도 장소 Identity, 지도에서 사용할 수 있는 위치, 출처 Evidence가 충분하면 `Place`로 저장한다. 대신 Source, confidence, freshness, verification을 보존하고 `WEB_VERIFIED` 또는 `UNVERIFIED`로 사용자에게 확인 수준을 표시한다.
+
 - `designated_smoking_area`: 최신 공식 자료가 지정 흡연구역이라고 명시한 장소
 - `smoking_booth`, `smoking_room`: 부스 또는 실의 현행 운영이 확인된 장소
 - `ashtray_only`: 재떨이 설치만 확인된 장소. `smoking_permission=unknown`을 고정한다.
@@ -10,6 +12,12 @@
 재떨이는 흡연 허용을 뜻하지 않는다. UI에는 다음 안내를 함께 표시한다.
 
 > 재떨이 설치가 확인된 위치입니다. 공식 지정 흡연구역 여부는 확인되지 않았으므로 현장 안내와 관련 규정을 확인해 주세요.
+
+## 좌표와 현장 위치 안내
+
+좌표와 위치 설명은 별개로 관리한다. `Place.detail_location`은 사용자가 현장에서 찾을 수 있는 원문 기반 위치 설명을 담고, `Place.raw`와 Evidence context에는 `location_description`, `location_landmark`, `location_directions`, `location_accuracy`, `location_source_url`, `location_evidence_span`을 보존한다.
+
+정확도는 `EXACT`, `ENTRANCE`, `BUILDING`, `LANDMARK`, `APPROXIMATE`, `UNKNOWN`을 사용한다. 출구나 건물 좌표는 흡연 설비 자체 좌표라고 표현하지 않는다. Source가 “인근”까지만 말하면 방향이나 거리를 새로 만들지 않고 그 수준의 설명만 반환한다.
 
 ## 상태와 근거
 

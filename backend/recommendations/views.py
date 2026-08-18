@@ -1025,7 +1025,7 @@ def place_list(request):
                 verification=verification, include_stale=include_stale,
             )
         ]
-        priority = {"VERIFIED": 0, "VERIFIED_OFFICIAL": 0, "VERIFIED_FACILITY": 1, "PUBLIC_DATA": 2, "WEB_VERIFIED": 3, "ASHTRAY_ONLY": 4, "UNVERIFIED": 5}
+        priority = {"VERIFIED": 0, "VERIFIED_OFFICIAL": 0, "VERIFIED_FACILITY": 1, "PUBLIC_DATA": 2, "WEB_VERIFIED": 3, "UNVERIFIED": 4, "ASHTRAY_ONLY": 5}
         results.sort(key=lambda row: (
             priority.get(row["smoking"]["verification_level"], 9),
             row.get("distance") is None,

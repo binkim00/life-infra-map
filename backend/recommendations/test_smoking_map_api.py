@@ -1,8 +1,14 @@
+import json
+import tempfile
+from pathlib import Path
+
+from django.core.management import call_command
 from django.test import TestCase, override_settings
 
 from recommendations.models import Place, PlaceTag, PlaceTagEvidence, Tag
 from recommendations.services.conversational_search_planner import build_conversational_search_plan
 from recommendations.services.map_search import get_matching_categories
+from recommendations.management.commands.discover_busan_smoking_places import CANDIDATES
 
 
 class SmokingMapApiTests(TestCase):
@@ -63,3 +69,45 @@ class SmokingMapApiTests(TestCase):
         self.assertEqual(build_conversational_search_plan("해운대 흡연부스")["search_plan"]["smoking_filters"]["facility_type"], "smoking_booth")
         self.assertEqual(build_conversational_search_plan("부산역 재떨이")["search_plan"]["smoking_filters"]["facility_type"], "ashtray_only")
         self.assertEqual(build_conversational_search_plan("부산역 공식 흡연구역")["search_plan"]["smoking_filters"]["verification"], "VERIFIED_OFFICIAL")
+
+
+class BusanSmokingCandidateImportTests(TestCase):
+    def _input_files(self, directory):
+        candidates = [row for row in CANDIDATES if row["status"] not in {"EXISTING", "REJECTED"}]
+        discovery = Path(directory) / "discovery.json"
+        reverification = Path(directory) / "reverification.json"
+        discovery.write_text(json.dumps({"candidates": candidates}, ensure_ascii=False), encoding="utf-8")
+        reverification.write_text(json.dumps({"rows": [{"name": row["candidate_name"], "previous_status": row["status"], "new_status": row["status"], "reason": "test"} for row in candidates]}, ensure_ascii=False), encoding="utf-8")
+        return discovery, reverification
+
+    def test_apply_is_idempotent_and_preserves_evidence_and_location(self):
+        with tempfile.TemporaryDirectory() as directory:
+            discovery, reverification = self._input_files(directory)
+            kwargs = {"apply": True, "discovery": str(discovery), "reverification": str(reverification), "output_dir": directory}
+            call_command("import_busan_smoking_candidates", **kwargs)
+            call_command("import_busan_smoking_candidates", **kwargs)
+            imported = Place.objects.filter(raw__import_batch="busan_smoking_candidates_2026_08")
+            self.assertEqual(imported.count(), 19)
+            self.assertEqual(PlaceTag.objects.filter(place__in=imported).count(), 19)
+            self.assertEqual(PlaceTagEvidence.objects.filter(place__in=imported).count(), 19)
+            self.assertTrue(all(34.8 <= p.lat <= 35.4 and 128.7 <= p.lng <= 129.35 for p in imported))
+            busan_station = imported.get(name="부산역 5번 출구 외부 흡연구역")
+            self.assertEqual(busan_station.raw["coordinate_accuracy"], "ENTRANCE")
+            self.assertIn("5번 출구", busan_station.detail_location)
+
+    def test_imported_visibility_and_ashtray_semantics(self):
+        with tempfile.TemporaryDirectory() as directory:
+            discovery, reverification = self._input_files(directory)
+            call_command("import_busan_smoking_candidates", apply=True, discovery=str(discovery), reverification=str(reverification), output_dir=directory)
+        default = self.client.get("/api/recommendations/places/", {"category": "smoking_area", "min_lat": 34.8, "min_lng": 128.7, "max_lat": 35.4, "max_lng": 129.35, "limit": 100})
+        self.assertEqual(default.data["count"], 17)
+        with_stale = self.client.get("/api/recommendations/places/", {"category": "smoking_area", "min_lat": 34.8, "min_lng": 128.7, "max_lat": 35.4, "max_lng": 129.35, "include_stale": "true", "limit": 100})
+        self.assertEqual(with_stale.data["count"], 19)
+        ashtrays = [row for row in default.data["results"] if row["smoking"]["facility_type"] == "ashtray_only"]
+        self.assertEqual(len(ashtrays), 4)
+        self.assertTrue(all(row["smoking"]["smoking_permission"] == "unknown" for row in ashtrays))
+        self.assertTrue(all(row["smoking"]["location_description"] for row in default.data["results"]))
+        centum = self.client.get("/api/recommendations/places/", {"category": "smoking_area", "q": "센텀"})
+        self.assertEqual([row["name"] for row in centum.data["results"]], ["센텀시티역 6번 출구 흡연구역"])
+        sasang_ashtray = self.client.get("/api/recommendations/places/", {"category": "smoking_area", "q": "사상", "facility_type": "ashtray_only"})
+        self.assertEqual([row["name"] for row in sasang_ashtray.data["results"]], ["어반풋볼파크 부산사상점 B구장 뒤 재떨이"])
