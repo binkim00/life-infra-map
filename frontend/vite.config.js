@@ -22,6 +22,16 @@ export default defineConfig({
       localsConvention: 'camelCase',
     },
   },
+  build: {
+    rollupOptions: {
+      input: {
+        app: fileURLToPath(new URL('./index.html', import.meta.url)),
+        kakaoMap: fileURLToPath(
+          new URL('./kakao-map-embed.html', import.meta.url),
+        ),
+      },
+    },
+  },
   test: {
     environment: 'jsdom',
     globals: true,

@@ -164,6 +164,29 @@ public class PostController {
         return ResponseEntity.ok(assembler.post(post, context, user.getId(), true));
     }
 
+    /** 수정에서도 새 이미지를 선택할 수 있도록 글쓰기와 같은 multipart 계약을 제공합니다. */
+    @PatchMapping(value = "/{postId}", consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
+    @Transactional
+    public ResponseEntity<?> updateMultipart(
+            @PathVariable Long postId,
+            @RequestParam String title,
+            @RequestParam String content,
+            @RequestParam(name = "board_type", required = false) String boardType,
+            @RequestParam(required = false) org.springframework.web.multipart.MultipartFile image,
+            Authentication authentication) {
+        String imageKey = null;
+        if (image != null && !image.isEmpty()) {
+            try {
+                imageKey = storageService.upload(
+                        image,
+                        com.kyb.lifeinframap.storage.service.StorageService.BOARD_IMAGE_PREFIX);
+            } catch (IllegalArgumentException exception) {
+                return ResponseEntity.badRequest().body(Map.of("image", List.of(exception.getMessage())));
+            }
+        }
+        return update(postId, new PostRequest(title, content, boardType, imageKey), authentication);
+    }
+
     @DeleteMapping("/{postId}")
     @Transactional
     public ResponseEntity<?> delete(@PathVariable Long postId, Authentication authentication) {

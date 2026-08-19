@@ -132,15 +132,29 @@ public class AdminUserController {
         }
         User admin = currentUser(authentication);
 
-        // 기간이 없으면 영구 제재입니다.
-        OffsetDateTime endAt = request.days() == null || request.days() <= 0
-                ? null : OffsetDateTime.now().plusDays(request.days());
+        Integer days = request.days() == null
+                ? defaultPenaltyDays(request.penaltyType()) : request.days();
+        // 경고는 이력과 알림만 남기고 활동을 차단하지 않습니다.
+        OffsetDateTime endAt = "warning".equals(request.penaltyType())
+                ? OffsetDateTime.now()
+                : days == null || days <= 0 ? null : OffsetDateTime.now().plusDays(days);
         UserPenalty penalty = penaltyRepository.save(
                 UserPenalty.create(target, admin, request.penaltyType(), request.reason(), endAt));
 
         notificationRepository.save(Notification.create(
                 target, admin, "penalty", "제재가 적용되었어요.", request.reason(), null, null));
         return ResponseEntity.status(HttpStatus.CREATED).body(serializePenalty(penalty));
+    }
+
+    private Integer defaultPenaltyDays(String penaltyType) {
+        return switch (penaltyType) {
+            case "warning" -> 0;
+            case "suspend_3_days" -> 3;
+            case "suspend_7_days" -> 7;
+            case "suspend_30_days" -> 30;
+            case "suspend_1_year" -> 365;
+            default -> null;
+        };
     }
 
     @PostMapping("/{userId}/notifications")
