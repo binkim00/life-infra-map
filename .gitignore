@@ -64,6 +64,11 @@ coverage/
 *.swp
 *.swo
 
+# Local agent configuration
+mobile/.claude/
+mobile/AGENTS.md
+mobile/CLAUDE.md
+
 
 # =========================
 # OS files
