@@ -1,0 +1,10 @@
+[Unit]
+Description=Back up the life-infra-map PostgreSQL database to S3
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/default/life-infra-map-db-backup
+ExecStart=/usr/local/bin/life-infra-map-db-backup.sh
+NoNewPrivileges=true

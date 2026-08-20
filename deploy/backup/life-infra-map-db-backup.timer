@@ -1,0 +1,11 @@
+[Unit]
+Description=Run the life-infra-map database backup daily
+
+[Timer]
+OnCalendar=*-*-* 02:30:00 UTC
+RandomizedDelaySec=10m
+Persistent=true
+Unit=life-infra-map-db-backup.service
+
+[Install]
+WantedBy=timers.target
