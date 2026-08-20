@@ -1,0 +1,45 @@
+name: life-infra-map-tag-collection
+
+services:
+  tag_scheduler:
+    build:
+      context: ../../backend
+    container_name: life-infra-map-tag-scheduler
+    restart: unless-stopped
+    init: true
+    env_file:
+      - ../../backend/.env
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-life_infra_map}
+      POSTGRES_USER: ${POSTGRES_USER:-life_infra_map}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+      TAG_ENRICHMENT_ENABLED: "true"
+    networks:
+      - runtime-db
+    command: python manage.py run_tag_collection_scheduler
+
+  tag_worker:
+    build:
+      context: ../../backend
+    container_name: life-infra-map-tag-worker
+    restart: unless-stopped
+    init: true
+    env_file:
+      - ../../backend/.env
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-life_infra_map}
+      POSTGRES_USER: ${POSTGRES_USER:-life_infra_map}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+      TAG_ENRICHMENT_ENABLED: "true"
+    networks:
+      - runtime-db
+    command: python manage.py process_place_tag_collection_jobs --watch --worker-id ec2-primary
+
+networks:
+  runtime-db:
+    external: true
+    name: life-infra-map-runtime-db_default
