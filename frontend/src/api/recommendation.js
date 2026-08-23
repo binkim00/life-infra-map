@@ -1,5 +1,67 @@
 import api from '@/api/axios'
 
+const CONVERSATION_SESSION_KEY = 'lifeInfraMap.conversationSession.v1'
+let conversationSessionPromise = null
+
+const readConversationSession = () => {
+  if (typeof window === 'undefined') return null
+  try {
+    const value = JSON.parse(window.sessionStorage.getItem(CONVERSATION_SESSION_KEY) || 'null')
+    return value?.id ? value : null
+  } catch {
+    return null
+  }
+}
+
+const storeConversationSession = (value) => {
+  if (typeof window !== 'undefined') {
+    window.sessionStorage.setItem(CONVERSATION_SESSION_KEY, JSON.stringify(value))
+  }
+  return value
+}
+
+export const startNewConversationSession = () => {
+  conversationSessionPromise = null
+  if (typeof window !== 'undefined') {
+    window.sessionStorage.removeItem(CONVERSATION_SESSION_KEY)
+  }
+}
+
+const getOrCreateConversationSession = async () => {
+  const stored = readConversationSession()
+  if (stored) return stored
+  if (!conversationSessionPromise) {
+    conversationSessionPromise = api
+      .post('/recommendations/conversation-sessions/', {})
+      .then(({ data }) => storeConversationSession({
+        id: data.id,
+        token: data.conversation_token || '',
+      }))
+      .finally(() => {
+        conversationSessionPromise = null
+      })
+  }
+  return conversationSessionPromise
+}
+
+const postConversationTurn = async (payload, { retry = true } = {}) => {
+  const session = await getOrCreateConversationSession()
+  try {
+    const response = await api.post(
+      `/recommendations/conversation-sessions/${session.id}/turns/`,
+      payload,
+      session.token ? { headers: { 'X-Conversation-Token': session.token } } : undefined,
+    )
+    return response.data
+  } catch (error) {
+    if (retry && [404, 409].includes(error?.response?.status)) {
+      startNewConversationSession()
+      return postConversationTurn(payload, { retry: false })
+    }
+    throw error
+  }
+}
+
 export const aiSearchRecommendations = async ({
   query,
   lat = 37.5665,
@@ -8,16 +70,24 @@ export const aiSearchRecommendations = async ({
   radius = null,
   ...extraPayload
 }) => {
-  const response = await api.post('/recommendations/ai-search/', {
+  const payload = {
     query,
     lat,
     lng,
     limit,
     radius,
     ...extraPayload,
-  })
-
-  return response.data
+  }
+  try {
+    return await postConversationTurn(payload)
+  } catch (error) {
+    // Keep older deployments usable while the additive conversation API rolls out.
+    if (!error?.response || [404, 405].includes(error.response.status)) {
+      const response = await api.post('/recommendations/ai-search/', payload)
+      return response.data
+    }
+    throw error
+  }
 }
 
 export const aiSearchCandidateRecommendations = async ({

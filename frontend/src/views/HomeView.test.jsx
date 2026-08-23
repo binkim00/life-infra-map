@@ -24,6 +24,7 @@ vi.mock('@/api/recommendation', () => ({
   runAiWebSearch: () => Promise.resolve({ ai_web_search: {} }),
   saveSearchLog: (...args) => saveSearchLog(...args),
   savePlaceInteractions: () => Promise.resolve({ count: 0 }),
+  startNewConversationSession: () => {},
   fetchUserSavedPlaces: () => Promise.resolve({ results: [] }),
   saveUserSavedPlace: () => Promise.resolve({}),
 }))

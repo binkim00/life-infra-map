@@ -10,6 +10,7 @@ import {
   getSavedPlaces,
   runAiWebSearch,
   saveSearchLog,
+  startNewConversationSession,
 } from '@/api/recommendation'
 import {
   AI_WEB_SEARCH_MIN_DB_RESULTS,
@@ -3915,6 +3916,7 @@ export const useHomeSearch = ({ initialTab = 'search' } = {}) => {
   }
 
   const startNewConversationSearch = async () => {
+    startNewConversationSession()
     s.conversationModeStarted = false
     s.searchKeyword = ''
     s.mapSearchKeyword = ''

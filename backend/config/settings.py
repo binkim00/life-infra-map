@@ -52,6 +52,13 @@ def _env_float(name, default, min_value=None, max_value=None):
     return value
 
 
+def _env_list(name, default=()):
+    value = os.getenv(name)
+    if value is None:
+        return list(default)
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
 KAKAO_REST_API_KEY = os.getenv("KAKAO_REST_API_KEY")
 AI_PROVIDER = os.getenv("AI_PROVIDER", "openai").strip().lower()
 AI_WEB_SEARCH_ENABLED = _env_bool("AI_WEB_SEARCH_ENABLED", False)
@@ -274,12 +281,15 @@ AI_WEB_SEARCH_AUTO_MERGE_ENABLED = _env_bool("AI_WEB_SEARCH_AUTO_MERGE_ENABLED",
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-@$$oq#1_&d5ym20rfjx(c#t3f0hkyext842=2kk7nnsu8jim*$'
+SECRET_KEY = os.getenv(
+    "DJANGO_SECRET_KEY",
+    'django-insecure-@$$oq#1_&d5ym20rfjx(c#t3f0hkyext842=2kk7nnsu8jim*$',
+)
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = _env_bool("DJANGO_DEBUG", True)
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = _env_list("DJANGO_ALLOWED_HOSTS", [])
 
 
 # Application definition
@@ -428,12 +438,13 @@ if FILE_STORAGE_BACKEND == "s3":
     }
 
 # CORS 설정
-CORS_ALLOWED_ORIGINS = [
+CORS_ALLOWED_ORIGINS = _env_list("DJANGO_CORS_ALLOWED_ORIGINS", [
     'http://localhost:5173',
     'http://127.0.0.1:5173',
     'http://localhost:8082',
     'http://127.0.0.1:8082',
-]
+])
+CSRF_TRUSTED_ORIGINS = _env_list("DJANGO_CSRF_TRUSTED_ORIGINS", [])
 
 # DRF 설정
 REST_FRAMEWORK = {

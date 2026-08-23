@@ -38,6 +38,7 @@ from .services.place_mapper import (
     map_kakao_place_to_recommendation,
 )
 from .services.tag_enrichment_queue import enqueue_tag_enrichment
+from .services.search_coverage_demand import safe_record_search_coverage_demand
 from .services.ai_situation_parser import parse_situation
 from .services.ai_web_search_provider import (
     get_ai_web_search_result,
@@ -2291,6 +2292,11 @@ def _normalize_web_external_candidate(candidate, frame):
 def ai_recommendation_search(request):
     user = request.user if request.user.is_authenticated else None
     data = run_ai_search(request.data, user=user)
+    safe_record_search_coverage_demand(
+        data,
+        user=user,
+        session_key=request.headers.get("X-Conversation-Token", ""),
+    )
     timings = data.get("debug_pipeline") or {}
     logger.info(
         "AI search latency phase=reranked total_ms=%s planner_ms=%s retrieval_ms=%s reranker_ms=%s results=%s",
@@ -2384,6 +2390,12 @@ def conversation_session_turn(request, session_id):
         "version": session.version,
         "turn_count": session.turn_count,
     }
+    safe_record_search_coverage_demand(
+        result,
+        user=request.user if request.user.is_authenticated else None,
+        session_key=str(session.id),
+        search_id=f"{session.id.hex}:{session.turn_count}",
+    )
     return Response(result)
 
 

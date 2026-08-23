@@ -6,6 +6,7 @@ import {
   getPlaceSourceClass,
   getPlaceSourceText,
   getRecommendationFallbackText,
+  getRecommendationMissingLabels,
   getRecommendationMetaText,
   getRecommendationPreviewLabels,
   isRecommendationPlace,
@@ -56,6 +57,7 @@ const PlaceResultList = ({
         const reasonSummary = getRecommendationReasonSummary(place)
         const personalizationReasons = getPersonalizationReasons(place)
         const matchedLabels = getRecommendationMatchedLabels(place)
+        const missingLabels = getRecommendationMissingLabels(place)
 
         return (
           <article
@@ -131,6 +133,20 @@ const PlaceResultList = ({
                       <span
                         key={`matched-${place.id}-${label}-${index}`}
                         className="place-list-condition-chip matched"
+                      >
+                        {label}
+                      </span>
+                    ))}
+                  </span>
+                ) : null}
+
+                {isRecommendation && missingLabels.length ? (
+                  <span className="place-list-condition-group">
+                    <span className="place-list-condition-label">확인 필요</span>
+                    {getRecommendationPreviewLabels(missingLabels, 2).map((label, index) => (
+                      <span
+                        key={`missing-${place.id}-${label}-${index}`}
+                        className="place-list-condition-chip missing"
                       >
                         {label}
                       </span>

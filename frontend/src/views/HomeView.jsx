@@ -303,57 +303,6 @@ const HomeView = ({ initialTab = 'search' }) => {
     return ''
   })()
 
-  const mapParserStatus = (() => {
-    if (!s.mapAiParse) return null
-    if (
-      !displayResults.length
-      && !s.isSearchingMap
-      && ['empty', 'error', 'idle'].includes(s.searchResultStatus)
-    ) {
-      return null
-    }
-
-    const parserProvider = getTextValue(s.mapAiParse.parser_provider)
-    const parserFallback = s.mapAiParse.parser_fallback === true
-    const executionMode = getTextValue(
-      s.mapAiParse.execution_mode
-      || s.activeSearchPlan?.execution_mode
-      || s.activeSearchPlan?.executionMode,
-    )
-    const planSource = getTextValue(
-      s.mapAiParse.plan_source
-      || s.activeSearchPlan?.plan_source
-      || s.activeSearchPlan?.planSource,
-    )
-    const hasAiFrame = executionMode === 'frame' && planSource !== 'legacy_fallback'
-    const isAiFirstParser = executionMode === 'ai_first_orchestrator'
-      || parserProvider === 'ai_intent_planner'
-      || parserProvider === 'backend_ai_only'
-    const isAiProviderParser = ['openai', 'gms', 'ai'].includes(parserProvider)
-
-    if (!parserFallback && (isAiProviderParser || hasAiFrame || isAiFirstParser)) {
-      return {
-        label: '조건 정리 완료',
-        detail: '말씀하신 내용을 장소와 조건으로 정리했어요.',
-        className: 'ai',
-      }
-    }
-
-    const fallbackReason = getTextValue(
-      s.mapAiParse.ai_fallback_reason
-      || s.mapAiParse.fallback_reason
-      || s.activeSearchPlan?.fallbackReason,
-    )
-
-    return {
-      label: '기본 검색 기준 적용',
-      detail: fallbackReason
-        ? `입력한 표현에서 바로 찾을 수 있는 조건을 우선 적용했어요. (${fallbackReason})`
-        : '입력한 표현에서 바로 찾을 수 있는 조건을 우선 적용했어요.',
-      className: 'fallback',
-    }
-  })()
-
   const searchPlanStatus = s.activeSearchPlan?.correctionApplied
     ? {
       label: '검색어 보정',
@@ -633,13 +582,6 @@ const HomeView = ({ initialTab = 'search' }) => {
               </div>
             ) : null}
           </section>
-
-          {mapParserStatus ? (
-            <div className={`map-parser-status ${mapParserStatus.className}`}>
-              <strong>{mapParserStatus.label}</strong>
-              <span>{mapParserStatus.detail}</span>
-            </div>
-          ) : null}
 
           {searchPlanStatus ? (
             <div className={`map-parser-status ${searchPlanStatus.className}`}>

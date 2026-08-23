@@ -7,6 +7,7 @@ from django.utils import timezone
 from recommendations.models import PlaceTag, PlaceTagCollectionJob, PlaceTagEvidence, TagEnrichmentRequest
 from recommendations.services.place_tag_collection import requested_tags_for_category
 from recommendations.services.restaurant_collection_quality import restaurant_collection_quality
+from recommendations.services.search_coverage_demand import coverage_demand_context
 from recommendations.services.tag_source_policy import OFFICIAL_EVIDENCE_SOURCES, WEB_EVIDENCE_SOURCES
 from recommendations.services.adaptive_budget import collection_bucket
 
@@ -135,6 +136,7 @@ def priority_context(places, *, category_priorities=None, now=None):
         )
     }
     category_priorities = category_priorities or {}
+    coverage_demands = coverage_demand_context(places, now=now)
     results = {}
     for place in places:
         stats = evidence.get(place.id, {})
@@ -155,6 +157,7 @@ def priority_context(places, *, category_priorities=None, now=None):
             freshness_gap = max(freshness_gap, min(20, 5 + (now - latest).days // 90 * 3))
         conflict_priority = min(20, int(conflicts.get(place.id, 0)) * 8)
         search_demand = min(20, int(demands.get(place.id, 0) or 0))
+        coverage_demand = coverage_demands.get(place.id, {})
         data_quality_need = max(0, min(10, round((100 - place.data_quality_score) / 10)))
         job_stats = job_quality.get(place.id, {})
         restaurant_quality = restaurant_collection_quality(
@@ -170,7 +173,8 @@ def priority_context(places, *, category_priorities=None, now=None):
         }
         stale_hints = stale_web_tag_names[place.id]
         no_tag_count = int(job_stats.get("no_tag_expression") or 0)
-        target_pool = candidate_hints | stale_hints
+        requested_demand_tags = set(coverage_demand.get("targeted_tags") or ())
+        target_pool = candidate_hints | stale_hints | requested_demand_tags
         if no_tag_count:
             target_pool |= set(relevant_tags) - active_names
         targeted_tags = [tag for tag in TARGET_TAG_ORDER if tag in target_pool and tag in relevant_tags]
@@ -193,6 +197,7 @@ def priority_context(places, *, category_priorities=None, now=None):
             "freshness_gap": freshness_gap,
             "conflict": conflict_priority,
             "search_demand": search_demand,
+            "search_coverage_demand": int(coverage_demand.get("score") or 0),
             "data_quality_need": data_quality_need,
             "restaurant_collection_quality": restaurant_quality["score"],
             "collection_history": history_score,
@@ -214,6 +219,7 @@ def priority_context(places, *, category_priorities=None, now=None):
             "stale_refresh_tags": [tag for tag in TARGET_TAG_ORDER if tag in stale_hints],
             "targeted_tags": targeted_tags,
             "adaptive_reason": (
+                "search_coverage_demand" if coverage_demand.get("score") else
                 "no_tag_expression" if no_tag_count else
                 "candidate_hint" if candidate_hints else
                 "stale_refresh" if stale_hints else
