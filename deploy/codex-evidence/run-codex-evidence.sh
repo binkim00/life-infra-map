@@ -5,8 +5,8 @@ APP_ROOT="${CODEX_EVIDENCE_APP_ROOT:-/home/ubuntu/life-infra-map/app}"
 API_CONTAINER="${CODEX_EVIDENCE_API_CONTAINER:-life-infra-map-django-api}"
 RUNTIME_DIR="${CODEX_EVIDENCE_RUNTIME_DIR:-/home/ubuntu/life-infra-map/runtime/codex-evidence}"
 CODEX_BIN="${CODEX_EVIDENCE_CODEX_BIN:-/home/ubuntu/.local/bin/codex}"
-CAFE_LIMIT="${CODEX_EVIDENCE_CAFE_LIMIT:-10}"
-RESTAURANT_LIMIT="${CODEX_EVIDENCE_RESTAURANT_LIMIT:-10}"
+CAFE_LIMIT="${CODEX_EVIDENCE_CAFE_LIMIT:-25}"
+RESTAURANT_LIMIT="${CODEX_EVIDENCE_RESTAURANT_LIMIT:-25}"
 DEPLOY_DIR="${APP_ROOT}/deploy/codex-evidence"
 
 for required in "$CODEX_BIN" "$DEPLOY_DIR/research-prompt.txt" "$DEPLOY_DIR/codex-evidence-output.schema.json"; do
