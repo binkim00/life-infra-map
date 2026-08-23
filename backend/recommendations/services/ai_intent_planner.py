@@ -783,6 +783,21 @@ def _local_rule_out_of_scope_plan(raw_query, *, reason="not_place_recommendation
     }
 
 
+def _local_rule_blocked_plan(raw_query, *, reason="unsafe_place_request"):
+    plan = _local_rule_out_of_scope_plan(raw_query, reason=reason)
+    plan.update({
+        "action": "blocked",
+        "decision_action": "blocked",
+        "confidence": 0.96,
+    })
+    plan["frame"] = _enrich_frame_policy(
+        plan["frame"],
+        raw_query=raw_query,
+        action="blocked",
+    )
+    return plan
+
+
 def _local_rule_clarification_plan(raw_query, *, question, options, missing_fields, expected_patch_fields):
     anchor_location = _local_rule_anchor_location(raw_query)
     location_mode = "explicit" if anchor_location else "current_context"
@@ -843,7 +858,47 @@ def _local_rule_followup_plan(raw_query, previous_context):
     ambience = _has_any(text, ["분위기", "감성", "예쁜", "멋진"])
     closer = _has_any(text, ["더 가까", "가까운 곳", "가까운 데", "근처"])
     alternate = _has_any(text, ["다른 곳", "다른 데", "다른곳", "다른데"])
-    if not any([quiet, ambience, closer, alternate]):
+    requested_constraints = []
+    constraint_rules = [
+        (["주차"], "주차 가능"),
+        (["단체석", "단체 좌석", "여럿이"], "단체석 있음"),
+        (["콘센트", "충전"], "콘센트 있음"),
+        (["와이파이", "wifi"], "와이파이 가능"),
+        (["오래 있어", "오래 머", "장기 체류", "눈치 안"], "오래 머물기 좋음"),
+        (["사람 적", "덜 붐", "붐비지"], "사람 적음"),
+        (["실내", "밖 말고", "야외 말고", "비 피"], "실내"),
+        (["무료"], "무료"),
+        (["계단 없", "무단차", "휠체어"], "무단차 접근"),
+    ]
+    for keywords, label in constraint_rules:
+        if _has_any(text, keywords):
+            requested_constraints.append(label)
+
+    requested_exclusions = []
+    if _has_any(text, ["빼줘", "빼고", "제외", "말고", "아닌"]):
+        exclusion_rules = [
+            (["술집", "포차", "바 분위기"], "술집"),
+            (["프랜차이즈", "체인점"], "프랜차이즈"),
+            (["카페"], "카페"),
+            (["시장"], "시장"),
+            (["주차장"], "주차장"),
+            (["공원"], "공원"),
+        ]
+        for keywords, label in exclusion_rules:
+            if _has_any(text, keywords):
+                requested_exclusions.append(label)
+
+    add_library = _has_any(text, ["도서관도", "도서관 괜찮", "도서관도 괜찮"])
+    recognized = any([
+        quiet,
+        ambience,
+        closer,
+        alternate,
+        bool(requested_constraints),
+        bool(requested_exclusions),
+        add_library,
+    ])
+    if not recognized:
         return None
 
     constraints = list(frame.get("constraints") or [])
@@ -853,9 +908,28 @@ def _local_rule_followup_plan(raw_query, previous_context):
         constraints.append("분위기 좋음")
     if closer:
         constraints.append("가까운 곳")
+    constraints.extend(requested_constraints)
     frame["constraints"] = _dedupe(constraints)
+    frame["exclusions"] = _dedupe([
+        *(frame.get("exclusions") or []),
+        *requested_exclusions,
+    ])
     if closer:
         frame["ranking_policy"] = "distance_first"
+
+    if add_library:
+        frame["candidate_place_types"] = _dedupe([
+            *(frame.get("candidate_place_types") or []),
+            "도서관",
+        ])
+        frame["result_match_terms"] = _dedupe([
+            *(frame.get("result_match_terms") or []),
+            "도서관",
+        ])
+        frame["candidate_category_codes"] = _dedupe([
+            *(frame.get("candidate_category_codes") or []),
+            "library",
+        ])
 
     place_types = frame.get("candidate_place_types") or frame.get("target_objects") or []
     primary_type = _clean_text(place_types[0], 80)
@@ -865,6 +939,11 @@ def _local_rule_followup_plan(raw_query, previous_context):
         refined_queries.append(f"조용한 {primary_type}")
     if ambience and primary_type:
         refined_queries.append(f"분위기 좋은 {primary_type}")
+    for constraint in requested_constraints:
+        if primary_type:
+            refined_queries.append(f"{constraint} {primary_type}")
+    if add_library:
+        refined_queries.append("도서관")
     if primary_type:
         refined_queries.append(primary_type)
     frame["primary_search_queries"] = _dedupe([*refined_queries, *previous_queries])[:6]
@@ -872,7 +951,12 @@ def _local_rule_followup_plan(raw_query, previous_context):
 
     normalized_query = " ".join([
         _clean_text((frame.get("target_objects") or [""])[0], 80),
-        *([item for item in ["조용함" if quiet else "", "분위기 좋음" if ambience else "", "가까운 곳" if closer else ""] if item]),
+        *([item for item in [
+            "조용함" if quiet else "",
+            "분위기 좋음" if ambience else "",
+            "가까운 곳" if closer else "",
+            *requested_constraints,
+        ] if item]),
     ]).strip()
     return {
         "action": "search",
@@ -900,6 +984,12 @@ def _local_rule_plan_for_known_intent(raw_query):
     if not text:
         return None
     compact_text = _compact(text)
+
+    if _has_any(text, ["불법적인 장소", "불법 장소", "범죄 장소"]):
+        return _local_rule_blocked_plan(text)
+
+    if _has_any(text, ["비트코인", "주식", "코인 투자", "환율 전망"]):
+        return _local_rule_out_of_scope_plan(text, reason="finance_question")
 
     if (
         _has_any(text, ["실내"])
@@ -1138,7 +1228,7 @@ def _local_rule_plan_for_known_intent(raw_query):
 
     if (
         _has_any(text, ["\ube44", "\ube44 \uc624", "\ube44\uc624", "\ub354\uc6cc", "\ub354\uc6b4", "\ucd94\uc6cc", "\ucd94\uc6b4"])
-        and _has_any(text, ["\uc26c", "\uc274", "\uc26c\uace0", "\uc26c\uc5b4", "\ud53c\ud560", "\ud53c\ud574", "\uc7a0\uae50"])
+        and _has_any(text, ["\uc26c", "\uc274", "\uc26c\uace0", "\uc26c\uc5b4", "\ud53c\ud560", "\ud53c\ud574", "비 피", "앉아 있", "\uc7a0\uae50"])
     ):
         return _local_rule_search_plan(
             text,
@@ -1398,6 +1488,30 @@ def _local_rule_plan_for_known_intent(raw_query):
                     constraints=["식사 가능"],
                     candidate_category_codes=["restaurant"],
                 )
+        family_meal = _has_any(text, ["가족", "부모님", "아이", "모임"])
+        quiet_meal = _has_any(text, ["조용", "시끄럽지", "대화"])
+        parking_needed = _has_any(text, ["주차"])
+        constraints = ["식사 가능"]
+        if family_meal:
+            constraints.extend(["가족 식사", "편한 좌석"])
+        if _has_any(text, ["부모님"]):
+            constraints.extend(["부모님 동행", "무단차 접근"])
+        if quiet_meal:
+            constraints.append("조용함")
+        if parking_needed:
+            constraints.append("주차 가능")
+        return _local_rule_search_plan(
+            text,
+            normalized_query="가족 식당" if family_meal else "식당",
+            target_objects=["식당"],
+            candidate_place_types=["식당", "음식점", "레스토랑"],
+            result_match_terms=["식당", "음식점", "맛집", "레스토랑"],
+            primary_search_queries=["식당", "맛집", "음식점"],
+            constraints=constraints,
+            exclusions=["술집 제외"] if family_meal else [],
+            candidate_category_codes=["restaurant"],
+            ranking_policy="evidence_first",
+        )
 
     if _has_any(text, ["전시", "전시회", "전시관", "전시장", "박물관", "미술관", "갤러리"]):
         return _local_rule_search_plan(
@@ -2184,6 +2298,35 @@ def build_ai_intent_plan(query, *, lat=None, lng=None, map_center=None, previous
     local_followup_plan = _local_rule_followup_plan(raw_query, previous_context)
     if local_followup_plan:
         return local_followup_plan
+
+    if not previous_context and _has_any(raw_query, ["거기", "그곳", "그중", "아까", "첫 번째", "두 번째", "세 번째"]):
+        return _local_rule_clarification_plan(
+            raw_query,
+            question="어떤 이전 검색 결과를 말씀하시는지 확인할 수 없어요. 먼저 찾을 장소를 알려주세요.",
+            options=[],
+            missing_fields=["previous_search_context"],
+            expected_patch_fields=["target_objects", "anchor_location"],
+        )
+
+    if (
+        _has_any(raw_query, ["조용", "한적"])
+        and _has_any(raw_query, ["곳 추천", "장소 추천", "어디가 좋아"])
+        and not _has_any(raw_query, [
+            "카페", "식당", "밥", "음식", "공원", "산책", "도서관",
+            "작업", "공부", "노트북", "쉬", "휴식", "대화",
+        ])
+    ):
+        return _local_rule_clarification_plan(
+            raw_query,
+            question="조용한 곳에서 무엇을 하려는지 알려주세요.",
+            options=[
+                {"label": "작업·공부", "value": "작업하거나 공부할 곳"},
+                {"label": "혼자 휴식", "value": "혼자 쉬어갈 곳"},
+                {"label": "대화·모임", "value": "조용히 대화할 곳"},
+            ],
+            missing_fields=["purpose"],
+            expected_patch_fields=["target_objects", "constraints"],
+        )
 
     local_plan = _local_rule_plan_for_known_intent(raw_query)
     if local_plan:

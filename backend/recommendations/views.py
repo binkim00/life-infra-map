@@ -15,7 +15,7 @@ from accounts.tier_notifications import (
     get_current_user_tier,
     notify_tier_upgrade_if_needed,
 )
-from .models import Place, PlaceInteractionEvent, PlaceReport, PlaceTag, Tag, UserPreference, UserSavedPlace, UserSearchLog
+from .models import ConversationSession, Place, PlaceInteractionEvent, PlaceReport, PlaceTag, Tag, UserPreference, UserSavedPlace, UserSearchLog
 from .serializers import (
     PlaceReportAdminReviewSerializer,
     PlaceReportCreateSerializer,
@@ -47,6 +47,12 @@ from .services.conversational_search_planner import (
     sync_frame_location_to_search_plan,
 )
 from .services.ai_search_orchestrator import run_ai_search, run_ai_search_candidates
+from .services.conversation_sessions import (
+    build_previous_context,
+    can_access_conversation_session,
+    create_conversation_session,
+    persist_conversation_turn,
+)
 from .services.db_recommender import search_db_recommendations
 from .services.place_urls import get_kakao_place_url
 from .services.smoking_area_data import (
@@ -2295,6 +2301,90 @@ def ai_recommendation_search(request):
         len(data.get("results") or []),
     )
     return Response(data)
+
+
+def _conversation_session_payload(session, *, include_turns=False):
+    payload = {
+        "id": str(session.id),
+        "status": session.status,
+        "title": session.title,
+        "state": session.state,
+        "version": session.version,
+        "turn_count": session.turn_count,
+        "created_at": session.created_at,
+        "updated_at": session.updated_at,
+    }
+    if include_turns:
+        payload["turns"] = [
+            {
+                "sequence": turn.sequence,
+                "user_query": turn.user_query,
+                "action": turn.action,
+                "assistant_message": turn.assistant_message,
+                "result_refs": turn.result_refs,
+                "created_at": turn.created_at,
+            }
+            for turn in session.turns.order_by("sequence")
+        ]
+    return payload
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def conversation_session_create(request):
+    session, token = create_conversation_session(request.user)
+    payload = _conversation_session_payload(session)
+    if token:
+        payload["conversation_token"] = token
+    return Response(payload, status=status.HTTP_201_CREATED)
+
+
+@api_view(["GET", "DELETE"])
+@permission_classes([AllowAny])
+def conversation_session_detail(request, session_id):
+    session = get_object_or_404(ConversationSession, pk=session_id)
+    if not can_access_conversation_session(request, session):
+        return Response({"detail": "Conversation session not found."}, status=status.HTTP_404_NOT_FOUND)
+    if request.method == "DELETE":
+        session.status = "closed"
+        session.save(update_fields=["status", "updated_at"])
+        return Response(status=status.HTTP_204_NO_CONTENT)
+    return Response(_conversation_session_payload(session, include_turns=True))
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def conversation_session_turn(request, session_id):
+    session = get_object_or_404(ConversationSession, pk=session_id)
+    if not can_access_conversation_session(request, session):
+        return Response({"detail": "Conversation session not found."}, status=status.HTTP_404_NOT_FOUND)
+    if session.status != "active":
+        return Response({"detail": "Conversation session is closed."}, status=status.HTTP_409_CONFLICT)
+    query = str(request.data.get("query") or "").strip()
+    if not query:
+        return Response({"query": ["This field is required."]}, status=status.HTTP_400_BAD_REQUEST)
+
+    payload = dict(request.data)
+    payload["query"] = query
+    payload["previous_context"] = build_previous_context(session.state)
+    expected_version = session.version
+    result = run_ai_search(payload, user=request.user if request.user.is_authenticated else None)
+    try:
+        session = persist_conversation_turn(
+            session.id,
+            query=query,
+            response=result,
+            expected_version=expected_version,
+        )
+    except ValueError as exc:
+        return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
+
+    result["conversation"] = {
+        "session_id": str(session.id),
+        "version": session.version,
+        "turn_count": session.turn_count,
+    }
+    return Response(result)
 
 
 @api_view(["POST"])

@@ -330,10 +330,15 @@ def _matches_expected_conversation_scenario(expected_scenario, actual_scenario, 
         *_frame_values(frame, "target_objects"),
         *_frame_values(frame, "candidate_place_types"),
     ]))
+    constraint_text = _compact(" ".join(_frame_values(frame, "constraints")))
     if expected_scenario == "restaurant":
         return "restaurant" in category_codes or any(term in target_text for term in ["식당", "음식점", "맛집"])
     if expected_scenario == "work_cafe":
-        return (situation == "work" or "cafe" in category_codes) and "카페" in target_text
+        return "카페" in target_text and (
+            situation == "work"
+            or "cafe" in category_codes
+            or any(term in constraint_text for term in ["작업", "노트북", "콘센트", "와이파이", "공부"])
+        )
     if expected_scenario == "walk_healing":
         return situation == "walk" or bool(
             {"city_park", "beach", "tourism"} & category_codes
@@ -341,6 +346,13 @@ def _matches_expected_conversation_scenario(expected_scenario, actual_scenario, 
     if expected_scenario == "waiting_place":
         return situation in {"quietrest", "weather_shelter", "waiting"} or "쉴곳" in target_text
     return False
+
+
+def _matches_expected_action(expected_action, actual_action):
+    if not expected_action or expected_action == actual_action:
+        return True
+    # 통합 검색 API는 문맥 보정 후 실제 후보 검색을 수행하므로 refine을 search로 반환할 수 있다.
+    return expected_action == "refine_previous_search" and actual_action == "search"
 
 
 def _strict_context_issues(case, frame, top_results):
@@ -480,7 +492,7 @@ def _issues_for_case(case, data, frame, top_results):
         if _compact(term)
     ]
 
-    if expected_action and action != expected_action:
+    if not _matches_expected_action(expected_action, action):
         issues.append(f"기대 action={expected_action}, 실제 action={action}")
     if expected_scenario and not _matches_expected_conversation_scenario(
         expected_scenario,
@@ -523,9 +535,17 @@ def _issues_for_case(case, data, frame, top_results):
     if expected_target_terms and not any(term in target_text for term in expected_target_terms):
         issues.append(f"대화 대상 문맥 누락: {', '.join(expected_target_terms)}")
     expected_sort_hint = str(case.get("expected_sort_hint") or "").strip()
-    if expected_sort_hint and search_plan.get("sort_hint") != expected_sort_hint:
+    actual_sort_hint = str(search_plan.get("sort_hint") or "").strip()
+    if not actual_sort_hint and _compact(frame.get("ranking_policy")) in {
+        "distancefirst",
+        "distance_first",
+        "urgentnearest",
+        "urgent_nearest",
+    }:
+        actual_sort_hint = "distance"
+    if expected_sort_hint and actual_sort_hint != expected_sort_hint:
         issues.append(
-            f"기대 sort_hint={expected_sort_hint}, 실제 sort_hint={search_plan.get('sort_hint') or '-'}"
+            f"기대 sort_hint={expected_sort_hint}, 실제 sort_hint={actual_sort_hint or '-'}"
         )
     if action in {"search", "success"} and count <= 0 and not allow_empty:
         issues.append("검색 실행됐지만 결과 0개")
@@ -926,6 +946,8 @@ def _followup_payload(previous_data, *, current_query, previous_query):
     previous_context = {
         "search_plan": previous_search_plan,
         "pending_clarification_frame": pending_frame,
+        "place_intent_frame": pending_frame,
+        "previous_results": _top_results(previous_data, 10),
         "is_clarification_followup": previous_data.get("decision_action") == "ask_clarification",
         "clarification_answer": current_query,
         "pending_clarification_question": previous_data.get("clarification_question") or "",

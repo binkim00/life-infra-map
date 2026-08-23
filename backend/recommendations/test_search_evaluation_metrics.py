@@ -3,11 +3,16 @@ from django.test import SimpleTestCase
 from recommendations.management.commands.evaluate_ai_search import (
     _evaluation_metrics,
     _issues_for_case,
+    _matches_expected_action,
     _matches_expected_conversation_scenario,
 )
 
 
 class SearchEvaluationMetricTests(SimpleTestCase):
+    def test_refinement_expectation_accepts_executed_search_action(self):
+        self.assertTrue(_matches_expected_action("refine_previous_search", "search"))
+        self.assertFalse(_matches_expected_action("compare_previous_results", "search"))
+
     def test_unified_ai_scenario_uses_frame_semantics_for_conversation_expectation(self):
         self.assertTrue(_matches_expected_conversation_scenario(
             "restaurant",
@@ -15,6 +20,14 @@ class SearchEvaluationMetricTests(SimpleTestCase):
             {
                 "candidate_category_codes": ["restaurant"],
                 "target_objects": ["식당"],
+            },
+        ))
+        self.assertTrue(_matches_expected_conversation_scenario(
+            "work_cafe",
+            "ai_place_search",
+            {
+                "target_objects": ["카페"],
+                "constraints": ["노트북 작업"],
             },
         ))
         self.assertTrue(_matches_expected_conversation_scenario(

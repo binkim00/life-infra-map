@@ -836,3 +836,64 @@ class PlaceReportImage(models.Model):
 
     def __str__(self):
         return self.original_name or f"report-image-{self.id}"
+
+
+class ConversationSession(models.Model):
+    STATUS_CHOICES = [
+        ("active", "Active"),
+        ("closed", "Closed"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="place_conversation_sessions",
+        null=True,
+        blank=True,
+    )
+    anonymous_token_hash = models.CharField(max_length=64, blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="active")
+    title = models.CharField(max_length=200, blank=True)
+    state = models.JSONField(default=dict, blank=True)
+    version = models.PositiveIntegerField(default=0)
+    turn_count = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["user", "-updated_at"]),
+            models.Index(fields=["status", "-updated_at"]),
+        ]
+
+    def __str__(self):
+        return f"conversation {self.id} ({self.status})"
+
+
+class ConversationTurn(models.Model):
+    session = models.ForeignKey(
+        ConversationSession,
+        on_delete=models.CASCADE,
+        related_name="turns",
+    )
+    sequence = models.PositiveIntegerField()
+    user_query = models.TextField()
+    action = models.CharField(max_length=40, blank=True)
+    assistant_message = models.TextField(blank=True)
+    state_before = models.JSONField(default=dict, blank=True)
+    state_after = models.JSONField(default=dict, blank=True)
+    result_refs = models.JSONField(default=list, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["session", "sequence"],
+                name="unique_conversation_turn_sequence",
+            ),
+        ]
+        indexes = [models.Index(fields=["session", "sequence"])]
+
+    def __str__(self):
+        return f"{self.session_id} turn {self.sequence}"

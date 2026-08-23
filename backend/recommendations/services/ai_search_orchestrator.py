@@ -32,6 +32,7 @@ from recommendations.services.tag_utils import get_category_display_name
 from recommendations.services.semantic_retrieval import attach_semantic_scores, retrieve_semantic_places
 from recommendations.services.canonical_tag_policy import canonical_tag_name
 from recommendations.services.commercial_place_registry import normalize_address, normalize_name
+from recommendations.services.conversation_sessions import resolve_previous_result_action
 from recommendations.services.search_hard_gate import apply_common_hard_gate
 
 
@@ -3928,6 +3929,40 @@ def _empty_response(action, *, intent_plan, search_plan, frame, message="", timi
     }
 
 
+def _previous_result_action_response(action_data, previous_context, timings):
+    action = action_data["action"]
+    results = action_data.get("results") or []
+    search_plan = previous_context.get("search_plan") or {}
+    frame = (
+        previous_context.get("place_intent_frame")
+        or search_plan.get("place_intent_frame")
+        or search_plan.get("placeIntentFrame")
+        or {}
+    )
+    if action == "reset_conversation":
+        search_plan = {}
+        frame = {}
+    return {
+        "scenario": action,
+        "type": action,
+        "decision_action": action,
+        "decisionAction": action,
+        "blocked": False,
+        "can_search_now": False,
+        "results": results,
+        "markers": results,
+        "count": len(results),
+        "result_count": len(results),
+        "relevant_result_count": len(results),
+        "message": action_data.get("message") or "",
+        "result_indexes": action_data.get("result_indexes") or [],
+        "search_plan": search_plan,
+        "place_intent_frame": frame,
+        "execution_policy": {"run_search": False},
+        "debug_pipeline": {"total_latency_ms": timings.get("total_latency_ms")},
+    }
+
+
 def _previous_context_from_request(data):
     previous_context = (
         data.get("previous_search_context")
@@ -4202,6 +4237,14 @@ def run_ai_search(request_data, *, user=None):
     limit = _limit(request_data.get("limit"), default=15)
     map_center = request_data.get("map_center") or request_data.get("mapCenter")
     previous_context = _previous_context_from_request(request_data)
+
+    previous_result_action = resolve_previous_result_action(query, previous_context)
+    if previous_result_action:
+        return _previous_result_action_response(
+            previous_result_action,
+            previous_context,
+            finish_timings(),
+        )
 
     planner_started = time.perf_counter()
     intent_plan = build_ai_intent_plan(
