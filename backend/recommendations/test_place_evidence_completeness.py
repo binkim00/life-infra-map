@@ -8,6 +8,7 @@ from recommendations.services.place_evidence_completeness import (
     target_tags_for_gaps,
 )
 from recommendations.services.ai_intent_planner import build_ai_intent_plan
+from recommendations.services.ai_search_orchestrator import _candidate_result_quality
 
 
 def observation(tag, *, polarity="positive", source="naver_blog_search", reference=None):
@@ -20,6 +21,31 @@ def observation(tag, *, polarity="positive", source="naver_blog_search", referen
 
 
 class PlaceEvidenceCompletenessUnitTests(TestCase):
+    def test_restaurant_category_hides_internal_meal_capability_from_quality(self):
+        result = _candidate_result_quality(
+            {
+                "id": "db:1",
+                "name": "테스트 식당",
+                "category": "restaurant",
+                "matched_evidence": [],
+            },
+            {"constraints": ["식사 가능", "혼밥좋음"]},
+        )
+
+        self.assertNotIn("식사 가능", result["matched_conditions"])
+        self.assertNotIn("식사 가능", result["missing_conditions"])
+        self.assertIn("혼밥좋음", result["missing_conditions"])
+        self.assertEqual(result["result_tier"], "best_available")
+
+    def test_zero_condition_hit_marks_honest_best_available_fallback(self):
+        result = _candidate_result_quality(
+            {"id": "db:1", "name": "테스트 카페", "category": "cafe"},
+            {"constraints": ["조용함"]},
+        )
+
+        self.assertEqual(result["result_tier"], "best_available")
+        self.assertTrue(result["best_available_fallback"])
+
     def test_cafe_view_and_photo_language_becomes_explicit_constraints(self):
         plan = build_ai_intent_plan(
             "해운대에서 바다 보이고 사진 찍기 좋은 카페",

@@ -9,6 +9,56 @@ from recommendations.management.commands.evaluate_ai_search import (
 
 
 class SearchEvaluationMetricTests(SimpleTestCase):
+    def test_feature_metrics_do_not_treat_five_unmatched_results_as_quality(self):
+        rows = [{
+            "action": "search",
+            "frame": {"constraints": ["조용함", "콘센트있음"]},
+            "top_results": [
+                {
+                    "result_tier": "best_available",
+                    "matched_conditions": [],
+                    "missing_conditions": ["조용함", "콘센트있음"],
+                    "reason": "부족하거나 확인이 필요한 조건이 있습니다.",
+                }
+                for _ in range(5)
+            ],
+            "timing_ms": {"total_observed": 100},
+        }]
+
+        metrics = _evaluation_metrics(rows)
+
+        self.assertEqual(metrics["top_five_coverage_rate"]["value"], 1.0)
+        self.assertEqual(metrics["feature_query_hit_at_5_rate"]["value"], 0.0)
+        self.assertEqual(metrics["verified_feature_result_rate_at_5"]["value"], 0.0)
+        self.assertEqual(metrics["honest_no_hit_fallback_rate"]["value"], 1.0)
+
+    def test_feature_metrics_count_verified_condition_hits(self):
+        rows = [{
+            "action": "search",
+            "frame": {"constraints": ["조용함"]},
+            "top_results": [
+                {
+                    "result_tier": "all_conditions_met",
+                    "matched_conditions": ["조용함"],
+                    "missing_conditions": [],
+                    "reason": "조용함이 확인됐습니다.",
+                },
+                {
+                    "result_tier": "best_available",
+                    "matched_conditions": [],
+                    "missing_conditions": ["조용함"],
+                    "reason": "조용함 근거가 부족합니다.",
+                },
+            ],
+            "timing_ms": {"total_observed": 100},
+        }]
+
+        metrics = _evaluation_metrics(rows)
+
+        self.assertEqual(metrics["feature_query_hit_at_5_rate"]["value"], 1.0)
+        self.assertEqual(metrics["verified_feature_result_rate_at_5"]["value"], 0.5)
+        self.assertEqual(metrics["honest_no_hit_fallback_rate"]["value"], 0.0)
+
     def test_refinement_expectation_accepts_executed_search_action(self):
         self.assertTrue(_matches_expected_action("refine_previous_search", "search"))
         self.assertFalse(_matches_expected_action("compare_previous_results", "search"))

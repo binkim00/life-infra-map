@@ -867,6 +867,39 @@ def _evaluation_metrics(rows):
         if row.get("action") == "search" and not row.get("allow_empty")
     ]
     top_five_ready = sum(len(row.get("top_results") or []) >= 5 for row in search_rows)
+    non_feature_constraints = {
+        "가까운곳", "긴급", "실내", "식사가능", "음료마실수있음", "음료구매가능",
+    }
+    feature_search_rows = []
+    for row in search_rows:
+        constraints = [
+            value
+            for value in (row.get("frame") or {}).get("constraints") or []
+            if _compact(value) not in non_feature_constraints
+        ]
+        if constraints:
+            feature_search_rows.append(row)
+    feature_top_results = [
+        item
+        for row in feature_search_rows
+        for item in (row.get("top_results") or [])[:5]
+    ]
+    verified_feature_results = sum(
+        bool(item.get("matched_conditions")) for item in feature_top_results
+    )
+    feature_queries_with_hit = sum(
+        any(item.get("matched_conditions") for item in (row.get("top_results") or [])[:5])
+        for row in feature_search_rows
+    )
+    honest_no_hit_queries = sum(
+        bool((row.get("top_results") or [])[:5])
+        and not any(item.get("matched_conditions") for item in (row.get("top_results") or [])[:5])
+        and all(
+            item.get("result_tier") == "best_available" and item.get("missing_conditions")
+            for item in (row.get("top_results") or [])[:5]
+        )
+        for row in feature_search_rows
+    )
     tier_order_hits = 0
     for row in search_rows:
         tier_order = {"all_conditions_met": 0, "partial_match": 1, "best_available": 2}
@@ -920,6 +953,27 @@ def _evaluation_metrics(rows):
             measured=bool(search_rows),
             numerator=top_five_ready,
             denominator=len(search_rows),
+        ),
+        "feature_query_hit_at_5_rate": _metric(
+            round(feature_queries_with_hit / len(feature_search_rows), 4)
+            if feature_search_rows else 0,
+            measured=bool(feature_search_rows),
+            numerator=feature_queries_with_hit,
+            denominator=len(feature_search_rows),
+        ),
+        "verified_feature_result_rate_at_5": _metric(
+            round(verified_feature_results / len(feature_top_results), 4)
+            if feature_top_results else 0,
+            measured=bool(feature_top_results),
+            numerator=verified_feature_results,
+            denominator=len(feature_top_results),
+        ),
+        "honest_no_hit_fallback_rate": _metric(
+            round(honest_no_hit_queries / len(feature_search_rows), 4)
+            if feature_search_rows else 0,
+            measured=bool(feature_search_rows),
+            numerator=honest_no_hit_queries,
+            denominator=len(feature_search_rows),
         ),
         "condition_order_accuracy": _metric(
             round(tier_order_hits / len(search_rows), 4) if search_rows else 0,

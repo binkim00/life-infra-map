@@ -3924,6 +3924,17 @@ def _candidate_result_quality(candidate, frame, *, best_available=False):
         *requested,
         *(_clean_text(requirement.get("label"), 80) for requirement in feature_requirements),
     ]))[:12]
+    raw_category = _clean_text(candidate.get("category"))
+    matching_category_codes = get_matching_categories(raw_category)
+    implicit_category_capabilities = set()
+    if "restaurant" in matching_category_codes:
+        implicit_category_capabilities.update({"식사가능", "식당", "음식점"})
+    if "cafe" in matching_category_codes:
+        implicit_category_capabilities.update({"음료마실수있음", "카페"})
+    requested = [
+        condition for condition in requested
+        if _compact(condition) not in implicit_category_capabilities
+    ]
     verified_values = [
         *_as_list(candidate.get("hard_gate_active_tags"), max_items=50),
         *_as_list(candidate.get("verified_tags"), max_items=50),
@@ -3998,8 +4009,6 @@ def _candidate_result_quality(candidate, frame, *, best_available=False):
         tier_label = "가장 가까운 대안"
         tier_rank = 2
 
-    raw_category = _clean_text(candidate.get("category"))
-    matching_category_codes = get_matching_categories(raw_category)
     category = (
         get_category_display_name(matching_category_codes[0])
         if matching_category_codes
@@ -4041,6 +4050,7 @@ def _candidate_result_quality(candidate, frame, *, best_available=False):
         "unverified_conditions": unverified,
         "missing_conditions": missing,
         "relaxation_applied": bool(best_available or missing),
+        "best_available_fallback": bool(best_available or tier == "best_available"),
         "relaxed_conditions": missing,
         "verification_required": bool(
             candidate.get("verification_required") or missing or unverified
