@@ -10,6 +10,7 @@ from django.utils import timezone
 from recommendations.models import Place, PlaceTagCollectionJob, PlaceTagEvidence
 from recommendations.services.restaurant_collection_quality import restaurant_collection_quality
 from recommendations.services.web_tag_evidence_provider import CATEGORY_TAGS
+from recommendations.services.place_evidence_completeness import target_tags_for_gaps
 
 
 class Command(BaseCommand):
@@ -98,24 +99,35 @@ def select_places(category, limit, allocation, *, exclude_place_ids=None):
         ]
     else:
         places.sort(key=lambda place: (-int(place.evidence_success), -int(place.no_tag), place.name))
-    active = defaultdict(set)
-    for place_id, tag in PlaceTagEvidence.objects.filter(
-        place_id__in=[place.id for place in places], tag__name__in=tags, polarity="positive",
-    ).filter(Q(expires_at__isnull=True) | Q(expires_at__gt=timezone.now())).values_list("place_id", "tag__name"):
-        active[place_id].add(tag)
+    active = defaultdict(list)
+    for row in PlaceTagEvidence.objects.filter(
+        place_id__in=[place.id for place in places],
+        tag__name__in=tags,
+        polarity__in=("positive", "negative"),
+    ).filter(Q(expires_at__isnull=True) | Q(expires_at__gt=timezone.now())).values(
+        "place_id", "tag__name", "polarity", "source", "source_reference",
+    ):
+        active[row["place_id"]].append({**row, "tag_name": row["tag__name"]})
     selected = []
     seen_names = set()
     for place in places:
         normalized_name = "".join(str(place.name or "").lower().split())
         if len(normalized_name) < 3 or normalized_name in seen_names:
             continue
-        missing = [tag for tag in tags if tag not in active[place.id]]
+        missing = [
+            tag for tag in target_tags_for_gaps(category, active[place.id], limit=len(tags))
+            if tag in tags
+        ]
         if not missing:
             continue
         tag = min(missing, key=lambda value: (allocation[(category, value)], tags.index(value)))
         allocation[(category, tag)] += 1
         seen_names.add(normalized_name)
-        selected.append({"place": place, "tag": tag, "active_tags": sorted(active[place.id])})
+        selected.append({
+            "place": place,
+            "tag": tag,
+            "active_tags": sorted({row["tag_name"] for row in active[place.id]}),
+        })
         if len(selected) >= limit:
             break
     return selected

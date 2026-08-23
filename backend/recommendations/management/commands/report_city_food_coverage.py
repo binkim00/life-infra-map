@@ -6,6 +6,7 @@ from django.db.models import Count, Q
 from django.utils import timezone
 
 from recommendations.models import Place, PlaceTag, PlaceTagEvidence
+from recommendations.services.place_evidence_completeness import quality_profiles_for_places
 
 
 REGIONS = {
@@ -51,6 +52,17 @@ def build_report(now=None):
         for category, tags in CORE_TAGS.items():
             places = Place.objects.filter(location, category=category).distinct()
             total = places.count()
+            place_rows = list(places.only("id", "category"))
+            quality_profiles = quality_profiles_for_places(place_rows, now=now)
+            quality_levels = {
+                level: sum(profile["level"] == level for profile in quality_profiles.values())
+                for level in ("empty", "thin", "searchable", "rich")
+            }
+            searchable_places = quality_levels["searchable"] + quality_levels["rich"]
+            average_quality_score = (
+                round(sum(profile["score"] for profile in quality_profiles.values()) / total, 2)
+                if total else 0
+            )
             place_ids = places.values_list("id", flat=True)
             evidence = PlaceTagEvidence.objects.filter(place_id__in=place_ids)
             active = evidence.filter(Q(expires_at__isnull=True) | Q(expires_at__gt=now))
@@ -85,6 +97,15 @@ def build_report(now=None):
                 "address_pct": percentage(places.exclude(address="").count(), total),
                 "evidence_places": evidence.values("place_id").distinct().count(),
                 "place_coverage_pct": percentage(evidence.values("place_id").distinct().count(), total),
+                "legacy_any_evidence_place_coverage_pct": percentage(
+                    evidence.values("place_id").distinct().count(), total
+                ),
+                "recommendation_searchable_places": searchable_places,
+                "recommendation_searchable_coverage_pct": percentage(searchable_places, total),
+                "recommendation_rich_places": quality_levels["rich"],
+                "recommendation_rich_coverage_pct": percentage(quality_levels["rich"], total),
+                "recommendation_quality_levels": quality_levels,
+                "average_recommendation_quality_score": average_quality_score,
                 "active_evidence_places": active.values("place_id").distinct().count(),
                 "stale_evidence_places": stale.values("place_id").distinct().count(),
                 "tag_coverage_pct": percentage(active_pair_total, total * len(tags)),

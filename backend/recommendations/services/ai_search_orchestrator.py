@@ -2652,6 +2652,10 @@ def collect_db_candidates(frame, *, lat=None, lng=None, limit=50, radius=None):
         queryset = _order_by_distance(queryset, lat, lng).prefetch_related("place_tags__tag")
         candidate_places = queryset[:candidate_limit]
 
+    from recommendations.services.place_evidence_completeness import quality_profiles_for_places
+
+    candidate_places = list(candidate_places)
+    evidence_quality_profiles = quality_profiles_for_places(candidate_places)
     candidates = []
     restaurant_search = "restaurant" in direct_category_codes
     for place in candidate_places:
@@ -2662,6 +2666,7 @@ def collect_db_candidates(frame, *, lat=None, lng=None, limit=50, radius=None):
         if restaurant_search and business_profile["excluded"]:
             continue
         tag_lists = _db_tag_lists(place)
+        evidence_quality = evidence_quality_profiles[place.id]
         level, matched, policy_unmet, policy_verification_needed = _db_evidence(place, tag_lists, frame)
         if direct_category_codes and place.category not in direct_category_codes:
             has_strong_non_category_evidence = any(
@@ -2708,6 +2713,10 @@ def collect_db_candidates(frame, *, lat=None, lng=None, limit=50, radius=None):
             "db_business_fit_score": business_profile["score"],
             "db_business_fit_reason": business_profile["reason"],
             "data_quality_score": place.data_quality_score,
+            "place_evidence_quality": evidence_quality,
+            "evidence_quality_score": evidence_quality["score"],
+            "evidence_quality_level": evidence_quality["level"],
+            "evidence_gaps": evidence_quality["missing_dimension_labels"],
             "kakao_place_url": get_kakao_place_url(place),
             "place_url": get_kakao_place_url(place),
             "verified_tags": tag_lists["verified"],
@@ -4017,6 +4026,9 @@ def _candidate_result_quality(candidate, frame, *, best_available=False):
         reason_parts.append(f"확인된 조건은 {', '.join(matched[:3])}입니다.")
     if missing:
         reason_parts.append(f"부족하거나 확인이 필요한 조건은 {', '.join(missing[:3])}입니다.")
+    evidence_gaps = _as_list(candidate.get("evidence_gaps"), max_items=10)
+    if evidence_gaps and candidate.get("evidence_quality_level") in {"empty", "thin"}:
+        reason_parts.append(f"장소 정보가 아직 부족한 영역은 {', '.join(evidence_gaps[:3])}입니다.")
     reason = " ".join(reason_parts)
 
     return {
@@ -4103,6 +4115,7 @@ def _complete_and_order_results(
     decorated.sort(key=lambda candidate: (
         _as_int(candidate.get("result_quality_sort_key"), 9),
         -_as_int(candidate.get("condition_match_count"), 0),
+        -_as_int(candidate.get("evidence_quality_score"), 0),
         candidate.get("distance") if candidate.get("distance") is not None else 999999999,
         {"strong": 0, "medium": 1, "weak": 2}.get(
             _clean_text(candidate.get("pre_ai_evidence_level") or candidate.get("evidence_level")),

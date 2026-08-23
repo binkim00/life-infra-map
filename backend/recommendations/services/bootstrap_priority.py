@@ -10,6 +10,11 @@ from recommendations.services.restaurant_collection_quality import restaurant_co
 from recommendations.services.search_coverage_demand import coverage_demand_context
 from recommendations.services.tag_source_policy import OFFICIAL_EVIDENCE_SOURCES, WEB_EVIDENCE_SOURCES
 from recommendations.services.adaptive_budget import collection_bucket
+from recommendations.services.place_evidence_completeness import (
+    meaningful_tags_for_category,
+    quality_profiles_for_places,
+    target_tags_for_gaps,
+)
 
 
 VOLATILE_REFRESH_TAGS = frozenset({
@@ -137,13 +142,23 @@ def priority_context(places, *, category_priorities=None, now=None):
     }
     category_priorities = category_priorities or {}
     coverage_demands = coverage_demand_context(places, now=now)
+    quality_profiles = quality_profiles_for_places(places, now=now)
     results = {}
     for place in places:
         stats = evidence.get(place.id, {})
-        relevant_tag_count = len(requested_tags_for_category(place.category))
-        active_tags = int(stats.get("active_tags") or 0)
-        coverage_gap = max(0, relevant_tag_count - active_tags)
-        evidence_gap = 20 if not stats.get("active_count") else 0
+        quality_profile = quality_profiles[place.id]
+        relevant_tag_count = len(meaningful_tags_for_category(place.category))
+        active_tags = quality_profile["meaningful_tag_count"]
+        coverage_gap = (
+            len(quality_profile["missing_dimensions"]) * 2
+            + max(0, 6 - active_tags)
+        )
+        evidence_gap = {
+            "empty": 20,
+            "thin": 12,
+            "searchable": 4,
+            "rich": 0,
+        }[quality_profile["level"]]
         expired_count = int(stats.get("expired_count") or 0)
         expired_web_count = int(stats.get("expired_web_count") or 0)
         volatile_expired = int(stats.get("volatile_expired_tags") or 0)
@@ -174,10 +189,19 @@ def priority_context(places, *, category_priorities=None, now=None):
         stale_hints = stale_web_tag_names[place.id]
         no_tag_count = int(job_stats.get("no_tag_expression") or 0)
         requested_demand_tags = set(coverage_demand.get("targeted_tags") or ())
-        target_pool = candidate_hints | stale_hints | requested_demand_tags
+        gap_targets = target_tags_for_gaps(
+            place.category,
+            ({"tag_name": tag, "polarity": "positive"} for tag in active_names),
+            limit=12,
+        )
+        target_pool = candidate_hints | stale_hints | requested_demand_tags | set(gap_targets)
         if no_tag_count:
             target_pool |= set(relevant_tags) - active_names
-        targeted_tags = [tag for tag in TARGET_TAG_ORDER if tag in target_pool and tag in relevant_tags]
+        targeted_tags = list(dict.fromkeys([
+            *(tag for tag in gap_targets if tag in target_pool and tag in relevant_tags),
+            *(tag for tag in TARGET_TAG_ORDER if tag in target_pool and tag in relevant_tags),
+            *(tag for tag in relevant_tags if tag in target_pool),
+        ]))
         history_score = (
             min(12, int(job_stats.get("successful_jobs") or 0) * 6)
             + min(8, int(job_stats.get("identity_passes") or 0) * 2)
@@ -194,6 +218,16 @@ def priority_context(places, *, category_priorities=None, now=None):
             "category": int(category_priorities.get(place.category, 10)),
             "tag_coverage_gap": min(30, coverage_gap * 3),
             "place_evidence_gap": evidence_gap,
+            # For the launch cohort, deepen places that already have a usable
+            # identity/evidence foothold instead of endlessly creating one-tag
+            # coverage across new places. Empty places still receive a smaller
+            # discovery priority so the cohort can continue expanding.
+            "recommendation_depth_priority": {
+                "empty": 12,
+                "thin": 30,
+                "searchable": 24,
+                "rich": 0,
+            }[quality_profile["level"]],
             "freshness_gap": freshness_gap,
             "conflict": conflict_priority,
             "search_demand": search_demand,
@@ -210,6 +244,7 @@ def priority_context(places, *, category_priorities=None, now=None):
             "tier": place_region_tier(place),
             "active_tag_count": active_tags,
             "relevant_tag_count": relevant_tag_count,
+            "recommendation_evidence_quality": quality_profile,
             "expired_evidence_count": int(stats.get("expired_count") or 0),
             "expired_web_evidence_count": expired_web_count,
             "expired_structured_evidence_count": int(stats.get("expired_structured_count") or 0),
@@ -223,7 +258,8 @@ def priority_context(places, *, category_priorities=None, now=None):
                 "no_tag_expression" if no_tag_count else
                 "candidate_hint" if candidate_hints else
                 "stale_refresh" if stale_hints else
-                "discovery"
+                "evidence_dimension_gap" if quality_profile["missing_dimensions"] else
+                "depth_enrichment"
             ),
         }
         results[place.id]["budget_bucket"] = collection_bucket(place, results[place.id])

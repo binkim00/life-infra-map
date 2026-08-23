@@ -1542,6 +1542,11 @@ export const getRecommendationMissingLabels = (place) => {
   return toDisplayList([
     ...toDisplayList(place?.missingConditions || place?.missing_conditions),
     ...toDisplayList(place?.missingTagLabels || place?.missing_tag_labels),
+    ...(
+      ['empty', 'thin'].includes(place?.evidenceQualityLevel || place?.evidence_quality_level)
+        ? toDisplayList(place?.evidenceGaps || place?.evidence_gaps)
+        : []
+    ),
   ])
 }
 

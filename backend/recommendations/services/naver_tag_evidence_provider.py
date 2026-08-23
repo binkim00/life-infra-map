@@ -217,6 +217,46 @@ TAG_TERMS.update({
         'positive': ('주차 어려', '주차 불가', '주차장 없'),
         'negative': ('주차 가능', '주차장 있'),
     },
+    '자연채광좋음': {
+        'positive': ('자연광이 좋', '채광이 좋', '햇살이 잘 들', '햇빛이 잘 들'),
+        'negative': ('채광이 아쉽', '자연광이 없', '어두운 편'),
+    },
+    '야외좌석': {
+        'positive': ('야외 좌석 있', '테라스 좌석 있', '테라스석 있', '루프탑 좌석'),
+        'negative': ('야외 좌석 없', '테라스 좌석 없'),
+    },
+    '반려동물동반': {
+        'positive': ('반려동물 동반 가능', '애견 동반 가능', '강아지 동반 가능', '펫 동반 가능'),
+        'negative': ('반려동물 동반 불가', '애견 동반 불가', '강아지 동반 불가'),
+    },
+    '디저트특화': {
+        'positive': ('디저트 맛집', '디저트 전문', '베이커리 맛집', '케이크 맛집'),
+        'negative': ('디저트가 아쉽', '디저트 종류가 적'),
+    },
+    '커피맛좋음': {
+        'positive': ('커피가 맛있', '커피 맛이 좋', '원두가 좋', '커피 맛집'),
+        'negative': ('커피가 아쉽', '커피 맛이 별로'),
+    },
+    '사진찍기좋음': {
+        'positive': ('사진 찍기 좋', '포토존 있', '사진이 잘 나오', '인생샷'),
+        'negative': ('사진 찍기 어렵', '촬영 금지'),
+    },
+    '대표메뉴뚜렷함': {
+        'positive': ('대표 메뉴', '시그니처 메뉴', '대표메뉴', '이 집의 시그니처'),
+        'negative': ('대표 메뉴가 없', '시그니처가 없'),
+    },
+    '메뉴선택폭넓음': {
+        'positive': ('메뉴가 다양', '메뉴 종류가 많', '선택지가 많'),
+        'negative': ('메뉴가 적', '선택지가 적', '메뉴가 한정'),
+    },
+    '여럿이먹기좋은메뉴': {
+        'positive': ('나눠 먹기 좋', '여럿이 먹기 좋', '단체로 먹기 좋', '세트 메뉴'),
+        'negative': ('나눠 먹기 어렵', '1인 메뉴만'),
+    },
+    '가성비좋음': {
+        'positive': ('가성비 좋', '가격 대비 훌륭', '가격이 합리적', '푸짐한 편'),
+        'negative': ('가성비 아쉽', '가격이 비싼 편', '양이 적은 편'),
+    },
 })
 
 
@@ -298,6 +338,16 @@ SEARCH_QUERY_VOCABULARY.update({
     '유모차접근': {'direct': ('유모차 접근',), 'synonym': ('유모차 입장',), 'situational': ('아이 동반',), 'supporting_signal': ('엘리베이터', '무단차')},
     '테이크아웃전문': {'direct': ('테이크아웃 전문',), 'synonym': ('포장 전문',), 'situational': (), 'supporting_signal': ('좌석 없음',)},
     '좌석없음': {'direct': ('좌석 없음',), 'synonym': ('매장 좌석 없음',), 'situational': (), 'supporting_signal': ('포장 전문',)},
+    '자연채광좋음': {'direct': ('채광',), 'synonym': ('자연광', '햇살'), 'situational': ('햇빛 잘 드는',), 'supporting_signal': ('창가 좌석',)},
+    '야외좌석': {'direct': ('야외 좌석',), 'synonym': ('테라스 좌석', '루프탑 좌석'), 'situational': (), 'supporting_signal': ()},
+    '반려동물동반': {'direct': ('반려동물 동반',), 'synonym': ('애견 동반', '강아지 동반'), 'situational': (), 'supporting_signal': ()},
+    '디저트특화': {'direct': ('디저트 맛집',), 'synonym': ('디저트 전문', '케이크 맛집'), 'situational': (), 'supporting_signal': ('베이커리',)},
+    '커피맛좋음': {'direct': ('커피 맛집',), 'synonym': ('원두', '커피가 맛있는'), 'situational': (), 'supporting_signal': ()},
+    '사진찍기좋음': {'direct': ('사진 찍기 좋은',), 'synonym': ('포토존', '인생샷'), 'situational': (), 'supporting_signal': ()},
+    '대표메뉴뚜렷함': {'direct': ('대표 메뉴',), 'synonym': ('시그니처 메뉴',), 'situational': (), 'supporting_signal': ()},
+    '메뉴선택폭넓음': {'direct': ('메뉴 다양',), 'synonym': ('메뉴 종류', '선택지'), 'situational': (), 'supporting_signal': ()},
+    '여럿이먹기좋은메뉴': {'direct': ('여럿이 먹기 좋은',), 'synonym': ('나눠 먹기', '세트 메뉴'), 'situational': ('모임 식사',), 'supporting_signal': ()},
+    '가성비좋음': {'direct': ('가성비',), 'synonym': ('가격 대비', '합리적인 가격'), 'situational': (), 'supporting_signal': ('푸짐한',)},
 })
 
 

@@ -3,7 +3,7 @@ from datetime import date, timedelta
 
 from django.conf import settings
 from django.core.management.base import BaseCommand
-from django.db.models import Exists, OuterRef, Q, Sum
+from django.db.models import Count, Exists, OuterRef, Q, Sum
 from django.utils import timezone
 
 from recommendations.models import Place, PlaceTag, PlaceTagCollectionJob, ProviderQuotaUsage
@@ -21,6 +21,7 @@ from recommendations.services.bootstrap_priority import (
 from recommendations.services.tag_source_policy import WEB_EVIDENCE_SOURCES
 from recommendations.services.adaptive_tag_collection import adaptive_planned_requests
 from recommendations.services.restaurant_collection_quality import restaurant_collection_quality
+from recommendations.services.place_evidence_completeness import meaningful_tags_for_category
 from recommendations.services.adaptive_budget import (
     allocate_by_request_budget,
     yield_adjusted_weights,
@@ -244,11 +245,20 @@ def plan_bootstrap_jobs(
                 id__in=recent_place_ids
             )
             total_places = Place.objects.filter(location, category=category).count()
+            meaningful_tags = meaningful_tags_for_category(category)
             active_places = PlaceTagEvidence.objects.filter(
                 place__in=Place.objects.filter(location, category=category),
+                tag__name__in=meaningful_tags,
+                polarity__in=("positive", "negative"),
             ).filter(Q(expires_at__isnull=True) | Q(expires_at__gt=timezone.now())).values(
                 "place_id"
-            ).distinct().count()
+            ).annotate(
+                meaningful_tag_count=Count("tag_id", distinct=True),
+                evidence_source_count=Count("source_reference", distinct=True),
+            ).filter(
+                meaningful_tag_count__gte=3,
+                evidence_source_count__gte=2,
+            ).count()
             coverage_gap = 1 - (active_places / total_places if total_places else 0)
             region_weights[region_name] = region_weights.get(region_name, 0) + total_places * coverage_gap
             active_same_tag = PlaceTagEvidence.objects.filter(

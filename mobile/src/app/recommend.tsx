@@ -24,6 +24,8 @@ type AiPlace = Place & {
   result_tier_label?: string;
   matched_conditions?: string[];
   missing_conditions?: string[];
+  evidence_gaps?: string[];
+  evidence_quality_level?: "empty" | "thin" | "searchable" | "rich";
   suggested_tags?: string[];
   distance_m?: number;
 };
@@ -268,6 +270,13 @@ export default function RecommendScreen() {
                       {place.missing_conditions?.length ? (
                         <Text style={styles.missing}>
                           확인 필요: {place.missing_conditions.slice(0, 3).join(" · ")}
+                        </Text>
+                      ) : null}
+                      {(["empty", "thin"] as const).includes(
+                        place.evidence_quality_level as "empty" | "thin",
+                      ) && place.evidence_gaps?.length ? (
+                        <Text style={styles.missing}>
+                          장소 정보 부족: {place.evidence_gaps.slice(0, 3).join(" · ")}
                         </Text>
                       ) : null}
                       {place.suggested_tags?.length ? (
