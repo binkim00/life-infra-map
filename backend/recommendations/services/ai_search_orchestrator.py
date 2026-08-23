@@ -3989,9 +3989,13 @@ def _candidate_result_quality(candidate, frame, *, best_available=False):
         tier_label = "가장 가까운 대안"
         tier_rank = 2
 
-    category = get_category_display_name(candidate.get("category")) or _clean_text(
-        candidate.get("category")
-    ) or "장소"
+    raw_category = _clean_text(candidate.get("category"))
+    matching_category_codes = get_matching_categories(raw_category)
+    category = (
+        get_category_display_name(matching_category_codes[0])
+        if matching_category_codes
+        else get_category_display_name(raw_category)
+    ) or raw_category or "장소"
     distance = candidate.get("distance")
     if distance is None:
         distance = candidate.get("distance_m")
@@ -4099,11 +4103,11 @@ def _complete_and_order_results(
     decorated.sort(key=lambda candidate: (
         _as_int(candidate.get("result_quality_sort_key"), 9),
         -_as_int(candidate.get("condition_match_count"), 0),
+        candidate.get("distance") if candidate.get("distance") is not None else 999999999,
         {"strong": 0, "medium": 1, "weak": 2}.get(
             _clean_text(candidate.get("pre_ai_evidence_level") or candidate.get("evidence_level")),
             9,
         ),
-        candidate.get("distance") if candidate.get("distance") is not None else 999999999,
         -_as_int(candidate.get("db_business_fit_score"), 0),
         -_as_int(candidate.get("data_quality_score"), 0),
         -float(candidate.get("score") or 0),

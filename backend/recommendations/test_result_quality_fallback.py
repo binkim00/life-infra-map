@@ -48,6 +48,23 @@ class ResultQualityFallbackTests(SimpleTestCase):
         self.assertIn("확인된 조건은 조용함, 콘센트", results[0]["recommendation_reason"])
         self.assertIn("부족하거나 확인이 필요한 조건은 콘센트", results[1]["recommendation_reason"])
 
+    def test_same_tier_uses_distance_before_evidence_strength_and_normalizes_category_label(self):
+        far_strong = self._candidate(30, level="strong")
+        near_external = self._candidate(1, level="medium")
+        near_external.update({
+            "id": "kakao:near",
+            "candidate_source": "kakao",
+            "category": "음식점 > 카페 > 커피전문점",
+        })
+
+        results, _ = _complete_and_order_results(
+            [], [far_strong, near_external], [], [], self._frame(), limit=5,
+        )
+
+        self.assertEqual([row["id"] for row in results], ["kakao:near", "db:30"])
+        self.assertIn("카페 후보", results[0]["recommendation_reason"])
+        self.assertNotIn("음식점 >", results[0]["recommendation_reason"])
+
     def test_unknown_feature_can_be_disclosed_but_contradicted_feature_is_excluded(self):
         unknown = self._candidate(1, violations=[{
             "type": "feature",
