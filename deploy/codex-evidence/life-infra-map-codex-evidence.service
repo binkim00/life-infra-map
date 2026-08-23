@@ -1,0 +1,24 @@
+[Unit]
+Description=Life Infra Map Codex web evidence collection
+After=docker.service network-online.target
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/life-infra-map/app
+Environment=HOME=/home/ubuntu
+Environment=CODEX_HOME=/home/ubuntu/.codex
+ExecStart=/usr/bin/flock -n /run/lock/life-infra-map-codex-evidence.lock /home/ubuntu/life-infra-map/app/deploy/codex-evidence/run-codex-evidence.sh
+TimeoutStartSec=45min
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/ubuntu/.codex /home/ubuntu/life-infra-map/runtime /run/lock
+InaccessiblePaths=-/home/ubuntu/.ssh -/home/ubuntu/.aws -/home/ubuntu/life-infra-map/app/backend/.env -/home/ubuntu/life-infra-map/app/deploy/db/.env
+
+[Install]
+WantedBy=multi-user.target

@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 from django.test import TestCase
 
 from recommendations.models import Place, PlaceTagEvidence, Tag
@@ -42,3 +44,25 @@ class CodexWebEvidenceValidatorTests(TestCase):
             polarity="positive", evidence="자리마다 콘센트가 있다",
         )
         self.assertEqual(validate_candidate(self.row())["status"], "duplicate")
+
+    @patch("recommendations.services.codex_web_evidence_validator.fetch_public_page")
+    def test_live_verification_rejects_a_quote_missing_from_page(self, fetch):
+        fetch.return_value = {
+            "ok": True, "url": "https://example.com/cafe", "title": self.place.name,
+            "text": "이 카페에는 넓은 좌석이 있다", "published_at": "2026-08-01",
+        }
+        result = validate_candidate(self.row(), live_verify=True)
+        self.assertEqual(result["reason"], "LIVE_EVIDENCE_SPAN_MISMATCH")
+
+    @patch("recommendations.services.codex_web_evidence_validator.fetch_public_page")
+    def test_live_verification_uses_fetched_page_not_model_claim(self, fetch):
+        row = self.row()
+        row["page_verified"] = False
+        row["identity_confidence"] = 0
+        fetch.return_value = {
+            "ok": True, "url": "https://example.com/cafe", "title": self.place.name,
+            "text": "자리마다 콘센트가 있다", "published_at": "2026-08-01",
+        }
+        result = validate_candidate(row, live_verify=True)
+        self.assertEqual(result["status"], "needs_verification")
+        self.assertEqual(result["normalized"]["identity"]["score"], 90)

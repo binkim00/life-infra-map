@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "results": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "place_id": { "type": "integer" },
+          "place_name": { "type": "string" },
+          "category": { "enum": ["cafe", "restaurant"] },
+          "target_tag": { "type": "string" },
+          "extracted_tag": { "type": "string" },
+          "polarity": { "enum": ["", "positive", "negative"] },
+          "source_url": { "type": "string" },
+          "source_title": { "type": "string" },
+          "source_type": { "enum": ["", "official", "public", "brand_official", "blog", "news", "web_content"] },
+          "evidence_span": { "type": "string" },
+          "published_at": { "type": "string" },
+          "identity_status": { "enum": ["", "verified", "failed", "ambiguous"] },
+          "identity_confidence": { "type": "integer", "minimum": 0, "maximum": 100 },
+          "page_verified": { "type": "boolean" },
+          "source_candidate_only": { "type": "boolean" },
+          "research_status": {
+            "enum": ["FOUND", "NO_RESULT", "PAGE_UNAVAILABLE", "IDENTITY_MISMATCH", "NO_FEATURE_EVIDENCE", "AMBIGUOUS", "STALE_ONLY"]
+          },
+          "notes": { "type": "string" }
+        },
+        "required": [
+          "place_id", "place_name", "category", "target_tag", "extracted_tag", "polarity",
+          "source_url", "source_title", "source_type", "evidence_span", "published_at",
+          "identity_status", "identity_confidence", "page_verified", "source_candidate_only",
+          "research_status", "notes"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["results"],
+  "additionalProperties": false
+}

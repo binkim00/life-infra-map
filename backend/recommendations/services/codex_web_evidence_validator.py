@@ -7,6 +7,7 @@ from django.utils import timezone
 from recommendations.models import Place, PlaceTagEvidence
 from recommendations.services.evidence_scoring import evidence_confidence, parse_observed_date
 from recommendations.services.naver_tag_evidence_provider import polarity_assessment
+from recommendations.services.public_page_tag_evidence import fetch_public_page
 from recommendations.services.web_tag_evidence_provider import (
     CATEGORY_TAGS,
     canonical_url,
@@ -22,7 +23,7 @@ VALID_RESEARCH_STATUSES = {
 }
 
 
-def validate_candidate(row, *, now=None):
+def validate_candidate(row, *, now=None, live_verify=False):
     now = now or timezone.now()
     result = {"status": "rejected", "reason": "", "candidate": row}
     research_status = str(row.get("research_status") or "").strip().upper()
@@ -48,6 +49,13 @@ def validate_candidate(row, *, now=None):
     if tag not in CATEGORY_TAGS.get(place.category, ()):
         result["reason"] = "NON_CANONICAL_OR_CATEGORY_TAG"
         return result
+    if live_verify:
+        verified, reason = verify_live_source(place, row)
+        if reason:
+            result["reason"] = reason
+            return result
+        row = verified
+        result["candidate"] = row
     if row.get("page_verified") is not True or row.get("source_candidate_only") is True:
         result["reason"] = "PAGE_NOT_VERIFIED"
         return result
@@ -113,3 +121,40 @@ def validate_candidate(row, *, now=None):
         },
     })
     return result
+
+
+def verify_live_source(place, row):
+    """Re-fetch the cited page and replace model-reported verification fields."""
+    page = fetch_public_page(row.get("source_url"))
+    if not page.get("ok"):
+        return None, "LIVE_{}".format(page.get("error") or "FETCH_FAILED")
+
+    span = str(row.get("evidence_span") or "").strip()
+    page_text = " ".join(str(page.get("text") or "").split())
+    normalized_span = " ".join(span.split())
+    if not normalized_span or normalized_span not in page_text:
+        return None, "LIVE_EVIDENCE_SPAN_MISMATCH"
+
+    compact_name = _compact(place.name)
+    identity_text = "{} {}".format(page.get("title") or "", page_text[:1500])
+    if not compact_name or compact_name not in _compact(identity_text):
+        return None, "LIVE_PLACE_IDENTITY_MISMATCH"
+
+    host = urlsplit(page.get("url") or row.get("source_url") or "").netloc.lower()
+    source_type = "blog" if "blog" in host or host.endswith("tistory.com") else "web_content"
+    verified = dict(row)
+    verified.update({
+        "source_url": page.get("url") or row.get("source_url"),
+        "source_title": page.get("title") or row.get("source_title") or "",
+        "source_type": source_type,
+        "published_at": page.get("published_at") or "unknown",
+        "identity_status": "verified",
+        "identity_confidence": 90,
+        "page_verified": True,
+        "source_candidate_only": False,
+    })
+    return verified, ""
+
+
+def _compact(value):
+    return "".join(character.lower() for character in str(value or "") if character.isalnum())
