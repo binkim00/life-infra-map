@@ -616,7 +616,14 @@ def _local_rule_anchor_location(raw_query):
         rf"([\uac00-\ud7a3A-Za-z0-9·.-]{{2,24}}(?:\uc5ed|\ub3d9|\uad6c|\uc2dc|\ub300|\uc2dc\uc7a5|\ud574\uc218\uc695\uc7a5|\uacf5\ud56d|\ud130\ubbf8\ub110))\s*(?:{marker_pattern})(?:\s+|$)",
         text,
     )
-    match = specific_location_match or re.match(rf"^(.{{1,40}}?)\s*(?:{marker_pattern})(?:\s+|$)", text)
+    token_location_match = re.search(
+        rf"(?:^|\s)([\uac00-\ud7a3A-Za-z0-9·.-]{{2,20}})\s*(?:{marker_pattern})(?:\s+|$)",
+        text,
+    )
+    match = specific_location_match or token_location_match or re.match(
+        rf"^(.{{1,40}}?)\s*(?:{marker_pattern})(?:\s+|$)",
+        text,
+    )
     if not match:
         suffixes = (
             "특별자치시",
@@ -842,6 +849,7 @@ def _local_rule_clarification_plan(raw_query, *, question, options, missing_fiel
 
 def _local_rule_followup_plan(raw_query, previous_context):
     previous_context = previous_context if isinstance(previous_context, dict) else {}
+    text = _clean_text(raw_query, 500)
     previous_frame = (
         previous_context.get("pending_clarification_frame")
         or previous_context.get("place_intent_frame")
@@ -851,9 +859,27 @@ def _local_rule_followup_plan(raw_query, previous_context):
     )
     frame = _normalize_frame(previous_frame)
     if not frame.get("target_objects"):
+        if previous_context.get("is_clarification_followup") and _has_any(
+            text,
+            ["혼자 쉬", "쉬고 싶", "휴식", "잠깐 쉬"],
+        ):
+            plan = _local_rule_search_plan(
+                text,
+                normalized_query="혼자 조용히 쉬어갈 곳",
+                target_objects=["조용히 쉬어갈 곳"],
+                candidate_place_types=["카페", "공공도서관", "실내 쉼터", "공원"],
+                result_match_terms=["카페", "도서관", "쉼터", "공원", "휴식"],
+                primary_search_queries=["조용한 카페", "공공도서관", "실내 쉼터", "공원"],
+                constraints=["조용함", "혼자 이용"],
+                candidate_category_codes=["cafe", "library", "shelter", "city_park"],
+            )
+            plan["frame"]["situation"] = "quiet_rest"
+            return plan
         return None
 
-    text = _clean_text(raw_query, 500)
+    location_patch = ""
+    if previous_context.get("is_clarification_followup") and len(text) <= 30:
+        location_patch = _local_rule_anchor_location(text) or text
     quiet = _has_any(text, ["조용", "시끄럽지", "한적", "붐비지"])
     ambience = _has_any(text, ["분위기", "감성", "예쁜", "멋진"])
     closer = _has_any(text, ["더 가까", "가까운 곳", "가까운 데", "근처"])
@@ -897,6 +923,7 @@ def _local_rule_followup_plan(raw_query, previous_context):
         bool(requested_constraints),
         bool(requested_exclusions),
         add_library,
+        bool(location_patch),
     ])
     if not recognized:
         return None
@@ -916,6 +943,9 @@ def _local_rule_followup_plan(raw_query, previous_context):
     ])
     if closer:
         frame["ranking_policy"] = "distance_first"
+    if location_patch:
+        frame["location_mode"] = "explicit"
+        frame["anchor_location"] = location_patch
 
     if add_library:
         frame["candidate_place_types"] = _dedupe([
@@ -1207,8 +1237,9 @@ def _local_rule_plan_for_known_intent(raw_query):
                 "\ubc15\ubb3c\uad00",
                 "\uc804\uc2dc\uad00",
             ],
-            constraints=[],
+            constraints=["실내"],
             exclusions=["\uc57c\uc678 \uc0b0\ucc45 \uc81c\uc678", "\uacf5\uc6d0 \uc81c\uc678", "\uc2dc\uc7a5 \uc81c\uc678"],
+            candidate_category_codes=["tourism", "cafe"],
             ranking_policy="evidence_first",
         )
 
@@ -1230,18 +1261,37 @@ def _local_rule_plan_for_known_intent(raw_query):
         _has_any(text, ["\ube44", "\ube44 \uc624", "\ube44\uc624", "\ub354\uc6cc", "\ub354\uc6b4", "\ucd94\uc6cc", "\ucd94\uc6b4"])
         and _has_any(text, ["\uc26c", "\uc274", "\uc26c\uace0", "\uc26c\uc5b4", "\ud53c\ud560", "\ud53c\ud574", "비 피", "앉아 있", "\uc7a0\uae50"])
     ):
-        return _local_rule_search_plan(
+        plan = _local_rule_search_plan(
             text,
             normalized_query="\uc7a0\uae50 \uc26c\uc5b4\uac08 \uc2e4\ub0b4 \uc7a5\uc18c",
             target_objects=["\uc2e4\ub0b4 \uc26c\uc5b4\uac08 \uacf3"],
             candidate_place_types=["\uce74\ud398", "\uacf5\uacf5\ub3c4\uc11c\uad00", "\uc1fc\ud551\ubab0", "\uc9c0\ud558\uc0c1\uac00"],
             result_match_terms=["\uce74\ud398", "\ub3c4\uc11c\uad00", "\uc1fc\ud551\ubab0", "\uc9c0\ud558\uc0c1\uac00", "\uc2e4\ub0b4"],
             primary_search_queries=["\uce74\ud398", "\uacf5\uacf5\ub3c4\uc11c\uad00", "\uc1fc\ud551\ubab0", "\uc9c0\ud558\uc0c1\uac00"],
-            constraints=[],
+            constraints=["비 피하기", "실내"],
             exclusions=["\ub178\uc778\ud68c\uad00 \uc81c\uc678", "\uacbd\ub85c\ub2f9 \uc81c\uc678", "\uc0c1\ub2f4\uc13c\ud130 \uc81c\uc678", "\uc8fc\ucc28\uc7a5 \uc81c\uc678"],
             candidate_category_codes=["cafe", "shopping"],
             ranking_policy="evidence_first",
         )
+        plan["frame"]["situation"] = "weather_shelter"
+        if (
+            not plan["frame"].get("anchor_location")
+            and not _has_any(text, ["여기", "현재 위치", "내 주변", "근처"])
+            and _has_any(text, ["비 피", "피하면서"])
+        ):
+            plan.update({
+                "action": "ask_clarification",
+                "decision_action": "ask_clarification",
+                "can_search_now": False,
+                "clarification": {
+                    "question": "어느 동네나 역 근처에서 찾을까요?",
+                    "options": [],
+                    "missing_fields": ["anchor_location"],
+                    "expected_patch_fields": ["anchor_location"],
+                },
+            })
+            plan["frame"]["location_mode"] = "clarification_required"
+        return plan
 
     weather_info_request = (
         _has_any(text, ["날씨", "기온", "비 와", "비와", "눈 와", "눈와"])
@@ -1286,7 +1336,7 @@ def _local_rule_plan_for_known_intent(raw_query):
 
     if _has_any(text, ["비 오", "비오", "비 와", "비와", "더워", "덥", "추워", "춥", "쉴 곳", "쉴곳", "쉬어갈", "쉬어 갈", "잠깐 쉴"]):
         if _has_any(text, ["피할 곳", "피할곳", "쉴 곳", "쉴곳", "쉬어갈", "쉬어 갈", "잠깐 쉴", "실내"]):
-            return _local_rule_search_plan(
+            plan = _local_rule_search_plan(
                 text,
                 normalized_query="잠깐 쉴 실내 장소",
                 target_objects=["쉴 곳"],
@@ -1297,6 +1347,25 @@ def _local_rule_plan_for_known_intent(raw_query):
                 exclusions=["유료 주차장 제외", "사유지 접근 제한 제외"],
                 candidate_category_codes=["cafe", "shelter", "shopping"],
             )
+            plan["frame"]["situation"] = "weather_shelter"
+            if (
+                not plan["frame"].get("anchor_location")
+                and not _has_any(text, ["여기", "현재 위치", "내 주변", "근처"])
+                and _has_any(text, ["비 피", "피하면서"])
+            ):
+                plan.update({
+                    "action": "ask_clarification",
+                    "decision_action": "ask_clarification",
+                    "can_search_now": False,
+                    "clarification": {
+                        "question": "어느 동네나 역 근처에서 찾을까요?",
+                        "options": [],
+                        "missing_fields": ["anchor_location"],
+                        "expected_patch_fields": ["anchor_location"],
+                    },
+                })
+                plan["frame"]["location_mode"] = "clarification_required"
+            return plan
 
     if _has_any(text, ["흡연구역", "흡연장", "흡연실", "흡연", "담배필", "담배 필", "담배피", "담배 피", "담배"]):
         outdoor = _has_any(text, ["실외", "외부", "밖", "야외", "옥외"])
@@ -1512,7 +1581,6 @@ def _local_rule_plan_for_known_intent(raw_query):
             candidate_category_codes=["restaurant"],
             ranking_policy="evidence_first",
         )
-
     if _has_any(text, ["전시", "전시회", "전시관", "전시장", "박물관", "미술관", "갤러리"]):
         return _local_rule_search_plan(
             text,
@@ -1942,6 +2010,7 @@ def _normalize_frame(raw_frame):
         location_mode = "current_context"
 
     return {
+        "situation": _clean_text(raw_frame.get("situation"), 50),
         "location_mode": location_mode,
         "anchor_location": _clean_text(raw_frame.get("anchor_location") or raw_frame.get("anchorLocation"), 80),
         "target_objects": _as_list(raw_frame.get("target_objects") or raw_frame.get("targetObjects")),
@@ -1953,6 +2022,11 @@ def _normalize_frame(raw_frame):
         ),
         "constraints": _as_list(raw_frame.get("constraints")),
         "exclusions": _as_list(raw_frame.get("exclusions")),
+        "candidate_category_codes": _as_list(
+            raw_frame.get("candidate_category_codes") or raw_frame.get("candidateCategoryCodes"),
+            max_items=10,
+            max_length=50,
+        ),
         "ranking_policy": ranking_policy,
         "primary_search_queries": _as_list(
             raw_frame.get("primary_search_queries")
@@ -2321,7 +2395,7 @@ def build_ai_intent_plan(query, *, lat=None, lng=None, map_center=None, previous
             question="조용한 곳에서 무엇을 하려는지 알려주세요.",
             options=[
                 {"label": "작업·공부", "value": "작업하거나 공부할 곳"},
-                {"label": "혼자 휴식", "value": "혼자 쉬어갈 곳"},
+                {"label": "휴식", "value": "혼자 휴식하고 쉬어갈 곳"},
                 {"label": "대화·모임", "value": "조용히 대화할 곳"},
             ],
             missing_fields=["purpose"],
@@ -2494,6 +2568,38 @@ def frame_with_sources(frame, source=TRUSTED_FRAME_SOURCE):
     }
 
 
+def _conversation_scenario(frame):
+    frame = frame if isinstance(frame, dict) else {}
+    situation = _compact(frame.get("situation")).replace("_", "")
+    categories = set(_as_list(
+        frame.get("candidate_category_codes") or frame.get("candidateCategoryCodes"),
+        max_items=10,
+        max_length=50,
+    ))
+    context_text = _compact(" ".join([
+        *_as_list(frame.get("target_objects") or frame.get("targetObjects")),
+        *_as_list(frame.get("candidate_place_types") or frame.get("candidatePlaceTypes")),
+        *_as_list(frame.get("constraints")),
+    ]))
+    if "restaurant" in categories:
+        return "restaurant"
+    if situation == "work" or (
+        "cafe" in categories
+        and _has_any(context_text, ["작업", "공부", "노트북", "콘센트", "와이파이"])
+    ):
+        return "work_cafe"
+    if situation == "walk" or {"city_park", "beach", "tourism"} & categories and _has_any(
+        context_text, ["산책", "걷기", "걸을"]
+    ):
+        return "walk_healing"
+    if situation in {"quietrest", "weathershelter", "waiting"} or _has_any(
+        context_text,
+        ["쉬어갈", "쉴 곳", "휴식", "쉼터", "잠깐 앉"],
+    ):
+        return "waiting_place"
+    return "ai_place_search"
+
+
 def to_search_plan(intent_plan, raw_query=""):
     frame = intent_plan.get("frame") if isinstance(intent_plan.get("frame"), dict) else {}
     sourced_frame = frame_with_sources(frame)
@@ -2516,7 +2622,7 @@ def to_search_plan(intent_plan, raw_query=""):
         "base_location_query": frame.get("anchor_location") if frame.get("location_mode") == "explicit" else "",
         "has_explicit_location": frame.get("location_mode") == "explicit",
         "location_resolution_required": frame.get("location_mode") == "explicit",
-        "scenario": "ai_place_search",
+        "scenario": _conversation_scenario(frame),
         "decision_action": action,
         "decisionAction": action,
         "can_search_now": action == "search",

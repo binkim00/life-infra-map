@@ -4794,6 +4794,24 @@ def run_ai_search(request_data, *, user=None):
             ),
         )
 
+    planner_status = str(
+        ((intent_plan.get("ai_debug") or {}).get("planner") or {}).get("status") or ""
+    )
+    if (
+        not reranker_available
+        and not ranking_fallback_candidates
+        and planner_status.startswith("local_")
+    ):
+        # A deterministic intent was understood successfully. An empty result
+        # set is a data coverage outcome, not an AI availability failure.
+        ranked_candidates = []
+        reranker_debug = {
+            **reranker_debug,
+            "status": "degraded_success",
+            "reason": "local_intent_no_supported_candidates",
+        }
+        reranker_available = True
+
     if not reranker_available and not ranking_fallback_candidates:
         intent_plan = {
             **intent_plan,

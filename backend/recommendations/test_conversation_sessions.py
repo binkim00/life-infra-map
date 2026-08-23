@@ -1,6 +1,6 @@
 from unittest.mock import patch
 
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
 from recommendations.models import ConversationSession, ConversationTurn
@@ -60,6 +60,24 @@ class ConversationSessionApiTests(TestCase):
 
         self.assertEqual(response["decision_action"], "select_previous_result")
         self.assertEqual(response["results"][0]["id"], "db:2")
+
+    @override_settings(
+        AI_PROVIDER="rule",
+        AI_RERANK_ENABLED=True,
+        AI_WEB_SEARCH_ENABLED=False,
+        AI_WEB_SEARCH_AVAILABLE=False,
+        KAKAO_REST_API_KEY="",
+    )
+    def test_local_intent_with_no_supported_candidate_is_empty_search(self):
+        response = run_ai_search({
+            "query": "연산동에서 노트북 할 카페",
+            "lat": 35.18,
+            "lng": 129.08,
+            "limit": 5,
+        })
+
+        self.assertEqual(response["decision_action"], "search")
+        self.assertEqual(response["result_count"], 0)
 
     def test_anonymous_session_requires_returned_secret_token(self):
         created = self._create_anonymous_session()

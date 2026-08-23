@@ -2120,21 +2120,16 @@ class RecommendationSearchTests(TestCase):
         self.assertIn("s.searchResultStatus = data.decision_action === 'ai_unavailable' ? 'error' : 'empty'", ai_first_block)
         self.assertNotIn("runKakaoRecommendationFallbackSearch(", ai_first_block)
 
-    def test_frontend_ai_first_response_resets_rule_parser_banner_state(self):
-        # 배너는 화면(HomeView.jsx), 응답 반영은 훅(useHomeSearch.js)으로 나뉘어 있습니다.
+    def test_frontend_ai_first_response_hides_and_resets_rule_parser_state(self):
+        # 내부 파서 배너는 숨기고 훅의 응답 상태 초기화는 유지합니다.
         view_source = self._repo_file_text("frontend/src/views/HomeView.jsx")
-        parser_status_start = view_source.index("const mapParserStatus = (() =>")
-        parser_status_end = view_source.index("const searchPlanStatus =", parser_status_start)
-        parser_status_block = view_source[parser_status_start:parser_status_end]
-
         hook_source = self._repo_file_text("frontend/src/hooks/useHomeSearch.js")
         response_start = hook_source.index("s.mapAiParse = {")
         response_end = hook_source.index("if (backendAction && backendAction !== 'search')", response_start)
         response_block = hook_source[response_start:response_end]
 
-        self.assertIn("executionMode === 'ai_first_orchestrator'", parser_status_block)
-        self.assertIn("parserProvider === 'ai_intent_planner'", parser_status_block)
-        self.assertIn("parserFallback", parser_status_block)
+        self.assertNotIn("const mapParserStatus = (() =>", view_source)
+        self.assertNotIn("parserFallback", view_source)
         self.assertIn("parser_fallback: backendIsAiFirst ? false", response_block)
         self.assertIn("ai_fallback_reason: backendIsAiFirst ? ''", response_block)
         self.assertIn("fallback_reason: backendIsAiFirst ? ''", response_block)
