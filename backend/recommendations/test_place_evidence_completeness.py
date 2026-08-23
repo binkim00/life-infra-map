@@ -7,6 +7,7 @@ from recommendations.services.place_evidence_completeness import (
     assess_evidence_quality,
     target_tags_for_gaps,
 )
+from recommendations.services.ai_intent_planner import build_ai_intent_plan
 
 
 def observation(tag, *, polarity="positive", source="naver_blog_search", reference=None):
@@ -19,6 +20,18 @@ def observation(tag, *, polarity="positive", source="naver_blog_search", referen
 
 
 class PlaceEvidenceCompletenessUnitTests(TestCase):
+    def test_cafe_view_and_photo_language_becomes_explicit_constraints(self):
+        plan = build_ai_intent_plan(
+            "해운대에서 바다 보이고 사진 찍기 좋은 카페",
+            lat=35.1579,
+            lng=129.0592,
+        )
+
+        self.assertEqual(plan["action"], "search")
+        self.assertIn("전망좋음", plan["frame"]["constraints"])
+        self.assertIn("사진찍기좋음", plan["frame"]["constraints"])
+        self.assertNotIn("가까운 곳", plan["frame"]["constraints"])
+
     def test_basic_facts_do_not_make_place_recommendation_ready(self):
         profile = assess_evidence_quality("cafe", [
             observation("카페"),

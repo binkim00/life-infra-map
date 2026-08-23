@@ -1737,6 +1737,14 @@ def _local_rule_plan_for_known_intent(raw_query):
         ambience_constraints.append("분위기 좋음")
     if _has_any(text, ["조용", "시끄럽지", "한적", "붐비지"]):
         ambience_constraints.append("조용함")
+    experience_constraints = list(ambience_constraints)
+    if _has_any(text, ["바다 보", "바다뷰", "오션뷰", "전망", "뷰 좋은", "경치"]):
+        experience_constraints.append("전망좋음")
+    if _has_any(text, ["사진 찍", "사진찍", "포토존", "인생샷"]):
+        experience_constraints.append("사진찍기좋음")
+    if _has_any(text, ["반려동물", "애견 동반", "강아지 동반"]):
+        experience_constraints.append("반려동물동반")
+    experience_constraints = _dedupe(experience_constraints)
 
     if has_cafe and _has_any(text, ["브런치"]):
         return _local_rule_search_plan(
@@ -1746,7 +1754,7 @@ def _local_rule_plan_for_known_intent(raw_query):
             candidate_place_types=["브런치 카페", "카페"],
             result_match_terms=["브런치", "카페", "베이커리", "샌드위치"],
             primary_search_queries=["브런치 카페", "브런치", "베이커리 카페"],
-            constraints=ambience_constraints,
+            constraints=experience_constraints,
             candidate_category_codes=["cafe"],
         )
 
@@ -1758,7 +1766,7 @@ def _local_rule_plan_for_known_intent(raw_query):
             candidate_place_types=["식당", "음식점", "레스토랑"],
             result_match_terms=["식당", "음식점", "맛집", "레스토랑"],
             primary_search_queries=["식당", "맛집", "음식점"],
-            constraints=["식사 가능", *ambience_constraints],
+            constraints=["식사 가능", *experience_constraints],
             candidate_category_codes=["restaurant"],
         )
 
@@ -1770,7 +1778,7 @@ def _local_rule_plan_for_known_intent(raw_query):
             candidate_place_types=["카페", "작업 카페", "스터디카페"],
             result_match_terms=["카페", "노트북", "콘센트", "와이파이", "작업"],
             primary_search_queries=["작업 카페", "노트북 카페", "콘센트 카페", "카페"],
-            constraints=[],
+            constraints=experience_constraints,
             candidate_category_codes=["cafe"],
         )
     if has_cafe and has_drink and not has_work:
@@ -1781,7 +1789,7 @@ def _local_rule_plan_for_known_intent(raw_query):
             candidate_place_types=["카페"],
             result_match_terms=["카페", "커피", "음료"],
             primary_search_queries=["카페", "커피", "음료 카페"],
-            constraints=["음료 마실 수 있음"],
+            constraints=["음료 마실 수 있음", *experience_constraints],
             exclusions=["스터디카페 제외", "스터디룸 제외", "공간대여 제외"],
         )
     if has_cafe and not has_work:
@@ -1792,7 +1800,7 @@ def _local_rule_plan_for_known_intent(raw_query):
             candidate_place_types=["카페"],
             result_match_terms=["카페", "커피", "음료"],
             primary_search_queries=["카페", "커피"],
-            constraints=["가까운 곳"],
+            constraints=experience_constraints or ["가까운 곳"],
             candidate_category_codes=["cafe"],
         )
 
