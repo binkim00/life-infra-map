@@ -19,13 +19,18 @@ class Command(BaseCommand):
         parser.add_argument("--cafe", type=int, default=50)
         parser.add_argument("--restaurant", type=int, default=50)
         parser.add_argument("--output", default="tmp/codex_web_evidence_busan_pilot.json")
+        parser.add_argument("--exclude-place-ids", default="")
 
     def handle(self, *args, **options):
         selected = []
         allocation = Counter()
+        excluded = {
+            int(value) for value in str(options["exclude_place_ids"] or "").split(",")
+            if value.strip().isdigit()
+        }
         for category in ("cafe", "restaurant"):
             limit = max(0, int(options[category]))
-            rows = select_places(category, limit, allocation)
+            rows = select_places(category, limit, allocation, exclude_place_ids=excluded)
             if len(rows) < limit:
                 raise CommandError("Only {} eligible {} places found".format(len(rows), category))
             selected.extend(rows)
@@ -52,8 +57,9 @@ class Command(BaseCommand):
         }, ensure_ascii=False))
 
 
-def select_places(category, limit, allocation):
+def select_places(category, limit, allocation, *, exclude_place_ids=None):
     tags = CATEGORY_TAGS[category]
+    exclude_place_ids = exclude_place_ids or set()
     identity_job = PlaceTagCollectionJob.objects.filter(
         place_id=OuterRef("pk"), provider="naver_search", status="completed",
         stats__diagnostics__identity_matches__gt=0,
@@ -68,7 +74,7 @@ def select_places(category, limit, allocation):
     )
     places = list(Place.objects.filter(
         Q(address__startswith="부산") | Q(detail_location__startswith="부산"), category=category,
-    ).annotate(
+    ).exclude(id__in=exclude_place_ids).annotate(
         identity_success=Exists(identity_job), no_tag=Exists(no_tag_job),
         evidence_success=Exists(evidence_job),
     ).filter(identity_success=True).order_by("-no_tag", "-evidence_success", "name")[:5000])

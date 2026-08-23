@@ -5,8 +5,8 @@ APP_ROOT="${CODEX_EVIDENCE_APP_ROOT:-/home/ubuntu/life-infra-map/app}"
 API_CONTAINER="${CODEX_EVIDENCE_API_CONTAINER:-life-infra-map-django-api}"
 RUNTIME_DIR="${CODEX_EVIDENCE_RUNTIME_DIR:-/home/ubuntu/life-infra-map/runtime/codex-evidence}"
 CODEX_BIN="${CODEX_EVIDENCE_CODEX_BIN:-/home/ubuntu/.local/bin/codex}"
-CAFE_LIMIT="${CODEX_EVIDENCE_CAFE_LIMIT:-5}"
-RESTAURANT_LIMIT="${CODEX_EVIDENCE_RESTAURANT_LIMIT:-5}"
+CAFE_LIMIT="${CODEX_EVIDENCE_CAFE_LIMIT:-1}"
+RESTAURANT_LIMIT="${CODEX_EVIDENCE_RESTAURANT_LIMIT:-1}"
 DEPLOY_DIR="${APP_ROOT}/deploy/codex-evidence"
 
 for required in "$CODEX_BIN" "$DEPLOY_DIR/research-prompt.txt" "$DEPLOY_DIR/codex-evidence-output.schema.json"; do
@@ -30,14 +30,20 @@ seed_file="${RUNTIME_DIR}/${seed_name}"
 result_file="${RUNTIME_DIR}/${result_name}"
 container_seed="/tmp/${seed_name}"
 container_result="/tmp/${result_name}"
+container_seed_csv="${container_seed%.json}.csv"
 
 cleanup() {
-  docker exec "$API_CONTAINER" rm -f -- "$container_seed" "$container_result" >/dev/null 2>&1 || true
+  docker exec "$API_CONTAINER" rm -f -- "$container_seed" "$container_seed_csv" "$container_result" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
+exclude_ids="$(
+  jq -r '.results[]?.place_id // empty' "$RUNTIME_DIR"/result-*.json 2>/dev/null \
+    | sort -nu | paste -sd, - || true
+)"
 docker exec "$API_CONTAINER" python manage.py prepare_codex_web_research \
-  --cafe "$CAFE_LIMIT" --restaurant "$RESTAURANT_LIMIT" --output "$container_seed"
+  --cafe "$CAFE_LIMIT" --restaurant "$RESTAURANT_LIMIT" \
+  --exclude-place-ids "$exclude_ids" --output "$container_seed"
 docker cp "${API_CONTAINER}:${container_seed}" "$seed_file"
 
 "$CODEX_BIN" --search --ask-for-approval never exec \
