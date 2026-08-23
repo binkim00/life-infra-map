@@ -40,11 +40,10 @@ docker exec "$API_CONTAINER" python manage.py prepare_codex_web_research \
   --cafe "$CAFE_LIMIT" --restaurant "$RESTAURANT_LIMIT" --output "$container_seed"
 docker cp "${API_CONTAINER}:${container_seed}" "$seed_file"
 
-"$CODEX_BIN" --search exec \
+"$CODEX_BIN" --search --ask-for-approval never exec \
   --ephemeral \
   --ignore-user-config \
   --sandbox read-only \
-  --ask-for-approval never \
   --skip-git-repo-check \
   --cd "$RUNTIME_DIR" \
   --output-schema "$DEPLOY_DIR/codex-evidence-output.schema.json" \
