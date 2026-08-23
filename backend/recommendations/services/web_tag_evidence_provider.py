@@ -44,6 +44,29 @@ CATEGORY_TAGS = {
 }
 
 
+RESTAURANT_ATOMIC_TAGS = (
+    '단체석있음', '예약가능', '개별룸있음', '넓은테이블', '좌석간격넓음',
+    '편한좌석', '유아의자있음', '유모차접근', '아이메뉴있음',
+    '엘리베이터있음', '무단차접근', '메뉴선택폭넓음',
+    '여럿이먹기좋은메뉴', '테이크아웃전문', '좌석없음',
+    '시간제한있음', '예약필수', '웨이팅많음', '혼잡함', '소음큼',
+    '계단접근만가능', '주차어려움',
+)
+CAFE_ATOMIC_TAGS = (
+    '와이파이있음', '단체석있음', '예약가능', '개별룸있음',
+    '넓은테이블', '좌석간격넓음', '편한좌석', '유아의자있음',
+    '유모차접근', '엘리베이터있음', '무단차접근', '테이크아웃전문',
+    '좌석없음', '시간제한있음', '혼잡함', '소음큼', '계단접근만가능',
+    '주차어려움',
+)
+CATEGORY_TAGS['restaurant'] = tuple(dict.fromkeys([
+    *CATEGORY_TAGS['restaurant'], *RESTAURANT_ATOMIC_TAGS,
+]))
+CATEGORY_TAGS['cafe'] = tuple(dict.fromkeys([
+    *CATEGORY_TAGS['cafe'], *CAFE_ATOMIC_TAGS,
+]))
+
+
 def discover_web_sources(place, target_tags, *, request_post=None):
     """Discover cited URLs only. Page verification and tag extraction are separate."""
     allowed = [tag for tag in target_tags if tag in CATEGORY_TAGS.get(place.category, ())]

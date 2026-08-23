@@ -136,6 +136,109 @@ TAG_TERMS = {
     },
 }
 
+TAG_TERMS.update({
+    '단체석있음': {
+        'positive': ('단체석 있', '단체 좌석 있', '단체 테이블 있', '여럿이 앉을 수'),
+        'negative': ('단체석 없', '단체 이용 불가', '단체 손님 불가'),
+    },
+    '예약가능': {
+        'positive': ('예약 가능', '전화 예약', '네이버 예약', '예약할 수'),
+        'negative': ('예약 불가', '예약 안 받', '예약을 받지 않'),
+    },
+    '개별룸있음': {
+        'positive': ('개별 룸 있', '개별룸 있', '프라이빗 룸', '룸 예약 가능'),
+        'negative': ('개별 룸 없', '개별룸 없', '룸 없음'),
+    },
+    '넓은테이블': {
+        'positive': ('테이블 넓', '큰 테이블', '대형 테이블'),
+        'negative': ('테이블 좁', '테이블이 작'),
+    },
+    '좌석간격넓음': {
+        'positive': ('좌석 간격 넓', '테이블 간격 넓', '자리 간격 넓'),
+        'negative': ('좌석 간격 좁', '테이블 간격 좁', '자리 간격 좁'),
+    },
+    '편한좌석': {
+        'positive': ('좌석 편', '의자 편', '편한 좌석', '소파 좌석'),
+        'negative': ('좌석 불편', '의자 불편', '딱딱한 의자'),
+    },
+    '유아의자있음': {
+        'positive': ('유아 의자 있', '아기 의자 있', '하이체어 있', '아기 의자 요청'),
+        'negative': ('유아 의자 없', '아기 의자 없', '하이체어 없'),
+    },
+    '유모차접근': {
+        'positive': ('유모차 접근 가능', '유모차 입장 가능', '유모차 들어갈 수'),
+        'negative': ('유모차 접근 불가', '유모차 입장 불가'),
+    },
+    '아이메뉴있음': {
+        'positive': ('아이 메뉴 있', '어린이 메뉴 있', '키즈 메뉴 있'),
+        'negative': ('아이 메뉴 없', '어린이 메뉴 없', '키즈 메뉴 없'),
+    },
+    '엘리베이터있음': {
+        'positive': ('엘리베이터 있', '승강기 있'),
+        'negative': ('엘리베이터 없', '승강기 없'),
+    },
+    '무단차접근': {
+        'positive': ('무단차', '단차 없', '문턱 없', '계단 없이'),
+        'negative': ('단차 있', '문턱 있', '계단으로만'),
+    },
+    '테이크아웃전문': {
+        'positive': ('테이크아웃 전문', '포장 전문', '테이크아웃만'),
+        'negative': ('매장 식사 가능', '매장 이용 가능'),
+    },
+    '좌석없음': {
+        'positive': ('좌석 없', '앉을 곳 없', '매장 좌석 없'),
+        'negative': ('좌석 있', '매장 좌석 있'),
+    },
+    '시간제한있음': {
+        'positive': ('이용 시간 제한', '좌석 시간제', '체류 시간 제한'),
+        'negative': ('시간 제한 없', '이용 시간 제한 없'),
+    },
+    '예약필수': {
+        'positive': ('예약 필수', '사전 예약제', '예약 없이는 이용 불가'),
+        'negative': ('예약 없이 가능', '예약 불필요'),
+    },
+    '웨이팅많음': {
+        'positive': ('웨이팅 많', '대기 길', '줄이 길', '오래 기다'),
+        'negative': ('웨이팅 없', '대기 없이', '바로 입장'),
+    },
+    '혼잡함': {
+        'positive': ('혼잡', '붐비', '북적', '사람이 많'),
+        'negative': ('한산', '한적', '붐비지 않', '북적이지 않'),
+    },
+    '소음큼': {
+        'positive': ('시끄럽', '소음 크', '음악 소리 크', '대화하기 어렵'),
+        'negative': ('조용', '시끄럽지 않', '소음 적'),
+    },
+    '계단접근만가능': {
+        'positive': ('계단만 있', '엘리베이터 없', '계단 이용만'),
+        'negative': ('엘리베이터 있', '무단차', '계단 없이'),
+    },
+    '주차어려움': {
+        'positive': ('주차 어려', '주차 불가', '주차장 없'),
+        'negative': ('주차 가능', '주차장 있'),
+    },
+})
+
+
+TAG_TERMS['와이파이있음'] = {
+    'positive': (
+        '와이파이 제공', '와이파이 있', '와이파이 가능', '와이파이 잘',
+        '와이파이 빵빵', '무선인터넷', 'wifi 제공',
+    ),
+    'negative': ('와이파이 없', '무선인터넷 없', 'wifi 없'),
+}
+TAG_TERMS['무료와이파이'] = {
+    'positive': ('무료 와이파이', '공공 와이파이', '무료 무선인터넷', 'free wifi'),
+    'negative': ('와이파이 유료', '무선인터넷 유료', '무료 와이파이 없'),
+}
+TAG_TERMS['와이파이있음']['positive'] += ('와이파이도 잘', '와이파이가 잘')
+TAG_TERMS['단체석있음']['positive'] += ('단체석이 있', '단체석이 마련', '여럿이 함께 앉')
+TAG_TERMS['단체석있음']['negative'] += ('단체석은 없', '단체석이 없')
+TAG_TERMS['개별룸있음']['positive'] += ('개별 룸이 있', '개별룸이 있', '룸이 있')
+TAG_TERMS['유아의자있음']['positive'] += ('유아 의자를', '아기 의자를', '하이체어를')
+TAG_TERMS['좌석없음']['positive'] += ('좌석이 없', '앉을 곳이 없')
+
+
 QUALITATIVE_TAGS = frozenset({
     '조용함', '작업하기좋음', '혼자이용좋음', '혼밥좋음',
     '분위기좋음', '데이트좋음', '대화하기좋음', '장기체류좋음',
@@ -186,6 +289,32 @@ SEARCH_QUERY_VOCABULARY = {
     '웨이팅적음': {'direct': ('웨이팅 없음', '대기 없음'), 'synonym': ('바로 입장',), 'situational': ('기다리지 않고', '웨이팅 적음'), 'supporting_signal': ()},
 }
 
+SEARCH_QUERY_VOCABULARY.update({
+    '단체석있음': {'direct': ('단체석',), 'synonym': ('단체 좌석', '단체 테이블'), 'situational': ('가족 모임', '회식'), 'supporting_signal': ('8인석', '여럿이 앉기')},
+    '예약가능': {'direct': ('예약 가능',), 'synonym': ('전화 예약', '네이버 예약'), 'situational': (), 'supporting_signal': ()},
+    '개별룸있음': {'direct': ('개별 룸', '개별룸'), 'synonym': ('프라이빗 룸', '룸 예약'), 'situational': ('가족 모임 룸',), 'supporting_signal': ()},
+    '편한좌석': {'direct': ('편한 좌석',), 'synonym': ('소파 좌석', '의자 편한'), 'situational': ('오래 앉기',), 'supporting_signal': ()},
+    '유아의자있음': {'direct': ('유아 의자', '아기 의자'), 'synonym': ('하이체어',), 'situational': ('아이 동반',), 'supporting_signal': ()},
+    '유모차접근': {'direct': ('유모차 접근',), 'synonym': ('유모차 입장',), 'situational': ('아이 동반',), 'supporting_signal': ('엘리베이터', '무단차')},
+    '테이크아웃전문': {'direct': ('테이크아웃 전문',), 'synonym': ('포장 전문',), 'situational': (), 'supporting_signal': ('좌석 없음',)},
+    '좌석없음': {'direct': ('좌석 없음',), 'synonym': ('매장 좌석 없음',), 'situational': (), 'supporting_signal': ('포장 전문',)},
+})
+
+
+SEARCH_QUERY_VOCABULARY['와이파이있음'] = {
+    'direct': ('와이파이', 'WiFi', 'Wi-Fi'),
+    'synonym': ('무선인터넷',),
+    'situational': (),
+    'supporting_signal': (),
+}
+SEARCH_QUERY_VOCABULARY['무료와이파이'] = {
+    'direct': ('무료 와이파이', '공공 와이파이'),
+    'synonym': ('무료 인터넷', 'free wifi'),
+    'situational': (),
+    'supporting_signal': (),
+}
+
+
 SEARCH_KEYWORDS = {
     '조용함': '조용',
     '작업하기좋음': '작업',
@@ -210,6 +339,14 @@ SEARCH_KEYWORDS = {
     '무료이용': '무료',
     '관리잘됨': '청결',
 }
+
+SEARCH_KEYWORDS.update({
+    tag_name: vocabulary['direct'][0]
+    for tag_name, vocabulary in SEARCH_QUERY_VOCABULARY.items()
+    if tag_name not in SEARCH_KEYWORDS and vocabulary.get('direct')
+})
+SEARCH_KEYWORDS['와이파이있음'] = '와이파이'
+SEARCH_KEYWORDS['무료와이파이'] = '무료 와이파이'
 
 
 def compact(value):

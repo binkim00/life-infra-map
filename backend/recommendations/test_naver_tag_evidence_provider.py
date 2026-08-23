@@ -73,7 +73,7 @@ class NaverTagEvidenceProviderTests(SimpleTestCase):
     def test_repeated_cafe_feature_phrases_map_to_existing_canonical_tags(self):
         cases = {
             '콘센트있음': '자리마다 콘센트가 설치되어 있다',
-            '무료와이파이': '와이파이도 잘 터져서 작업하기 편하다',
+            '와이파이있음': '와이파이도 잘 터져서 작업하기 편하다',
             '혼자이용좋음': '혼자 책 읽기 좋은 카페다',
             '대화하기좋음': '친구와 이야기 나누기 좋은 공간이다',
             '장기체류좋음': '오래 앉아서 시간을 보내기 좋은 곳이다',

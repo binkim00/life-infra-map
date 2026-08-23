@@ -4,6 +4,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from django.core.management import call_command
+from django.db import connection
 from django.test import TestCase
 
 from recommendations.management.commands.report_place_inventory import build_inventory_report
@@ -50,7 +51,7 @@ class PlaceInventoryReportTests(TestCase):
     def test_reports_place_source_region_and_match_inventory(self):
         report = build_inventory_report()
 
-        self.assertEqual(report["database_vendor"], "postgresql")
+        self.assertEqual(report["database_vendor"], connection.vendor)
         self.assertEqual(report["places"]["total"], 2)
         self.assertEqual(report["places"]["kakao_canonical"], 1)
         self.assertIn({"sido": "서울특별시", "count": 1}, report["places"]["regions"])

@@ -6,6 +6,7 @@ from django.db.models import Q
 from django.utils import timezone
 
 from recommendations.models import PlaceTagEvidence
+from recommendations.services.canonical_tag_policy import canonical_tag_name
 from recommendations.services.map_search import get_matching_categories
 from recommendations.services.tag_utils import get_category_display_name
 
@@ -86,6 +87,23 @@ def objective_feature_requirements(query, frame):
             "code": "accessible", "label": "장애인시설",
             "tags": {"장애인시설"}, "categories": set(),
         })
+    existing_codes = {item['code'] for item in requirements}
+    for value in frame.get('required_features') or []:
+        canonical = canonical_tag_name(value) or str(value or '').strip()
+        if not canonical:
+            continue
+        if any(canonical in item.get('tags', set()) for item in requirements):
+            continue
+        code = f'explicit_feature:{canonical}'
+        if code in existing_codes:
+            continue
+        requirements.append({
+            'code': code,
+            'label': canonical,
+            'tags': {canonical},
+            'categories': set(),
+        })
+        existing_codes.add(code)
     return requirements
 
 
@@ -143,7 +161,7 @@ def _active_positive_tags(candidates, now):
         polarity="positive",
     ).filter(Q(expires_at__isnull=True) | Q(expires_at__gt=now)).values_list("place_id", "tag__name")
     for place_id, tag_name in rows.iterator(chunk_size=1000):
-        result.setdefault(place_id, set()).add(tag_name)
+        result.setdefault(place_id, set()).add(canonical_tag_name(tag_name) or tag_name)
     return result
 
 

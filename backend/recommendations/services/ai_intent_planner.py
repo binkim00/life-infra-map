@@ -6,7 +6,8 @@ from django.conf import settings
 import requests
 
 from recommendations.services.map_search import get_matching_categories
-from recommendations.services.canonical_tag_policy import CANONICAL_TAG_ALIASES
+from recommendations.services.canonical_tag_policy import CANONICAL_TAG_ALIASES, TAG_FACETS
+from recommendations.services.semantic_intent_profile import build_semantic_intent_profile
 
 from recommendations.services.ai_situation_parser import _call_ai_chat_json as _shared_call_ai_chat_json
 from recommendations.services.ai_json_client import get_ai_json_unavailable_reason
@@ -362,6 +363,11 @@ def _derive_structured_conditions(raw_query, frame):
     if _has_any(text, ["단체", "회식", "모임", "여럿"]):
         add("단체 이용", "party")
 
+    for feature in frame.get('required_features') or []:
+        add(feature, TAG_FACETS.get(feature, 'feature'), required=True)
+    for feature in frame.get('preferred_features') or []:
+        add(feature, TAG_FACETS.get(feature, 'feature'), required=False)
+
     return _dedupe_condition_dicts(conditions)
 
 
@@ -475,6 +481,19 @@ def _derive_result_policy(frame, structured_conditions, fallback_targets, confli
 
 def _enrich_frame_policy(frame, raw_query="", action="search"):
     frame = frame if isinstance(frame, dict) else {}
+    frame = {
+        **frame,
+        **build_semantic_intent_profile(raw_query, frame),
+    }
+    frame['constraints'] = _dedupe([
+        *(frame.get('constraints') or []),
+        *(frame.get('required_features') or []),
+        *(frame.get('preferred_features') or []),
+    ])
+    frame['exclusions'] = _dedupe([
+        *(frame.get('exclusions') or []),
+        *(frame.get('avoid_features') or []),
+    ])
     if action != "search":
         structured_conditions = _derive_structured_conditions(raw_query, frame)
         conflicts = _derive_policy_conflicts(raw_query, frame, structured_conditions)
@@ -673,6 +692,8 @@ def _local_rule_anchor_location(raw_query):
     if _has_any(anchor, ["쇼핑", "실내", "체험", "놀거리", "액티비티", "카페", "식당", "맛집"]):
         return ""
     if _has_any(anchor, ["머리", "아픈", "아파", "두통", "배고", "목마", "비오", "비 오", "더워", "추워"]):
+        return ""
+    if _is_situational_anchor_false_positive(anchor):
         return ""
     return anchor
 
@@ -1835,6 +1856,27 @@ def _normalize_frame(raw_frame):
     }
 
 
+NON_LOCATION_ANCHOR_ROOTS = frozenset({
+    '가족', '가족모임', '모임', '회식', '데이트', '친구', '친구모임',
+    '부모님', '아이', '어린아이', '연인', '동료', '혼자', '식사',
+    '대화', '작업', '공부', '휴식', '산책',
+})
+
+
+def _is_situational_anchor_false_positive(value):
+    compact = _compact(value)
+    if not compact:
+        return False
+    if compact in NON_LOCATION_ANCHOR_ROOTS:
+        return True
+    stripped = re.sub(
+        r'(?:과|와|이랑|랑|하고|할|하는|하기|하려는|하려고|만날|만나는)$',
+        '',
+        compact,
+    )
+    return stripped in NON_LOCATION_ANCHOR_ROOTS
+
+
 def _normalize_clarification(raw):
     raw = raw if isinstance(raw, dict) else {}
     raw_options = raw.get("options") or raw.get("clarification_options") or []
@@ -1959,6 +2001,12 @@ def _validate_plan(plan, raw_query="", lat=None, lng=None, map_center=None):
 def _canonicalize(raw_plan, raw_query="", lat=None, lng=None, map_center=None):
     raw_plan = raw_plan if isinstance(raw_plan, dict) else {}
     frame = _normalize_frame(raw_plan.get("frame") or raw_plan.get("place_intent_frame") or {})
+    if (
+        frame.get('location_mode') == 'explicit'
+        and _is_situational_anchor_false_positive(frame.get('anchor_location'))
+    ):
+        frame['anchor_location'] = ''
+        frame['location_mode'] = 'current_context'
     # AI가 지명을 빠뜨리는 경우가 있어(`광안리 맛집` -> anchor 없음) 규칙으로 찾은 지명으로 채운다.
     if not _clean_text(frame.get("anchor_location")):
         local_anchor = _local_rule_anchor_location(raw_query)

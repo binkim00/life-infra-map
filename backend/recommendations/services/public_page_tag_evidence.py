@@ -299,6 +299,15 @@ def relevant_page_text(text):
 
 def normalize_page_polarity(tag_name, span, extraction):
     compact_span = _compact(span)
+    if tag_name == '와이파이있음' and re.search(
+        r'(?:와이파이|무선인터넷)(?:여부)?[:：]?(?:x|없|불가)', compact_span, re.I,
+    ):
+        return {
+            **extraction,
+            'polarity': 'negative',
+            'strength': 'CONTRADICTING',
+            'clarity_score': max(80, int(extraction.get('clarity_score') or 0)),
+        }
     contradicting = False
     if tag_name == "무료와이파이":
         contradicting = bool(re.search(r"(?:와이파이|무선인터넷)(?:여부)?[:：]?(?:x|없|불가)", compact_span, re.I))

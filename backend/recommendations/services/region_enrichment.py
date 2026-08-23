@@ -31,6 +31,14 @@ CORE_TAGS = {
 }
 
 
+CORE_TAGS['restaurant'] = tuple(dict.fromkeys([
+    *CORE_TAGS['restaurant'],
+    '단체석있음', '예약가능', '개별룸있음', '편한좌석', '좌석간격넓음',
+    '유아의자있음', '유모차접근', '장기체류좋음', '테이크아웃전문',
+    '좌석없음', '시간제한있음', '혼잡함', '소음큼',
+]))
+
+
 def normalize_region(value):
     text = str(value or "").strip()
     for short, full in REGION_NAMES.items():

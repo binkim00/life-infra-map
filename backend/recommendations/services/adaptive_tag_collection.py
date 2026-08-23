@@ -21,6 +21,15 @@ FEATURE_QUERY_CLUSTERS = (
     ("visit", ("전망좋음",)),
 )
 
+FEATURE_QUERY_CLUSTERS = (*FEATURE_QUERY_CLUSTERS, (
+    'group_dining',
+    (
+        '단체석있음', '예약가능', '개별룸있음', '편한좌석',
+        '유아의자있음', '유모차접근', '테이크아웃전문', '좌석없음',
+    ),
+))
+
+
 CLUSTER_QUERY_STAGES = {
     "work_sparse": (("direct", "노트북"), ("synonym", "카공 공부"), ("supporting_signal", "콘센트 좌석")),
     "solo": (("direct", "혼밥"), ("synonym", "혼자 식사"), ("supporting_signal", "1인석 바 좌석")),
@@ -29,6 +38,11 @@ CLUSTER_QUERY_STAGES = {
     "talk": (("direct", "대화"), ("synonym", "이야기 나누기"), ("supporting_signal", "좌석 간격 한적")),
     "waiting": (("direct", "웨이팅 없음"), ("synonym", "대기 없음"), ("situational", "바로 입장")),
     "visit": (("direct", "전망"),),
+    'group_dining': (
+        ('direct', '단체석 예약'),
+        ('synonym', '가족 모임 룸'),
+        ('supporting_signal', '유아 의자 편한 좌석'),
+    ),
 }
 
 

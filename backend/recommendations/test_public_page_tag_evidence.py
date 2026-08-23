@@ -4,7 +4,7 @@ from django.test import SimpleTestCase, override_settings
 
 from recommendations.services.public_page_tag_evidence import (
     PageTextParser, evidence_span, extract_page_evidences, fetch_public_page,
-    normalize_page_polarity, relevant_page_text, safe_public_url,
+    normalize_page_polarity, polarity_assessment, relevant_page_text, safe_public_url,
 )
 
 

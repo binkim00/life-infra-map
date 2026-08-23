@@ -31,6 +31,7 @@ from recommendations.services.smoking_area_data import calculate_distance_m
 from recommendations.services.tag_utils import get_category_display_name
 from recommendations.services.semantic_retrieval import attach_semantic_scores, retrieve_semantic_places
 from recommendations.services.canonical_tag_policy import canonical_tag_name
+from recommendations.services.commercial_place_registry import normalize_address, normalize_name
 from recommendations.services.search_hard_gate import apply_common_hard_gate
 
 
@@ -850,12 +851,18 @@ def _semantic_activation_context(frame, raw_query):
     )
 
     needs_semantic = bool(parsed_features or intent_markers or has_multiple_semantic_signals)
+    top_up_requires_semantic_support = (
+        bool(frame.get('required_features'))
+        if 'required_features' in frame
+        else needs_semantic
+    )
     if not needs_semantic and (
         category_codes or anchor_location
         or _frame_terms(frame, "target_objects", "result_match_terms", "candidate_place_types")
     ):
         return {
             "semantic_required": False,
+            "top_up_requires_semantic_support": False,
             "activation_reason": "category_or_place_reference_only",
             "parsed_features": parsed_features,
             "hard_conditions": hard_conditions,
@@ -879,6 +886,7 @@ def _semantic_activation_context(frame, raw_query):
 
     return {
         "semantic_required": needs_semantic,
+        "top_up_requires_semantic_support": top_up_requires_semantic_support,
         "activation_reason": reason,
         "parsed_features": parsed_features,
         "hard_conditions": hard_conditions,
@@ -2140,6 +2148,7 @@ def _db_tag_lists(place):
         tag_name = _clean_text(getattr(place_tag.tag, "name", ""))
         if not tag_name:
             continue
+        tag_name = canonical_tag_name(tag_name) or tag_name
         if place_tag.source == "warning_tags":
             warnings.append(tag_name)
             continue
@@ -3034,20 +3043,95 @@ def collect_web_candidates(frame, queries, *, lat=None, lng=None, existing_count
     return candidates
 
 
+def _same_place_identity(left, right):
+    left_name = normalize_name(left.get('name'))
+    right_name = normalize_name(right.get('name'))
+    if not left_name or left_name != right_name:
+        return False
+
+    left_address = normalize_address(left.get('address') or left.get('detail_location'))
+    right_address = normalize_address(right.get('address') or right.get('detail_location'))
+    if left_address and left_address == right_address:
+        return True
+
+    left_lat = _as_float(left.get('lat'))
+    left_lng = _as_float(left.get('lng'))
+    right_lat = _as_float(right.get('lat'))
+    right_lng = _as_float(right.get('lng'))
+    if None in {left_lat, left_lng, right_lat, right_lng}:
+        return False
+    return calculate_distance_m(left_lat, left_lng, right_lat, right_lng) <= 30
+
+
+def _merge_duplicate_candidate(primary, duplicate):
+    merged = {**primary}
+    list_fields = {
+        'verified_tags', 'verified_tag_labels', 'suggested_tags',
+        'suggested_tag_labels', 'candidate_tags', 'candidate_tag_labels',
+        'warning_tags', 'matched_tags', 'matched_tag_labels',
+        'policy_matched_constraints', 'pre_ai_unmet_constraints',
+        'policy_verification_needed',
+    }
+    for field in list_fields:
+        merged[field] = list(dict.fromkeys([
+            *_as_list(primary.get(field), max_items=100),
+            *_as_list(duplicate.get(field), max_items=100),
+        ]))
+
+    matched_evidence = []
+    seen_evidence = set()
+    for item in [
+        *(primary.get('matched_evidence') or []),
+        *(duplicate.get('matched_evidence') or []),
+    ]:
+        if not isinstance(item, dict):
+            continue
+        key = json.dumps(item, ensure_ascii=False, sort_keys=True, default=str)
+        if key in seen_evidence:
+            continue
+        seen_evidence.add(key)
+        matched_evidence.append(item)
+    merged['matched_evidence'] = matched_evidence
+
+    for field in ('kakao_place_url', 'place_url', 'external_url'):
+        if not _clean_text(merged.get(field)) and _clean_text(duplicate.get(field)):
+            merged[field] = duplicate[field]
+    merged['duplicate_count'] = int(primary.get('duplicate_count') or 1) + int(
+        duplicate.get('duplicate_count') or 1
+    )
+    merged['duplicate_candidate_ids'] = list(dict.fromkeys([
+        *_as_list(primary.get('duplicate_candidate_ids'), max_items=100),
+        _clean_text(duplicate.get('id')),
+        *_as_list(duplicate.get('duplicate_candidate_ids'), max_items=100),
+    ]))
+    return merged
+
+
 def _dedupe_candidates(candidates):
-    seen = set()
+    seen_external_ids = set()
     deduped = []
     for candidate in candidates:
         if not isinstance(candidate, dict):
             continue
         external_id = _clean_text(candidate.get("external_id"))
-        name = _compact(candidate.get("name"))
-        address = _compact(candidate.get("address") or candidate.get("detail_location"))
-        key = ("external_id", external_id) if external_id else ("name_address", name, address)
-        if key in seen:
+        duplicate_index = next(
+            (
+                index
+                for index, existing in enumerate(deduped)
+                if _same_place_identity(existing, candidate)
+            ),
+            None,
+        )
+        if duplicate_index is not None:
+            deduped[duplicate_index] = _merge_duplicate_candidate(
+                deduped[duplicate_index], candidate,
+            )
             continue
-        seen.add(key)
-        deduped.append(candidate)
+        if external_id and external_id in seen_external_ids:
+            continue
+        if external_id:
+            seen_external_ids.add(external_id)
+        deduped.append({**candidate, 'duplicate_count': int(candidate.get('duplicate_count') or 1)})
     return deduped
 
 
@@ -3409,7 +3493,48 @@ def _semantic_hybrid_pilot_rank(candidates, *, limit=15):
     ]
 
 
-def _top_up_ranked_candidates(ranked_candidates, candidate_pool, excluded_candidates, *, limit=15):
+SEMANTIC_SUPPORT_EVIDENCE_TYPES = {
+    'verified_tag_direct',
+    'suggested_tag_direct',
+    'candidate_tag_direct',
+    'semantic_feature_document',
+    'policy_constraint',
+}
+
+
+def _has_semantic_support(candidate):
+    return any(
+        isinstance(item, dict) and item.get('type') in SEMANTIC_SUPPORT_EVIDENCE_TYPES
+        for item in candidate.get('matched_evidence') or []
+    )
+
+
+def _cap_verification_confidence(candidates):
+    capped = []
+    for candidate in candidates or []:
+        needs_verification = bool(candidate.get('verification_required')) or (
+            candidate.get('compatibility_gate') == 'needs_verification'
+        )
+        if not needs_verification:
+            capped.append(candidate)
+            continue
+        capped.append({
+            **candidate,
+            'confidence': 'low',
+            'recommendation_confidence': 'low',
+            'confidence_label': '조건 확인 필요',
+        })
+    return capped
+
+
+def _top_up_ranked_candidates(
+    ranked_candidates,
+    candidate_pool,
+    excluded_candidates,
+    *,
+    limit=15,
+    semantic_required=False,
+):
     desired_count = _minimum_result_count(limit)
     ranked_candidates = list(ranked_candidates or [])
     if len(ranked_candidates) >= desired_count:
@@ -3430,6 +3555,8 @@ def _top_up_ranked_candidates(ranked_candidates, candidate_pool, excluded_candid
             continue
         if candidate_id in excluded_ids and not _can_top_up_excluded_candidate(candidate):
             continue
+        if semantic_required and not _has_semantic_support(candidate):
+            continue
         level = _clean_text(candidate.get("pre_ai_evidence_level") or candidate.get("evidence_level"))
         if level not in {"strong", "medium"}:
             continue
@@ -3440,6 +3567,9 @@ def _top_up_ranked_candidates(ranked_candidates, candidate_pool, excluded_candid
         reason = "요청 조건과 맞아 보이는 후보예요. 세부 정보는 방문 전에 확인해 주세요."
         additions.append({
             **candidate,
+            'confidence': 'low',
+            'recommendation_confidence': 'low',
+            'confidence_label': '조건 확인 필요',
             "semantic_score": max(float(candidate.get("score") or 0), 45.0),
             "evidence_level": evidence_level,
             "frame_evidence_tier": evidence_level,
@@ -4553,6 +4683,10 @@ def run_ai_search(request_data, *, user=None):
             candidate_pool,
             [],
             limit=limit,
+            semantic_required=semantic_activation.get(
+                'top_up_requires_semantic_support',
+                semantic_activation.get('semantic_required', False),
+            ),
         )
 
     if not reranker_available and not ranking_fallback_candidates:
@@ -4638,6 +4772,10 @@ def run_ai_search(request_data, *, user=None):
         candidate_pool,
         hidden_weak,
         limit=limit,
+        semantic_required=semantic_activation.get(
+            'top_up_requires_semantic_support',
+            semantic_activation.get('semantic_required', False),
+        ),
     )
     if top_up_candidates:
         reranker_debug = {
@@ -4645,6 +4783,7 @@ def run_ai_search(request_data, *, user=None):
             "top_up_count": len(top_up_candidates),
             "top_up_candidate_ids": [candidate.get("id") for candidate in top_up_candidates],
         }
+    ranked_candidates = _cap_verification_confidence(ranked_candidates)
     ranked_candidates = _prioritize_direct_specific_targets(ranked_candidates, frame)
     results = ranked_candidates[:limit]
     timings["ranking_latency_ms"] = round(

@@ -1,3 +1,7 @@
+import re
+import unicodedata
+
+
 CANONICAL_TAG_ALIASES = {
     "조용함": ("조용", "한적", "차분", "시끄럽지", "북적이지", "사람 적"),
     "작업하기좋음": ("작업하기 좋", "공부하기 좋", "오래 작업", "카공하기 좋"),
@@ -44,7 +48,80 @@ CANONICAL_TAG_ALIASES = {
     "열람좌석많음": ("열람좌석", "좌석 많음"),
 }
 
+CANONICAL_TAG_ALIASES['조용함'] = (*CANONICAL_TAG_ALIASES['조용함'], '조용한')
+CANONICAL_TAG_ALIASES['무료와이파이'] = ('무료 와이파이', '공공 와이파이', 'free wifi')
+CANONICAL_TAG_ALIASES['와이파이있음'] = ('와이파이', '무선 인터넷', 'wifi', 'wi-fi')
+
+CANONICAL_TAG_ALIASES.update({
+    '단체석있음': ('단체석', '단체 좌석', '단체 테이블', '여럿이 앉'),
+    '예약가능': ('예약 가능', '예약할 수', '예약 받', '네이버 예약'),
+    '개별룸있음': ('개별 룸', '개별룸', '프라이빗 룸', '룸 있음', '룸 예약'),
+    '넓은테이블': ('넓은 테이블', '큰 테이블', '대형 테이블'),
+    '좌석간격넓음': ('좌석 간격', '테이블 간격', '자리 간격'),
+    '편한좌석': ('편한 좌석', '좌석 편', '의자 편', '소파 좌석'),
+    '유아의자있음': ('유아 의자', '아기 의자', '하이체어'),
+    '유모차접근': ('유모차 접근', '유모차 가능', '유모차 들어', '유모차 입장'),
+    '아이메뉴있음': ('아이 메뉴', '어린이 메뉴', '키즈 메뉴'),
+    '엘리베이터있음': ('엘리베이터', '승강기'),
+    '무단차접근': ('무단차', '단차 없음', '문턱 없음', '계단 없이'),
+    '메뉴선택폭넓음': ('메뉴 다양', '메뉴가 많', '선택 폭', '다양한 메뉴'),
+    '여럿이먹기좋은메뉴': ('나눠 먹기', '공유 메뉴', '단체 메뉴', '여럿이 먹'),
+})
+
+CANONICAL_TAG_ALIASES.update({
+    '테이크아웃전문': ('테이크아웃 전문', '포장 전문', '테이크아웃만'),
+    '좌석없음': ('좌석 없음', '앉을 곳 없음', '매장 좌석 없'),
+    '시간제한있음': ('이용 시간 제한', '시간 제한', '좌석 시간제', '체류 시간 제한'),
+    '예약필수': ('예약 필수', '예약 없이는', '사전 예약제'),
+    '웨이팅많음': ('웨이팅 많', '대기 길', '줄이 길', '오래 기다'),
+    '혼잡함': ('혼잡', '붐빔', '북적', '사람 많'),
+    '소음큼': ('시끄러', '소음 크', '음악 소리 크', '대화 어렵'),
+    '계단접근만가능': ('계단만', '엘리베이터 없음', '계단 이용'),
+    '주차어려움': ('주차 어려', '주차 불가', '주차장 없음'),
+})
+
 CANONICAL_TAGS = frozenset(CANONICAL_TAG_ALIASES)
+
+TAG_FACETS = {
+    '조용함': 'ambience', '분위기좋음': 'ambience', '대화하기좋음': 'ambience',
+    '혼잡함': 'ambience', '소음큼': 'ambience', '작업하기좋음': 'usage',
+    '노트북작업': 'usage', '장기체류좋음': 'usage', '단체석있음': 'space',
+    '개별룸있음': 'space', '넓은테이블': 'space', '좌석간격넓음': 'space',
+    '편한좌석': 'space', '좌석없음': 'space', '주차가능': 'accessibility',
+    '주차어려움': 'accessibility', '휠체어접근': 'accessibility',
+    '엘리베이터있음': 'accessibility', '무단차접근': 'accessibility',
+    '계단접근만가능': 'accessibility', '유아의자있음': 'family_facility',
+    '유모차접근': 'family_facility', '아이메뉴있음': 'family_facility',
+    '예약가능': 'operation', '예약필수': 'operation', '시간제한있음': 'operation',
+    '웨이팅많음': 'operation', '웨이팅적음': 'operation', '주말휴일운영': 'operation',
+    '와이파이있음': 'facility', '무료와이파이': 'facility', '콘센트있음': 'facility',
+    '메뉴선택폭넓음': 'food', '여럿이먹기좋은메뉴': 'food',
+    '테이크아웃전문': 'service_limit',
+}
+
+
+def _compact_tag_text(value):
+    text = unicodedata.normalize('NFKC', str(value or '')).casefold()
+    return re.sub(r'[^0-9a-z가-힣]+', '', text)
+
+
+def canonical_tags_in_text(value):
+    text = _compact_tag_text(value)
+    if not text:
+        return []
+    matched = []
+    for canonical, aliases in CANONICAL_TAG_ALIASES.items():
+        if any(
+            _compact_tag_text(term) and _compact_tag_text(term) in text
+            for term in (canonical, *aliases)
+        ):
+            matched.append(canonical)
+    if '무료와이파이' in matched:
+        matched = [
+            tag_name for tag_name in matched
+            if tag_name != '와이파이있음'
+        ]
+    return matched
 
 
 def canonical_tag_name(value):
