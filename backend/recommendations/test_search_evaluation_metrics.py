@@ -1,9 +1,111 @@
 from django.test import SimpleTestCase
 
-from recommendations.management.commands.evaluate_ai_search import _evaluation_metrics
+from recommendations.management.commands.evaluate_ai_search import (
+    _evaluation_metrics,
+    _issues_for_case,
+    _matches_expected_conversation_scenario,
+)
 
 
 class SearchEvaluationMetricTests(SimpleTestCase):
+    def test_unified_ai_scenario_uses_frame_semantics_for_conversation_expectation(self):
+        self.assertTrue(_matches_expected_conversation_scenario(
+            "restaurant",
+            "ai_place_search",
+            {
+                "candidate_category_codes": ["restaurant"],
+                "target_objects": ["식당"],
+            },
+        ))
+        self.assertTrue(_matches_expected_conversation_scenario(
+            "work_cafe",
+            "ai_place_search",
+            {
+                "situation": "work",
+                "candidate_category_codes": ["cafe"],
+                "target_objects": ["카페"],
+            },
+        ))
+        self.assertFalse(_matches_expected_conversation_scenario(
+            "walk_healing",
+            "ai_place_search",
+            {"situation": "work"},
+        ))
+
+    def test_conversation_expectations_report_missing_preserved_state(self):
+        issues = _issues_for_case(
+            {
+                "query": "주차되는 곳만",
+                "expected_action": "refine_previous_search",
+                "expected_scenario": "restaurant",
+                "expected_location_terms": ["서면"],
+                "expected_conditions_all": ["주차", "조용"],
+                "expected_exclusions_all": ["카페"],
+                "expected_target_terms": ["식당"],
+                "expected_sort_hint": "distance",
+                "allow_empty": True,
+            },
+            {
+                "decision_action": "refine_previous_search",
+                "conditions": ["주차"],
+                "search_plan": {
+                    "scenario": "restaurant",
+                    "locationQuery": "서면",
+                    "targetQuery": "식당",
+                    "requestedConditions": ["주차"],
+                    "sort_hint": "",
+                },
+            },
+            {
+                "anchor_location": "서면",
+                "target_objects": ["식당"],
+                "constraints": ["주차"],
+                "exclusions": [],
+            },
+            [],
+        )
+
+        self.assertIn("대화 조건 문맥 누락: 조용", issues)
+        self.assertIn("대화 제외 문맥 누락: 카페", issues)
+        self.assertIn("기대 sort_hint=distance, 실제 sort_hint=-", issues)
+
+    def test_conversation_expectations_accept_preserved_state(self):
+        issues = _issues_for_case(
+            {
+                "query": "좀 더 가까운 곳",
+                "expected_action": "refine_previous_search",
+                "expected_scenario": "restaurant",
+                "expected_location_terms": ["서면"],
+                "expected_conditions_all": ["주차", "조용"],
+                "expected_exclusions_all": ["카페"],
+                "expected_target_terms": ["식당"],
+                "expected_sort_hint": "distance",
+                "allow_empty": True,
+            },
+            {
+                "decision_action": "refine_previous_search",
+                "conditions": ["주차", "조용"],
+                "avoid": ["카페"],
+                "search_plan": {
+                    "scenario": "restaurant",
+                    "locationQuery": "서면",
+                    "targetQuery": "식당",
+                    "requestedConditions": ["주차", "조용"],
+                    "exclude_terms": ["카페"],
+                    "sort_hint": "distance",
+                },
+            },
+            {
+                "anchor_location": "서면",
+                "target_objects": ["식당"],
+                "constraints": ["주차", "조용"],
+                "exclusions": ["카페"],
+            },
+            [],
+        )
+
+        self.assertEqual(issues, [])
+
     def test_reports_rank_metrics_only_with_explicit_relevance_labels(self):
         rows = [{
             "action": "search",

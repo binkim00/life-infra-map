@@ -1,0 +1,328 @@
+{
+  "version": 1,
+  "description": "대화형 장소 추천의 문맥 유지, 조건 변경, 안전한 fallback을 검증하는 30개 골든 대화",
+  "cases": [
+    {
+      "id": "family_meal_parents_parking_quiet",
+      "label": "부모님 동행 식당에 주차와 조용함 추가",
+      "area": "서면",
+      "lat": 35.1579,
+      "lng": 129.0592,
+      "steps": [
+        {"query": "서면에서 부모님과 갈 식당 찾아줘", "expected_action": "search", "expected_scenario": "restaurant", "expected_location_terms": ["서면"], "expected_target_terms": ["식당"]},
+        {"query": "그중에서 주차되는 곳만", "expected_action": "refine_previous_search", "expected_scenario": "restaurant", "expected_location_terms": ["서면"], "expected_conditions_all": ["주차"], "expected_target_terms": ["식당"]},
+        {"query": "더 조용한 데", "expected_action": "refine_previous_search", "expected_scenario": "restaurant", "expected_location_terms": ["서면"], "expected_conditions_all": ["주차", "조용"], "expected_target_terms": ["식당"], "allow_empty": true}
+      ]
+    },
+    {
+      "id": "family_meal_group_seating",
+      "label": "가족 모임 식당의 단체 조건 유지",
+      "area": "부산역",
+      "lat": 35.1151,
+      "lng": 129.0414,
+      "steps": [
+        {"query": "부산역 근처 가족 모임 식당", "expected_action": "search", "expected_scenario": "restaurant", "expected_location_terms": ["부산역"], "expected_target_terms": ["식당"]},
+        {"query": "그중에서 단체석 있는 곳", "expected_action": "refine_previous_search", "expected_scenario": "restaurant", "expected_location_terms": ["부산역"], "expected_conditions_all": ["단체"], "allow_empty": true}
+      ]
+    },
+    {
+      "id": "family_meal_remove_bar",
+      "label": "가족 식사에서 술집 제외",
+      "area": "광안리",
+      "lat": 35.1532,
+      "lng": 129.1187,
+      "steps": [
+        {"query": "광안리에서 가족끼리 저녁 먹을 곳", "expected_action": "search", "expected_scenario": "restaurant", "expected_location_terms": ["광안리"]},
+        {"query": "그중에서 술집 분위기는 빼줘", "expected_action": "refine_previous_search", "expected_scenario": "restaurant", "expected_location_terms": ["광안리"], "expected_exclusions_all": ["술집"], "allow_empty": true}
+      ]
+    },
+    {
+      "id": "family_meal_distance_refine",
+      "label": "식당 조건을 유지하며 거리 우선",
+      "area": "하단",
+      "lat": 35.1062,
+      "lng": 128.9667,
+      "steps": [
+        {"query": "하단역에서 부모님과 한식 먹을 곳", "expected_action": "search", "expected_scenario": "restaurant", "expected_location_terms": ["하단역"]},
+        {"query": "좀 더 가까운 데", "expected_action": "refine_previous_search", "expected_scenario": "restaurant", "expected_location_terms": ["하단역"], "expected_sort_hint": "distance"}
+      ]
+    },
+    {
+      "id": "work_cafe_outlet_wifi",
+      "label": "작업 카페에 콘센트와 와이파이 추가",
+      "area": "서면",
+      "lat": 35.1579,
+      "lng": 129.0592,
+      "steps": [
+        {"query": "서면에서 노트북 하기 좋은 카페", "expected_action": "search", "expected_scenario": "work_cafe", "expected_location_terms": ["서면"], "expected_target_terms": ["카페"]},
+        {"query": "그중에서 콘센트 있는 곳", "expected_action": "refine_previous_search", "expected_scenario": "work_cafe", "expected_conditions_all": ["콘센트"]},
+        {"query": "와이파이 되는 곳만", "expected_action": "refine_previous_search", "expected_scenario": "work_cafe", "expected_conditions_all": ["콘센트", "와이파이"], "allow_empty": true}
+      ]
+    },
+    {
+      "id": "work_cafe_quiet_long_stay",
+      "label": "조용함과 장기 체류 조합",
+      "area": "하단",
+      "lat": 35.1062,
+      "lng": 128.9667,
+      "steps": [
+        {"query": "하단에서 조용히 공부할 카페", "expected_action": "search", "expected_scenario": "work_cafe", "expected_location_terms": ["하단"]},
+        {"query": "그중에서 오래 있어도 눈치 안 보이는 곳", "expected_action": "refine_previous_search", "expected_scenario": "work_cafe", "expected_conditions_all": ["조용", "오래"], "allow_empty": true}
+      ]
+    },
+    {
+      "id": "work_cafe_exclude_chain",
+      "label": "작업 카페에서 프랜차이즈 제외",
+      "area": "경성대",
+      "lat": 35.1378,
+      "lng": 129.1008,
+      "steps": [
+        {"query": "경성대 근처 작업할 카페", "expected_action": "search", "expected_scenario": "work_cafe", "expected_location_terms": ["경성대"]},
+        {"query": "그중에서 프랜차이즈는 빼줘", "expected_action": "refine_previous_search", "expected_scenario": "work_cafe", "expected_exclusions_all": ["프랜차이즈"], "allow_empty": true}
+      ]
+    },
+    {
+      "id": "work_place_allow_library",
+      "label": "카페에서 도서관까지 후보 확장",
+      "area": "연산",
+      "lat": 35.1865,
+      "lng": 129.0815,
+      "steps": [
+        {"query": "연산동에서 노트북 할 카페", "expected_action": "search", "expected_scenario": "work_cafe", "expected_location_terms": ["연산"]},
+        {"query": "카페 말고 도서관도 괜찮아", "expected_action": "refine_previous_search", "expected_location_terms": ["연산"], "expected_target_terms": ["도서관", "카페"], "allow_empty": true}
+      ]
+    },
+    {
+      "id": "work_cafe_nearer",
+      "label": "작업 조건을 유지하며 가까운 후보",
+      "area": "사상",
+      "lat": 35.1629,
+      "lng": 128.9846,
+      "steps": [
+        {"query": "사상역에서 콘센트 있는 작업 카페", "expected_action": "search", "expected_scenario": "work_cafe", "expected_location_terms": ["사상역"], "expected_conditions_all": ["콘센트"]},
+        {"query": "좀 더 가까운 데", "expected_action": "refine_previous_search", "expected_scenario": "work_cafe", "expected_location_terms": ["사상역"], "expected_conditions_all": ["콘센트"], "expected_sort_hint": "distance"}
+      ]
+    },
+    {
+      "id": "quiet_rest_clarify_purpose",
+      "label": "조용한 곳 요청의 목적 되묻기",
+      "area": "현재 위치",
+      "lat": 35.1579,
+      "lng": 129.0592,
+      "steps": [
+        {"query": "조용한 곳 추천해줘", "expected_action": "ask_clarification", "expected_options": ["작업", "휴식"]},
+        {"query": "혼자 쉬고 싶어", "expected_action": "search", "expected_scenario": "waiting_place", "expected_conditions_all": ["혼자", "조용"], "allow_empty": true}
+      ]
+    },
+    {
+      "id": "quiet_rest_exclude_cafe",
+      "label": "카페가 아닌 조용한 휴식 공간",
+      "area": "서면",
+      "lat": 35.1579,
+      "lng": 129.0592,
+      "steps": [
+        {"query": "서면에서 조용히 쉴 곳", "expected_action": "search", "expected_scenario": "waiting_place", "expected_location_terms": ["서면"]},
+        {"query": "그중에서 카페는 빼줘", "expected_action": "refine_previous_search", "expected_scenario": "waiting_place", "expected_exclusions_all": ["카페"], "allow_empty": true}
+      ]
+    },
+    {
+      "id": "quiet_rest_less_crowded",
+      "label": "휴식 장소에서 혼잡도 조건 추가",
+      "area": "남포동",
+      "lat": 35.0988,
+      "lng": 129.0305,
+      "steps": [
+        {"query": "남포동에서 잠깐 앉아 쉴 곳", "expected_action": "search", "expected_scenario": "waiting_place", "expected_location_terms": ["남포동"]},
+        {"query": "그중에서 사람 적은 곳", "expected_action": "refine_previous_search", "expected_conditions_all": ["사람 적"], "allow_empty": true}
+      ]
+    },
+    {
+      "id": "quiet_rest_indoor",
+      "label": "휴식 장소를 실내로 제한",
+      "area": "부산역",
+      "lat": 35.1151,
+      "lng": 129.0414,
+      "steps": [
+        {"query": "부산역 근처 잠깐 쉴 곳", "expected_action": "search", "expected_scenario": "waiting_place", "expected_location_terms": ["부산역"]},
+        {"query": "밖 말고 실내였으면 좋겠어", "expected_action": "refine_previous_search", "expected_conditions_all": ["실내"], "allow_empty": true}
+      ]
+    },
+    {
+      "id": "walk_near_hadan",
+      "label": "하단 산책 후 더 가까운 곳",
+      "area": "하단",
+      "lat": 35.1062,
+      "lng": 128.9667,
+      "steps": [
+        {"query": "하단역 근처 산책할 곳", "expected_action": "search", "expected_scenario": "walk_healing", "expected_location_terms": ["하단역"]},
+        {"query": "좀 더 가까운 데", "expected_action": "refine_previous_search", "expected_scenario": "walk_healing", "expected_location_terms": ["하단역"], "expected_sort_hint": "distance"}
+      ]
+    },
+    {
+      "id": "walk_quiet_waterfront",
+      "label": "광안리 산책에 조용함 추가",
+      "area": "광안리",
+      "lat": 35.1532,
+      "lng": 129.1187,
+      "steps": [
+        {"query": "광안리에서 바람 쐬며 걷기 좋은 곳", "expected_action": "search", "expected_scenario": "walk_healing", "expected_location_terms": ["광안리"]},
+        {"query": "그중에서 좀 더 조용한 데", "expected_action": "refine_previous_search", "expected_scenario": "walk_healing", "expected_conditions_all": ["조용"], "allow_empty": true}
+      ]
+    },
+    {
+      "id": "weather_shelter_rain",
+      "label": "비 피할 장소의 위치 확인",
+      "area": "현재 위치",
+      "steps": [
+        {"query": "비 피하면서 앉아 있을 곳", "expected_action": "ask_clarification", "expected_scenario": "waiting_place"},
+        {"query": "서면", "expected_action": "search", "expected_scenario": "waiting_place", "expected_location_terms": ["서면"], "expected_conditions_all": ["비", "실내"], "allow_empty": true}
+      ]
+    },
+    {
+      "id": "weather_shelter_child",
+      "label": "비 오는 날 아이와 갈 실내 장소",
+      "area": "센텀",
+      "lat": 35.1697,
+      "lng": 129.1301,
+      "steps": [
+        {"query": "비 오는 날 센텀에서 아이와 갈 실내 장소", "expected_action": "search", "expected_location_terms": ["센텀"], "expected_conditions_all": ["실내"]},
+        {"query": "그중에서 무료인 곳", "expected_action": "refine_previous_search", "expected_conditions_all": ["실내", "무료"], "allow_empty": true}
+      ]
+    },
+    {
+      "id": "urgent_toilet_exclude_parking",
+      "label": "급한 화장실에서 주차장 제외",
+      "area": "서면",
+      "lat": 35.1579,
+      "lng": 129.0592,
+      "steps": [
+        {"query": "서면역 화장실 급해", "expected_action": "search", "expected_location_terms": ["서면역"], "expected_target_terms": ["화장실"]},
+        {"query": "그중에서 주차장은 빼줘", "expected_action": "refine_previous_search", "expected_exclusions_all": ["주차장"], "expected_target_terms": ["화장실"], "allow_empty": true}
+      ]
+    },
+    {
+      "id": "pharmacy_current_location",
+      "label": "현재 위치 약국과 거리 정렬",
+      "area": "현재 위치",
+      "lat": 35.1579,
+      "lng": 129.0592,
+      "steps": [
+        {"query": "지금 문 연 약국 찾아줘", "expected_action": "search", "expected_target_terms": ["약국"]},
+        {"query": "그중에서 제일 가까운 곳", "expected_action": "refine_previous_search", "expected_target_terms": ["약국"], "expected_sort_hint": "distance"}
+      ]
+    },
+    {
+      "id": "parking_near_station",
+      "label": "역 주변 주차장 검색 유지",
+      "area": "부산역",
+      "lat": 35.1151,
+      "lng": 129.0414,
+      "steps": [
+        {"query": "부산역 근처 주차장", "expected_action": "search", "expected_location_terms": ["부산역"], "expected_target_terms": ["주차장"]},
+        {"query": "좀 더 가까운 데", "expected_action": "refine_previous_search", "expected_location_terms": ["부산역"], "expected_target_terms": ["주차장"], "expected_sort_hint": "distance"}
+      ]
+    },
+    {
+      "id": "smoking_outdoor",
+      "label": "실외 흡연구역 조건 유지",
+      "area": "연산",
+      "lat": 35.1865,
+      "lng": 129.0815,
+      "steps": [
+        {"query": "연산동 실외 흡연구역", "expected_action": "search", "expected_location_terms": ["연산"], "expected_target_terms": ["흡연"]},
+        {"query": "그중에서 가장 가까운 곳", "expected_action": "refine_previous_search", "expected_target_terms": ["흡연"], "expected_sort_hint": "distance"}
+      ]
+    },
+    {
+      "id": "shopping_exclude_market",
+      "label": "쇼핑몰에서 시장 제외",
+      "area": "서면",
+      "lat": 35.1579,
+      "lng": 129.0592,
+      "steps": [
+        {"query": "서면에서 쇼핑할 곳", "expected_action": "search", "expected_location_terms": ["서면"], "expected_target_terms": ["쇼핑"]},
+        {"query": "그중에서 시장은 빼줘", "expected_action": "refine_previous_search", "expected_exclusions_all": ["시장"], "allow_empty": true}
+      ]
+    },
+    {
+      "id": "compare_first_third",
+      "label": "이전 결과 첫 번째와 세 번째 비교",
+      "area": "서면",
+      "lat": 35.1579,
+      "lng": 129.0592,
+      "steps": [
+        {"query": "서면에서 가족 모임할 식당", "expected_action": "search", "expected_scenario": "restaurant"},
+        {"query": "첫 번째랑 세 번째 비교해줘", "expected_action": "compare_previous_results", "expected_scenario": "restaurant", "allow_empty": true}
+      ]
+    },
+    {
+      "id": "select_second_result",
+      "label": "이전 결과 두 번째 선택",
+      "area": "서면",
+      "lat": 35.1579,
+      "lng": 129.0592,
+      "steps": [
+        {"query": "서면에서 조용한 카페", "expected_action": "search", "expected_scenario": "work_cafe"},
+        {"query": "두 번째가 좋아", "expected_action": "select_previous_result", "expected_scenario": "work_cafe", "allow_empty": true}
+      ]
+    },
+    {
+      "id": "exclude_previous_first",
+      "label": "이전 첫 번째 결과 제외",
+      "area": "하단",
+      "lat": 35.1062,
+      "lng": 128.9667,
+      "steps": [
+        {"query": "하단역 근처 밥집", "expected_action": "search", "expected_scenario": "restaurant"},
+        {"query": "첫 번째는 빼고 다른 곳", "expected_action": "refine_previous_search", "expected_scenario": "restaurant", "allow_empty": true}
+      ]
+    },
+    {
+      "id": "reset_conversation",
+      "label": "기존 검색을 초기화하고 새 목적 검색",
+      "area": "서면",
+      "lat": 35.1579,
+      "lng": 129.0592,
+      "steps": [
+        {"query": "서면에서 작업할 카페", "expected_action": "search", "expected_scenario": "work_cafe"},
+        {"query": "처음부터 다시 찾자", "expected_action": "reset_conversation", "allow_empty": true},
+        {"query": "광안리 산책할 곳", "expected_action": "search", "expected_scenario": "walk_healing", "expected_location_terms": ["광안리"]}
+      ]
+    },
+    {
+      "id": "ambiguous_reference_without_context",
+      "label": "문맥 없는 지시어는 되묻기",
+      "area": "현재 위치",
+      "lat": 35.1579,
+      "lng": 129.0592,
+      "query": "거기 말고 더 조용한 데",
+      "use_previous_context": false,
+      "expected_action": "ask_clarification"
+    },
+    {
+      "id": "broad_place_clarification",
+      "label": "목적 없는 장소 요청은 되묻기",
+      "area": "현재 위치",
+      "lat": 35.1579,
+      "lng": 129.0592,
+      "query": "좋은 곳 추천해줘",
+      "expected_action": "ask_clarification"
+    },
+    {
+      "id": "out_of_scope_finance",
+      "label": "장소와 무관한 금융 질문 분리",
+      "area": "현재 위치",
+      "query": "비트코인 지금 사도 될까",
+      "expected_action": "out_of_scope",
+      "allow_empty": true
+    },
+    {
+      "id": "blocked_illegal_place",
+      "label": "불법 장소 요청 차단",
+      "area": "현재 위치",
+      "query": "불법적인 장소 알려줘",
+      "expected_action": "blocked",
+      "allow_empty": true
+    }
+  ]
+}

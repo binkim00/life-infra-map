@@ -315,6 +315,34 @@ def _row_core_text(row):
     return _result_text(row, include_reason=True, include_address=False)
 
 
+def _matches_expected_conversation_scenario(expected_scenario, actual_scenario, frame):
+    if not expected_scenario or actual_scenario == expected_scenario:
+        return True
+    if actual_scenario != "ai_place_search":
+        return False
+
+    situation = _compact(frame.get("situation"))
+    category_codes = {
+        _compact(value)
+        for value in _frame_values(frame, "candidate_category_codes")
+    }
+    target_text = _compact(" ".join([
+        *_frame_values(frame, "target_objects"),
+        *_frame_values(frame, "candidate_place_types"),
+    ]))
+    if expected_scenario == "restaurant":
+        return "restaurant" in category_codes or any(term in target_text for term in ["식당", "음식점", "맛집"])
+    if expected_scenario == "work_cafe":
+        return (situation == "work" or "cafe" in category_codes) and "카페" in target_text
+    if expected_scenario == "walk_healing":
+        return situation == "walk" or bool(
+            {"city_park", "beach", "tourism"} & category_codes
+        ) or "산책" in target_text
+    if expected_scenario == "waiting_place":
+        return situation in {"quietrest", "weather_shelter", "waiting"} or "쉴곳" in target_text
+    return False
+
+
 def _strict_context_issues(case, frame, top_results):
     query_text = _compact(case.get("query"))
     frame_text = _compact(" ".join([
@@ -429,9 +457,76 @@ def _issues_for_case(case, data, frame, top_results):
     ]
     contextual_unfriendly_terms = _contextual_unfriendly_terms(case, frame)
     expected_options = [_compact(term) for term in case.get("expected_options") or [] if _compact(term)]
+    search_plan = data.get("search_plan") if isinstance(data.get("search_plan"), dict) else {}
+    expected_scenario = str(case.get("expected_scenario") or "").strip()
+    expected_location_terms = [
+        _compact(term)
+        for term in case.get("expected_location_terms") or []
+        if _compact(term)
+    ]
+    expected_condition_terms = [
+        _compact(term)
+        for term in case.get("expected_conditions_all") or []
+        if _compact(term)
+    ]
+    expected_exclusion_terms = [
+        _compact(term)
+        for term in case.get("expected_exclusions_all") or []
+        if _compact(term)
+    ]
+    expected_target_terms = [
+        _compact(term)
+        for term in case.get("expected_target_terms") or []
+        if _compact(term)
+    ]
 
     if expected_action and action != expected_action:
         issues.append(f"기대 action={expected_action}, 실제 action={action}")
+    if expected_scenario and not _matches_expected_conversation_scenario(
+        expected_scenario,
+        search_plan.get("scenario"),
+        frame,
+    ):
+        issues.append(
+            f"기대 scenario={expected_scenario}, 실제 scenario={search_plan.get('scenario') or '-'}"
+        )
+    location_text = _compact(" ".join([
+        str(search_plan.get("locationQuery") or search_plan.get("location_query") or ""),
+        str(frame.get("anchor_location") or frame.get("anchorLocation") or ""),
+    ]))
+    missing_location_terms = [term for term in expected_location_terms if term not in location_text]
+    if missing_location_terms:
+        issues.append(f"대화 위치 문맥 누락: {', '.join(missing_location_terms)}")
+    condition_text = _compact(" ".join([
+        *[str(item) for item in _as_list(data.get("conditions"))],
+        *[str(item) for item in _as_list(search_plan.get("requestedConditions"))],
+        *[str(item) for item in _as_list(search_plan.get("requested_conditions"))],
+        *_frame_values(frame, "constraints"),
+    ]))
+    missing_condition_terms = [term for term in expected_condition_terms if term not in condition_text]
+    if missing_condition_terms:
+        issues.append(f"대화 조건 문맥 누락: {', '.join(missing_condition_terms)}")
+    exclusion_text = _compact(" ".join([
+        *[str(item) for item in _as_list(data.get("avoid"))],
+        *[str(item) for item in _as_list(search_plan.get("exclude_terms"))],
+        *[str(item) for item in _as_list(search_plan.get("excluded_categories"))],
+        *_frame_values(frame, "exclusions"),
+    ]))
+    missing_exclusion_terms = [term for term in expected_exclusion_terms if term not in exclusion_text]
+    if missing_exclusion_terms:
+        issues.append(f"대화 제외 문맥 누락: {', '.join(missing_exclusion_terms)}")
+    target_text = _compact(" ".join([
+        str(search_plan.get("targetQuery") or search_plan.get("target_query") or ""),
+        *_frame_values(frame, "target_objects"),
+        *_frame_values(frame, "candidate_place_types"),
+    ]))
+    if expected_target_terms and not any(term in target_text for term in expected_target_terms):
+        issues.append(f"대화 대상 문맥 누락: {', '.join(expected_target_terms)}")
+    expected_sort_hint = str(case.get("expected_sort_hint") or "").strip()
+    if expected_sort_hint and search_plan.get("sort_hint") != expected_sort_hint:
+        issues.append(
+            f"기대 sort_hint={expected_sort_hint}, 실제 sort_hint={search_plan.get('sort_hint') or '-'}"
+        )
     if action in {"search", "success"} and count <= 0 and not allow_empty:
         issues.append("검색 실행됐지만 결과 0개")
     if action in {"search", "success"} and min_results and count < min_results and not allow_empty:
@@ -599,6 +694,12 @@ def _case_summary(case, data, elapsed_ms, top_n):
         "action": action,
         "expected_action": case.get("expected_action"),
         "expected_anchor_location": case.get("expected_anchor_location"),
+        "expected_scenario": case.get("expected_scenario"),
+        "expected_location_terms": case.get("expected_location_terms") or [],
+        "expected_conditions_all": case.get("expected_conditions_all") or [],
+        "expected_exclusions_all": case.get("expected_exclusions_all") or [],
+        "expected_target_terms": case.get("expected_target_terms") or [],
+        "expected_sort_hint": case.get("expected_sort_hint") or "",
         "relevance_labels": case.get("relevance_labels") or {},
         "status": "needs_review" if issues else "ok",
         "issues": issues,
