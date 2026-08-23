@@ -47,6 +47,11 @@ docker compose --env-file /home/ubuntu/life-infra-map/deploy/db/.env -f docker-c
 - `life-infra-map-tag-scheduler`
 - `life-infra-map-tag-worker`
 
+기본 수집 범위는 1차 출시 품질을 만들기 위해 `bootstrap`, `부산광역시`,
+`cafe,restaurant`로 제한합니다. 서울로 전환하거나 병행할 때는 Compose 실행 환경에서
+`TAG_COLLECTION_FOCUS_REGION`과 `TAG_COLLECTION_FOCUS_CATEGORIES`를 명시적으로 바꾸고,
+지역별 `recommendation_searchable_coverage_pct`를 확인한 뒤 재기동합니다.
+
 ## 중지
 
 DB 컨테이너에는 영향을 주지 않고 scheduler와 worker만 중지합니다.

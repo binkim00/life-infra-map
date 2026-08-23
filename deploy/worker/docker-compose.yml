@@ -16,6 +16,9 @@ services:
       POSTGRES_HOST: db
       POSTGRES_PORT: 5432
       TAG_ENRICHMENT_ENABLED: "true"
+      TAG_COLLECTION_MODE: ${TAG_COLLECTION_MODE:-bootstrap}
+      TAG_COLLECTION_FOCUS_REGION: ${TAG_COLLECTION_FOCUS_REGION:-부산광역시}
+      TAG_COLLECTION_FOCUS_CATEGORIES: ${TAG_COLLECTION_FOCUS_CATEGORIES:-cafe,restaurant}
     networks:
       - runtime-db
     command: python manage.py run_tag_collection_scheduler
@@ -35,6 +38,9 @@ services:
       POSTGRES_HOST: db
       POSTGRES_PORT: 5432
       TAG_ENRICHMENT_ENABLED: "true"
+      TAG_COLLECTION_MODE: ${TAG_COLLECTION_MODE:-bootstrap}
+      TAG_COLLECTION_FOCUS_REGION: ${TAG_COLLECTION_FOCUS_REGION:-부산광역시}
+      TAG_COLLECTION_FOCUS_CATEGORIES: ${TAG_COLLECTION_FOCUS_CATEGORIES:-cafe,restaurant}
     networks:
       - runtime-db
     command: python manage.py process_place_tag_collection_jobs --watch --worker-id ec2-primary
