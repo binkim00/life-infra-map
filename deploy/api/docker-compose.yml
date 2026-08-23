@@ -20,6 +20,9 @@ services:
       DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-127.0.0.1,localhost}
       DJANGO_CORS_ALLOWED_ORIGINS: ${DJANGO_CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
       DJANGO_CSRF_TRUSTED_ORIGINS: ${DJANGO_CSRF_TRUSTED_ORIGINS:-}
+      # The deterministic local planner keeps the API available when an
+      # optional external model endpoint is down.
+      AI_PROVIDER: ${API_AI_PROVIDER:-rule}
     networks:
       - runtime-db
     ports:
