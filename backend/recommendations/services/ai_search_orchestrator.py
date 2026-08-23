@@ -86,6 +86,16 @@ DB_CATEGORY_SEARCH_CODES = {
     "shopping",
     "karaoke",
 }
+RESTAURANT_PRIMARY_DATASETS = frozenset({"general_restaurant"})
+RESTAURANT_SECONDARY_DATASETS = frozenset({"commercial_store"})
+CONVENIENCE_STORE_NAME_PREFIXES = (
+    "씨유", "지에스25", "세븐일레븐", "이마트24", "미니스톱", "스토리웨이",
+)
+NON_MEAL_RESTAURANT_NAME_TERMS = (
+    "카페", "커피", "COFFEE", "CAFE", "베이커리", "제과", "도넛", "던킨",
+    "파스쿠찌", "스타벅스", "투썸", "이디야", "메가MGC", "컴포즈", "빽다방",
+    "할리스", "엔제리너스",
+)
 STRUCTURED_PLACE_TYPE_TERMS = {
     "카페",
     "커피",
@@ -2379,6 +2389,39 @@ def _candidate_has_invalid_display(candidate):
     return "검증 태그" in name or "테스트로" in address
 
 
+def _restaurant_business_profile(place):
+    """Use source business metadata to keep non-dining permits out of meal search."""
+    if place.category != "restaurant":
+        return {"excluded": False, "score": 0, "reason": "not_restaurant"}
+
+    raw = place.raw if isinstance(place.raw, dict) else {}
+    business_type = _clean_text(raw.get("business_type"))
+    dataset = _clean_text(raw.get("dataset")).lower()
+    name = _clean_text(place.name)
+    upper_name = name.upper()
+    compact_name = re.sub(r"[\s_-]+", "", upper_name)
+    is_convenience_name = compact_name.startswith(("GS25", "CU")) or name.startswith(
+        CONVENIENCE_STORE_NAME_PREFIXES
+    )
+    if "편의점" in business_type or is_convenience_name:
+        return {"excluded": True, "score": -100, "reason": "convenience_store"}
+    if any(term.upper() in upper_name for term in NON_MEAL_RESTAURANT_NAME_TERMS):
+        return {"excluded": True, "score": -80, "reason": "non_meal_cafe_or_bakery"}
+
+    score = 0
+    reason = "generic_restaurant"
+    if dataset in RESTAURANT_PRIMARY_DATASETS:
+        score = 30
+        reason = "general_restaurant_registry"
+    elif dataset in RESTAURANT_SECONDARY_DATASETS:
+        score = 20
+        reason = "commercial_food_registry"
+    elif "휴게음식점" in business_type:
+        score = -5
+        reason = "rest_food_service"
+    return {"excluded": False, "score": score, "reason": reason}
+
+
 def _order_by_distance(queryset, lat, lng, *, use_knn=True):
     """
     후보를 가까운 순으로 정렬한다.
@@ -2481,9 +2524,13 @@ def collect_db_candidates(frame, *, lat=None, lng=None, limit=50, radius=None):
         candidate_places = queryset[:candidate_limit]
 
     candidates = []
+    restaurant_search = "restaurant" in direct_category_codes
     for place in candidate_places:
         distance = _distance(lat, lng, place.lat, place.lng)
         if distance is not None and distance > radius:
+            continue
+        business_profile = _restaurant_business_profile(place)
+        if restaurant_search and business_profile["excluded"]:
             continue
         tag_lists = _db_tag_lists(place)
         level, matched, policy_unmet, policy_verification_needed = _db_evidence(place, tag_lists, frame)
@@ -2523,6 +2570,15 @@ def collect_db_candidates(frame, *, lat=None, lng=None, limit=50, radius=None):
             "place_id": place.id,
             "external_id": place.external_id,
             "source_name": place.source_name,
+            "business_type": _clean_text(
+                (place.raw if isinstance(place.raw, dict) else {}).get("business_type")
+            ),
+            "source_dataset": _clean_text(
+                (place.raw if isinstance(place.raw, dict) else {}).get("dataset")
+            ),
+            "db_business_fit_score": business_profile["score"],
+            "db_business_fit_reason": business_profile["reason"],
+            "data_quality_score": place.data_quality_score,
             "kakao_place_url": get_kakao_place_url(place),
             "place_url": get_kakao_place_url(place),
             "verified_tags": tag_lists["verified"],
@@ -2557,9 +2613,15 @@ def collect_db_candidates(frame, *, lat=None, lng=None, limit=50, radius=None):
             },
         }
         candidates.append(candidate)
-        if len(candidates) >= limit:
-            break
-    return candidates
+    if restaurant_search:
+        candidates.sort(key=lambda candidate: (
+            -_as_int(candidate.get("db_business_fit_score"), 0),
+            -_as_int(candidate.get("score"), 0),
+            -_as_int(candidate.get("data_quality_score"), 0),
+            candidate.get("distance") if candidate.get("distance") is not None else float("inf"),
+            _clean_text(candidate.get("name")),
+        ))
+    return candidates[:limit]
 
 
 def collect_semantic_candidates(

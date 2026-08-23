@@ -20,6 +20,13 @@ INSTITUTION_CONTEXT_TERMS = (
 )
 LEGAL_NAME_RE = re.compile(r"(?:주식회사|유한회사|재단법인|사단법인|\(주\)|㈜)")
 BRANCH_RE = re.compile(r"(?:점|지점|역점|본점|직영점)$")
+CONVENIENCE_PREFIXES = (
+    "씨유", "지에스25", "세븐일레븐", "이마트24", "미니스톱", "스토리웨이",
+)
+CAFE_OR_BAKERY_TERMS = (
+    "카페", "커피", "coffee", "cafe", "베이커리", "제과", "도넛", "던킨",
+    "파스쿠찌", "스타벅스", "투썸", "이디야", "컴포즈", "빽다방", "할리스",
+)
 
 
 def restaurant_collection_quality(place, *, identity_misses=0, successful_jobs=0):
@@ -29,6 +36,11 @@ def restaurant_collection_quality(place, *, identity_misses=0, successful_jobs=0
     name = re.sub(r"\s+", "", str(place.name or "")).strip()
     raw = place.raw if isinstance(place.raw, dict) else {}
     minor = str(raw.get("industry_minor_name") or raw.get("business_type") or "").strip()
+    business_type = str(raw.get("business_type") or "").strip()
+    dataset = str(raw.get("dataset") or "").strip().lower()
+    normalized_name = str(place.name or "").strip()
+    upper_name = normalized_name.upper()
+    compact_name = re.sub(r"[\s_-]+", "", upper_name)
     score = 0
     flags = []
 
@@ -47,6 +59,15 @@ def restaurant_collection_quality(place, *, identity_misses=0, successful_jobs=0
     if successful_jobs:
         score += min(10, successful_jobs * 5)
         flags.append("past_evidence_success")
+    if dataset == "general_restaurant":
+        score += 8
+        flags.append("general_restaurant_registry")
+    elif dataset == "commercial_store":
+        score += 5
+        flags.append("commercial_food_registry")
+    elif "휴게음식점" in business_type:
+        score -= 5
+        flags.append("rest_food_service")
 
     if any(term in name for term in INSTITUTIONAL_TERMS):
         score -= 25
@@ -63,6 +84,16 @@ def restaurant_collection_quality(place, *, identity_misses=0, successful_jobs=0
     if len(name) <= 2:
         score -= 10
         flags.append("very_short_name")
+    if (
+        "편의점" in business_type
+        or compact_name.startswith(("GS25", "CU"))
+        or normalized_name.startswith(CONVENIENCE_PREFIXES)
+    ):
+        score -= 30
+        flags.append("convenience_store")
+    if any(term.lower() in normalized_name.lower() for term in CAFE_OR_BAKERY_TERMS):
+        score -= 15
+        flags.append("cafe_or_bakery")
     if identity_misses:
         score -= min(20, identity_misses * 6)
         flags.append("past_identity_mismatch")

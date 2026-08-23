@@ -60,6 +60,17 @@ class DailyTagCollectionTests(TestCase):
         self.assertIn("institutional_food_service", result["flags"])
         self.assertTrue(Place.objects.filter(pk=place.pk).exists())
 
+    def test_restaurant_quality_penalizes_convenience_store_permit(self):
+        place = self.make_place(93, category="restaurant")
+        place.name = "GS25 부산역점"
+        place.raw = {"dataset": "rest_restaurant", "business_type": "편의점"}
+        place.save(update_fields=["name", "raw"])
+
+        result = restaurant_collection_quality(place)
+
+        self.assertLess(result["score"], 0)
+        self.assertIn("convenience_store", result["flags"])
+
     def test_volatile_stale_web_evidence_gets_refresh_priority(self):
         place = self.make_place(92)
         tag = Tag.objects.create(name="콘센트있음")
@@ -86,6 +97,27 @@ class DailyTagCollectionTests(TestCase):
         self.assertLessEqual(first["planned_requests"], 9)
         self.assertEqual(second["places"], 0)
         self.assertEqual(PlaceTagCollectionJob.objects.count(), 3)
+
+    @override_settings(TAG_COLLECTION_DAILY_API_LIMIT=100)
+    def test_balanced_plan_prioritizes_consumer_restaurant_over_low_yield_row(self):
+        low_yield = self.make_place(601, category="restaurant", region="부산광역시")
+        low_yield.name = "주식회사 푸디스트 본사 직원식당"
+        low_yield.save(update_fields=["name"])
+        consumer = self.make_place(602, category="restaurant", region="부산광역시")
+        consumer.name = "부산 가족식당"
+        consumer.raw = {"dataset": "general_restaurant", "business_type": "한식"}
+        consumer.save(update_fields=["name", "raw"])
+
+        stats = plan_daily_jobs(
+            cycle_date=timezone.localdate(),
+            place_limit=1,
+            mode="balanced",
+            categories=("restaurant",),
+            regions=("부산광역시",),
+        )
+
+        self.assertEqual(stats["places"], 1)
+        self.assertEqual(PlaceTagCollectionJob.objects.get().place_id, consumer.id)
 
     @override_settings(
         TAG_COLLECTION_DAILY_API_LIMIT=100,
@@ -214,6 +246,31 @@ class DailyTagCollectionTests(TestCase):
 
         self.assertEqual(stats["planned"], 2)
         self.assertEqual(PlaceTagCollectionJob.objects.count(), 3)
+
+    @override_settings(TAG_COLLECTION_DAILY_PLACE_LIMIT=2)
+    def test_scheduler_reports_useful_completion_separately_from_empty_completion(self):
+        useful_place = self.make_place(701)
+        empty_place = self.make_place(702)
+        PlaceTagCollectionJob.objects.create(
+            place=useful_place,
+            provider="naver_search",
+            cycle_date=timezone.localdate(),
+            status="completed",
+            error_code="",
+        )
+        PlaceTagCollectionJob.objects.create(
+            place=empty_place,
+            provider="naver_search",
+            cycle_date=timezone.localdate(),
+            status="completed",
+            error_code="insufficient_evidence",
+        )
+
+        stats = scheduler_tick()
+
+        self.assertEqual(stats["completed"], 2)
+        self.assertEqual(stats["useful_completed"], 1)
+        self.assertEqual(stats["insufficient_evidence"], 1)
 
     @override_settings(
         TAG_COLLECTION_MODE="bootstrap",

@@ -6,6 +6,7 @@ from django.utils import timezone
 from recommendations.models import Place, PlaceTagEvidence, Tag
 from recommendations.services.ai_intent_planner import _canonicalize, build_ai_intent_plan
 from recommendations.services.ai_search_orchestrator import (
+    collect_db_candidates,
     _dedupe_candidates,
     _top_up_ranked_candidates,
     run_ai_search,
@@ -168,6 +169,69 @@ class SemanticTopUpSafetyTests(SimpleTestCase):
         self.assertEqual(ranked[0]["confidence"], "low")
         self.assertEqual(ranked[0]["recommendation_confidence"], "low")
         self.assertTrue(ranked[0]["verification_required"])
+
+
+class RestaurantDbBusinessQualityTests(TestCase):
+    def _place(self, name, external_id, *, raw, lat=35.1578, quality=80):
+        return Place.objects.create(
+            name=name,
+            category="restaurant",
+            address="부산광역시 부산진구 중앙대로 테스트",
+            lat=lat,
+            lng=129.0592,
+            source="localdata",
+            external_id=external_id,
+            data_quality_score=quality,
+            raw=raw,
+        )
+
+    def test_meal_search_excludes_convenience_store_and_prioritizes_dining_registry(self):
+        convenience = self._place(
+            "지에스25서면역점", "restaurant-convenience",
+            raw={"dataset": "rest_restaurant", "business_type": "백화점"},
+            quality=100,
+        )
+        cafe_permit = self._place(
+            "가다커피", "restaurant-cafe-permit",
+            raw={"dataset": "general_restaurant", "business_type": "기타"},
+            quality=99,
+        )
+        rest_food = self._place(
+            "서면 간식점", "restaurant-rest-food",
+            raw={"dataset": "rest_restaurant", "business_type": "기타 휴게음식점"},
+            lat=35.1579,
+        )
+        commercial_food = self._place(
+            "서면 김밥집", "restaurant-commercial-food",
+            raw={"dataset": "commercial_store", "business_type": "김밥/만두/분식"},
+            lat=35.1580,
+        )
+        general_food = self._place(
+            "서면 중식당", "restaurant-general-food",
+            raw={"dataset": "general_restaurant", "business_type": "중국식"},
+            lat=35.1581,
+        )
+
+        candidates = collect_db_candidates(
+            {
+                "target_objects": ["식당"],
+                "result_match_terms": ["식당"],
+                "candidate_place_types": ["식당"],
+                "candidate_category_codes": ["restaurant"],
+                "primary_search_queries": ["근처 식당"],
+                "constraints": [],
+            },
+            lat=35.1578,
+            lng=129.0592,
+            radius=5000,
+            limit=10,
+        )
+
+        ids = [candidate["place_id"] for candidate in candidates]
+        self.assertNotIn(convenience.id, ids)
+        self.assertNotIn(cafe_permit.id, ids)
+        self.assertEqual(ids[:3], [general_food.id, commercial_food.id, rest_food.id])
+        self.assertEqual(candidates[0]["db_business_fit_reason"], "general_restaurant_registry")
 
 
 class CrossSourcePlaceDeduplicationTests(SimpleTestCase):

@@ -20,6 +20,7 @@ from recommendations.services.bootstrap_priority import (
 )
 from recommendations.services.tag_source_policy import WEB_EVIDENCE_SOURCES
 from recommendations.services.adaptive_tag_collection import adaptive_planned_requests
+from recommendations.services.restaurant_collection_quality import restaurant_collection_quality
 from recommendations.services.adaptive_budget import (
     allocate_by_request_budget,
     yield_adjusted_weights,
@@ -160,10 +161,17 @@ def plan_daily_jobs(
             location |= Q(address__startswith=alias)
             location |= Q(detail_location__startswith=alias)
         for category in categories:
+            candidate_limit = per_stratum * 3 if category == "restaurant" else per_stratum
             rows = list(Place.objects.filter(
                 location,
                 category=category,
-            ).exclude(id__in=recent_place_ids).order_by("id")[:per_stratum])
+            ).exclude(id__in=recent_place_ids).order_by("id")[:candidate_limit])
+            if category == "restaurant":
+                rows.sort(key=lambda place: (
+                    -restaurant_collection_quality(place)["score"],
+                    place.id,
+                ))
+                rows = rows[:per_stratum]
             if rows:
                 pools.append((region, category, rows))
 

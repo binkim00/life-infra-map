@@ -22,7 +22,8 @@ class Command(BaseCommand):
             stats = scheduler_tick()
             self.stdout.write(
                 "Tag scheduler: date={date} planned={planned} recovered={recovered} "
-                "queued={queued} processing={processing} completed={completed} requests={requests} "
+                "queued={queued} processing={processing} completed={completed} useful={useful_completed} "
+                "insufficient={insufficient_evidence} requests={requests} "
                 "dashboard_snapshot={snapshot_refreshed}".format(**stats)
             )
             if options["once"]:
@@ -54,6 +55,12 @@ def scheduler_tick():
         status: PlaceTagCollectionJob.objects.filter(cycle_date=today, status=status).count()
         for status in ("queued", "processing", "completed")
     }
+    insufficient_evidence = PlaceTagCollectionJob.objects.filter(
+        cycle_date=today,
+        status="completed",
+        error_code="insufficient_evidence",
+    ).count()
+    useful_completed = max(0, counts["completed"] - insufficient_evidence)
     quota = ProviderQuotaUsage.objects.filter(
         provider=settings.TAG_ENRICHMENT_PROVIDER,
         usage_date=today,
@@ -72,6 +79,8 @@ def scheduler_tick():
         "planned": planned,
         "recovered": recovered,
         "requests": quota.request_count if quota else 0,
+        "useful_completed": useful_completed,
+        "insufficient_evidence": insufficient_evidence,
         "snapshot_refreshed": snapshot_refreshed,
         **counts,
     }
