@@ -48,6 +48,30 @@ class SearchCoverageDemandTests(TestCase):
         self.assertIsNone(result)
         self.assertFalse(PlaceInteractionEvent.objects.exists())
 
+    def test_abundant_but_weak_top_five_records_missing_tag_demand(self):
+        event = record_search_coverage_demand({
+            "decision_action": "search",
+            "result_count": 15,
+            "place_intent_frame": {
+                "anchor_location": "서면",
+                "candidate_category_codes": ["cafe"],
+            },
+            "results": [
+                {
+                    "result_tier": "best_available",
+                    "missing_conditions": ["콘센트 있음", "노트북 작업"],
+                }
+                for _ in range(5)
+            ],
+        })
+
+        self.assertIsNotNone(event)
+        self.assertEqual(event.context["signal_reason"], "top_five_quality_gap")
+        self.assertEqual(event.context["top_five_fallback_count"], 5)
+        self.assertEqual(event.context["demand_weight"], 2)
+        self.assertIn("콘센트있음", event.requested_tags)
+        self.assertIn("노트북작업", event.context["quality_gap_tags"])
+
     def test_sparse_regional_demand_boosts_matching_collection_candidate(self):
         other = Place.objects.create(
             name="해운대 카페",

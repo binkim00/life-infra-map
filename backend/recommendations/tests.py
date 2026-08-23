@@ -20,6 +20,7 @@ from recommendations.models import (
     PlaceReport,
     PlaceReportImage,
     PlaceTag,
+    PlaceTagEvidence,
     Tag,
     UserPreference,
     UserSavedPlace,
@@ -1401,7 +1402,17 @@ class RecommendationSearchTests(TestCase):
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertEqual(data["decision_action"], "search")
-        self.assertEqual(len(data["results"]), 2)
+        self.assertGreater(len(data["results"]), 2)
+        self.assertEqual(
+            [row["id"] for row in data["results"][:2]],
+            ["kakao-0", "kakao-1"],
+        )
+        self.assertTrue(
+            all(row["result_tier"] == "best_available" for row in data["results"][2:])
+        )
+        self.assertTrue(
+            all(row["missing_conditions"] for row in data["results"][2:])
+        )
         self.assertEqual(data["debug_pipeline"]["reranker"]["status"], "partial_executed")
         self.assertEqual(data["debug_pipeline"]["candidate_counts"]["removed_incompatible"], 1)
         self.assertEqual(data["debug_pipeline"]["candidate_counts"]["unresolved"], 7)
@@ -7842,6 +7853,19 @@ class RecommendationSearchTests(TestCase):
         mock_legacy_plan,
         mock_legacy_db,
     ):
+        work_tag, _ = Tag.objects.get_or_create(
+            name="노트북작업",
+            defaults={"tag_type": "recommendation"},
+        )
+        PlaceTagEvidence.objects.create(
+            place=self.place,
+            tag=work_tag,
+            source="official",
+            polarity="positive",
+            confidence=90,
+            evidence_key="unified-pipeline-work-evidence",
+            observed_at=timezone.now(),
+        )
         mock_intent.return_value = {
             "action": "search",
             "decision_action": "search",

@@ -342,8 +342,9 @@ export const useHomeSearch = ({ initialTab = 'search' } = {}) => {
     const labels = toDisplayList(place?.matchedTagLabels || place?.matched_tag_labels)
     const baseLabels = labels.length ? labels : toDisplayList(place?.matchedTags || place?.matched_tags)
     const menuLabels = getMenuDisplayMatchedLabels(place)
+    const conditionLabels = toDisplayList(place?.matchedConditions || place?.matched_conditions)
 
-    return [...new Set([...baseLabels, ...menuLabels])]
+    return [...new Set([...conditionLabels, ...baseLabels, ...menuLabels])]
   }
 
   const getRecommendationSortScore = (place) => {

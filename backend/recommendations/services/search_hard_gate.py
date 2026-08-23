@@ -38,6 +38,10 @@ def explicit_query_categories(query):
         (("화장실",), "toilet"),
         (("주차장",), "parking"),
         (("대피소", "쉼터"), "shelter"),
+        (("약국",), "pharmacy"),
+        (("쇼핑몰", "백화점", "아울렛", "쇼핑할"), "shopping"),
+        (("해수욕장", "바닷가", "해변"), "beach"),
+        (("노래방",), "karaoke"),
     )
     return [category for terms, category in ordered if any(compact(term) in text for term in terms)]
 
@@ -81,6 +85,16 @@ def objective_feature_requirements(query, frame):
         requirements.append({
             "code": "open_late", "label": "야간운영",
             "tags": {"야간운영", "24시간운영"}, "categories": set(),
+        })
+    if any(term in text for term in ("문연", "영업중", "지금열", "현재열")):
+        requirements.append({
+            "code": "open_now", "label": "현재영업중",
+            "tags": {"현재영업중"}, "categories": set(),
+        })
+    if any(term in text for term in ("작업할카페", "작업카페", "노트북작업", "노트북카페")):
+        requirements.append({
+            "code": "work_friendly", "label": "작업 관련 설비",
+            "tags": {"노트북작업", "콘센트"}, "categories": set(),
         })
     if any(term in text for term in ("장애인시설", "장애인편의", "휠체어")):
         requirements.append({
@@ -138,9 +152,14 @@ def _candidate_categories(candidate):
     value = str(candidate.get("category") or "")
     direct = value if value in {
         "cafe", "restaurant", "tourism", "city_park", "library", "toilet",
-        "parking", "shelter", "freewifi",
+        "parking", "shelter", "freewifi", "shopping", "pharmacy", "beach",
+        "smoking_area", "karaoke",
     } else ""
-    return set([direct] if direct else []) | set(get_matching_categories(value))
+    categories = set([direct] if direct else []) | set(get_matching_categories(value))
+    name = compact(candidate.get("name"))
+    if "약국" in name:
+        categories.add("pharmacy")
+    return categories
 
 
 def _candidate_tags(candidate, active_tags):
@@ -151,24 +170,28 @@ def _candidate_tags(candidate, active_tags):
     }
 
 
-def _active_positive_tags(candidates, now):
+def _active_tags_by_polarity(candidates, now):
     place_ids = {candidate.get("place_id") for candidate in candidates if candidate.get("place_id")}
-    result = {}
+    result = {"positive": {}, "negative": {}}
     if not place_ids:
         return result
     rows = PlaceTagEvidence.objects.filter(
         place_id__in=place_ids,
-        polarity="positive",
-    ).filter(Q(expires_at__isnull=True) | Q(expires_at__gt=now)).values_list("place_id", "tag__name")
-    for place_id, tag_name in rows.iterator(chunk_size=1000):
-        result.setdefault(place_id, set()).add(canonical_tag_name(tag_name) or tag_name)
+        polarity__in=("positive", "negative"),
+    ).filter(Q(expires_at__isnull=True) | Q(expires_at__gt=now)).values_list(
+        "place_id", "tag__name", "polarity",
+    )
+    for place_id, tag_name, polarity in rows.iterator(chunk_size=1000):
+        result[polarity].setdefault(place_id, set()).add(
+            canonical_tag_name(tag_name) or tag_name
+        )
     return result
 
 
 def apply_common_hard_gate(candidates, query, frame, *, now=None):
     candidates = list(candidates or [])
     requirements = hard_gate_requirements(query, frame or {})
-    active_tags = _active_positive_tags(candidates, now or timezone.now())
+    active_tags = _active_tags_by_polarity(candidates, now or timezone.now())
     kept = []
     removed = []
     for candidate in candidates:
@@ -183,12 +206,15 @@ def apply_common_hard_gate(candidates, query, frame, *, now=None):
         address = str(candidate.get("address") or candidate.get("detail_location") or "")
         if region and not any(address.startswith(alias) for alias in REGION_ALIASES[region]):
             violations.append({"type": "region", "required": region, "actual": address})
-        tags = _candidate_tags(candidate, active_tags)
+        tags = _candidate_tags(candidate, active_tags["positive"])
+        negative_tags = _candidate_tags(candidate, active_tags["negative"])
         for requirement in requirements["features"]:
             if not (tags.intersection(requirement["tags"]) or categories.intersection(requirement["categories"])):
+                contradicted = bool(negative_tags.intersection(requirement["tags"]))
                 violations.append({
                     "type": "feature", "required": requirement["code"],
                     "label": requirement["label"], "actual_tags": sorted(tags),
+                    "evidence_status": "contradicted" if contradicted else "unknown",
                 })
         enriched = {
             **candidate,
@@ -196,7 +222,12 @@ def apply_common_hard_gate(candidates, query, frame, *, now=None):
             "hard_gate_violations": violations,
             "hard_gate_requirements": requirements,
             "hard_gate_active_tags": sorted(tags),
+            "hard_gate_negative_tags": sorted(negative_tags),
         }
+        if "pharmacy" in categories and compact(candidate.get("name")).find("약국") >= 0:
+            enriched["source_category"] = candidate.get("category")
+            enriched["category"] = "pharmacy"
+            enriched["category_identity_inferred"] = True
         (removed if violations else kept).append(enriched)
     return kept, removed, {
         "requirements": requirements,

@@ -172,6 +172,14 @@ def _top_results(data, top_n):
             "candidate_tags": result.get("candidate_tags") or result.get("candidate_tag_labels") or [],
             "policy_matched_constraints": result.get("policy_matched_constraints") or [],
             "unmet_constraints": result.get("unmet_constraints") or result.get("pre_ai_unmet_constraints") or [],
+            "result_tier": result.get("result_tier") or "",
+            "result_tier_label": result.get("result_tier_label") or "",
+            "matched_conditions": result.get("matched_conditions") or [],
+            "unverified_conditions": result.get("unverified_conditions") or [],
+            "missing_conditions": result.get("missing_conditions") or [],
+            "relaxation_applied": bool(result.get("relaxation_applied")),
+            "best_available_fallback": bool(result.get("best_available_fallback")),
+            "hard_gate_violations": result.get("hard_gate_violations") or [],
         })
     return rows
 
@@ -551,12 +559,45 @@ def _issues_for_case(case, data, frame, top_results):
         issues.append("검색 실행됐지만 결과 0개")
     if action in {"search", "success"} and min_results and count < min_results and not allow_empty:
         issues.append(f"결과 수가 기대보다 적음: 기대 {min_results}개 이상, 실제 {count}개")
+    quality_min_results = int(case.get("quality_min_results") or 5)
+    if (
+        action in {"search", "success"}
+        and not allow_empty
+        and count < quality_min_results
+    ):
+        issues.append(
+            f"상위 품질 검증에 필요한 결과 부족: 기대 {quality_min_results}개 이상, 실제 {count}개"
+        )
     if action == "ai_unavailable":
         issues.append("AI/local rule이 실행 가능한 의도로 처리하지 못함")
     if action == "ask_clarification" and not data.get("clarification_question"):
         issues.append("되묻기인데 질문 문구 없음")
-    if action == "search" and any(row.get("unmet_constraints") for row in top_results[:5]):
+    if action == "search" and any(
+        row.get("unmet_constraints") and not row.get("relaxation_applied")
+        for row in top_results[:5]
+    ):
         issues.append("상위 결과에 미충족 조건이 남아 있음")
+    if action == "search" and top_results:
+        tier_rank = {
+            "all_conditions_met": 0,
+            "partial_match": 1,
+            "best_available": 2,
+        }
+        ranks = [tier_rank.get(row.get("result_tier"), 9) for row in top_results]
+        if ranks != sorted(ranks):
+            issues.append("결과가 조건 충족도 순으로 정렬되지 않음")
+        for row in top_results[:5]:
+            if not _compact(row.get("reason")):
+                issues.append(f"상위 결과 추천 사유 누락: {row.get('name') or row.get('id')}")
+                continue
+            missing = row.get("missing_conditions") or []
+            if row.get("result_tier") == "best_available" and not missing:
+                issues.append(f"보강 결과의 부족 조건 누락: {row.get('name') or row.get('id')}")
+            if missing and not any(
+                term in _compact(row.get("reason"))
+                for term in ["부족", "확인필요", "확인해야"]
+            ):
+                issues.append(f"추천 사유에 부족 조건 설명 누락: {row.get('name') or row.get('id')}")
     if action == "search" and (frame.get("location_mode") or frame.get("locationMode")) == "explicit":
         anchor = str(frame.get("anchor_location") or frame.get("anchorLocation") or "")
         anchor_key = _compact(anchor)
@@ -720,6 +761,7 @@ def _case_summary(case, data, elapsed_ms, top_n):
         "expected_exclusions_all": case.get("expected_exclusions_all") or [],
         "expected_target_terms": case.get("expected_target_terms") or [],
         "expected_sort_hint": case.get("expected_sort_hint") or "",
+        "allow_empty": bool(case.get("allow_empty")),
         "relevance_labels": case.get("relevance_labels") or {},
         "status": "needs_review" if issues else "ok",
         "issues": issues,
@@ -795,12 +837,50 @@ def _evaluation_metrics(rows):
     )
 
     result_rows = [item for row in rows for item in row.get("top_results") or []]
-    hard_violations = sum(bool(item.get("unmet_constraints")) for item in result_rows)
+    def has_hard_violation(item):
+        violations = item.get("hard_gate_violations") or []
+        actual_hard_violation = any(
+            not isinstance(violation, dict)
+            or violation.get("evidence_status") != "unknown"
+            for violation in violations
+        )
+        undisclosed_unmet = bool(
+            item.get("unmet_constraints") and not item.get("relaxation_applied")
+        )
+        return actual_hard_violation or undisclosed_unmet
+
+    hard_violations = sum(has_hard_violation(item) for item in result_rows)
     no_result = sum(
         row.get("action") == "search" and not (row.get("top_results") or [])
         for row in rows
     )
+    unexpected_no_result_rows = [
+        row for row in rows
+        if row.get("action") == "search" and not row.get("allow_empty")
+    ]
+    unexpected_no_result = sum(
+        not (row.get("top_results") or []) for row in unexpected_no_result_rows
+    )
     fallback = sum(bool((row.get("location_resolution") or {}).get("fallback_used")) for row in rows)
+    search_rows = [
+        row for row in rows
+        if row.get("action") == "search" and not row.get("allow_empty")
+    ]
+    top_five_ready = sum(len(row.get("top_results") or []) >= 5 for row in search_rows)
+    tier_order_hits = 0
+    for row in search_rows:
+        tier_order = {"all_conditions_met": 0, "partial_match": 1, "best_available": 2}
+        ranks = [
+            tier_order.get(item.get("result_tier"), 9)
+            for item in row.get("top_results") or []
+        ]
+        tier_order_hits += int(ranks == sorted(ranks))
+    reason_rows = [item for item in result_rows if item.get("reason")]
+    transparent_reason_rows = [
+        item for item in reason_rows
+        if not item.get("missing_conditions")
+        or any(term in _compact(item.get("reason")) for term in ["부족", "확인필요", "확인해야"])
+    ]
     latencies = sorted(
         float((row.get("timing_ms") or {}).get("total_observed"))
         for row in rows
@@ -835,7 +915,32 @@ def _evaluation_metrics(rows):
         "ndcg_at_k": _metric(round(sum(ndcgs) / len(ndcgs), 4) if ndcgs else 0, measured=bool(ndcgs)),
         "hard_violation_rate": _metric(round(hard_violations / len(result_rows), 4) if result_rows else 0, measured=bool(result_rows), numerator=hard_violations, denominator=len(result_rows)),
         "unsupported_reason_rate": "NOT_MEASURED",
+        "top_five_coverage_rate": _metric(
+            round(top_five_ready / len(search_rows), 4) if search_rows else 0,
+            measured=bool(search_rows),
+            numerator=top_five_ready,
+            denominator=len(search_rows),
+        ),
+        "condition_order_accuracy": _metric(
+            round(tier_order_hits / len(search_rows), 4) if search_rows else 0,
+            measured=bool(search_rows),
+            numerator=tier_order_hits,
+            denominator=len(search_rows),
+        ),
+        "reason_transparency_rate": _metric(
+            round(len(transparent_reason_rows) / len(reason_rows), 4) if reason_rows else 0,
+            measured=bool(reason_rows),
+            numerator=len(transparent_reason_rows),
+            denominator=len(reason_rows),
+        ),
         "no_result_rate": _metric(round(no_result / len(rows), 4) if rows else 0, measured=bool(rows), numerator=no_result, denominator=len(rows)),
+        "unexpected_no_result_rate": _metric(
+            round(unexpected_no_result / len(unexpected_no_result_rows), 4)
+            if unexpected_no_result_rows else 0,
+            measured=bool(unexpected_no_result_rows),
+            numerator=unexpected_no_result,
+            denominator=len(unexpected_no_result_rows),
+        ),
         "fallback_rate": _metric(round(fallback / len(rows), 4) if rows else 0, measured=bool(rows), numerator=fallback, denominator=len(rows)),
         "latency_ms": _metric({
             "average": round(sum(latencies) / len(latencies), 2),

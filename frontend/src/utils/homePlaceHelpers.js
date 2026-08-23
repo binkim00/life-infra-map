@@ -1539,7 +1539,10 @@ export const normalizeLocationText = (text = '') => {
 
 
 export const getRecommendationMissingLabels = (place) => {
-  return toDisplayList(place?.missingTagLabels || place?.missing_tag_labels)
+  return toDisplayList([
+    ...toDisplayList(place?.missingConditions || place?.missing_conditions),
+    ...toDisplayList(place?.missingTagLabels || place?.missing_tag_labels),
+  ])
 }
 
 export const getRecommendationMetaText = (place) => {

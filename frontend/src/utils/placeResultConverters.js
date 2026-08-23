@@ -335,6 +335,13 @@ export const convertRecommendationPlaces = (
       tagDetails: toArray(place.tag_details),
       matchedTagLabels: toDisplayList(place.matched_tag_labels),
       missingTagLabels: toDisplayList(place.missing_tag_labels),
+      matchedConditions: toDisplayList(place.matched_conditions),
+      unverifiedConditions: toDisplayList(place.unverified_conditions),
+      missingConditions: toDisplayList(place.missing_conditions),
+      resultTier: getTextValue(place.result_tier),
+      resultTierLabel: getTextValue(place.result_tier_label),
+      relaxationApplied: Boolean(place.relaxation_applied),
+      relaxedConditions: toDisplayList(place.relaxed_conditions),
       matchedEvidence: toArray(place.matched_evidence),
       backendRank: Number(place.backend_rank || place.backendRank || place.unified_rank || 0),
       unifiedRank: Number(place.unified_rank || place.unifiedRank || place.backend_rank || 0),
@@ -352,7 +359,11 @@ export const convertRecommendationPlaces = (
       placeNatures: toDisplayList(place.place_natures),
       recommendationSourceLabel: getTextValue(place.source_label),
       recommendationConfidenceLabel: getTextValue(place.confidence_label),
-      recommendationFallbackLabel: getTextValue(place.fallback_label),
+      recommendationFallbackLabel: getTextValue(
+        place.fallback_label || (
+          place.result_tier === 'all_conditions_met' ? '' : place.result_tier_label
+        ),
+      ),
       recommendationFallbackDescription: getTextValue(place.fallback_description),
       recommendationCaution: getTextValue(place.caution_message || place.caution),
       recommendScore: Math.min(

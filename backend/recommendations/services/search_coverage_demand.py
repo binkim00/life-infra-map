@@ -38,6 +38,25 @@ def _category_codes(frame):
     return _values(values)[:10]
 
 
+def _quality_gap_tags(response):
+    results = response.get("results") or []
+    gaps = []
+    fallback_count = 0
+    for result in results[:5]:
+        if not isinstance(result, dict):
+            continue
+        tier = result.get("result_tier") or result.get("resultTier")
+        if tier == "best_available":
+            fallback_count += 1
+        gaps.extend(
+            _values(result.get("missing_conditions") or result.get("missingConditions"))
+        )
+        gaps.extend(
+            _values(result.get("unverified_conditions") or result.get("unverifiedConditions"))
+        )
+    return normalize_subjective_tags(gaps), fallback_count
+
+
 def record_search_coverage_demand(response, *, user=None, session_key="", search_id=""):
     """Record normalized demand without retaining the user's raw query."""
     if not isinstance(response, dict):
@@ -49,12 +68,19 @@ def record_search_coverage_demand(response, *, user=None, session_key="", search
     frame = response.get("place_intent_frame") or response.get("placeIntentFrame") or {}
     frame = frame if isinstance(frame, dict) else {}
     result_count = int(response.get("result_count") or response.get("count") or 0)
-    if result_count >= LOW_RESULT_THRESHOLD:
+    quality_gap_tags, top_five_fallback_count = _quality_gap_tags(response)
+    sparse = result_count < LOW_RESULT_THRESHOLD
+    quality_gap = bool(quality_gap_tags or top_five_fallback_count)
+    if not sparse and not quality_gap:
         return None
 
     constraints = _values(frame.get("constraints"))
     target_objects = _values(frame.get("target_objects") or frame.get("targetObjects"))
-    requested_tags = normalize_subjective_tags([*constraints, *target_objects])
+    requested_tags = normalize_subjective_tags([
+        *constraints,
+        *target_objects,
+        *quality_gap_tags,
+    ])
     location_hint = str(frame.get("anchor_location") or "").strip()[:100]
     categories = _category_codes(frame)
     scenario = str((response.get("search_plan") or {}).get("scenario") or response.get("scenario") or "")[:50]
@@ -83,7 +109,14 @@ def record_search_coverage_demand(response, *, user=None, session_key="", search
             "category_codes": categories,
             "scenario": scenario,
             "result_count": result_count,
-            "demand_weight": 3 if result_count == 0 else 2,
+            "top_five_fallback_count": top_five_fallback_count,
+            "quality_gap_tags": quality_gap_tags,
+            "signal_reason": "sparse_results" if sparse else "top_five_quality_gap",
+            "demand_weight": (
+                3 if result_count == 0 else
+                2 if sparse or top_five_fallback_count >= 3 else
+                1
+            ),
         },
     )
 

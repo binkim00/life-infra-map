@@ -21,6 +21,9 @@ type AiPlace = Place & {
   external_id?: string;
   place_id?: number;
   recommendation_reason?: string;
+  result_tier_label?: string;
+  matched_conditions?: string[];
+  missing_conditions?: string[];
   suggested_tags?: string[];
   distance_m?: number;
 };
@@ -57,7 +60,7 @@ export default function RecommendScreen() {
         query: submitted,
         lat: 37.5665,
         lng: 126.978,
-        limit: 10,
+        limit: 30,
         previous_search_context: searchPlan,
       })
       .then((raw) => {
@@ -254,6 +257,19 @@ export default function RecommendScreen() {
                           {place.recommendation_reason}
                         </Text>
                       ) : null}
+                      {place.result_tier_label ? (
+                        <Text style={ui.muted}>{place.result_tier_label}</Text>
+                      ) : null}
+                      {place.matched_conditions?.length ? (
+                        <Text style={styles.tags}>
+                          충족: {place.matched_conditions.slice(0, 3).join(" · ")}
+                        </Text>
+                      ) : null}
+                      {place.missing_conditions?.length ? (
+                        <Text style={styles.missing}>
+                          확인 필요: {place.missing_conditions.slice(0, 3).join(" · ")}
+                        </Text>
+                      ) : null}
                       {place.suggested_tags?.length ? (
                         <Text style={styles.tags}>
                           {place.suggested_tags.slice(0, 4).join(" · ")}
@@ -319,4 +335,5 @@ const styles = StyleSheet.create({
   name: { marginBottom: 5, color: "#222222", fontSize: 14, fontWeight: "900" },
   reason: { marginTop: 8, color: "#38403C", fontSize: 11, lineHeight: 17 },
   tags: { marginTop: 7, color: "#0F766E", fontSize: 10, fontWeight: "700" },
+  missing: { marginTop: 7, color: "#A33A21", fontSize: 10, fontWeight: "700" },
 });

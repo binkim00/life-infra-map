@@ -2446,11 +2446,135 @@ def _order_by_distance(queryset, lat, lng, *, use_knn=True):
     ).order_by("collect_distance")
 
 
+SHOPPING_VENUE_MARKERS = (
+    ("롯데백화점부산본점", "롯데백화점 부산본점"),
+    ("롯데백화점광복점", "롯데백화점 광복점"),
+    ("롯데백화점동래점", "롯데백화점 동래점"),
+    ("롯데백화점센텀시티점", "롯데백화점 센텀시티점"),
+    ("신세계백화점센텀시티점", "신세계백화점 센텀시티점"),
+    ("현대백화점부산점", "현대백화점 부산점"),
+    ("롯데프리미엄아울렛동부산점", "롯데프리미엄아울렛 동부산점"),
+    ("신세계사이먼프리미엄아울렛부산점", "신세계사이먼 프리미엄 아울렛 부산점"),
+    ("애플아울렛부산점", "애플아울렛 부산점"),
+    ("서면삼정타워", "서면 삼정타워"),
+    ("삼정타워", "서면 삼정타워"),
+    ("서면지하상가", "서면지하상가"),
+    ("중부지하도상가서면몰", "서면몰"),
+    ("서면몰", "서면몰"),
+)
+
+
+def _shopping_venue_name(raw_name):
+    name_key = _compact(raw_name)
+    for marker, label in SHOPPING_VENUE_MARKERS:
+        if marker in name_key:
+            return label
+    return ""
+
+
+def _collect_derived_shopping_candidates(*, lat=None, lng=None, limit=50, radius=None):
+    query = Q()
+    for term in [
+        "백화점", "프리미엄아울렛", "애플아울렛", "삼정타워",
+        "서면지하상가", "서면몰",
+    ]:
+        query |= Q(name__icontains=term)
+    queryset = Place.objects.filter(query)
+    bounds = _nearby_bounds(lat, lng, radius)
+    if bounds:
+        queryset = queryset.filter(
+            lat__gte=bounds["lat_min"],
+            lat__lte=bounds["lat_max"],
+            lng__gte=bounds["lng_min"],
+            lng__lte=bounds["lng_max"],
+        )
+
+    venues = {}
+    scan_limit = max(_as_int(limit, 50) * 100, 1000)
+    for row in queryset.values(
+        "id", "name", "address", "detail_location", "lat", "lng",
+    )[:scan_limit]:
+        venue_name = _shopping_venue_name(row.get("name"))
+        if not venue_name:
+            continue
+        venue_key = _compact(venue_name)
+        if venue_key not in venues:
+            venues[venue_key] = {
+                "name": venue_name,
+                "address": row.get("address") or row.get("detail_location") or "",
+                "lat": row.get("lat"),
+                "lng": row.get("lng"),
+                "evidence_count": 0,
+            }
+        venues[venue_key]["evidence_count"] += 1
+
+    candidates = []
+    for venue_key, venue in venues.items():
+        distance = _distance(lat, lng, venue["lat"], venue["lng"])
+        candidate_id = f"shopping:{venue_key}"
+        evidence_count = venue["evidence_count"]
+        candidates.append({
+            **_candidate_base(
+                candidate_id,
+                "db",
+                venue["name"],
+                "shopping",
+                venue["address"],
+                lat=venue["lat"],
+                lng=venue["lng"],
+                distance=distance,
+            ),
+            "source_name": "derived_shopping_venue",
+            "derived_from_tenant_records": True,
+            "venue_evidence_count": evidence_count,
+            "verified_tags": ["쇼핑시설"],
+            "verified_tag_labels": ["쇼핑시설"],
+            "suggested_tags": [],
+            "candidate_tags": [],
+            "warning_tags": [],
+            "matched_evidence": [{
+                "type": "target_direct",
+                "field": "tenant_venue_name",
+                "value": "쇼핑시설",
+                "source_strength": "verified",
+                "evidence_count": evidence_count,
+            }],
+            "matched_tags": ["쇼핑시설"],
+            "matched_tag_labels": ["쇼핑시설"],
+            "policy_matched_constraints": [],
+            "pre_ai_unmet_constraints": [],
+            "policy_verification_needed": [],
+            "pre_ai_evidence_level": "strong" if evidence_count >= 3 else "medium",
+            "evidence_level": "strong" if evidence_count >= 3 else "medium",
+            "frame_match_strength": "strong" if evidence_count >= 3 else "medium",
+            "recommendation_confidence": "medium",
+            "confidence": "medium",
+            "confidence_label": "입점 데이터로 확인된 쇼핑시설",
+            "score": min(92, 65 + evidence_count),
+            "data_quality_score": min(100, 60 + evidence_count),
+        })
+    candidates.sort(key=lambda candidate: (
+        candidate.get("distance") if candidate.get("distance") is not None else float("inf"),
+        -_as_int(candidate.get("venue_evidence_count"), 0),
+        _clean_text(candidate.get("name")),
+    ))
+    return candidates[:max(_as_int(limit, 50), 1)]
+
+
 def collect_db_candidates(frame, *, lat=None, lng=None, limit=50, radius=None):
     terms = _db_evidence_terms(frame)
     search_terms = terms["search"]
     db_first_category_codes = _db_first_category_codes(frame)
     direct_category_codes = _direct_db_category_codes(frame)
+    if "shopping" in direct_category_codes:
+        derived = _collect_derived_shopping_candidates(
+            lat=lat,
+            lng=lng,
+            limit=limit,
+            radius=_radius(radius),
+        )
+        if derived:
+            return derived
     if not search_terms and not db_first_category_codes and not direct_category_codes:
         return []
 
@@ -2460,6 +2584,10 @@ def collect_db_candidates(frame, *, lat=None, lng=None, limit=50, radius=None):
         # spatial/category cut, while tag suitability is evaluated below from
         # the prefetched PlaceTags. Keep the candidate universe category-safe.
         query = Q(category__in=direct_category_codes)
+        # 일부 공공 원천은 실제 약국을 tourism/freewifi 등으로 잘못 분류한다.
+        # 상호에 '약국'이 명시된 경우만 신뢰해 실체 카테고리를 복구한다.
+        if "pharmacy" in direct_category_codes:
+            query |= Q(name__icontains="약국")
     else:
         query = Q()
         for term in search_terms[:8]:
@@ -2662,7 +2790,10 @@ def collect_semantic_candidates(
     required_feature_groups = _semantic_required_feature_groups(frame)
     for row in retrieval["results"]:
         place = row["place"]
-        if direct_category_codes and place.category not in direct_category_codes:
+        inferred_category = place.category
+        if "pharmacy" in direct_category_codes and "약국" in _compact(place.name):
+            inferred_category = "pharmacy"
+        if direct_category_codes and inferred_category not in direct_category_codes:
             continue
         distance = _distance(lat, lng, place.lat, place.lng)
         if distance is not None and distance > radius:
@@ -2685,7 +2816,7 @@ def collect_semantic_candidates(
         level = "medium" if level == "weak" else level
         candidate = {
             **_candidate_base(
-                f"db:{place.id}", "db", place.name, place.category,
+                f"db:{place.id}", "db", place.name, inferred_category,
                 place.address or place.detail_location, lat=place.lat, lng=place.lng, distance=distance,
             ),
             "place_id": place.id, "external_id": place.external_id,
@@ -2710,6 +2841,9 @@ def collect_semantic_candidates(
             "semantic_document": row["document"],
             "score_breakdown": {"collector": "semantic", "semantic_similarity": row["semantic_similarity"]},
         }
+        if inferred_category != place.category:
+            candidate["source_category"] = place.category
+            candidate["category_identity_inferred"] = True
         candidates.append(candidate)
         if len(candidates) >= int(getattr(settings, "SEMANTIC_CANDIDATE_LIMIT", 5)):
             break
@@ -3666,6 +3800,324 @@ def _top_up_ranked_candidates(
         for index, candidate in enumerate(merged)
     ]
     return merged, additions
+
+
+def _feature_unknown_violations(candidate):
+    return [
+        violation
+        for violation in candidate.get("hard_gate_violations") or []
+        if isinstance(violation, dict)
+        and violation.get("type") == "feature"
+        and violation.get("evidence_status") == "unknown"
+    ]
+
+
+def _relaxable_best_available_gap(value):
+    text = _clean_text(value, 160)
+    if not text:
+        return False
+    non_relaxable_terms = [
+        "제외 조건",
+        "다른 정보",
+        "비카페",
+        "온라인 쇼핑",
+        "차량 충전소",
+        "주차장 후보",
+        "입점 식음료",
+        "일반 방문 추천 맥락과 맞지 않는",
+        "술집/바 요청과 맞지 않는",
+    ]
+    if any(term in text for term in non_relaxable_terms):
+        return False
+    return "근거가 부족" in text or text.endswith("요청과 맞지 않는 후보")
+
+
+def _display_gap_label(value):
+    text = _clean_text(value, 120)
+    text = text.replace(" 요청과 맞지 않는 후보", " 근거 확인 필요")
+    text = text.replace("에 적합하다는 근거가 부족한 후보", " 적합성 확인 필요")
+    return text
+
+
+def _can_use_as_best_available(candidate, frame):
+    """Allow only category/region-safe candidates whose missing data is unknown."""
+    if not isinstance(candidate, dict) or not _clean_text(candidate.get("id")):
+        return False
+    violations = [
+        item for item in candidate.get("hard_gate_violations") or []
+        if isinstance(item, dict)
+    ]
+    if any(
+        item.get("type") != "feature" or item.get("evidence_status") != "unknown"
+        for item in violations
+    ):
+        return False
+    pre_ai_unmet = _as_list(candidate.get("pre_ai_unmet_constraints"))
+    if pre_ai_unmet and not all(
+        _relaxable_best_available_gap(item) for item in pre_ai_unmet
+    ):
+        return False
+    semantic = candidate.get("semantic_reranker") if isinstance(
+        candidate.get("semantic_reranker"), dict
+    ) else {}
+    semantic_unmet = [
+        item for item in _as_list(semantic.get("unmet_constraints"))
+        if _clean_text(item) != "details_need_verification"
+    ]
+    if semantic_unmet and not all(
+        _relaxable_best_available_gap(item) for item in semantic_unmet
+    ):
+        return False
+
+    expected_categories = set(_frame_category_codes(frame))
+    if expected_categories:
+        actual_categories = set(get_matching_categories(candidate.get("category")))
+        raw_category = _clean_text(candidate.get("category"))
+        if raw_category:
+            actual_categories.add(raw_category)
+        if not expected_categories.intersection(actual_categories):
+            return False
+    return True
+
+
+def _requested_result_conditions(frame):
+    conditions = []
+    for value in _frame_terms(frame, "constraints"):
+        value = _clean_text(value, 80)
+        if not value or _compact(value) in NON_DISCRIMINATING_CONSTRAINTS:
+            continue
+        conditions.append(value)
+    return list(dict.fromkeys(conditions))[:12]
+
+
+def _condition_supported(condition, values):
+    condition_key = _compact(condition)
+    if not condition_key:
+        return False
+    for value in values:
+        value_key = _compact(value)
+        if not value_key:
+            continue
+        if condition_key in value_key or value_key in condition_key:
+            return True
+    return False
+
+
+def _candidate_result_quality(candidate, frame, *, best_available=False):
+    requested = _requested_result_conditions(frame)
+    hard_gate_requirements = candidate.get("hard_gate_requirements") or {}
+    feature_requirements = [
+        requirement
+        for requirement in hard_gate_requirements.get("features") or []
+        if isinstance(requirement, dict) and _clean_text(requirement.get("label"), 80)
+    ]
+    requested = list(dict.fromkeys([
+        *requested,
+        *(_clean_text(requirement.get("label"), 80) for requirement in feature_requirements),
+    ]))[:12]
+    verified_values = [
+        *_as_list(candidate.get("hard_gate_active_tags"), max_items=50),
+        *_as_list(candidate.get("verified_tags"), max_items=50),
+        *_as_list(candidate.get("policy_matched_constraints"), max_items=30),
+    ]
+    violated_feature_codes = {
+        _clean_text(violation.get("required"), 80)
+        for violation in candidate.get("hard_gate_violations") or []
+        if isinstance(violation, dict) and violation.get("type") == "feature"
+    }
+    verified_values.extend(
+        _clean_text(requirement.get("label"), 80)
+        for requirement in feature_requirements
+        if _clean_text(requirement.get("code"), 80) not in violated_feature_codes
+    )
+    provisional_values = [
+        *_as_list(candidate.get("suggested_tags"), max_items=50),
+        *_as_list(candidate.get("candidate_tags"), max_items=50),
+    ]
+    for evidence in candidate.get("matched_evidence") or []:
+        if not isinstance(evidence, dict):
+            continue
+        value = evidence.get("value") or evidence.get("label")
+        if not value:
+            continue
+        if evidence.get("source_strength") == "verified":
+            verified_values.append(value)
+        elif evidence.get("source_strength") in {"suggested", "candidate"}:
+            provisional_values.append(value)
+
+    matched = [
+        condition for condition in requested
+        if _condition_supported(condition, verified_values)
+    ]
+    unverified = [
+        condition for condition in requested
+        if condition not in matched and _condition_supported(condition, provisional_values)
+    ]
+    missing = [
+        condition for condition in requested
+        if condition not in matched
+    ]
+    missing.extend(
+        _clean_text(item, 100)
+        for item in _as_list(candidate.get("policy_verification_needed"), max_items=20)
+        if _clean_text(item, 100)
+    )
+    missing.extend(
+        _clean_text(item.get("label") or item.get("required"), 100)
+        for item in _feature_unknown_violations(candidate)
+        if _clean_text(item.get("label") or item.get("required"), 100)
+    )
+    missing.extend(
+        _display_gap_label(item)
+        for item in _as_list(candidate.get("pre_ai_unmet_constraints"), max_items=20)
+        if _display_gap_label(item)
+    )
+    missing = list(dict.fromkeys(missing))
+    if best_available and not missing:
+        missing = ["세부 적합성 근거"]
+
+    if not missing and not best_available:
+        tier = "all_conditions_met"
+        tier_label = "모든 조건 충족"
+        tier_rank = 0
+    elif matched:
+        tier = "partial_match"
+        tier_label = "일부 조건 충족"
+        tier_rank = 1
+    else:
+        tier = "best_available"
+        tier_label = "가장 가까운 대안"
+        tier_rank = 2
+
+    category = get_category_display_name(candidate.get("category")) or _clean_text(
+        candidate.get("category")
+    ) or "장소"
+    distance = candidate.get("distance")
+    if distance is None:
+        distance = candidate.get("distance_m")
+    base_reason = f"요청한 지역의 {category} 후보예요."
+    if distance is not None:
+        base_reason = f"요청한 지역에서 약 {int(round(float(distance)))}m 거리의 {category} 후보예요."
+    if candidate.get("derived_from_tenant_records"):
+        evidence_count = _as_int(candidate.get("venue_evidence_count"), 0)
+        base_reason = (
+            f"입점 시설 데이터 {evidence_count}건으로 확인된 {category}이며, "
+            + (
+                f"요청한 지역에서 약 {int(round(float(distance)))}m 거리예요."
+                if distance is not None
+                else "요청한 지역의 후보예요."
+            )
+        )
+    reason_parts = [base_reason]
+    if matched:
+        reason_parts.append(f"확인된 조건은 {', '.join(matched[:3])}입니다.")
+    if missing:
+        reason_parts.append(f"부족하거나 확인이 필요한 조건은 {', '.join(missing[:3])}입니다.")
+    reason = " ".join(reason_parts)
+
+    return {
+        **candidate,
+        "result_tier": tier,
+        "result_tier_label": tier_label,
+        "condition_match_count": len(matched),
+        "condition_request_count": len(requested),
+        "matched_conditions": matched,
+        "unverified_conditions": unverified,
+        "missing_conditions": missing,
+        "relaxation_applied": bool(best_available or missing),
+        "relaxed_conditions": missing,
+        "verification_required": bool(
+            candidate.get("verification_required") or missing or unverified
+        ),
+        "recommendation_reason": reason,
+        "recommend_reason": reason,
+        "semantic_reason": reason,
+        "result_quality_sort_key": tier_rank,
+    }
+
+
+def _complete_and_order_results(
+    ranked_candidates,
+    candidate_pool,
+    feature_removed_candidates,
+    excluded_candidates,
+    frame,
+    *,
+    limit,
+):
+    """Keep strict matches first, then fill the requested window with honest alternatives."""
+    limit = max(_as_int(limit, 15), 1)
+    strict = list(ranked_candidates or [])
+    strict_ids = {
+        _clean_text(candidate.get("id"))
+        for candidate in strict
+        if _clean_text(candidate.get("id"))
+    }
+    excluded_ids = {
+        _clean_text(candidate.get("id"))
+        for candidate in excluded_candidates or []
+        if _clean_text(candidate.get("id"))
+    }
+    additions = []
+    seen_ids = set(strict_ids)
+    pools = [
+        list(candidate_pool or []),
+        list(feature_removed_candidates or []),
+    ]
+    for pool in pools:
+        for candidate in sorted(pool, key=_candidate_sort_key):
+            candidate_id = _clean_text(candidate.get("id"))
+            if not candidate_id or candidate_id in seen_ids:
+                continue
+            if candidate_id in excluded_ids and not _can_top_up_excluded_candidate(candidate):
+                continue
+            if not _can_use_as_best_available(candidate, frame):
+                continue
+            additions.append({
+                **candidate,
+                "confidence": "low",
+                "recommendation_confidence": "low",
+                "confidence_label": "조건 확인 필요",
+                "compatibility_gate": "needs_verification",
+                "compatibility_gate_reason": "best_available_missing_evidence",
+                "best_available_fallback": True,
+            })
+            seen_ids.add(candidate_id)
+            if len(strict) + len(additions) >= limit:
+                break
+        if len(strict) + len(additions) >= limit:
+            break
+
+    decorated = [
+        _candidate_result_quality(candidate, frame, best_available=False)
+        for candidate in strict
+    ]
+    decorated.extend(
+        _candidate_result_quality(candidate, frame, best_available=True)
+        for candidate in additions
+    )
+    decorated.sort(key=lambda candidate: (
+        _as_int(candidate.get("result_quality_sort_key"), 9),
+        -_as_int(candidate.get("condition_match_count"), 0),
+        {"strong": 0, "medium": 1, "weak": 2}.get(
+            _clean_text(candidate.get("pre_ai_evidence_level") or candidate.get("evidence_level")),
+            9,
+        ),
+        candidate.get("distance") if candidate.get("distance") is not None else 999999999,
+        -_as_int(candidate.get("db_business_fit_score"), 0),
+        -_as_int(candidate.get("data_quality_score"), 0),
+        -float(candidate.get("score") or 0),
+        _clean_text(candidate.get("name")),
+    ))
+    ordered = [
+        {
+            **candidate,
+            "backend_rank": index + 1,
+            "unified_rank": index + 1,
+        }
+        for index, candidate in enumerate(decorated[:limit])
+    ]
+    return ordered, additions
 
 
 def _has_only_retrieval_query_evidence(candidate):
@@ -4908,6 +5360,14 @@ def run_ai_search(request_data, *, user=None):
         }
     ranked_candidates = _cap_verification_confidence(ranked_candidates)
     ranked_candidates = _prioritize_direct_specific_targets(ranked_candidates, frame)
+    ranked_candidates, best_available_candidates = _complete_and_order_results(
+        ranked_candidates,
+        candidate_pool,
+        common_hard_gate_removed,
+        hidden_weak,
+        frame,
+        limit=limit,
+    )
     results = ranked_candidates[:limit]
     timings["ranking_latency_ms"] = round(
         max(0.0, (time.perf_counter() - ranking_started) * 1000 - (timings["reranker_latency_ms"] or 0)),
@@ -4918,7 +5378,26 @@ def run_ai_search(request_data, *, user=None):
         "hidden_weak": len(hidden_weak),
         "removed_incompatible": len(hidden_weak),
         "unresolved": len(unresolved_candidates),
+        "best_available": len(best_available_candidates),
     })
+    result_quality_summary = {
+        "requested_limit": limit,
+        "returned_count": len(results),
+        "top_five_count": min(len(results), 5),
+        "all_conditions_met": sum(
+            candidate.get("result_tier") == "all_conditions_met"
+            for candidate in results
+        ),
+        "partial_match": sum(
+            candidate.get("result_tier") == "partial_match"
+            for candidate in results
+        ),
+        "best_available": sum(
+            candidate.get("result_tier") == "best_available"
+            for candidate in results
+        ),
+        "fallback_applied": bool(best_available_candidates),
+    }
 
     serialization_started = time.perf_counter()
     debug_pipeline = _debug_pipeline(
@@ -4945,6 +5424,7 @@ def run_ai_search(request_data, *, user=None):
         fallback_used=(
             query_repair_debug.get("status") == "executed"
             or bool(ranking_fallback_candidates)
+            or bool(best_available_candidates)
         ),
         fallback_created_candidates=False,
         timings=finish_timings(),
@@ -5006,6 +5486,7 @@ def run_ai_search(request_data, *, user=None):
         "count": len(results),
         "result_count": len(results),
         "relevant_result_count": len(results),
+        "result_quality": result_quality_summary,
         "search_plan": search_plan,
         "place_intent_frame": search_plan.get("place_intent_frame") or frame,
         "ai_parse": parsed,

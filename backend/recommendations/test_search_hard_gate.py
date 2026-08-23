@@ -39,6 +39,30 @@ class CommonSearchHardGateTests(TestCase):
         self.assertEqual(kept, [])
         self.assertEqual(len(removed), 1)
         self.assertEqual(debug["removed_by_type"], {"feature": 1})
+        self.assertEqual(
+            removed[0]["hard_gate_violations"][0]["evidence_status"],
+            "unknown",
+        )
+
+    def test_active_negative_feature_is_marked_contradicted(self):
+        PlaceTagEvidence.objects.create(
+            place=self.cafe,
+            tag=self.parking_tag,
+            source="field_rule",
+            polarity="negative",
+            confidence=90,
+            expires_at=timezone.now() + timedelta(days=1),
+        )
+
+        kept, removed, _ = apply_common_hard_gate(
+            [self._candidate()], "주차 가능한 카페", {},
+        )
+
+        self.assertEqual(kept, [])
+        self.assertEqual(
+            removed[0]["hard_gate_violations"][0]["evidence_status"],
+            "contradicted",
+        )
 
     def test_semantic_document_feature_cannot_satisfy_hard_gate_without_current_evidence(self):
         candidate = self._candidate(
@@ -112,3 +136,43 @@ class CommonSearchHardGateTests(TestCase):
         )
         self.assertEqual(len(kept), 1)
         self.assertEqual(removed, [])
+
+    def test_pharmacy_name_repairs_stale_source_category_but_rejects_cafe(self):
+        pharmacy = self._candidate(
+            name="서면365약국",
+            category="tourism",
+        )
+        cafe = self._candidate(
+            name="하삼동커피 문현현대점",
+            category="cafe",
+        )
+
+        kept, removed, _ = apply_common_hard_gate(
+            [pharmacy, cafe], "가까운 약국", {},
+        )
+
+        self.assertEqual([row["name"] for row in kept], ["서면365약국"])
+        self.assertEqual(kept[0]["category"], "pharmacy")
+        self.assertEqual(kept[0]["source_category"], "tourism")
+        self.assertEqual([row["name"] for row in removed], ["하삼동커피 문현현대점"])
+
+    def test_open_now_and_work_cafe_require_current_evidence(self):
+        pharmacy = self._candidate(name="행복한약국", category="tourism")
+        kept, removed, _ = apply_common_hard_gate(
+            [pharmacy], "지금 문 연 약국", {},
+        )
+        self.assertEqual(kept, [])
+        self.assertEqual(removed[0]["category"], "pharmacy")
+        self.assertEqual(
+            removed[0]["hard_gate_violations"][0]["required"],
+            "open_now",
+        )
+
+        kept, removed, _ = apply_common_hard_gate(
+            [self._candidate()], "작업할 카페", {},
+        )
+        self.assertEqual(kept, [])
+        self.assertEqual(
+            removed[0]["hard_gate_violations"][0]["required"],
+            "work_friendly",
+        )
