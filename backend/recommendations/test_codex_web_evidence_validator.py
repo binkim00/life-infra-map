@@ -37,6 +37,15 @@ class CodexWebEvidenceValidatorTests(TestCase):
         row["evidence_span"] = "좌석이 넓다"
         self.assertEqual(validate_candidate(row)["reason"], "POLARITY_OR_RULE_MISMATCH")
 
+    def test_rejects_mismatched_target_and_extracted_tags(self):
+        row = self.row()
+        row["target_tag"] = "조용함"
+
+        self.assertEqual(
+            validate_candidate(row)["reason"],
+            "TARGET_EXTRACTED_TAG_MISMATCH",
+        )
+
     def test_detects_duplicate_url_tag_and_polarity(self):
         tag = Tag.objects.create(name="콘센트있음", tag_type="recommendation")
         PlaceTagEvidence.objects.create(

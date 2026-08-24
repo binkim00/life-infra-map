@@ -1,0 +1,11 @@
+[Unit]
+Description=Run Life Infra Map launch quality report daily
+
+[Timer]
+OnCalendar=*-*-* 05:15:00 Asia/Seoul
+RandomizedDelaySec=5m
+Persistent=true
+Unit=life-infra-map-quality-report.service
+
+[Install]
+WantedBy=timers.target

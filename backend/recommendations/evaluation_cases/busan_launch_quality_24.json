@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "description": "부산 1차 출시용 카페·식당 복합조건 검색 결과 품질 24문항",
+  "cases": [
+    {"id":"cafe_seomyeon_work","area":"서면","query":"서면에서 조용하고 콘센트 있고 오래 머물기 좋은 카페","lat":35.1579,"lng":129.0592,"expected_action":"search","expected_anchor_location":"서면","cohort":"cafe"},
+    {"id":"cafe_hadan_solo_work","area":"하단","query":"하단에서 혼자 노트북 작업하기 편하고 좌석이 편한 카페","lat":35.1062,"lng":128.9667,"expected_action":"search","expected_anchor_location":"하단","cohort":"cafe"},
+    {"id":"cafe_pnu_quiet_wifi","area":"부산대","query":"부산대 근처 조용하고 와이파이 되는 작업 카페","lat":35.2307,"lng":129.0843,"expected_action":"search","expected_anchor_location":"부산대","cohort":"cafe"},
+    {"id":"cafe_kyungsung_long_stay","area":"경성대","query":"경성대에서 테이블 넓고 오래 앉아 있기 좋은 카페","lat":35.1378,"lng":129.1008,"expected_action":"search","expected_anchor_location":"경성대","cohort":"cafe"},
+    {"id":"cafe_haeundae_view_photo","area":"해운대","query":"해운대에서 바다 보이고 사진 찍기 좋은 카페","lat":35.1631,"lng":129.1636,"expected_action":"search","expected_anchor_location":"해운대","cohort":"cafe"},
+    {"id":"cafe_gwangalli_view_date","area":"광안리","query":"광안리에서 전망 좋고 데이트하기 좋은 카페","lat":35.1532,"lng":129.1187,"expected_action":"search","expected_anchor_location":"광안리","cohort":"cafe"},
+    {"id":"cafe_haeundae_sunlight_dessert","area":"해운대","query":"해운대에서 자연광 좋고 디저트가 특별한 카페","lat":35.1631,"lng":129.1636,"expected_action":"search","expected_anchor_location":"해운대","cohort":"cafe"},
+    {"id":"cafe_gwangalli_pet_outdoor","area":"광안리","query":"광안리에서 반려동물과 야외 좌석을 이용할 수 있는 카페","lat":35.1532,"lng":129.1187,"expected_action":"search","expected_anchor_location":"광안리","cohort":"cafe"},
+    {"id":"cafe_nampo_talk","area":"남포동","query":"남포동에서 좌석 간격 넓고 대화하기 좋은 카페","lat":35.0988,"lng":129.0305,"expected_action":"search","expected_anchor_location":"남포동","cohort":"cafe"},
+    {"id":"cafe_busan_station_solo","area":"부산역","query":"부산역 근처 혼자 이용하기 좋고 조용한 카페","lat":35.1151,"lng":129.0414,"expected_action":"search","expected_anchor_location":"부산역","cohort":"cafe"},
+    {"id":"cafe_sasang_coffee_dessert","area":"사상","query":"사상에서 커피 맛 좋고 디저트가 특별한 카페","lat":35.1629,"lng":128.9846,"expected_action":"search","expected_anchor_location":"사상","cohort":"cafe"},
+    {"id":"cafe_yeonsan_group_room","area":"연산","query":"연산동에서 단체석이나 개별룸이 있고 대화하기 좋은 카페","lat":35.1865,"lng":129.0815,"expected_action":"search","expected_anchor_location":"연산동","cohort":"cafe"},
+    {"id":"restaurant_seomyeon_solo_wait","area":"서면","query":"서면에서 혼자 밥먹기 편하고 웨이팅 적은 식당","lat":35.1579,"lng":129.0592,"expected_action":"search","expected_anchor_location":"서면","cohort":"restaurant"},
+    {"id":"restaurant_hadan_value_solo","area":"하단","query":"하단에서 혼밥하기 좋고 가성비 좋은 식당","lat":35.1062,"lng":128.9667,"expected_action":"search","expected_anchor_location":"하단","cohort":"restaurant"},
+    {"id":"restaurant_pnu_menu_value","area":"부산대","query":"부산대 근처 대표메뉴가 뚜렷하고 가성비 좋은 식당","lat":35.2307,"lng":129.0843,"expected_action":"search","expected_anchor_location":"부산대","cohort":"restaurant"},
+    {"id":"restaurant_kyungsung_date_quiet","area":"경성대","query":"경성대에서 데이트하기 좋고 너무 시끄럽지 않은 식당","lat":35.1378,"lng":129.1008,"expected_action":"search","expected_anchor_location":"경성대","cohort":"restaurant"},
+    {"id":"restaurant_haeundae_family_seating","area":"해운대","query":"해운대에서 아이와 가기 좋고 좌석 넓은 식당","lat":35.1631,"lng":129.1636,"expected_action":"search","expected_anchor_location":"해운대","cohort":"restaurant"},
+    {"id":"restaurant_gwangalli_group_view","area":"광안리","query":"광안리에서 전망 좋고 여럿이 먹기 좋은 메뉴가 있는 식당","lat":35.1532,"lng":129.1187,"expected_action":"search","expected_anchor_location":"광안리","cohort":"restaurant"},
+    {"id":"restaurant_nampo_family_room","area":"남포동","query":"남포동에서 가족과 조용히 먹을 개별룸 있는 식당","lat":35.0988,"lng":129.0305,"expected_action":"search","expected_anchor_location":"남포동","cohort":"restaurant"},
+    {"id":"restaurant_busan_station_group_reservation","area":"부산역","query":"부산역 근처 단체석 있고 예약 가능한 식당","lat":35.1151,"lng":129.0414,"expected_action":"search","expected_anchor_location":"부산역","cohort":"restaurant"},
+    {"id":"restaurant_sasang_stroller_child","area":"사상","query":"사상에서 유모차로 들어가기 쉽고 유아의자 있는 식당","lat":35.1629,"lng":128.9846,"expected_action":"search","expected_anchor_location":"사상","cohort":"restaurant"},
+    {"id":"restaurant_yeonsan_accessible","area":"연산","query":"연산동에서 단차 없이 들어가고 엘리베이터 있는 식당","lat":35.1865,"lng":129.0815,"expected_action":"search","expected_anchor_location":"연산동","cohort":"restaurant"},
+    {"id":"restaurant_seomyeon_menu_range","area":"서면","query":"서면에서 메뉴 선택 폭이 넓고 대화하기 좋은 식당","lat":35.1579,"lng":129.0592,"expected_action":"search","expected_anchor_location":"서면","cohort":"restaurant"},
+    {"id":"restaurant_haeundae_wait_parking_tradeoff","area":"해운대","query":"해운대에서 웨이팅이 적고 주차가 어렵지 않은 식당","lat":35.1631,"lng":129.1636,"expected_action":"search","expected_anchor_location":"해운대","cohort":"restaurant"}
+  ]
+}

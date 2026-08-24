@@ -13,6 +13,27 @@ from recommendations.services.web_tag_evidence_provider import CATEGORY_TAGS
 from recommendations.services.place_evidence_completeness import target_tags_for_gaps
 
 
+MAX_TARGET_TAGS = 8
+MAX_SOURCE_HINTS = 5
+
+# Tags whose supporting language is commonly present in public reviews and
+# venue introductions come first. Facility facts remain useful candidates, but
+# a run should not spend its only attempt on a very specific, rarely written
+# detail when another missing recommendation dimension is researchable.
+RESEARCHABILITY_PRIORITY = (
+    "분위기좋음", "데이트좋음", "혼자이용좋음", "혼밥좋음", "대화하기좋음",
+    "전망좋음", "사진찍기좋음", "디저트특화", "커피맛좋음", "가성비좋음",
+    "대표메뉴뚜렷함", "여럿이먹기좋은메뉴", "메뉴선택폭넓음", "야외좌석",
+    "반려동물동반", "단체석있음", "개별룸있음", "넓은테이블", "편한좌석",
+    "자연채광좋음", "조용함", "웨이팅많음", "웨이팅적음", "예약필수",
+    "시간제한있음", "좌석없음", "작업하기좋음", "노트북작업", "콘센트있음",
+    "장기체류좋음", "좌석간격넓음", "유아의자있음", "유모차접근",
+    "아이메뉴있음", "무단차접근", "엘리베이터있음", "주차어려움",
+    "계단접근만가능", "테이크아웃전문", "와이파이있음", "무료와이파이",
+)
+RESEARCHABILITY_INDEX = {tag: index for index, tag in enumerate(RESEARCHABILITY_PRIORITY)}
+
+
 class Command(BaseCommand):
     help = "Prepare a Busan-only Codex web research seed file without calling providers."
 
@@ -108,6 +129,7 @@ def select_places(category, limit, allocation, *, exclude_place_ids=None):
         "place_id", "tag__name", "polarity", "source", "source_reference",
     ):
         active[row["place_id"]].append({**row, "tag_name": row["tag__name"]})
+    source_hints = source_hints_for_places([place.id for place in places])
     selected = []
     seen_names = set()
     for place in places:
@@ -120,17 +142,60 @@ def select_places(category, limit, allocation, *, exclude_place_ids=None):
         ]
         if not missing:
             continue
-        tag = min(missing, key=lambda value: (allocation[(category, value)], tags.index(value)))
+        ordered_missing = sorted(
+            missing,
+            key=lambda value: (
+                allocation[(category, value)],
+                RESEARCHABILITY_INDEX.get(value, len(RESEARCHABILITY_INDEX)),
+                tags.index(value),
+            ),
+        )
+        tag = ordered_missing[0]
         allocation[(category, tag)] += 1
         seen_names.add(normalized_name)
         selected.append({
             "place": place,
             "tag": tag,
+            "target_tags": [tag] + [value for value in ordered_missing if value != tag][:MAX_TARGET_TAGS - 1],
             "active_tags": sorted({row["tag_name"] for row in active[place.id]}),
+            "source_hints": source_hints.get(place.id, []),
         })
         if len(selected) >= limit:
             break
     return selected
+
+
+def source_hints_for_places(place_ids):
+    hints = defaultdict(list)
+    seen = defaultdict(set)
+    jobs = PlaceTagCollectionJob.objects.filter(
+        place_id__in=place_ids,
+        provider="naver_search",
+        status="completed",
+        stats__diagnostics__identity_matches__gt=0,
+    ).order_by("-cycle_date", "-id").values("place_id", "stats")
+    for job in jobs:
+        place_id = job["place_id"]
+        if len(hints[place_id]) >= MAX_SOURCE_HINTS:
+            continue
+        for attempt in (job.get("stats") or {}).get("search_attempts") or []:
+            for result in attempt.get("results") or []:
+                url = str(result.get("url") or "").strip()
+                if not result.get("identity_matched") or not url.startswith(("http://", "https://")):
+                    continue
+                if url in seen[place_id]:
+                    continue
+                seen[place_id].add(url)
+                hints[place_id].append({
+                    "url": url,
+                    "title": str(result.get("title") or "")[:180],
+                    "description": str(result.get("description") or "")[:500],
+                })
+                if len(hints[place_id]) >= MAX_SOURCE_HINTS:
+                    break
+            if len(hints[place_id]) >= MAX_SOURCE_HINTS:
+                break
+    return hints
 
 
 def seed_row(item):
@@ -144,6 +209,8 @@ def seed_row(item):
         "district": district,
         "existing_active_tags": "|".join(item["active_tags"]),
         "target_tag": item["tag"],
+        "target_tags": item["target_tags"],
+        "source_hints": item["source_hints"],
         "extracted_tag": "",
         "polarity": "",
         "source_url": "",

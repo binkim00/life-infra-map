@@ -84,3 +84,11 @@ python manage.py evaluate_ai_search `
 - 평가셋의 기대값을 현재 구현에 맞춰 낮추지 않는다.
 - 실패를 수정할 때 관련 발화만 통과시키지 말고 전체 59단계를 다시 실행한다.
 - 서버 DB 평가에서는 DB 기본 트랜잭션을 읽기 전용으로 강제한다.
+
+## 부산 출시 품질 세트
+
+대화 상태 처리와 별도로 실제 추천 근거가 상위 결과에 존재하는지는
+`backend/recommendations/evaluation_cases/busan_launch_quality_24.json`의 카페 12건,
+식당 12건으로 매일 측정한다. 운영 서버의 `life-infra-map-quality-report.timer`는
+증거 수집 이후 이 세트를 실행하고 `feature_query_hit_at_5_rate`와
+`verified_feature_result_rate_at_5`를 포함한 출시 게이트를 JSON으로 남긴다.

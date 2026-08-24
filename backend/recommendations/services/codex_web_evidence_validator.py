@@ -46,6 +46,9 @@ def validate_candidate(row, *, now=None, live_verify=False):
         result["reason"] = "CATEGORY_MISMATCH"
         return result
     tag = str(row.get("extracted_tag") or row.get("target_tag") or "").strip()
+    if row.get("extracted_tag") and str(row.get("target_tag") or "").strip() != tag:
+        result["reason"] = "TARGET_EXTRACTED_TAG_MISMATCH"
+        return result
     if tag not in CATEGORY_TAGS.get(place.category, ()):
         result["reason"] = "NON_CANONICAL_OR_CATEGORY_TAG"
         return result

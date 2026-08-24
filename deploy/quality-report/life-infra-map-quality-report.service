@@ -1,0 +1,22 @@
+[Unit]
+Description=Life Infra Map daily launch quality report
+After=docker.service network-online.target life-infra-map-codex-evidence.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/life-infra-map/app
+ExecStart=/usr/bin/flock -n /run/lock/life-infra-map-quality-report.lock /home/ubuntu/life-infra-map/app/deploy/quality-report/run-quality-report.sh
+TimeoutStartSec=30min
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/ubuntu/life-infra-map/runtime /run/lock
+InaccessiblePaths=-/home/ubuntu/.ssh -/home/ubuntu/.aws -/home/ubuntu/life-infra-map/app/backend/.env -/home/ubuntu/life-infra-map/app/deploy/db/.env
+
+[Install]
+WantedBy=multi-user.target
