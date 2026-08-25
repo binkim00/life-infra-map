@@ -9,6 +9,7 @@ Type=oneshot
 User=ubuntu
 Group=ubuntu
 WorkingDirectory=/home/ubuntu/life-infra-map/app
+ExecStartPre=+/usr/bin/install -d -o ubuntu -g ubuntu -m 0700 /home/ubuntu/life-infra-map/runtime/quality-reports
 ExecStart=/usr/bin/flock -n /run/lock/life-infra-map-quality-report.lock /home/ubuntu/life-infra-map/app/deploy/quality-report/run-quality-report.sh
 TimeoutStartSec=30min
 NoNewPrivileges=true

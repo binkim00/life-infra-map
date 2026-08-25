@@ -14,6 +14,7 @@ Install or update:
 
 ```bash
 chmod 0755 deploy/quality-report/run-quality-report.sh
+sudo install -d -o ubuntu -g ubuntu -m 0700 /home/ubuntu/life-infra-map/runtime/quality-reports
 sudo install -m 0644 deploy/quality-report/life-infra-map-quality-report.service /etc/systemd/system/
 sudo install -m 0644 deploy/quality-report/life-infra-map-quality-report.timer /etc/systemd/system/
 sudo systemctl daemon-reload
