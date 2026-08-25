@@ -25,7 +25,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-docker exec "$API_CONTAINER" python manage.py report_city_food_coverage --output "$container_coverage" >/dev/null
+docker exec "$API_CONTAINER" python manage.py report_launch_evidence_quality --output "$container_coverage" >/dev/null
 docker exec \
   -e CONVERSATIONAL_SEARCH_AI_ENABLED=false \
   -e AI_RERANK_ENABLED=false \
@@ -49,8 +49,8 @@ jq -n \
     generated_at: $generated_at,
     artifacts: {coverage: $coverage_file, evaluation: $evaluation_file},
     coverage: {
-      cafe: $coverage[0].regions["부산"].cafe,
-      restaurant: $coverage[0].regions["부산"].restaurant
+      cafe: $coverage[0].categories.cafe,
+      restaurant: $coverage[0].categories.restaurant
     },
     search: $evaluation[0].metrics,
     release_gate: {

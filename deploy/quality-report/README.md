@@ -4,6 +4,8 @@ This timer runs after the daily Codex evidence collection and measures the
 Busan launch cohort against 24 cafe and restaurant feature queries. It writes
 coverage, full evaluation output, and a compact release-gate summary under
 `/home/ubuntu/life-infra-map/runtime/quality-reports`.
+The coverage step uses a launch-only aggregate instead of the much heavier
+cross-city, per-tag operations report.
 
 The release gate remains closed unless every query returns five results, every
 query has at least one verified feature match in its top five, at least 60% of
