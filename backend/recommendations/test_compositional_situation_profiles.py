@@ -346,6 +346,16 @@ class RestaurantAtomicEvidenceVocabularyTests(SimpleTestCase):
             'negative',
         )
 
+    def test_famous_named_dish_supports_distinctive_signature_menu(self):
+        self.assertEqual(
+            evidence_polarity(
+                "대표메뉴뚜렷함",
+                "싱싱한 해물과 야채가 들어간 이색 메뉴 라조면으로 유명한 중화요리 맛집입니다.",
+                category="restaurant",
+            ),
+            "positive",
+        )
+
 
 class ExplicitSemanticHardGateTests(TestCase):
     def setUp(self):

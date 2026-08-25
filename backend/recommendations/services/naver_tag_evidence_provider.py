@@ -569,6 +569,12 @@ def polarity_assessment(tag_name, text, *, category=""):
     terms = TAG_TERMS.get(tag_name) or {}
     compact_text = compact(text)
     positive_terms = [term for term in terms.get('positive', ()) if compact(term) in compact_text]
+    if (
+        tag_name == "대표메뉴뚜렷함"
+        and any(term in compact_text for term in ("메뉴", "요리"))
+        and re.search(r"(?:으로|로)유명(?:한|하|해)", compact_text)
+    ):
+        positive_terms.append("특정 메뉴로 유명")
     negative_terms = [term for term in terms.get('negative', ()) if compact(term) in compact_text]
     supporting_terms = [
         term for term in SUPPORTING_TERMS.get(tag_name, ()) if compact(term) in compact_text
