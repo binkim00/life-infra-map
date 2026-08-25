@@ -8,6 +8,7 @@ from recommendations.services.ai_intent_planner import _canonicalize, build_ai_i
 from recommendations.services.ai_search_orchestrator import (
     collect_db_candidates,
     _dedupe_candidates,
+    _semantic_category_review,
     _top_up_ranked_candidates,
     run_ai_search,
 )
@@ -86,6 +87,19 @@ class CompositionalSituationProfileTests(SimpleTestCase):
         self.assertNotIn("장기체류좋음", frame["constraints"])
         self.assertIn("테이크아웃전문", frame["avoid_features"])
         self.assertNotIn("테이크아웃전문", frame["exclusions"])
+
+    def test_cafe_group_seating_does_not_trigger_restaurant_group_meal_rejection(self):
+        frame = self._frame("연산동에서 단체석이나 개별룸이 있고 대화하기 좋은 카페")
+        candidate = {
+            "name": "연산 일반카페",
+            "category": "cafe",
+            "address": "부산광역시 연제구 연산동",
+        }
+
+        self.assertNotIn(
+            "회식/단체 식사 요청과 맞지 않는 간단한 식사 후보",
+            _semantic_category_review(candidate, frame),
+        )
 
     def _frame(self, query):
         plan = build_ai_intent_plan(query)

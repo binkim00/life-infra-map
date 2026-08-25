@@ -1792,7 +1792,7 @@ def _semantic_category_review(candidate, frame):
             unmet.append("식당 요청과 맞지 않는 카페 카테고리 후보")
 
     group_dining_request = any(term in frame_text for term in ["회식", "단체식사", "단체석", "모임식사", "모임장소"])
-    if group_dining_request:
+    if group_dining_request and restaurant_request:
         group_dining_positive = [
             "회식",
             "단체",
