@@ -67,3 +67,12 @@ class LaunchEvidencePriorityTests(TestCase):
 
         self.assertEqual(report["demand_places"], 0)
         self.assertEqual(report["unresolved_results"], 1)
+
+    def test_resolves_legacy_db_result_without_id_by_exact_identity(self):
+        payload = self.payload()
+        payload["results"][0]["top_results"][0]["id"] = ""
+
+        report = prioritize_launch_evidence(payload, dry_run=True)
+
+        self.assertEqual(report["demand_places"], 1)
+        self.assertEqual(report["unresolved_results"], 0)

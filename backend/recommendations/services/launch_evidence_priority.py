@@ -32,12 +32,17 @@ def _values(items):
     return values
 
 
-def _resolve_place(result):
+def _numeric_result_id(result):
+    value = str(result.get("id") or "").strip()
+    return int(value) if value.isdigit() else None
+
+
+def _resolve_place(result, *, places_by_id, exact_places, unique_name_places):
     if str(result.get("source") or "").lower() != "db":
         return None
-    raw_id = str(result.get("id") or "").strip()
-    if raw_id.isdigit():
-        place = Place.objects.filter(id=int(raw_id)).first()
+    numeric_id = _numeric_result_id(result)
+    if numeric_id is not None:
+        place = places_by_id.get(numeric_id)
         if place:
             return place
     name = str(result.get("name") or "").strip()
@@ -45,13 +50,38 @@ def _resolve_place(result):
     address = str(result.get("address") or "").strip()
     if not name or category not in CATEGORY_TAGS:
         return None
-    matches = Place.objects.filter(name=name, category=category)
     if address:
-        exact = matches.filter(address=address).first()
+        exact = exact_places.get((name, category, address))
         if exact:
             return exact
-    rows = list(matches[:2])
-    return rows[0] if len(rows) == 1 else None
+    return unique_name_places.get((name, category))
+
+
+def _place_lookup(scanned_rows):
+    numeric_ids = {
+        _numeric_result_id(result)
+        for _case_id, _constraints, _rank, result in scanned_rows
+        if str(result.get("source") or "").lower() == "db"
+        and _numeric_result_id(result) is not None
+    }
+    places_by_id = Place.objects.in_bulk(numeric_ids)
+    fallback_rows = [
+        result for _case_id, _constraints, _rank, result in scanned_rows
+        if str(result.get("source") or "").lower() == "db"
+        and _numeric_result_id(result) not in places_by_id
+    ]
+    names = {str(result.get("name") or "").strip() for result in fallback_rows}
+    categories = {str(result.get("category") or "").strip() for result in fallback_rows}
+    candidates = list(Place.objects.filter(name__in=names, category__in=categories)) if names else []
+    exact_places = {}
+    by_name = defaultdict(list)
+    for place in candidates:
+        exact_places[(place.name, place.category, str(place.address or "").strip())] = place
+        by_name[(place.name, place.category)].append(place)
+    unique_name_places = {
+        key: rows[0] for key, rows in by_name.items() if len(rows) == 1
+    }
+    return places_by_id, exact_places, unique_name_places
 
 
 def extract_launch_demands(payload, *, top_n=TOP_N):
@@ -59,36 +89,43 @@ def extract_launch_demands(payload, *, top_n=TOP_N):
     demands = defaultdict(lambda: {
         "place": None, "tags": defaultdict(lambda: {"rank_score": 0, "signals": 0, "cases": set()}),
     })
-    unresolved = 0
-    scanned = 0
+    scanned_rows = []
     for case in payload.get("results") or []:
         case_id = str(case.get("case_id") or case.get("id") or "")[:100]
         frame_constraints = _values((case.get("frame") or {}).get("constraints"))
         for rank, result in enumerate((case.get("top_results") or [])[:top_n], start=1):
-            scanned += 1
-            place = _resolve_place(result)
-            if not place:
-                unresolved += 1
-                continue
-            raw_gaps = [
-                *_values(result.get("missing_conditions")),
-                *_values(result.get("unverified_conditions")),
-            ]
-            if not raw_gaps and result.get("result_tier") == "best_available":
-                raw_gaps = frame_constraints
-            tags = [
-                tag for tag in normalize_subjective_tags(raw_gaps)
-                if tag in CATEGORY_TAGS.get(place.category, ())
-            ]
-            for tag in dict.fromkeys(tags):
-                item = demands[place.id]
-                item["place"] = place
-                signal = item["tags"][tag]
-                signal["rank_score"] += max(1, top_n + 1 - rank)
-                signal["signals"] += 1
-                if case_id:
-                    signal["cases"].add(case_id)
-    return demands, {"scanned_results": scanned, "unresolved_results": unresolved}
+            scanned_rows.append((case_id, frame_constraints, rank, result))
+    places_by_id, exact_places, unique_name_places = _place_lookup(scanned_rows)
+    unresolved = 0
+    for case_id, frame_constraints, rank, result in scanned_rows:
+        place = _resolve_place(
+            result,
+            places_by_id=places_by_id,
+            exact_places=exact_places,
+            unique_name_places=unique_name_places,
+        )
+        if not place:
+            unresolved += 1
+            continue
+        raw_gaps = [
+            *_values(result.get("missing_conditions")),
+            *_values(result.get("unverified_conditions")),
+        ]
+        if not raw_gaps and result.get("result_tier") == "best_available":
+            raw_gaps = frame_constraints
+        tags = [
+            tag for tag in normalize_subjective_tags(raw_gaps)
+            if tag in CATEGORY_TAGS.get(place.category, ())
+        ]
+        for tag in dict.fromkeys(tags):
+            item = demands[place.id]
+            item["place"] = place
+            signal = item["tags"][tag]
+            signal["rank_score"] += max(1, top_n + 1 - rank)
+            signal["signals"] += 1
+            if case_id:
+                signal["cases"].add(case_id)
+    return demands, {"scanned_results": len(scanned_rows), "unresolved_results": unresolved}
 
 
 def prioritize_launch_evidence(payload, *, dry_run=False):
@@ -97,6 +134,16 @@ def prioritize_launch_evidence(payload, *, dry_run=False):
     created = updated = idempotent = 0
     tag_counts = Counter()
     place_scores = Counter()
+    place_ids = set(demands)
+    tag_names = {
+        tag_name for item in demands.values() for tag_name in item["tags"]
+    }
+    existing_requests = {
+        (request.place_id, request.tag_name): request
+        for request in TagEnrichmentRequest.objects.filter(
+            place_id__in=place_ids, tag_name__in=tag_names,
+        )
+    }
 
     with transaction.atomic():
         for place_id, item in demands.items():
@@ -104,9 +151,7 @@ def prioritize_launch_evidence(payload, *, dry_run=False):
             for tag_name, signal in item["tags"].items():
                 tag_counts[tag_name] += signal["signals"]
                 place_scores[place.name] += signal["rank_score"]
-                existing = TagEnrichmentRequest.objects.filter(
-                    place_id=place_id, tag_name=tag_name,
-                ).first()
+                existing = existing_requests.get((place_id, tag_name))
                 context = dict(existing.context or {}) if existing else {}
                 launch = dict(context.get("launch_quality") or {})
                 fingerprints = list(launch.get("evaluation_fingerprints") or [])
