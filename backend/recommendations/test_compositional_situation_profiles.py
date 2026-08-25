@@ -71,6 +71,22 @@ class CompositionalSituationProfileTests(SimpleTestCase):
         self.assertIn('무료와이파이', tags)
         self.assertNotIn('와이파이있음', tags)
 
+    def test_wifi_is_a_feature_when_an_explicit_cafe_is_requested(self):
+        frame = self._frame("부산대 근처 조용하고 와이파이 되는 작업 카페")
+
+        self.assertEqual(frame["candidate_category_codes"], ["cafe"])
+        self.assertIn("와이파이있음", frame["required_features"])
+        self.assertIn("조용함", frame["required_features"])
+
+    def test_contextual_preferences_do_not_become_unasked_hard_filters(self):
+        frame = self._frame("연산동에서 단체석이나 개별룸이 있고 대화하기 좋은 카페")
+
+        self.assertEqual(frame["candidate_category_codes"], ["cafe"])
+        self.assertIn("장기체류좋음", frame["preferred_features"])
+        self.assertNotIn("장기체류좋음", frame["constraints"])
+        self.assertIn("테이크아웃전문", frame["avoid_features"])
+        self.assertNotIn("테이크아웃전문", frame["exclusions"])
+
     def _frame(self, query):
         plan = build_ai_intent_plan(query)
         self.assertEqual(plan["action"], "search")

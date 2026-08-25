@@ -485,15 +485,14 @@ def _enrich_frame_policy(frame, raw_query="", action="search"):
         **frame,
         **build_semantic_intent_profile(raw_query, frame),
     }
+    # Context-derived preferences and avoidances are ranking hints, not user
+    # requirements. Promoting them into constraints/exclusions can remove every
+    # candidate and also claim the user asked for conditions they never stated.
     frame['constraints'] = _dedupe([
         *(frame.get('constraints') or []),
         *(frame.get('required_features') or []),
-        *(frame.get('preferred_features') or []),
     ])
-    frame['exclusions'] = _dedupe([
-        *(frame.get('exclusions') or []),
-        *(frame.get('avoid_features') or []),
-    ])
+    frame['exclusions'] = _dedupe(frame.get('exclusions') or [])
     if action != "search":
         structured_conditions = _derive_structured_conditions(raw_query, frame)
         conflicts = _derive_policy_conflicts(raw_query, frame, structured_conditions)
@@ -1687,8 +1686,11 @@ def _local_rule_plan_for_known_intent(raw_query):
     # 무료 와이파이는 DB 에 `freewifi` 로 83,145건이 저장돼 있습니다.
     # 예전에는 카페의 편의시설로만 보고 cafe/shopping 을 찾았는데,
     # 그러면 가장 큰 카테고리를 통째로 쓰지 못하고 "와이파이 여부 확인 필요"만 붙었습니다.
-    if _has_any(text, ["무료 와이파이", "공공 와이파이", "와이파이 되는", "와이파이 쓸",
-                       "와이파이 있는", "와이파이", "wifi", "wi-fi"]):
+    if (
+        _has_any(text, ["무료 와이파이", "공공 와이파이", "와이파이 되는", "와이파이 쓸",
+                        "와이파이 있는", "와이파이", "wifi", "wi-fi"])
+        and not _has_any(text, ["카페", "커피", "식당", "음식점", "레스토랑"])
+    ):
         return _local_rule_search_plan(
             text,
             normalized_query="무료 와이파이",
