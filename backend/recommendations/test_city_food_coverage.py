@@ -30,4 +30,6 @@ class CityFoodCoverageTests(TestCase):
         self.assertEqual(cafe["places"], 1)
         self.assertEqual(cafe["active_evidence_places"], 1)
         self.assertEqual(cafe["stale_evidence_places"], 1)
+        self.assertEqual(cafe["recommendation_quality_levels"]["thin"], 1)
+        self.assertEqual(cafe["recommendation_quality_levels"]["empty"], 0)
         self.assertEqual(cafe["tags"]["조용함"]["statuses"]["candidate"], 1)

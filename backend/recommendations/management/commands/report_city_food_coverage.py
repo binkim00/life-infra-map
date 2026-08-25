@@ -1,4 +1,5 @@
 import json
+from collections import defaultdict
 from pathlib import Path
 
 from django.core.management.base import BaseCommand
@@ -6,7 +7,10 @@ from django.db.models import Count, Q
 from django.utils import timezone
 
 from recommendations.models import Place, PlaceTag, PlaceTagEvidence
-from recommendations.services.place_evidence_completeness import quality_profiles_for_places
+from recommendations.services.place_evidence_completeness import (
+    assess_evidence_quality,
+    meaningful_tags_for_category,
+)
 
 
 REGIONS = {
@@ -52,21 +56,16 @@ def build_report(now=None):
         for category, tags in CORE_TAGS.items():
             places = Place.objects.filter(location, category=category).distinct()
             total = places.count()
-            place_rows = list(places.only("id", "category"))
-            quality_profiles = quality_profiles_for_places(place_rows, now=now)
-            quality_levels = {
-                level: sum(profile["level"] == level for profile in quality_profiles.values())
-                for level in ("empty", "thin", "searchable", "rich")
-            }
-            searchable_places = quality_levels["searchable"] + quality_levels["rich"]
-            average_quality_score = (
-                round(sum(profile["score"] for profile in quality_profiles.values()) / total, 2)
-                if total else 0
-            )
             place_ids = places.values_list("id", flat=True)
             evidence = PlaceTagEvidence.objects.filter(place_id__in=place_ids)
             active = evidence.filter(Q(expires_at__isnull=True) | Q(expires_at__gt=now))
             stale = evidence.filter(expires_at__lte=now)
+            quality_levels, average_quality_score = recommendation_quality_summary(
+                active,
+                category=category,
+                total=total,
+            )
+            searchable_places = quality_levels["searchable"] + quality_levels["rich"]
             tag_rows = {}
             active_pair_total = 0
             for tag in tags:
@@ -113,6 +112,29 @@ def build_report(now=None):
             }
         result["regions"][region] = region_result
     return result
+
+
+def recommendation_quality_summary(active_evidence, *, category, total):
+    observations = defaultdict(list)
+    meaningful_tags = meaningful_tags_for_category(category)
+    rows = active_evidence.filter(
+        tag__name__in=meaningful_tags,
+        polarity__in=("positive", "negative"),
+    ).values("place_id", "tag__name", "polarity", "source", "source_reference")
+    for row in rows:
+        observations[row["place_id"]].append({**row, "tag_name": row["tag__name"]})
+
+    profiles = [assess_evidence_quality(category, values) for values in observations.values()]
+    levels = {
+        "empty": max(0, total - len(profiles)),
+        "thin": 0,
+        "searchable": 0,
+        "rich": 0,
+    }
+    for profile in profiles:
+        levels[profile["level"]] += 1
+    average_score = round(sum(profile["score"] for profile in profiles) / total, 2) if total else 0
+    return levels, average_score
 
 
 def percentage(numerator, denominator):
