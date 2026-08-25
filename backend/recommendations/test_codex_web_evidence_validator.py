@@ -6,6 +6,7 @@ from unittest.mock import patch
 from django.core.management import call_command
 from django.test import TestCase
 
+from recommendations.management.commands.validate_codex_web_evidence import close_research_requests
 from recommendations.models import Place, PlaceTagEvidence, Tag, TagEnrichmentRequest
 from recommendations.services.codex_web_evidence_validator import validate_candidate
 
@@ -49,6 +50,12 @@ class CodexWebEvidenceValidatorTests(TestCase):
             validate_candidate(row)["reason"],
             "TARGET_EXTRACTED_TAG_MISMATCH",
         )
+
+    def test_rejects_known_server_unreadable_aggregator(self):
+        row = self.row()
+        row["source_url"] = "https://www.tabling.co.kr/restaurant/15085"
+
+        self.assertEqual(validate_candidate(row)["reason"], "SOURCE_POLICY_REJECTED")
 
     def test_detects_duplicate_url_tag_and_polarity(self):
         tag = Tag.objects.create(name="콘센트있음", tag_type="recommendation")
@@ -100,3 +107,46 @@ class CodexWebEvidenceValidatorTests(TestCase):
 
         request.refresh_from_db()
         self.assertEqual(request.status, "completed")
+
+    def test_identity_mismatch_closes_all_launch_requests_for_place(self):
+        first = TagEnrichmentRequest.objects.create(
+            place=self.place, tag_name="조용함", status="queued",
+            context={"launch_quality": {"source": "busan_launch_quality"}},
+        )
+        second = TagEnrichmentRequest.objects.create(
+            place=self.place, tag_name="콘센트있음", status="queued",
+            context={"launch_quality": {"source": "busan_launch_quality"}},
+        )
+
+        closed = close_research_requests({
+            "place_id": self.place.id,
+            "target_tag": "조용함",
+            "research_status": "IDENTITY_MISMATCH",
+        }, "IDENTITY_MISMATCH")
+
+        self.assertEqual(closed, 2)
+        first.refresh_from_db()
+        second.refresh_from_db()
+        self.assertEqual({first.status, second.status}, {"failed"})
+
+    def test_no_result_closes_only_the_attempted_launch_tag(self):
+        first = TagEnrichmentRequest.objects.create(
+            place=self.place, tag_name="조용함", status="queued",
+            context={"launch_quality": {"source": "busan_launch_quality"}},
+        )
+        second = TagEnrichmentRequest.objects.create(
+            place=self.place, tag_name="콘센트있음", status="queued",
+            context={"launch_quality": {"source": "busan_launch_quality"}},
+        )
+
+        closed = close_research_requests({
+            "place_id": self.place.id,
+            "target_tag": "조용함",
+            "research_status": "NO_RESULT",
+        }, "NO_RESULT")
+
+        self.assertEqual(closed, 1)
+        first.refresh_from_db()
+        second.refresh_from_db()
+        self.assertEqual(first.status, "completed")
+        self.assertEqual(second.status, "queued")

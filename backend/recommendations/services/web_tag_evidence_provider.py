@@ -31,7 +31,7 @@ FAILURE_REASONS = frozenset({
 TRACKING_QUERY_KEYS = {"fbclid", "gclid", "ref", "source"}
 BLOCKED_HOST_PARTS = (
     "map.naver.com", "m.place.naver.com", "place.map.kakao.com",
-    "map.kakao.com", "google.com/maps", "maps.google.",
+    "map.kakao.com", "google.com/maps", "maps.google.", "tabling.co.kr",
 )
 CATEGORY_TAGS = {
     "cafe": (

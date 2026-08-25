@@ -32,11 +32,14 @@ class Command(BaseCommand):
         reasons = Counter()
         saved = 0
         requests_completed = 0
+        requests_closed_without_evidence = 0
         for row in rows:
             result = validate_candidate(row, live_verify=options["live_verify"])
             counts[result["status"]] += 1
             if result["reason"]:
                 reasons[result["reason"]] += 1
+            if options["apply"] and result["status"] in {"rejected", "ambiguous"}:
+                requests_closed_without_evidence += close_research_requests(row, result["reason"])
             if options["apply"] and result["status"] in {"accepted", "needs_verification"}:
                 normalized = result["normalized"]
                 evidence = {
@@ -78,5 +81,37 @@ class Command(BaseCommand):
             "duplicate": counts["duplicate"],
             "saved": saved,
             "requests_completed": requests_completed,
+            "requests_closed_without_evidence": requests_closed_without_evidence,
             "reasons": dict(reasons),
         }, ensure_ascii=False, indent=2))
+
+
+def close_research_requests(row, reason):
+    """Close this run's launch requests; tomorrow's evaluation may queue them again."""
+    try:
+        place_id = int(row.get("place_id"))
+    except (TypeError, ValueError):
+        return 0
+    research_status = str(row.get("research_status") or reason or "").strip().upper()
+    requests = list(TagEnrichmentRequest.objects.filter(place_id=place_id))
+    if research_status != "IDENTITY_MISMATCH":
+        target_tag = str(row.get("target_tag") or "").strip()
+        requests = [request for request in requests if request.tag_name == target_tag]
+    closed = 0
+    for request in requests:
+        context = dict(request.context or {})
+        launch = context.get("launch_quality")
+        if not isinstance(launch, dict):
+            continue
+        launch = dict(launch)
+        launch["last_research_status"] = research_status or str(reason or "")[:100]
+        context["launch_quality"] = launch
+        request.status = "failed" if research_status == "IDENTITY_MISMATCH" else "completed"
+        request.error_message = "codex_cli:{}".format(reason or research_status)[:1000]
+        request.next_attempt_at = None
+        request.context = context
+        request.save(update_fields=[
+            "status", "error_message", "next_attempt_at", "context", "updated_at",
+        ])
+        closed += 1
+    return closed
