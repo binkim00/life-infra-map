@@ -1,8 +1,12 @@
+import json
+import tempfile
+from pathlib import Path
 from unittest.mock import patch
 
+from django.core.management import call_command
 from django.test import TestCase
 
-from recommendations.models import Place, PlaceTagEvidence, Tag
+from recommendations.models import Place, PlaceTagEvidence, Tag, TagEnrichmentRequest
 from recommendations.services.codex_web_evidence_validator import validate_candidate
 
 
@@ -75,3 +79,24 @@ class CodexWebEvidenceValidatorTests(TestCase):
         result = validate_candidate(row, live_verify=True)
         self.assertEqual(result["status"], "needs_verification")
         self.assertEqual(result["normalized"]["identity"]["score"], 90)
+
+    @patch("recommendations.services.codex_web_evidence_validator.fetch_public_page")
+    def test_apply_completes_matching_launch_enrichment_request(self, fetch):
+        fetch.return_value = {
+            "ok": True, "url": "https://example.com/cafe", "title": self.place.name,
+            "text": "자리마다 콘센트가 있다", "published_at": "2026-08-01",
+        }
+        request = TagEnrichmentRequest.objects.create(
+            place=self.place,
+            tag_name="콘센트있음",
+            status="queued",
+            context={"launch_quality": {"source": "busan_launch_quality"}},
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "result.json"
+            path.write_text(json.dumps({"results": [self.row()]}, ensure_ascii=False), encoding="utf-8")
+
+            call_command("validate_codex_web_evidence", str(path), live_verify=True, apply=True)
+
+        request.refresh_from_db()
+        self.assertEqual(request.status, "completed")

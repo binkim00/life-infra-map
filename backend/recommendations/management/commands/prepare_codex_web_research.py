@@ -1,13 +1,15 @@
 import csv
 import json
 from collections import Counter, defaultdict
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from django.core.management.base import BaseCommand, CommandError
 from django.db.models import Exists, OuterRef, Q
 from django.utils import timezone
 
-from recommendations.models import Place, PlaceTagCollectionJob, PlaceTagEvidence
+from recommendations.models import Place, PlaceTagCollectionJob, PlaceTagEvidence, TagEnrichmentRequest
+from recommendations.services.public_page_tag_evidence import fetch_public_page
 from recommendations.services.restaurant_collection_quality import restaurant_collection_quality
 from recommendations.services.web_tag_evidence_provider import CATEGORY_TAGS
 from recommendations.services.place_evidence_completeness import target_tags_for_gaps
@@ -42,6 +44,7 @@ class Command(BaseCommand):
         parser.add_argument("--restaurant", type=int, default=50)
         parser.add_argument("--output", default="tmp/codex_web_evidence_busan_pilot.json")
         parser.add_argument("--exclude-place-ids", default="")
+        parser.add_argument("--preflight-source-hints", action="store_true")
 
     def handle(self, *args, **options):
         selected = []
@@ -56,6 +59,9 @@ class Command(BaseCommand):
             if len(rows) < limit:
                 raise CommandError("Only {} eligible {} places found".format(len(rows), category))
             selected.extend(rows)
+        preflight = {"checked": 0, "reachable": 0, "rejected": 0}
+        if options["preflight_source_hints"]:
+            preflight = preflight_source_hints(selected)
         payload = {
             "region": "부산",
             "generated_at": timezone.now().isoformat(),
@@ -75,6 +81,8 @@ class Command(BaseCommand):
             "places": len(selected),
             "categories": dict(Counter(row["place"].category for row in selected)),
             "target_tags": dict(Counter(row["tag"] for row in selected)),
+            "launch_priority_places": sum(bool(row.get("launch_demand")) for row in selected),
+            "source_hint_preflight": preflight,
             "json": str(path), "csv": str(csv_path),
         }, ensure_ascii=False))
 
@@ -82,6 +90,8 @@ class Command(BaseCommand):
 def select_places(category, limit, allocation, *, exclude_place_ids=None):
     tags = CATEGORY_TAGS[category]
     exclude_place_ids = exclude_place_ids or set()
+    launch_demands = launch_demand_context(category)
+    launch_place_ids = set(launch_demands)
     identity_job = PlaceTagCollectionJob.objects.filter(
         place_id=OuterRef("pk"), provider="naver_search", status="completed",
         stats__diagnostics__identity_matches__gt=0,
@@ -99,7 +109,9 @@ def select_places(category, limit, allocation, *, exclude_place_ids=None):
     ).exclude(id__in=exclude_place_ids).annotate(
         identity_success=Exists(identity_job), no_tag=Exists(no_tag_job),
         evidence_success=Exists(evidence_job),
-    ).filter(identity_success=True).order_by("-no_tag", "-evidence_success", "name")[:5000])
+    ).filter(Q(identity_success=True) | Q(id__in=launch_place_ids)).order_by(
+        "-no_tag", "-evidence_success", "name",
+    )[:5000])
     if category == "restaurant":
         scored = []
         for place in places:
@@ -115,11 +127,17 @@ def select_places(category, limit, allocation, *, exclude_place_ids=None):
         places = [
             place for _score, place in sorted(
                 scored,
-                key=lambda item: (-item[0], -int(item[1].evidence_success), -int(item[1].no_tag), item[1].name),
+                key=lambda item: (
+                    -sum(launch_demands.get(item[1].id, {}).values()),
+                    -item[0], -int(item[1].evidence_success), -int(item[1].no_tag), item[1].name,
+                ),
             )
         ]
     else:
-        places.sort(key=lambda place: (-int(place.evidence_success), -int(place.no_tag), place.name))
+        places.sort(key=lambda place: (
+            -sum(launch_demands.get(place.id, {}).values()),
+            -int(place.evidence_success), -int(place.no_tag), place.name,
+        ))
     active = defaultdict(list)
     for row in PlaceTagEvidence.objects.filter(
         place_id__in=[place.id for place in places],
@@ -129,7 +147,6 @@ def select_places(category, limit, allocation, *, exclude_place_ids=None):
         "place_id", "tag__name", "polarity", "source", "source_reference",
     ):
         active[row["place_id"]].append({**row, "tag_name": row["tag__name"]})
-    source_hints = source_hints_for_places([place.id for place in places])
     selected = []
     seen_names = set()
     for place in places:
@@ -145,6 +162,7 @@ def select_places(category, limit, allocation, *, exclude_place_ids=None):
         ordered_missing = sorted(
             missing,
             key=lambda value: (
+                -launch_demands.get(place.id, {}).get(value, 0),
                 allocation[(category, value)],
                 RESEARCHABILITY_INDEX.get(value, len(RESEARCHABILITY_INDEX)),
                 tags.index(value),
@@ -158,11 +176,71 @@ def select_places(category, limit, allocation, *, exclude_place_ids=None):
             "tag": tag,
             "target_tags": [tag] + [value for value in ordered_missing if value != tag][:MAX_TARGET_TAGS - 1],
             "active_tags": sorted({row["tag_name"] for row in active[place.id]}),
-            "source_hints": source_hints.get(place.id, []),
+            "source_hints": [],
+            "launch_demand": launch_demands.get(place.id, {}),
         })
         if len(selected) >= limit:
             break
+    source_hints = source_hints_for_places([row["place"].id for row in selected])
+    for row in selected:
+        row["source_hints"] = source_hints.get(row["place"].id, [])
     return selected
+
+
+def launch_demand_context(category):
+    location = Q(place__address__startswith="부산") | Q(place__detail_location__startswith="부산")
+    requests = TagEnrichmentRequest.objects.filter(
+        location, place__category=category, status="queued",
+    ).values("place_id", "tag_name", "priority", "demand_count", "context")
+    demands = defaultdict(dict)
+    for request in requests:
+        launch = (request.get("context") or {}).get("launch_quality")
+        if not isinstance(launch, dict) or request["tag_name"] not in CATEGORY_TAGS.get(category, ()):
+            continue
+        demands[request["place_id"]][request["tag_name"]] = (
+            int(request.get("priority") or 0) + int(request.get("demand_count") or 0)
+        )
+    return demands
+
+
+def preflight_source_hints(selected, *, fetcher=fetch_public_page, max_attempts_per_place=2):
+    """Keep only source hints that the production page fetcher can read."""
+    candidates = []
+    for row in selected:
+        for hint in (row.get("source_hints") or [])[:max_attempts_per_place]:
+            candidates.append((row, hint))
+    if not candidates:
+        return {"checked": 0, "reachable": 0, "rejected": 0}
+    outcomes = {}
+    with ThreadPoolExecutor(max_workers=min(10, len(candidates))) as executor:
+        futures = {executor.submit(fetcher, hint["url"]): (row, hint) for row, hint in candidates}
+        for future in as_completed(futures):
+            row, hint = futures[future]
+            try:
+                page = future.result()
+            except Exception:
+                page = {"ok": False}
+            outcomes[(row["place"].id, hint["url"])] = page
+    reachable = 0
+    for row in selected:
+        verified = []
+        for hint in (row.get("source_hints") or [])[:max_attempts_per_place]:
+            page = outcomes.get((row["place"].id, hint["url"])) or {}
+            if not page.get("ok"):
+                continue
+            verified.append({
+                **hint,
+                "url": page.get("url") or hint["url"],
+                "title": page.get("title") or hint.get("title") or "",
+                "preflight_verified": True,
+            })
+            reachable += 1
+        row["source_hints"] = verified
+    return {
+        "checked": len(candidates),
+        "reachable": reachable,
+        "rejected": len(candidates) - reachable,
+    }
 
 
 def source_hints_for_places(place_ids):
@@ -211,6 +289,8 @@ def seed_row(item):
         "target_tag": item["tag"],
         "target_tags": item["target_tags"],
         "source_hints": item["source_hints"],
+        "selection_reason": "launch_quality_gap" if item.get("launch_demand") else "coverage_gap",
+        "launch_demand_tags": sorted(item.get("launch_demand") or {}, key=(item.get("launch_demand") or {}).get, reverse=True),
         "extracted_tag": "",
         "polarity": "",
         "source_url": "",

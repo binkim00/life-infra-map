@@ -6,6 +6,7 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
 from recommendations.management.commands.process_tag_enrichment_queue import save_place_candidate_evidence
+from recommendations.models import TagEnrichmentRequest
 from recommendations.services.codex_web_evidence_validator import validate_candidate
 
 
@@ -30,6 +31,7 @@ class Command(BaseCommand):
         counts = Counter()
         reasons = Counter()
         saved = 0
+        requests_completed = 0
         for row in rows:
             result = validate_candidate(row, live_verify=options["live_verify"])
             counts[result["status"]] += 1
@@ -58,6 +60,12 @@ class Command(BaseCommand):
                         normalized["place"], normalized["tag_name"], evidence,
                         observed_at=normalized["observed_at"],
                     )
+                    requests_completed += TagEnrichmentRequest.objects.filter(
+                        place=normalized["place"],
+                        tag_name=normalized["tag_name"],
+                    ).exclude(status="completed").update(
+                        status="completed", next_attempt_at=None, error_message="",
+                    )
                 saved += int(created)
         self.stdout.write(json.dumps({
             "dry_run": not options["apply"],
@@ -69,5 +77,6 @@ class Command(BaseCommand):
             "ambiguous": counts["ambiguous"],
             "duplicate": counts["duplicate"],
             "saved": saved,
+            "requests_completed": requests_completed,
             "reasons": dict(reasons),
         }, ensure_ascii=False, indent=2))

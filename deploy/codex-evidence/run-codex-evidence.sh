@@ -7,6 +7,7 @@ RUNTIME_DIR="${CODEX_EVIDENCE_RUNTIME_DIR:-/home/ubuntu/life-infra-map/runtime/c
 CODEX_BIN="${CODEX_EVIDENCE_CODEX_BIN:-/home/ubuntu/.local/bin/codex}"
 CAFE_LIMIT="${CODEX_EVIDENCE_CAFE_LIMIT:-25}"
 RESTAURANT_LIMIT="${CODEX_EVIDENCE_RESTAURANT_LIMIT:-25}"
+REVISIT_DAYS="${CODEX_EVIDENCE_REVISIT_DAYS:-1}"
 DEPLOY_DIR="${APP_ROOT}/deploy/codex-evidence"
 
 for required in "$CODEX_BIN" "$DEPLOY_DIR/research-prompt.txt" "$DEPLOY_DIR/codex-evidence-output.schema.json"; do
@@ -37,13 +38,18 @@ cleanup() {
 }
 trap cleanup EXIT
 
+if ! [[ "$REVISIT_DAYS" =~ ^[1-9][0-9]*$ ]]; then
+  echo "CODEX_EVIDENCE_REVISIT_DAYS must be a positive integer" >&2
+  exit 1
+fi
 exclude_ids="$(
-  jq -r '.results[]?.place_id // empty' "$RUNTIME_DIR"/result-*.json 2>/dev/null \
+  find "$RUNTIME_DIR" -maxdepth 1 -type f -name 'result-*.json' -mtime "-${REVISIT_DAYS}" -print0 \
+    | xargs -0 -r jq -r '.results[]?.place_id // empty' 2>/dev/null \
     | sort -nu | paste -sd, - || true
 )"
 docker exec "$API_CONTAINER" python manage.py prepare_codex_web_research \
   --cafe "$CAFE_LIMIT" --restaurant "$RESTAURANT_LIMIT" \
-  --exclude-place-ids "$exclude_ids" --output "$container_seed"
+  --exclude-place-ids "$exclude_ids" --preflight-source-hints --output "$container_seed"
 docker cp "${API_CONTAINER}:${container_seed}" "$seed_file"
 
 "$CODEX_BIN" --search --ask-for-approval never exec \

@@ -4,6 +4,7 @@ from django.test import TestCase
 
 from recommendations.management.commands.prepare_codex_web_research import (
     MAX_SOURCE_HINTS,
+    preflight_source_hints,
     seed_row,
     source_hints_for_places,
 )
@@ -65,3 +66,23 @@ class PrepareCodexWebResearchTests(TestCase):
         self.assertEqual(row["target_tag"], "분위기좋음")
         self.assertEqual(row["target_tags"], ["분위기좋음", "사진찍기좋음", "조용함"])
         self.assertEqual(row["source_hints"][0]["url"], "https://blog.example.com/right-place")
+
+    def test_preflight_keeps_only_pages_readable_by_production_fetcher(self):
+        selected = [{
+            "place": self.place,
+            "source_hints": [
+                {"url": "https://blog.example.com/readable", "title": "old"},
+                {"url": "https://blog.example.com/blocked", "title": "blocked"},
+            ],
+        }]
+
+        def fetcher(url):
+            if url.endswith("readable"):
+                return {"ok": True, "url": url, "title": "verified title"}
+            return {"ok": False, "error": "ROBOTS_DENIED"}
+
+        stats = preflight_source_hints(selected, fetcher=fetcher)
+
+        self.assertEqual(stats, {"checked": 2, "reachable": 1, "rejected": 1})
+        self.assertEqual(len(selected[0]["source_hints"]), 1)
+        self.assertTrue(selected[0]["source_hints"][0]["preflight_verified"])
