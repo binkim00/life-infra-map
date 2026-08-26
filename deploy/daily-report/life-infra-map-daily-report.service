@@ -11,7 +11,7 @@ Group=ubuntu
 WorkingDirectory=/home/ubuntu/life-infra-map/app
 Environment=DAILY_REPORT_SNS_TOPIC_ARN=arn:aws:sns:ap-northeast-2:497902501857:life-infra-map-alerts
 ExecStartPre=+/usr/bin/install -d -o ubuntu -g ubuntu -m 0700 /home/ubuntu/life-infra-map/runtime/daily-reports
-ExecStart=/usr/bin/flock -n /run/lock/life-infra-map-daily-report.lock /home/ubuntu/life-infra-map/app/deploy/daily-report/run-daily-report.sh
+ExecStart=/usr/bin/flock -n /run/lock/life-infra-map-daily-report.lock /usr/bin/bash /home/ubuntu/life-infra-map/app/deploy/daily-report/run-daily-report.sh
 TimeoutStartSec=10min
 NoNewPrivileges=true
 PrivateTmp=true
