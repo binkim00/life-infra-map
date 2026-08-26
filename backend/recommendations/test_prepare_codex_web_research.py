@@ -5,6 +5,7 @@ from django.test import TestCase
 from recommendations.management.commands.prepare_codex_web_research import (
     MAX_SOURCE_HINTS,
     preflight_source_hints,
+    research_priority,
     seed_row,
     source_hints_for_places,
 )
@@ -22,6 +23,28 @@ class PrepareCodexWebResearchTests(TestCase):
             source="semas",
             external_id="codex-research-seed",
         )
+
+    def test_research_priority_prefers_ready_launch_then_ready_coverage_then_cold_launch(self):
+        ready_launch = type("Candidate", (), {
+            "id": 1, "identity_success": True, "evidence_success": True,
+            "no_tag": False, "name": "ready launch",
+        })()
+        ready_coverage = type("Candidate", (), {
+            "id": 2, "identity_success": True, "evidence_success": False,
+            "no_tag": False, "name": "ready coverage",
+        })()
+        cold_launch = type("Candidate", (), {
+            "id": 3, "identity_success": False, "evidence_success": False,
+            "no_tag": True, "name": "cold launch",
+        })()
+        demands = {1: {"분위기좋음": 10}, 3: {"조용함": 100}}
+
+        ordered = sorted(
+            [cold_launch, ready_coverage, ready_launch],
+            key=lambda place: research_priority(place, demands),
+        )
+
+        self.assertEqual([place.id for place in ordered], [1, 2, 3])
 
     def test_source_hints_reuse_only_identity_matched_public_urls(self):
         PlaceTagCollectionJob.objects.create(

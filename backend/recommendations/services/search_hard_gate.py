@@ -8,6 +8,7 @@ from django.utils import timezone
 from recommendations.models import PlaceTagEvidence
 from recommendations.services.canonical_tag_policy import canonical_tag_name
 from recommendations.services.map_search import get_matching_categories
+from recommendations.services.tag_source_policy import WEB_EVIDENCE_SOURCES
 from recommendations.services.tag_utils import get_category_display_name
 
 
@@ -179,12 +180,24 @@ def _active_tags_by_polarity(candidates, now):
         place_id__in=place_ids,
         polarity__in=("positive", "negative"),
     ).filter(Q(expires_at__isnull=True) | Q(expires_at__gt=now)).values_list(
-        "place_id", "tag__name", "polarity",
+        "place_id", "tag__name", "polarity", "source", "source_reference", "context",
     )
-    for place_id, tag_name, polarity in rows.iterator(chunk_size=1000):
-        result[polarity].setdefault(place_id, set()).add(
-            canonical_tag_name(tag_name) or tag_name
-        )
+    trusted = set()
+    web_references = {}
+    for place_id, tag_name, polarity, source, source_reference, context in rows.iterator(chunk_size=1000):
+        canonical = canonical_tag_name(tag_name) or tag_name
+        key = (place_id, canonical, polarity)
+        extraction = (context or {}).get("extraction") or {}
+        semantic_fallback = extraction.get("method") == "semantic_quote_fallback"
+        if source not in WEB_EVIDENCE_SOURCES or not semantic_fallback:
+            trusted.add(key)
+        elif source_reference:
+            web_references.setdefault(key, set()).add(source_reference)
+    qualified = trusted | {
+        key for key, references in web_references.items() if len(references) >= 2
+    }
+    for place_id, tag_name, polarity in qualified:
+        result[polarity].setdefault(place_id, set()).add(tag_name)
     return result
 
 

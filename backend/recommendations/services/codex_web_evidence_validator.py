@@ -84,9 +84,26 @@ def validate_candidate(row, *, now=None, live_verify=False):
         result["reason"] = "INVALID_POLARITY"
         return result
     extraction = polarity_assessment(tag, span, category=place.category)
+    semantic_quote_fallback = False
     if extraction["polarity"] != polarity:
-        result["reason"] = "POLARITY_OR_RULE_MISMATCH"
-        return result
+        # The live verifier has already re-fetched the page, found the exact
+        # quoted span, and matched the place identity.  A deterministic term
+        # list can still miss natural Korean paraphrases (for example
+        # "예뻤던 카페" for 분위기좋음).  Preserve those grounded claims as
+        # low-confidence evidence instead of discarding them.  Never use this
+        # fallback without live verification, or when the rule engine found
+        # the opposite polarity.
+        if not live_verify or extraction["polarity"] != "unknown":
+            result["reason"] = "POLARITY_OR_RULE_MISMATCH"
+            return result
+        semantic_quote_fallback = True
+        extraction = {
+            **extraction,
+            "polarity": polarity,
+            "clarity_score": 45,
+            "strength": "SEMANTIC_QUOTE",
+            "semantic_quote_fallback": True,
+        }
     duplicate = PlaceTagEvidence.objects.filter(
         place=place, tag__name=tag, polarity=polarity, source_reference=url,
     ).exists()
@@ -103,7 +120,16 @@ def validate_candidate(row, *, now=None, live_verify=False):
         clarity_score=extraction["clarity_score"],
         observed_at=observed_at,
     )
-    status = "accepted" if source_type in {"official", "public", "brand_official"} and observed_at else "needs_verification"
+    if semantic_quote_fallback:
+        confidence = min(confidence, 55)
+        factors = {**factors, "semantic_quote_fallback": True}
+    status = (
+        "accepted"
+        if not semantic_quote_fallback
+        and source_type in {"official", "public", "brand_official"}
+        and observed_at
+        else "needs_verification"
+    )
     result.update({
         "status": status,
         "reason": "",
@@ -120,7 +146,10 @@ def validate_candidate(row, *, now=None, live_verify=False):
             "confidence": confidence,
             "confidence_factors": factors,
             "identity": {"matched": True, "score": identity_score, "source": "codex_page_verification"},
-            "extraction": {**extraction, "method": "rule"},
+            "extraction": {
+                **extraction,
+                "method": "semantic_quote_fallback" if semantic_quote_fallback else "rule",
+            },
         },
     })
     return result

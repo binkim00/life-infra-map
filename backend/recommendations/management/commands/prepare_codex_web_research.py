@@ -36,6 +36,21 @@ RESEARCHABILITY_PRIORITY = (
 RESEARCHABILITY_INDEX = {tag: index for index, tag in enumerate(RESEARCHABILITY_PRIORITY)}
 
 
+def research_priority(place, launch_demands, *, quality_score=0):
+    """Prefer source-ready launch gaps, then source-ready coverage, then cold launch gaps."""
+    demand_score = sum(launch_demands.get(place.id, {}).values())
+    identity_ready = bool(place.identity_success)
+    tier = 0 if identity_ready and demand_score else 1 if identity_ready else 2
+    return (
+        tier,
+        -demand_score,
+        -quality_score,
+        -int(place.evidence_success),
+        -int(place.no_tag),
+        place.name,
+    )
+
+
 class Command(BaseCommand):
     help = "Prepare a Busan-only Codex web research seed file without calling providers."
 
@@ -127,17 +142,13 @@ def select_places(category, limit, allocation, *, exclude_place_ids=None):
         places = [
             place for _score, place in sorted(
                 scored,
-                key=lambda item: (
-                    -sum(launch_demands.get(item[1].id, {}).values()),
-                    -item[0], -int(item[1].evidence_success), -int(item[1].no_tag), item[1].name,
+                key=lambda item: research_priority(
+                    item[1], launch_demands, quality_score=item[0],
                 ),
             )
         ]
     else:
-        places.sort(key=lambda place: (
-            -sum(launch_demands.get(place.id, {}).values()),
-            -int(place.evidence_success), -int(place.no_tag), place.name,
-        ))
+        places.sort(key=lambda place: research_priority(place, launch_demands))
     active = defaultdict(list)
     for row in PlaceTagEvidence.objects.filter(
         place_id__in=[place.id for place in places],

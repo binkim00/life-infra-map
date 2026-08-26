@@ -97,6 +97,38 @@ class CommonSearchHardGateTests(TestCase):
         self.assertEqual(kept, [])
         self.assertEqual(len(removed), 1)
 
+    def test_one_web_reference_cannot_satisfy_hard_gate_but_two_can(self):
+        PlaceTagEvidence.objects.create(
+            place=self.cafe,
+            tag=self.parking_tag,
+            source="web_search",
+            source_reference="https://example.com/first",
+            polarity="positive",
+            confidence=55,
+            context={"extraction": {"method": "semantic_quote_fallback"}},
+        )
+
+        kept, removed, _ = apply_common_hard_gate(
+            [self._candidate()], "주차 가능한 카페", {},
+        )
+        self.assertEqual(kept, [])
+        self.assertEqual(len(removed), 1)
+
+        PlaceTagEvidence.objects.create(
+            place=self.cafe,
+            tag=self.parking_tag,
+            source="naver_blog_search",
+            source_reference="https://example.org/second",
+            polarity="positive",
+            confidence=70,
+            context={"extraction": {"method": "semantic_quote_fallback"}},
+        )
+        kept, removed, _ = apply_common_hard_gate(
+            [self._candidate()], "주차 가능한 카페", {},
+        )
+        self.assertEqual(len(kept), 1)
+        self.assertEqual(removed, [])
+
     def test_explicit_category_applies_to_every_candidate_source(self):
         for source in ("db", "kakao", "fallback", "semantic"):
             candidate = {

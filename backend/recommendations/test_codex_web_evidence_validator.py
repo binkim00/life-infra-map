@@ -42,6 +42,40 @@ class CodexWebEvidenceValidatorTests(TestCase):
         row["evidence_span"] = "좌석이 넓다"
         self.assertEqual(validate_candidate(row)["reason"], "POLARITY_OR_RULE_MISMATCH")
 
+    @patch("recommendations.services.codex_web_evidence_validator.fetch_public_page")
+    def test_live_verified_unknown_phrase_is_kept_as_low_confidence_evidence(self, fetch):
+        row = self.row()
+        row["evidence_span"] = "노트북을 펴 두고 오래 머물기 편한 곳이었다"
+        fetch.return_value = {
+            "ok": True,
+            "url": row["source_url"],
+            "title": self.place.name,
+            "text": "{} {}".format(self.place.name, row["evidence_span"]),
+            "published_at": "2026-08-01",
+        }
+
+        result = validate_candidate(row, live_verify=True)
+
+        self.assertEqual(result["status"], "needs_verification")
+        self.assertEqual(result["normalized"]["extraction"]["method"], "semantic_quote_fallback")
+        self.assertLessEqual(result["normalized"]["confidence"], 55)
+
+    @patch("recommendations.services.codex_web_evidence_validator.fetch_public_page")
+    def test_live_verified_opposite_rule_polarity_is_still_rejected(self, fetch):
+        row = self.row()
+        row["evidence_span"] = "콘센트 없음"
+        fetch.return_value = {
+            "ok": True,
+            "url": row["source_url"],
+            "title": self.place.name,
+            "text": "{} {}".format(self.place.name, row["evidence_span"]),
+            "published_at": "2026-08-01",
+        }
+
+        result = validate_candidate(row, live_verify=True)
+
+        self.assertEqual(result["reason"], "POLARITY_OR_RULE_MISMATCH")
+
     def test_rejects_mismatched_target_and_extracted_tags(self):
         row = self.row()
         row["target_tag"] = "조용함"

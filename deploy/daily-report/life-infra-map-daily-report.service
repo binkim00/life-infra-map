@@ -1,0 +1,24 @@
+[Unit]
+Description=Email Life Infra Map daily collection and search-quality report
+After=docker.service network-online.target life-infra-map-quality-report.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/life-infra-map/app
+Environment=DAILY_REPORT_SNS_TOPIC_ARN=arn:aws:sns:ap-northeast-2:497902501857:life-infra-map-alerts
+ExecStartPre=+/usr/bin/install -d -o ubuntu -g ubuntu -m 0700 /home/ubuntu/life-infra-map/runtime/daily-reports
+ExecStart=/usr/bin/flock -n /run/lock/life-infra-map-daily-report.lock /home/ubuntu/life-infra-map/app/deploy/daily-report/run-daily-report.sh
+TimeoutStartSec=10min
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/ubuntu/life-infra-map/runtime /run/lock
+InaccessiblePaths=-/home/ubuntu/.ssh -/home/ubuntu/.aws -/home/ubuntu/life-infra-map/app/backend/.env -/home/ubuntu/life-infra-map/app/deploy/db/.env
+
+[Install]
+WantedBy=multi-user.target

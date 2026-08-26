@@ -44,7 +44,8 @@ TAG_TERMS = {
     '분위기좋음': {
         'positive': (
             '분위기 좋', '감성적', '감성 카페', '아늑', '무드 있',
-            '감각적인 인테리어', '인테리어가 좋',
+            '감각적인 인테리어', '인테리어가 좋', '예쁜 카페', '예뻤던 카페',
+            '분위기가 물씬', '분위기 물씬',
         ),
         'negative': ('분위기 별로', '어수선', '정신없'),
     },
@@ -234,7 +235,10 @@ TAG_TERMS.update({
         'negative': ('디저트가 아쉽', '디저트 종류가 적'),
     },
     '커피맛좋음': {
-        'positive': ('커피가 맛있', '커피 맛이 좋', '원두가 좋', '커피 맛집'),
+        'positive': (
+            '커피가 맛있', '커피가 맛이', '커피 맛이 좋', '커피 맛있',
+            '원두가 좋', '커피 맛집',
+        ),
         'negative': ('커피가 아쉽', '커피 맛이 별로'),
     },
     '사진찍기좋음': {
@@ -575,6 +579,8 @@ def polarity_assessment(tag_name, text, *, category=""):
         and re.search(r"(?:으로|로)유명(?:한|하|해)", compact_text)
     ):
         positive_terms.append("특정 메뉴로 유명")
+    if tag_name == "대표메뉴뚜렷함" and re.search(r"[가-힣A-Za-z0-9]{2,}전문점", compact_text):
+        positive_terms.append("특정 메뉴 전문점")
     negative_terms = [term for term in terms.get('negative', ()) if compact(term) in compact_text]
     supporting_terms = [
         term for term in SUPPORTING_TERMS.get(tag_name, ()) if compact(term) in compact_text

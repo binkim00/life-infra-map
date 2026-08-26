@@ -93,6 +93,16 @@ class NaverTagEvidenceProviderTests(SimpleTestCase):
             with self.subTest(tag_name=tag_name):
                 self.assertEqual(evidence_polarity(tag_name, snippet), 'positive')
 
+    def test_live_web_phrase_variants_map_to_canonical_tags(self):
+        cases = {
+            '커피맛좋음': '커피가 맛이가 있어요',
+            '분위기좋음': '참 예뻤던 카페였고 동남아 분위기가 물씬 풍깁니다',
+            '대표메뉴뚜렷함': '이곳은 딤섬 전문점입니다',
+        }
+        for tag_name, snippet in cases.items():
+            with self.subTest(tag_name=tag_name):
+                self.assertEqual(evidence_polarity(tag_name, snippet), 'positive')
+
     def test_long_stay_restriction_is_negative_not_positive(self):
         self.assertEqual(
             evidence_polarity('장기체류좋음', '장시간 노트북 사용 제한 안내가 있다'),

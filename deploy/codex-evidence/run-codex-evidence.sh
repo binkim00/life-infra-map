@@ -27,8 +27,10 @@ chmod 700 "$RUNTIME_DIR"
 run_id="$(date -u +%Y%m%dT%H%M%SZ)"
 seed_name="seed-${run_id}.json"
 result_name="result-${run_id}.json"
+validation_name="validation-${run_id}.json"
 seed_file="${RUNTIME_DIR}/${seed_name}"
 result_file="${RUNTIME_DIR}/${result_name}"
+validation_file="${RUNTIME_DIR}/${validation_name}"
 container_seed="/tmp/${seed_name}"
 container_result="/tmp/${result_name}"
 container_seed_csv="${container_seed%.json}.csv"
@@ -55,6 +57,7 @@ docker cp "${API_CONTAINER}:${container_seed}" "$seed_file"
 "$CODEX_BIN" --search --ask-for-approval never exec \
   --ephemeral \
   --ignore-user-config \
+  -c model_reasoning_effort='"low"' \
   --sandbox read-only \
   --skip-git-repo-check \
   --cd "$RUNTIME_DIR" \
@@ -65,7 +68,7 @@ docker cp "${API_CONTAINER}:${container_seed}" "$seed_file"
 jq -e '.results | type == "array"' "$result_file" >/dev/null
 docker cp "$result_file" "${API_CONTAINER}:${container_result}"
 docker exec "$API_CONTAINER" python manage.py validate_codex_web_evidence \
-  "$container_result" --live-verify --apply
+  "$container_result" --live-verify --apply | tee "$validation_file"
 
-find "$RUNTIME_DIR" -maxdepth 1 -type f \( -name 'seed-*.json' -o -name 'result-*.json' \) \
+find "$RUNTIME_DIR" -maxdepth 1 -type f \( -name 'seed-*.json' -o -name 'result-*.json' -o -name 'validation-*.json' \) \
   -mtime +14 -delete
