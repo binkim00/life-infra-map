@@ -11,12 +11,14 @@ from django.utils import timezone
 from recommendations.models import Place, PlaceTagCollectionJob, PlaceTagEvidence, TagEnrichmentRequest
 from recommendations.services.public_page_tag_evidence import fetch_public_page
 from recommendations.services.restaurant_collection_quality import restaurant_collection_quality
+from recommendations.services.tag_source_policy import WEB_EVIDENCE_SOURCES
 from recommendations.services.web_tag_evidence_provider import CATEGORY_TAGS
 from recommendations.services.place_evidence_completeness import target_tags_for_gaps
 
 
 MAX_TARGET_TAGS = 8
 MAX_SOURCE_HINTS = 5
+PREFLIGHT_POOL_MULTIPLIER = 2
 
 # Tags whose supporting language is commonly present in public reviews and
 # venue introductions come first. Facility facts remain useful candidates, but
@@ -62,21 +64,28 @@ class Command(BaseCommand):
         parser.add_argument("--preflight-source-hints", action="store_true")
 
     def handle(self, *args, **options):
-        selected = []
+        candidates = []
         allocation = Counter()
+        requested_limits = {}
         excluded = {
             int(value) for value in str(options["exclude_place_ids"] or "").split(",")
             if value.strip().isdigit()
         }
         for category in ("cafe", "restaurant"):
             limit = max(0, int(options[category]))
-            rows = select_places(category, limit, allocation, exclude_place_ids=excluded)
+            requested_limits[category] = limit
+            pool_limit = limit * PREFLIGHT_POOL_MULTIPLIER if options["preflight_source_hints"] else limit
+            rows = select_places(category, pool_limit, allocation, exclude_place_ids=excluded)
             if len(rows) < limit:
                 raise CommandError("Only {} eligible {} places found".format(len(rows), category))
-            selected.extend(rows)
+            candidates.extend(rows)
         preflight = {"checked": 0, "reachable": 0, "rejected": 0}
         if options["preflight_source_hints"]:
-            preflight = preflight_source_hints(selected)
+            preflight = preflight_source_hints(candidates)
+        selected = []
+        for category in ("cafe", "restaurant"):
+            category_rows = [row for row in candidates if row["place"].category == category]
+            selected.extend(prefer_source_ready(category_rows, requested_limits[category]))
         payload = {
             "region": "부산",
             "generated_at": timezone.now().isoformat(),
@@ -94,12 +103,18 @@ class Command(BaseCommand):
             writer.writerows(payload["results"])
         self.stdout.write(json.dumps({
             "places": len(selected),
+            "candidate_pool": len(candidates),
             "categories": dict(Counter(row["place"].category for row in selected)),
             "target_tags": dict(Counter(row["tag"] for row in selected)),
             "launch_priority_places": sum(bool(row.get("launch_demand")) for row in selected),
             "source_hint_preflight": preflight,
             "json": str(path), "csv": str(csv_path),
         }, ensure_ascii=False))
+
+
+def prefer_source_ready(rows, limit):
+    """Keep selection order inside each tier while filling reachable pages first."""
+    return sorted(rows, key=lambda row: not bool(row.get("source_hints")))[:limit]
 
 
 def select_places(category, limit, allocation, *, exclude_place_ids=None):
@@ -257,6 +272,27 @@ def preflight_source_hints(selected, *, fetcher=fetch_public_page, max_attempts_
 def source_hints_for_places(place_ids):
     hints = defaultdict(list)
     seen = defaultdict(set)
+    evidences = PlaceTagEvidence.objects.filter(
+        place_id__in=place_ids,
+        source__in=WEB_EVIDENCE_SOURCES,
+    ).exclude(source_reference="").order_by("-observed_at", "-id").values(
+        "place_id", "source_reference", "evidence", "context",
+    )
+    for evidence in evidences:
+        place_id = evidence["place_id"]
+        url = str(evidence.get("source_reference") or "").strip()
+        if len(hints[place_id]) >= MAX_SOURCE_HINTS or url in seen[place_id]:
+            continue
+        if not url.startswith(("http://", "https://")):
+            continue
+        seen[place_id].add(url)
+        context = evidence.get("context") or {}
+        hints[place_id].append({
+            "url": url,
+            "title": str(context.get("source_title") or "")[:180],
+            "description": str(evidence.get("evidence") or "")[:500],
+            "hint_origin": "stored_evidence",
+        })
     jobs = PlaceTagCollectionJob.objects.filter(
         place_id__in=place_ids,
         provider="naver_search",
@@ -279,6 +315,7 @@ def source_hints_for_places(place_ids):
                     "url": url,
                     "title": str(result.get("title") or "")[:180],
                     "description": str(result.get("description") or "")[:500],
+                    "hint_origin": "naver_identity_match",
                 })
                 if len(hints[place_id]) >= MAX_SOURCE_HINTS:
                     break

@@ -4,12 +4,13 @@ from django.test import TestCase
 
 from recommendations.management.commands.prepare_codex_web_research import (
     MAX_SOURCE_HINTS,
+    prefer_source_ready,
     preflight_source_hints,
     research_priority,
     seed_row,
     source_hints_for_places,
 )
-from recommendations.models import Place, PlaceTagCollectionJob
+from recommendations.models import Place, PlaceTagCollectionJob, PlaceTagEvidence, Tag
 
 
 class PrepareCodexWebResearchTests(TestCase):
@@ -76,6 +77,30 @@ class PrepareCodexWebResearchTests(TestCase):
         self.assertEqual(len(hints[self.place.id]), 1)
         self.assertEqual(hints[self.place.id][0]["url"], "https://blog.example.com/right-place")
         self.assertLessEqual(len(hints[self.place.id]), MAX_SOURCE_HINTS)
+
+    def test_source_hints_prioritize_existing_verified_evidence_urls(self):
+        tag = Tag.objects.create(name="stored-source-tag")
+        PlaceTagEvidence.objects.create(
+            place=self.place,
+            tag=tag,
+            source="naver_blog_search",
+            source_reference="https://blog.example.com/stored-page",
+            evidence="stored snippet",
+            context={"source_title": "stored title"},
+        )
+
+        hints = source_hints_for_places([self.place.id])
+
+        self.assertEqual(hints[self.place.id][0]["url"], "https://blog.example.com/stored-page")
+        self.assertEqual(hints[self.place.id][0]["hint_origin"], "stored_evidence")
+
+    def test_prefer_source_ready_fills_reachable_rows_first(self):
+        cold = {"place": self.place, "source_hints": []}
+        ready = {"place": self.place, "source_hints": [{"url": "https://example.com"}]}
+
+        selected = prefer_source_ready([cold, ready], 1)
+
+        self.assertEqual(selected, [ready])
 
     def test_seed_exposes_multiple_missing_tags_and_source_hints(self):
         row = seed_row({

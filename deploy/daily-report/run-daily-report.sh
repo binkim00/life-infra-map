@@ -21,7 +21,7 @@ json_file="${RUNTIME_DIR}/collection-${run_id}.json"
 message_file="${RUNTIME_DIR}/message-${run_id}.txt"
 
 db_json="$(docker exec "$API_CONTAINER" python manage.py report_daily_collection --date "$report_date")"
-codex_json='{"runs":0,"rows":0,"accepted":0,"needs_verification":0,"rejected":0,"saved":0,"reasons":{}}'
+codex_json='{"runs":0,"rows":0,"accepted":0,"needs_verification":0,"rejected":0,"saved":0,"primary_saved":0,"related_saved":0,"reasons":{}}'
 mapfile -d '' validation_files < <(
   find "$CODEX_DIR" -maxdepth 1 -type f -name 'validation-*.json' \
     -newermt "${report_date} 00:00:00 +0900" -print0 2>/dev/null || true
@@ -31,7 +31,8 @@ if [ "${#validation_files[@]}" -gt 0 ]; then
     def merge_counts: reduce .[] as $item ({}; reduce ($item | to_entries[]) as $pair (.; .[$pair.key] = ((.[$pair.key] // 0) + $pair.value)));
     {runs:length, rows:(map(.rows // 0)|add), accepted:(map(.accepted // 0)|add),
      needs_verification:(map(.needs_verification // 0)|add), rejected:(map(.rejected // 0)|add),
-     saved:(map(.saved // 0)|add), reasons:(map(.reasons // {})|merge_counts)}
+     saved:(map(.saved // 0)|add), primary_saved:(map(.primary_saved // .saved // 0)|add),
+     related_saved:(map(.related_saved // 0)|add), reasons:(map(.reasons // {})|merge_counts)}
   ' "${validation_files[@]}")"
 fi
 quality_json='{}'

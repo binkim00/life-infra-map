@@ -40,7 +40,7 @@ def main():
         "", "[Codex \uc6f9 \uc870\uc0ac]",
         "- \uc2e4\ud589/\uac80\uc0ac \ud6c4\ubcf4: {}\ud68c / {}\uac1c".format(runs["runs"], runs["rows"]),
         "- \ucc44\ud0dd/\ud655\uc778 \ud544\uc694/\ud0c8\ub77d: {} / {} / {}\uac1c".format(runs["accepted"], runs["needs_verification"], runs["rejected"]),
-        "- \uc0c8\ub85c \uc800\uc7a5: {}\uac1c".format(runs["saved"]),
+        "- \uc0c8\ub85c \uc800\uc7a5: {}\uac1c (\uc8fc \uadfc\uac70 {}, \uad00\ub828 \ud0dc\uadf8 \ud30c\uc0dd {})".format(runs["saved"], runs.get("primary_saved", runs["saved"]), runs.get("related_saved", 0)),
         "- \uc624\ub298 DB \uc2e0\uaddc \uadfc\uac70: {}\uac1c, \uc7a5\uc18c {}\uacf3".format(web["new_evidence_rows"], web["new_evidence_places"]),
         "- \uc8fc\uc694 \ud0c8\ub77d \uc0ac\uc720: {}".format(reason_text),
         "", "[\uac80\uc0c9 \ud488\uc9c8 \ubc18\uc601]",

@@ -6,7 +6,10 @@ from unittest.mock import patch
 from django.core.management import call_command
 from django.test import TestCase
 
-from recommendations.management.commands.validate_codex_web_evidence import close_research_requests
+from recommendations.management.commands.validate_codex_web_evidence import (
+    close_research_requests,
+    related_rule_evidences,
+)
 from recommendations.models import Place, PlaceTagEvidence, Tag, TagEnrichmentRequest
 from recommendations.services.codex_web_evidence_validator import validate_candidate
 
@@ -184,3 +187,31 @@ class CodexWebEvidenceValidatorTests(TestCase):
         second.refresh_from_db()
         self.assertEqual(first.status, "completed")
         self.assertEqual(second.status, "queued")
+
+    @patch(
+        "recommendations.management.commands.validate_codex_web_evidence.requested_tags_for_category",
+        return_value=["primary", "related", "unknown"],
+    )
+    @patch("recommendations.management.commands.validate_codex_web_evidence.polarity_assessment")
+    def test_verified_quote_mines_additional_rule_supported_tags(self, assess, _requested):
+        assess.side_effect = [
+            {"polarity": "positive", "clarity_score": 82, "strength": "DIRECT"},
+            {"polarity": "unknown", "clarity_score": 0, "strength": "UNKNOWN"},
+        ]
+        normalized = {
+            "place": self.place,
+            "tag_name": "primary",
+        }
+        evidence = {
+            "evidence_summary": "one verified quote",
+            "polarity": "positive",
+            "confidence": 70,
+            "extraction": {},
+            "raw": {"channel": "codex_cli_web_search"},
+        }
+
+        related = related_rule_evidences(normalized, evidence)
+
+        self.assertEqual([tag for tag, _row in related], ["related"])
+        self.assertEqual(related[0][1]["confidence"], 70)
+        self.assertEqual(related[0][1]["extraction"]["method"], "related_rule")

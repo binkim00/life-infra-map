@@ -8,6 +8,11 @@ from django.db import transaction
 from recommendations.management.commands.process_tag_enrichment_queue import save_place_candidate_evidence
 from recommendations.models import TagEnrichmentRequest
 from recommendations.services.codex_web_evidence_validator import validate_candidate
+from recommendations.services.naver_tag_evidence_provider import polarity_assessment
+from recommendations.services.place_tag_collection import requested_tags_for_category
+
+
+MAX_RELATED_TAGS_PER_EVIDENCE = 4
 
 
 class Command(BaseCommand):
@@ -30,7 +35,8 @@ class Command(BaseCommand):
             raise CommandError("Input must be a list or an object with a results list.")
         counts = Counter()
         reasons = Counter()
-        saved = 0
+        primary_saved = 0
+        related_saved = 0
         requests_completed = 0
         requests_closed_without_evidence = 0
         for row in rows:
@@ -63,13 +69,25 @@ class Command(BaseCommand):
                         normalized["place"], normalized["tag_name"], evidence,
                         observed_at=normalized["observed_at"],
                     )
+                    primary_saved += int(created)
                     requests_completed += TagEnrichmentRequest.objects.filter(
                         place=normalized["place"],
                         tag_name=normalized["tag_name"],
                     ).exclude(status="completed").update(
                         status="completed", next_attempt_at=None, error_message="",
                     )
-                saved += int(created)
+                    for related_tag, related_evidence in related_rule_evidences(normalized, evidence):
+                        _, related_created = save_place_candidate_evidence(
+                            normalized["place"], related_tag, related_evidence,
+                            observed_at=normalized["observed_at"],
+                        )
+                        related_saved += int(related_created)
+                        requests_completed += TagEnrichmentRequest.objects.filter(
+                            place=normalized["place"], tag_name=related_tag,
+                        ).exclude(status="completed").update(
+                            status="completed", next_attempt_at=None, error_message="",
+                        )
+        saved = primary_saved + related_saved
         self.stdout.write(json.dumps({
             "dry_run": not options["apply"],
             "live_verify": options["live_verify"],
@@ -80,10 +98,42 @@ class Command(BaseCommand):
             "ambiguous": counts["ambiguous"],
             "duplicate": counts["duplicate"],
             "saved": saved,
+            "primary_saved": primary_saved,
+            "related_saved": related_saved,
             "requests_completed": requests_completed,
             "requests_closed_without_evidence": requests_closed_without_evidence,
             "reasons": dict(reasons),
         }, ensure_ascii=False, indent=2))
+
+
+def related_rule_evidences(normalized, evidence):
+    """Mine other deterministic category tags from the same verified quote."""
+    related = []
+    primary_tag = normalized["tag_name"]
+    text = evidence["evidence_summary"]
+    for tag_name in requested_tags_for_category(normalized["place"].category):
+        if tag_name == primary_tag:
+            continue
+        extraction = polarity_assessment(tag_name, text, category=normalized["place"].category)
+        if extraction["polarity"] == "unknown":
+            continue
+        related.append((tag_name, {
+            **evidence,
+            "polarity": extraction["polarity"],
+            "confidence": min(int(evidence["confidence"]), int(extraction["clarity_score"])),
+            "extraction": {
+                **extraction,
+                "method": "related_rule",
+                "derived_from_tag": primary_tag,
+            },
+            "raw": {
+                **(evidence.get("raw") or {}),
+                "derived_from_tag": primary_tag,
+            },
+        }))
+        if len(related) >= MAX_RELATED_TAGS_PER_EVIDENCE:
+            break
+    return related
 
 
 def close_research_requests(row, reason):
