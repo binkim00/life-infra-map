@@ -3,6 +3,7 @@ import json
 from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+from urllib.parse import urlparse
 
 from django.core.management.base import BaseCommand, CommandError
 from django.db.models import Exists, OuterRef, Q
@@ -19,6 +20,7 @@ from recommendations.services.place_evidence_completeness import target_tags_for
 MAX_TARGET_TAGS = 8
 MAX_SOURCE_HINTS = 5
 PREFLIGHT_POOL_MULTIPLIER = 2
+CODEX_UNREADABLE_HOSTS = ("blog.naver.com", "m.blog.naver.com")
 
 # Tags whose supporting language is commonly present in public reviews and
 # venue introductions come first. Facility facts remain useful candidates, but
@@ -285,6 +287,8 @@ def source_hints_for_places(place_ids):
             continue
         if not url.startswith(("http://", "https://")):
             continue
+        if urlparse(url).hostname in CODEX_UNREADABLE_HOSTS:
+            continue
         seen[place_id].add(url)
         context = evidence.get("context") or {}
         hints[place_id].append({
@@ -307,6 +311,8 @@ def source_hints_for_places(place_ids):
             for result in attempt.get("results") or []:
                 url = str(result.get("url") or "").strip()
                 if not result.get("identity_matched") or not url.startswith(("http://", "https://")):
+                    continue
+                if urlparse(url).hostname in CODEX_UNREADABLE_HOSTS:
                     continue
                 if url in seen[place_id]:
                     continue

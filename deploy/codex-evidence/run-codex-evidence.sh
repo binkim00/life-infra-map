@@ -5,8 +5,8 @@ APP_ROOT="${CODEX_EVIDENCE_APP_ROOT:-/home/ubuntu/life-infra-map/app}"
 API_CONTAINER="${CODEX_EVIDENCE_API_CONTAINER:-life-infra-map-django-api}"
 RUNTIME_DIR="${CODEX_EVIDENCE_RUNTIME_DIR:-/home/ubuntu/life-infra-map/runtime/codex-evidence}"
 CODEX_BIN="${CODEX_EVIDENCE_CODEX_BIN:-/home/ubuntu/.local/bin/codex}"
-CAFE_LIMIT="${CODEX_EVIDENCE_CAFE_LIMIT:-40}"
-RESTAURANT_LIMIT="${CODEX_EVIDENCE_RESTAURANT_LIMIT:-40}"
+CAFE_LIMIT="${CODEX_EVIDENCE_CAFE_LIMIT:-15}"
+RESTAURANT_LIMIT="${CODEX_EVIDENCE_RESTAURANT_LIMIT:-15}"
 REVISIT_DAYS="${CODEX_EVIDENCE_REVISIT_DAYS:-1}"
 DEPLOY_DIR="${APP_ROOT}/deploy/codex-evidence"
 
@@ -57,7 +57,7 @@ docker cp "${API_CONTAINER}:${container_seed}" "$seed_file"
 "$CODEX_BIN" --search --ask-for-approval never exec \
   --ephemeral \
   --ignore-user-config \
-  -c model_reasoning_effort='"low"' \
+  -c model_reasoning_effort='"medium"' \
   --sandbox read-only \
   --skip-git-repo-check \
   --cd "$RUNTIME_DIR" \

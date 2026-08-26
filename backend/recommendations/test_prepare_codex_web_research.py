@@ -94,6 +94,20 @@ class PrepareCodexWebResearchTests(TestCase):
         self.assertEqual(hints[self.place.id][0]["url"], "https://blog.example.com/stored-page")
         self.assertEqual(hints[self.place.id][0]["hint_origin"], "stored_evidence")
 
+    def test_source_hints_exclude_naver_blog_pages_codex_cannot_revalidate(self):
+        tag = Tag.objects.create(name="naver-source-tag")
+        PlaceTagEvidence.objects.create(
+            place=self.place,
+            tag=tag,
+            source="naver_blog_search",
+            source_reference="https://blog.naver.com/example/123",
+            evidence="search snippet only",
+        )
+
+        hints = source_hints_for_places([self.place.id])
+
+        self.assertEqual(hints[self.place.id], [])
+
     def test_prefer_source_ready_fills_reachable_rows_first(self):
         cold = {"place": self.place, "source_hints": []}
         ready = {"place": self.place, "source_hints": [{"url": "https://example.com"}]}

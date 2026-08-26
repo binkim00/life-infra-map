@@ -19,12 +19,19 @@ report_date="$(TZ=Asia/Seoul date +%F)"
 run_id="$(date -u +%Y%m%dT%H%M%SZ)"
 json_file="${RUNTIME_DIR}/collection-${run_id}.json"
 message_file="${RUNTIME_DIR}/message-${run_id}.txt"
+codex_window_start="$(date -u -d '24 hours ago' +%Y-%m-%dT%H:%M:%SZ)"
+if [ -r "$RUNTIME_DIR/latest.json" ]; then
+  previous_report_at="$(jq -r '.collection.generated_at // empty' "$RUNTIME_DIR/latest.json" 2>/dev/null || true)"
+  if [ -n "$previous_report_at" ]; then
+    codex_window_start="$previous_report_at"
+  fi
+fi
 
 db_json="$(docker exec "$API_CONTAINER" python manage.py report_daily_collection --date "$report_date")"
 codex_json='{"runs":0,"rows":0,"accepted":0,"needs_verification":0,"rejected":0,"saved":0,"primary_saved":0,"related_saved":0,"reasons":{}}'
 mapfile -d '' validation_files < <(
   find "$CODEX_DIR" -maxdepth 1 -type f -name 'validation-*.json' \
-    -newermt "${report_date} 00:00:00 +0900" -print0 2>/dev/null || true
+    -newermt "$codex_window_start" -print0 2>/dev/null || true
 )
 if [ "${#validation_files[@]}" -gt 0 ]; then
   codex_json="$(jq -s '
@@ -41,7 +48,8 @@ if [ -r "$QUALITY_FILE" ]; then
 fi
 
 jq -n --argjson collection "$db_json" --argjson codex "$codex_json" --argjson quality "$quality_json" \
-  '{collection:$collection, codex_runs:$codex, quality:$quality}' > "$json_file"
+  --arg codex_window_start "$codex_window_start" \
+  '{collection:$collection, codex_runs:($codex + {window_start:$codex_window_start}), quality:$quality}' > "$json_file"
 python3 "$APP_ROOT/deploy/daily-report/render_daily_report.py" "$json_file" "$message_file"
 python3 "$APP_ROOT/deploy/daily-report/publish_daily_report.py" \
   --topic-arn "$SNS_TOPIC_ARN" \
