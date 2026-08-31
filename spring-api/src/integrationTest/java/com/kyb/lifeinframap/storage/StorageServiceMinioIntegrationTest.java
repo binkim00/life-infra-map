@@ -5,7 +5,6 @@ import com.kyb.lifeinframap.storage.service.StorageService;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.net.URI;
-import java.nio.charset.StandardCharsets;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockMultipartFile;
@@ -29,7 +28,9 @@ class StorageServiceMinioIntegrationTest {
         String accessKey = environment("S3_ACCESS_KEY", "life_infra_map");
         String secretKey = environment("S3_SECRET_KEY", "life_infra_map_secret");
         String region = environment("S3_REGION", "us-east-1");
-        byte[] expected = "minio-integration-test".getBytes(StandardCharsets.UTF_8);
+        byte[] expected = new byte[] {
+                (byte) 0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0
+        };
 
         StorageService storageService = new StorageService(
                 endpoint, bucket, accessKey, secretKey, region);

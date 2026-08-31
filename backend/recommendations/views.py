@@ -1,5 +1,6 @@
 import logging
 import math
+from django.conf import settings
 from django.db import transaction
 from django.shortcuts import get_object_or_404
 from django.db.models import Q
@@ -92,6 +93,30 @@ class PlaceInteractionRateThrottle(SimpleRateThrottle):
             'scope': self.scope,
             'ident': ident,
         }
+
+
+class UserOrIpRateThrottle(SimpleRateThrottle):
+    def get_cache_key(self, request, view):
+        if getattr(request.user, 'is_authenticated', False):
+            ident = 'user:{}'.format(request.user.pk)
+        else:
+            ident = 'ip:{}'.format(self.get_ident(request))
+        return self.cache_format % {'scope': self.scope, 'ident': ident}
+
+
+class AiSearchRateThrottle(UserOrIpRateThrottle):
+    scope = 'ai_search'
+    rate = settings.API_AI_SEARCH_RATE
+
+
+class ExternalSearchRateThrottle(UserOrIpRateThrottle):
+    scope = 'external_search'
+    rate = settings.API_EXTERNAL_SEARCH_RATE
+
+
+class ConversationRateThrottle(UserOrIpRateThrottle):
+    scope = 'conversation_search'
+    rate = settings.API_CONVERSATION_RATE
 
 SCENARIO_KEYWORDS = {
     "work_cafe": "카페",
@@ -1205,6 +1230,7 @@ def search_safety_check(request):
 
 
 @api_view(["POST"])
+@throttle_classes([AiSearchRateThrottle])
 def conversational_search_plan(request):
     query = request.data.get("query", "")
     previous_context = (
@@ -2289,6 +2315,7 @@ def _normalize_web_external_candidate(candidate, frame):
 
 
 @api_view(["POST"])
+@throttle_classes([AiSearchRateThrottle])
 def ai_recommendation_search(request):
     user = request.user if request.user.is_authenticated else None
     data = run_ai_search(request.data, user=user)
@@ -2337,6 +2364,7 @@ def _conversation_session_payload(session, *, include_turns=False):
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
+@throttle_classes([ConversationRateThrottle])
 def conversation_session_create(request):
     session, token = create_conversation_session(request.user)
     payload = _conversation_session_payload(session)
@@ -2347,6 +2375,7 @@ def conversation_session_create(request):
 
 @api_view(["GET", "DELETE"])
 @permission_classes([AllowAny])
+@throttle_classes([ConversationRateThrottle])
 def conversation_session_detail(request, session_id):
     session = get_object_or_404(ConversationSession, pk=session_id)
     if not can_access_conversation_session(request, session):
@@ -2360,6 +2389,7 @@ def conversation_session_detail(request, session_id):
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
+@throttle_classes([ConversationRateThrottle])
 def conversation_session_turn(request, session_id):
     session = get_object_or_404(ConversationSession, pk=session_id)
     if not can_access_conversation_session(request, session):
@@ -2400,6 +2430,7 @@ def conversation_session_turn(request, session_id):
 
 
 @api_view(["POST"])
+@throttle_classes([AiSearchRateThrottle])
 def ai_recommendation_candidates(request):
     user = request.user if request.user.is_authenticated else None
     data = run_ai_search_candidates(request.data, user=user)
@@ -2414,6 +2445,7 @@ def ai_recommendation_candidates(request):
 
 
 @api_view(["POST"])
+@throttle_classes([ExternalSearchRateThrottle])
 def ai_web_search(request):
     query = request.data.get("query", "")
     lat = request.data.get("lat")
@@ -2440,6 +2472,8 @@ def ai_web_search(request):
 
 
 @api_view(["GET"])
+@permission_classes([IsAdminUser])
+@throttle_classes([ExternalSearchRateThrottle])
 def kakao_search_test(request):
     keyword = request.GET.get("keyword", "카페")
     lat = request.GET.get("lat")

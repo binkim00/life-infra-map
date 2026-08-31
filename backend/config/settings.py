@@ -459,6 +459,18 @@ REST_FRAMEWORK = {
     ],
 }
 
+# 공개 검색 API는 외부 AI/검색 제공자 호출과 DB 연산을 유발하므로 사용자 또는 IP별로 제한합니다.
+# 테스트는 대량의 평가 케이스를 한 프로세스에서 실행하므로 충분히 높은 값을 사용합니다.
+API_AI_SEARCH_RATE = os.getenv(
+    "API_AI_SEARCH_RATE", "10000/minute" if IS_TESTING else "30/minute"
+)
+API_EXTERNAL_SEARCH_RATE = os.getenv(
+    "API_EXTERNAL_SEARCH_RATE", "10000/minute" if IS_TESTING else "8/minute"
+)
+API_CONVERSATION_RATE = os.getenv(
+    "API_CONVERSATION_RATE", "10000/minute" if IS_TESTING else "40/minute"
+)
+
 # Spring 서비스와 공유하는 토큰 설정입니다.
 # `spring-api` 의 app.jwt.secret 과 같은 값이어야 서로 발급한 토큰을 검증할 수 있습니다.
 JWT_SECRET = os.getenv("JWT_SECRET", "")

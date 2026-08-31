@@ -10,6 +10,7 @@ import com.kyb.lifeinframap.board.domain.*;
 import com.kyb.lifeinframap.board.repository.*;
 import com.kyb.lifeinframap.board.service.*;
 import com.kyb.lifeinframap.tier.service.ContributionService;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -84,7 +85,7 @@ public class ProfileController {
 
     @PatchMapping("/me/nickname")
     @Transactional
-    public ResponseEntity<?> updateNickname(@RequestBody NicknameRequest request, Authentication authentication) {
+    public ResponseEntity<?> updateNickname(@Valid @RequestBody NicknameRequest request, Authentication authentication) {
         User user = currentUser(authentication);
         if (user == null) {
             return unauthorized();
@@ -131,7 +132,7 @@ public class ProfileController {
 
     @PatchMapping("/me/profile-image")
     @Transactional
-    public ResponseEntity<?> updateProfileImage(@RequestBody ProfileImageRequest request,
+    public ResponseEntity<?> updateProfileImage(@Valid @RequestBody ProfileImageRequest request,
                                                 Authentication authentication) {
         User user = currentUser(authentication);
         if (user == null) {

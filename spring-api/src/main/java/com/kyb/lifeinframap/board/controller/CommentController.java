@@ -7,6 +7,7 @@ import com.kyb.lifeinframap.board.dto.*;
 
 import com.kyb.lifeinframap.account.domain.User;
 import com.kyb.lifeinframap.account.repository.UserRepository;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import java.util.List;
 import java.util.Map;
@@ -51,7 +52,7 @@ public class CommentController {
 
     @PostMapping("/posts/{postId}/comments")
     @Transactional
-    public ResponseEntity<?> create(@PathVariable Long postId, @RequestBody CommentRequest request,
+    public ResponseEntity<?> create(@PathVariable Long postId, @Valid @RequestBody CommentRequest request,
                                     Authentication authentication) {
         User user = currentUser(authentication);
         if (user == null) {
@@ -84,7 +85,7 @@ public class CommentController {
 
     @PatchMapping("/comments/{commentId}")
     @Transactional
-    public ResponseEntity<?> update(@PathVariable Long commentId, @RequestBody CommentRequest request,
+    public ResponseEntity<?> update(@PathVariable Long commentId, @Valid @RequestBody CommentRequest request,
                                     Authentication authentication) {
         User user = currentUser(authentication);
         if (user == null) {
@@ -129,7 +130,7 @@ public class CommentController {
         if (recipient == null || recipient.getId().equals(actor.getId())) {
             return;
         }
-        String type = parent != null ? "reply" : "comment";
+        String type = "post_commented";
         String title = parent != null ? "새 답글이 달렸어요." : "새 댓글이 달렸어요.";
         notificationRepository.save(Notification.create(
                 recipient, actor, type, title, comment.getContent(), post, comment));

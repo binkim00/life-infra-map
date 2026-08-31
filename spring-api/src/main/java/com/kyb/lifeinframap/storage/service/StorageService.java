@@ -14,6 +14,7 @@ import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.S3ClientBuilder;
 import software.amazon.awssdk.services.s3.S3Configuration;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
@@ -49,14 +50,17 @@ public class StorageService {
             @Value("${app.storage.secret-key}") String secretKey,
             @Value("${app.storage.region}") String region) {
         this.bucket = bucket;
-        this.client = S3Client.builder()
-                .endpointOverride(URI.create(endpoint))
+        S3ClientBuilder builder = S3Client.builder()
                 .region(Region.of(region))
                 .credentialsProvider(StaticCredentialsProvider.create(
                         AwsBasicCredentials.create(accessKey, secretKey)))
-                // MinIO 는 가상 호스트 방식 주소를 기본 지원하지 않습니다.
-                .serviceConfiguration(S3Configuration.builder().pathStyleAccessEnabled(true).build())
-                .build();
+                .serviceConfiguration(S3Configuration.builder()
+                        .pathStyleAccessEnabled(endpoint != null && !endpoint.isBlank())
+                        .build());
+        if (endpoint != null && !endpoint.isBlank()) {
+            builder.endpointOverride(URI.create(endpoint));
+        }
+        this.client = builder.build();
     }
 
     /** 업로드하고 저장소 키를 돌려줍니다. 파일이 비어 있으면 null 입니다. */
@@ -64,7 +68,7 @@ public class StorageService {
         if (file == null || file.isEmpty()) {
             return null;
         }
-        validate(file);
+        String contentType = validate(file);
 
         String key = buildKey(file.getOriginalFilename(), prefix);
         try {
@@ -72,7 +76,7 @@ public class StorageService {
                     PutObjectRequest.builder()
                             .bucket(bucket)
                             .key(key)
-                            .contentType(file.getContentType())
+                            .contentType(contentType)
                             .build(),
                     RequestBody.fromInputStream(file.getInputStream(), file.getSize()));
         } catch (IOException exception) {
@@ -81,7 +85,7 @@ public class StorageService {
         return key;
     }
 
-    private void validate(MultipartFile file) {
+    private String validate(MultipartFile file) {
         if (file.getSize() > MAX_BYTES) {
             throw new IllegalArgumentException("파일 크기는 10MB 를 넘을 수 없습니다.");
         }
@@ -89,6 +93,58 @@ public class StorageService {
         if (!ALLOWED_EXTENSIONS.contains(extension)) {
             throw new IllegalArgumentException("jpg, jpeg, png, gif, webp 만 올릴 수 있습니다.");
         }
+        String detected = detectedImageType(file);
+        boolean matches = extension.equals(detected)
+                || ("jpeg".equals(extension) && "jpg".equals(detected));
+        if (!matches) {
+            throw new IllegalArgumentException("파일 내용과 이미지 확장자가 일치하지 않습니다.");
+        }
+        return switch (detected) {
+            case "jpg" -> "image/jpeg";
+            case "png" -> "image/png";
+            case "gif" -> "image/gif";
+            case "webp" -> "image/webp";
+            default -> throw new IllegalArgumentException("올바른 이미지 파일이 아닙니다.");
+        };
+    }
+
+    private String detectedImageType(MultipartFile file) {
+        byte[] header = new byte[12];
+        int read;
+        try (var input = file.getInputStream()) {
+            read = input.read(header);
+        } catch (IOException exception) {
+            throw new IllegalArgumentException("파일 내용을 확인할 수 없습니다.", exception);
+        }
+        if (read >= 3 && (header[0] & 0xff) == 0xff && (header[1] & 0xff) == 0xd8
+                && (header[2] & 0xff) == 0xff) {
+            return "jpg";
+        }
+        byte[] png = {(byte) 0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a};
+        if (read >= png.length && startsWith(header, png)) {
+            return "png";
+        }
+        if (read >= 6) {
+            String signature = new String(header, 0, 6, java.nio.charset.StandardCharsets.US_ASCII);
+            if ("GIF87a".equals(signature) || "GIF89a".equals(signature)) {
+                return "gif";
+            }
+        }
+        if (read >= 12
+                && "RIFF".equals(new String(header, 0, 4, java.nio.charset.StandardCharsets.US_ASCII))
+                && "WEBP".equals(new String(header, 8, 4, java.nio.charset.StandardCharsets.US_ASCII))) {
+            return "webp";
+        }
+        return "";
+    }
+
+    private boolean startsWith(byte[] actual, byte[] prefix) {
+        for (int index = 0; index < prefix.length; index++) {
+            if (actual[index] != prefix[index]) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private String buildKey(String originalName, String prefix) {

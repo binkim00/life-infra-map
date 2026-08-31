@@ -7,11 +7,13 @@ import com.kyb.lifeinframap.board.dto.*;
 
 import com.kyb.lifeinframap.account.domain.User;
 import com.kyb.lifeinframap.account.repository.UserRepository;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.time.OffsetDateTime;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
@@ -35,6 +37,7 @@ public class ReportController {
     private final NotificationRepository notificationRepository;
     private final UserRepository userRepository;
     private final PenaltyService penaltyService;
+    private final UserPenaltyRepository penaltyRepository;
 
     public ReportController(
             ReportRepository reportRepository,
@@ -42,20 +45,22 @@ public class ReportController {
             CommentRepository commentRepository,
             NotificationRepository notificationRepository,
             UserRepository userRepository,
-            PenaltyService penaltyService) {
+            PenaltyService penaltyService,
+            UserPenaltyRepository penaltyRepository) {
         this.reportRepository = reportRepository;
         this.postRepository = postRepository;
         this.commentRepository = commentRepository;
         this.notificationRepository = notificationRepository;
         this.userRepository = userRepository;
         this.penaltyService = penaltyService;
+        this.penaltyRepository = penaltyRepository;
     }
 
 
 
     @PostMapping("/posts/{postId}/report")
     @Transactional
-    public ResponseEntity<?> reportPost(@PathVariable Long postId, @RequestBody ReportRequest request,
+    public ResponseEntity<?> reportPost(@PathVariable Long postId, @Valid @RequestBody ReportRequest request,
                                         Authentication authentication) {
         User user = currentUser(authentication);
         if (user == null) {
@@ -83,7 +88,7 @@ public class ReportController {
 
     @PostMapping("/comments/{commentId}/report")
     @Transactional
-    public ResponseEntity<?> reportComment(@PathVariable Long commentId, @RequestBody ReportRequest request,
+    public ResponseEntity<?> reportComment(@PathVariable Long commentId, @Valid @RequestBody ReportRequest request,
                                            Authentication authentication) {
         User user = currentUser(authentication);
         if (user == null) {
@@ -140,9 +145,9 @@ public class ReportController {
         return ResponseEntity.ok(items);
     }
 
-    @PostMapping("/reports/{reportId}/process")
+    @RequestMapping(value = "/reports/{reportId}/process", method = {RequestMethod.POST, RequestMethod.PATCH})
     @Transactional
-    public ResponseEntity<?> process(@PathVariable Long reportId, @RequestBody ProcessRequest request,
+    public ResponseEntity<?> process(@PathVariable Long reportId, @Valid @RequestBody ProcessRequest request,
                                      Authentication authentication) {
         User user = currentUser(authentication);
         if (user == null) {
@@ -156,14 +161,46 @@ public class ReportController {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("detail", "신고를 찾을 수 없습니다."));
         }
         String status = request.status() == null || request.status().isBlank()
-                ? "resolved" : request.status();
+                ? "passed" : request.status();
+        if ("resolved".equals(status)) {
+            status = "passed";
+        }
+        User reportedUser = report.getPost() != null
+                ? report.getPost().getAuthor()
+                : report.getComment() == null ? null : report.getComment().getAuthor();
+        if ("penalized".equals(status) && reportedUser != null) {
+            String penaltyType = request.penaltyType() == null || request.penaltyType().isBlank()
+                    ? "warning" : request.penaltyType();
+            String reason = request.penaltyReason() == null || request.penaltyReason().isBlank()
+                    ? report.getReason() : request.penaltyReason();
+            Integer days = defaultPenaltyDays(penaltyType);
+            OffsetDateTime endAt = "warning".equals(penaltyType)
+                    ? OffsetDateTime.now()
+                    : days == null ? null : OffsetDateTime.now().plusDays(days);
+            penaltyRepository.save(UserPenalty.create(reportedUser, user, penaltyType, reason, endAt));
+            notificationRepository.save(Notification.create(
+                    reportedUser, user, "penalty_notice", "제재가 적용되었어요.", reason,
+                    report.getPost(), report.getComment()));
+        }
         report.process(user, status, request.adminMemo());
 
         notificationRepository.save(Notification.create(
-                report.getReporter(), user, "report_processed",
+                report.getReporter(), user,
+                "penalized".equals(status) ? "report_penalty" : "report_passed",
                 "신고가 처리되었어요.", request.adminMemo() == null ? "" : request.adminMemo(),
                 report.getPost(), report.getComment()));
         return ResponseEntity.ok(serialize(report));
+    }
+
+    private Integer defaultPenaltyDays(String penaltyType) {
+        return switch (penaltyType) {
+            case "warning" -> 0;
+            case "suspend_3_days" -> 3;
+            case "suspend_7_days" -> 7;
+            case "suspend_30_days" -> 30;
+            case "suspend_1_year" -> 365;
+            default -> null;
+        };
     }
 
     /** 관리자 전원에게 신고 접수 알림을 보냅니다. */
@@ -182,14 +219,30 @@ public class ReportController {
         body.put("id", report.getId());
         body.put("reporter", report.getReporter().getId());
         body.put("reporter_username", report.getReporter().getUsername());
+        User reportedUser = report.getPost() != null
+                ? report.getPost().getAuthor()
+                : report.getComment() == null ? null : report.getComment().getAuthor();
+        body.put("reported_user_id", reportedUser == null ? null : reportedUser.getId());
+        body.put("reported_username", reportedUser == null ? "" : reportedUser.getUsername());
+        body.put("target_type", report.getPost() != null ? "post" : report.getComment() != null ? "comment" : "deleted");
+        body.put("target_id", report.getPost() != null
+                ? report.getPost().getId() : report.getComment() == null ? null : report.getComment().getId());
+        body.put("target_content", report.getPost() != null
+                ? report.getPost().getContent()
+                : report.getComment() == null ? "처리 과정에서 대상이 삭제되었습니다." : report.getComment().getContent());
         body.put("post", report.getPost() == null ? null : report.getPost().getId());
         body.put("post_title", report.getPost() == null ? null : report.getPost().getTitle());
+        body.put("post_id", report.getPost() != null
+                ? report.getPost().getId()
+                : report.getComment() == null ? null : report.getComment().getPost().getId());
         body.put("comment", report.getComment() == null ? null : report.getComment().getId());
         body.put("comment_content", report.getComment() == null ? null : report.getComment().getContent());
         body.put("reason", report.getReason());
         body.put("status", report.getStatus());
         body.put("admin_memo", report.getAdminMemo());
         body.put("processed_by", report.getProcessedBy() == null ? null : report.getProcessedBy().getId());
+        body.put("processed_by_username",
+                report.getProcessedBy() == null ? "" : report.getProcessedBy().getUsername());
         body.put("processed_at", report.getProcessedAt());
         body.put("created_at", report.getCreatedAt());
         return body;

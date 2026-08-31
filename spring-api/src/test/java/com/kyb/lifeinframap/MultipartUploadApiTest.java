@@ -5,6 +5,7 @@ import static org.hamcrest.Matchers.endsWith;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -55,6 +56,37 @@ class MultipartUploadApiTest extends ApiTestBase {
         User created = userRepository.findByUsername(username).orElseThrow();
         assertThat(profileRepository.findByUserId(created.getId()).orElseThrow().getProfileImage())
                 .isEqualTo(imageKey);
+    }
+
+    @Test
+    @DisplayName("잘못된 multipart 회원가입은 파일을 업로드하지 않는다")
+    void rejectsInvalidSignupBeforeUpload() throws Exception {
+        MockMultipartFile image = image("profile_image", "signup-avatar.png");
+
+        mockMvc.perform(multipart("/api/accounts/signup")
+                        .file(image)
+                        .param("username", "multipart" + System.nanoTime())
+                        .param("nickname", "테스트")
+                        .param("password", "short")
+                        .param("password_confirm", "short"))
+                .andExpect(status().isBadRequest());
+
+        verifyNoInteractions(storageService);
+    }
+
+    @Test
+    @DisplayName("비로그인 multipart 글쓰기는 파일을 업로드하지 않는다")
+    void rejectsAnonymousPostBeforeUpload() throws Exception {
+        MockMultipartFile image = image("image", "post-image.png");
+
+        mockMvc.perform(multipart("/api/boards/posts")
+                        .file(image)
+                        .param("title", "제목")
+                        .param("content", "본문")
+                        .param("board_type", "free"))
+                .andExpect(status().isUnauthorized());
+
+        verifyNoInteractions(storageService);
     }
 
     @Test

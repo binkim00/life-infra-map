@@ -6,12 +6,14 @@ import com.kyb.lifeinframap.place.dto.*;
 
 import com.kyb.lifeinframap.account.domain.User;
 import com.kyb.lifeinframap.account.repository.UserRepository;
+import jakarta.validation.Valid;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -53,40 +55,39 @@ public class SavedPlaceController {
             return unauthorized();
         }
 
-        List<UserSavedPlace> all = savedPlaceRepository.findByUserId(user.getId()).stream()
-                .filter(saved -> matches(saved, keyword, source))
-                .sorted((a, b) -> b.getUpdatedAt().compareTo(a.getUpdatedAt()))
-                .toList();
+        Sort sort = Sort.by(Sort.Order.desc("updatedAt"), Sort.Order.desc("id"));
 
         // limit 만 주면 페이지 정보 없이 배열만 돌려줍니다. Django 와 같은 규칙입니다.
         if (limit != null) {
             int capped = Math.min(Math.max(limit, 1), 100);
+            Page<UserSavedPlace> result = savedPlaceRepository.search(
+                    user.getId(), clean(keyword), normalizeFilterSource(source), PageRequest.of(0, capped, sort));
             List<Map<String, Object>> results = new ArrayList<>();
-            all.stream().limit(capped).forEach(saved -> results.add(serialize(saved)));
+            result.getContent().forEach(saved -> results.add(serialize(saved)));
             return ResponseEntity.ok(Map.of("results", results));
         }
 
         int safePage = Math.max(page, 1);
         int safeSize = Math.min(Math.max(pageSize, 1), 100);
-        int from = Math.min((safePage - 1) * safeSize, all.size());
-        int to = Math.min(from + safeSize, all.size());
+        Page<UserSavedPlace> result = savedPlaceRepository.search(
+                user.getId(), clean(keyword), normalizeFilterSource(source), PageRequest.of(safePage - 1, safeSize, sort));
 
         List<Map<String, Object>> results = new ArrayList<>();
-        for (UserSavedPlace saved : all.subList(from, to)) {
+        for (UserSavedPlace saved : result.getContent()) {
             results.add(serialize(saved));
         }
         Map<String, Object> body = new LinkedHashMap<>();
-        body.put("count", all.size());
+        body.put("count", result.getTotalElements());
         body.put("page", safePage);
         body.put("page_size", safeSize);
-        body.put("total_pages", Math.max((int) Math.ceil(all.size() / (double) safeSize), 1));
+        body.put("total_pages", Math.max(result.getTotalPages(), 1));
         body.put("results", results);
         return ResponseEntity.ok(body);
     }
 
     @PostMapping
     @Transactional
-    public ResponseEntity<?> save(@RequestBody SaveRequest request, Authentication authentication) {
+    public ResponseEntity<?> save(@Valid @RequestBody SaveRequest request, Authentication authentication) {
         User user = currentUser(authentication);
         if (user == null) {
             return unauthorized();
@@ -97,11 +98,13 @@ public class SavedPlaceController {
         }
 
         // 같은 장소를 다시 저장하면 내용을 갱신합니다.
+        String normalizedSource = normalizeSource(request.source());
         UserSavedPlace saved = savedPlaceRepository.findByUserIdAndPlaceKey(user.getId(), placeKey)
                 .orElseGet(() -> UserSavedPlace.create(user, placeKey,
-                        request.source() == null ? "" : request.source(),
+                        normalizedSource,
                         request.name() == null ? "" : request.name()));
 
+        saved.refreshIdentity(normalizedSource, request.name());
         saved.fill(request.placeId(), request.externalId(), request.category(), request.address(),
                 request.lat(), request.lng(), request.detailUrl(), request.kakaoPlaceUrl(),
                 request.phone(), request.memo(), request.raw());
@@ -112,7 +115,7 @@ public class SavedPlaceController {
 
     @PatchMapping("/{savedPlaceId}")
     @Transactional
-    public ResponseEntity<?> updateMemo(@PathVariable Long savedPlaceId, @RequestBody MemoRequest request,
+    public ResponseEntity<?> updateMemo(@PathVariable Long savedPlaceId, @Valid @RequestBody MemoRequest request,
                                         Authentication authentication) {
         User user = currentUser(authentication);
         if (user == null) {
@@ -141,20 +144,22 @@ public class SavedPlaceController {
         return ResponseEntity.noContent().build();
     }
 
-    private boolean matches(UserSavedPlace saved, String keyword, String source) {
-        if (source != null && !source.isBlank() && !source.equals(saved.getSource())) {
-            return false;
-        }
-        if (keyword == null || keyword.isBlank()) {
-            return true;
-        }
-        String needle = keyword.toLowerCase();
-        return contains(saved.getName(), needle) || contains(saved.getCategory(), needle)
-                || contains(saved.getAddress(), needle) || contains(saved.getMemo(), needle);
+    private String clean(String value) {
+        return value == null ? null : value.trim();
     }
 
-    private boolean contains(String value, String needle) {
-        return value != null && value.toLowerCase().contains(needle);
+    private String normalizeSource(String source) {
+        return switch (source == null ? "" : source) {
+            case "db" -> "local_db";
+            case "kakao_local" -> "kakao";
+            case "web_evidence_candidate" -> "web";
+            default -> source == null ? "" : source;
+        };
+    }
+
+    private String normalizeFilterSource(String source) {
+        String cleaned = clean(source);
+        return cleaned == null || cleaned.isBlank() ? cleaned : normalizeSource(cleaned);
     }
 
     private Map<String, Object> serialize(UserSavedPlace saved) {
@@ -183,7 +188,7 @@ public class SavedPlaceController {
     /** Django `get_source_display` 와 같은 표기입니다. */
     private String sourceLabel(String source) {
         return switch (source == null ? "" : source) {
-            case "db" -> "저장 장소";
+            case "db", "local_db" -> "저장 장소";
             case "kakao" -> "카카오 장소";
             case "web" -> "웹 참고";
             default -> source == null ? "" : source;

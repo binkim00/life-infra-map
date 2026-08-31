@@ -18,12 +18,11 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * 컨트롤러 테스트 공통 설정입니다.
  *
- * 스키마 소유자가 Django 이므로 Hibernate 가 테이블을 만들 수 없습니다(`ddl-auto: validate`).
- * 그래서 개발용 Postgres 에 그대로 붙고, `@Transactional` 로 테스트마다 롤백합니다.
- * 실행 전에 `docker compose up -d db` 가 되어 있어야 합니다.
+ * 운영 스키마 소유자는 Django 이지만 테스트는 외부 개발 DB를 건드리지 않습니다.
+ * `src/test/resources/application.yml` 의 일회성 H2 DB에 Hibernate가 테스트용 스키마를 만들고,
+ * `@Transactional` 로 테스트마다 롤백합니다.
  *
- * 롤백되지 않는 것이 하나 있습니다. 시퀀스는 트랜잭션을 따르지 않으므로
- * 테스트를 돌리면 id 값이 앞으로 나갑니다. 데이터가 남지는 않으니 문제되지 않습니다.
+ * 실제 PostgreSQL 스키마 호환성은 운영 시작 시 `ddl-auto: validate`와 별도 배포 smoke test로 확인합니다.
  */
 @SpringBootTest
 @AutoConfigureMockMvc

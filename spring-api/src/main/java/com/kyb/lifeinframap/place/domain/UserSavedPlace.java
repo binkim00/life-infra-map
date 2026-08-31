@@ -104,6 +104,12 @@ public class UserSavedPlace {
         touch();
     }
 
+    public void refreshIdentity(String source, String name) {
+        if (source != null) this.source = source;
+        if (name != null) this.name = name;
+        touch();
+    }
+
     public void fill(Long placeId, String externalId, String category, String address,
                      BigDecimal lat, BigDecimal lng, String detailUrl, String kakaoPlaceUrl,
                      String phone, String memo, Map<String, Object> raw) {

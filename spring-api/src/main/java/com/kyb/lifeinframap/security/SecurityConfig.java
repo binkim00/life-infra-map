@@ -26,7 +26,10 @@ public class SecurityConfig {
     }
 
     @Bean
-    public SecurityFilterChain filterChain(HttpSecurity http, JwtAuthenticationFilter jwtFilter) throws Exception {
+    public SecurityFilterChain filterChain(
+            HttpSecurity http,
+            JwtAuthenticationFilter jwtFilter,
+            PublicWriteRateLimitFilter rateLimitFilter) throws Exception {
         http
                 // 토큰 기반이라 세션과 CSRF 를 쓰지 않습니다.
                 .cors(cors -> {})
@@ -50,7 +53,8 @@ public class SecurityConfig {
                 // 403 으로 두면 토큰이 만료됐을 때 요청이 조용히 실패만 하고 로그인 유도가 안 됩니다.
                 .exceptionHandling(handling -> handling
                         .authenticationEntryPoint(unauthorizedEntryPoint()))
-                .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(rateLimitFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterAfter(jwtFilter, PublicWriteRateLimitFilter.class);
         return http.build();
     }
 

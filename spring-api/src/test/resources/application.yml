@@ -1,0 +1,27 @@
+spring:
+  datasource:
+    url: "jdbc:h2:mem:life_infra_map;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH;INIT=CREATE DOMAIN IF NOT EXISTS JSONB AS JSON"
+    username: sa
+    password: ""
+    driver-class-name: org.h2.Driver
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    database-platform: org.hibernate.dialect.H2Dialect
+    open-in-view: false
+
+app:
+  rate-limit:
+    login-per-minute: 10000
+    signup-per-minute: 10000
+  storage:
+    endpoint: http://127.0.0.1:9000
+    bucket: life-infra-map-test
+    access-key: test
+    secret-key: test-secret
+    region: us-east-1
+  media:
+    base-url: http://127.0.0.1:9000/life-infra-map-test
+  jwt:
+    secret: test-secret-key-at-least-32-bytes-long
+    access-token-minutes: 120

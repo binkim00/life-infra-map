@@ -7,6 +7,9 @@ import com.kyb.lifeinframap.board.dto.*;
 
 import com.kyb.lifeinframap.account.domain.User;
 import com.kyb.lifeinframap.account.repository.UserRepository;
+import jakarta.validation.Valid;
+import jakarta.validation.ConstraintViolation;
+import jakarta.validation.Validator;
 import jakarta.validation.constraints.NotBlank;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -34,6 +37,7 @@ public class PostController {
     private final BoardResponseAssembler assembler;
     private final PenaltyService penaltyService;
     private final com.kyb.lifeinframap.storage.service.StorageService storageService;
+    private final Validator validator;
 
     public PostController(
             PostRepository postRepository,
@@ -41,13 +45,15 @@ public class PostController {
             UserRepository userRepository,
             BoardResponseAssembler assembler,
             PenaltyService penaltyService,
-            com.kyb.lifeinframap.storage.service.StorageService storageService) {
+            com.kyb.lifeinframap.storage.service.StorageService storageService,
+            Validator validator) {
         this.postRepository = postRepository;
         this.commentRepository = commentRepository;
         this.userRepository = userRepository;
         this.assembler = assembler;
         this.penaltyService = penaltyService;
         this.storageService = storageService;
+        this.validator = validator;
     }
 
 
@@ -87,6 +93,15 @@ public class PostController {
             @RequestParam(name = "board_type", required = false) String boardType,
             @RequestParam(required = false) org.springframework.web.multipart.MultipartFile image,
             Authentication authentication) {
+        PostRequest request = new PostRequest(title, content, boardType, null);
+        ResponseEntity<?> invalid = validatePostRequest(request);
+        if (invalid != null) {
+            return invalid;
+        }
+        invalid = canCreate(request, authentication);
+        if (invalid != null) {
+            return invalid;
+        }
         String imageKey;
         try {
             imageKey = storageService.upload(image, com.kyb.lifeinframap.storage.service.StorageService.BOARD_IMAGE_PREFIX);
@@ -98,22 +113,15 @@ public class PostController {
 
     @PostMapping
     @Transactional
-    public ResponseEntity<?> create(@RequestBody PostRequest request, Authentication authentication) {
+    public ResponseEntity<?> create(@Valid @RequestBody PostRequest request, Authentication authentication) {
+        ResponseEntity<?> invalid = canCreate(request, authentication);
+        if (invalid != null) {
+            return invalid;
+        }
         User user = currentUser(authentication);
-        if (user == null) {
-            return unauthorized();
-        }
-        UserPenalty penalty = penaltyService.findCurrent(user.getId());
-        if (penalty != null) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(penaltyService.blockedBody(penalty));
-        }
 
         String boardType = request.boardType() == null || request.boardType().isBlank()
                 ? "free" : request.boardType();
-        if ("notice".equals(boardType) && !user.isStaff()) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                    .body(Map.of("detail", "공지사항은 관리자만 작성할 수 있습니다."));
-        }
 
         Post post = Post.create(user, boardType, request.title(), request.content(), request.image());
         // Django 는 공지를 항상 고정합니다.
@@ -144,7 +152,7 @@ public class PostController {
 
     @PatchMapping("/{postId}")
     @Transactional
-    public ResponseEntity<?> update(@PathVariable Long postId, @RequestBody PostRequest request,
+    public ResponseEntity<?> update(@PathVariable Long postId, @Valid @RequestBody PostRequest request,
                                     Authentication authentication) {
         User user = currentUser(authentication);
         if (user == null) {
@@ -174,6 +182,15 @@ public class PostController {
             @RequestParam(name = "board_type", required = false) String boardType,
             @RequestParam(required = false) org.springframework.web.multipart.MultipartFile image,
             Authentication authentication) {
+        PostRequest request = new PostRequest(title, content, boardType, null);
+        ResponseEntity<?> invalid = validatePostRequest(request);
+        if (invalid != null) {
+            return invalid;
+        }
+        invalid = canUpdate(postId, authentication);
+        if (invalid != null) {
+            return invalid;
+        }
         String imageKey = null;
         if (image != null && !image.isEmpty()) {
             try {
@@ -184,7 +201,54 @@ public class PostController {
                 return ResponseEntity.badRequest().body(Map.of("image", List.of(exception.getMessage())));
             }
         }
+        if (imageKey == null) {
+            imageKey = postRepository.findById(postId).map(Post::getImage).orElse(null);
+        }
         return update(postId, new PostRequest(title, content, boardType, imageKey), authentication);
+    }
+
+    private ResponseEntity<?> canCreate(PostRequest request, Authentication authentication) {
+        User user = currentUser(authentication);
+        if (user == null) {
+            return unauthorized();
+        }
+        UserPenalty penalty = penaltyService.findCurrent(user.getId());
+        if (penalty != null) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(penaltyService.blockedBody(penalty));
+        }
+        String boardType = request.boardType() == null || request.boardType().isBlank()
+                ? "free" : request.boardType();
+        if ("notice".equals(boardType) && !user.isStaff()) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("detail", "공지사항은 관리자만 작성할 수 있습니다."));
+        }
+        return null;
+    }
+
+    private ResponseEntity<?> canUpdate(Long postId, Authentication authentication) {
+        User user = currentUser(authentication);
+        if (user == null) {
+            return unauthorized();
+        }
+        Post post = postRepository.findById(postId).orElse(null);
+        if (post == null) {
+            return notFound();
+        }
+        if (!post.getAuthor().getId().equals(user.getId())) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("detail", "본인이 작성한 글만 수정할 수 있습니다."));
+        }
+        return null;
+    }
+
+    private ResponseEntity<?> validatePostRequest(PostRequest request) {
+        Map<String, List<String>> errors = new LinkedHashMap<>();
+        for (ConstraintViolation<PostRequest> violation : validator.validate(request)) {
+            String field = "boardType".equals(violation.getPropertyPath().toString())
+                    ? "board_type" : violation.getPropertyPath().toString();
+            errors.computeIfAbsent(field, key -> new ArrayList<>()).add(violation.getMessage());
+        }
+        return errors.isEmpty() ? null : ResponseEntity.badRequest().body(errors);
     }
 
     @DeleteMapping("/{postId}")

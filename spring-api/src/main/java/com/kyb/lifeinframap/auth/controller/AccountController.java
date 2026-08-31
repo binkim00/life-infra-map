@@ -8,6 +8,8 @@ import com.kyb.lifeinframap.account.repository.UserProfileRepository;
 import com.kyb.lifeinframap.account.repository.UserRepository;
 import com.kyb.lifeinframap.security.JwtService;
 import jakarta.validation.Valid;
+import jakarta.validation.ConstraintViolation;
+import jakarta.validation.Validator;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import java.util.LinkedHashMap;
@@ -40,6 +42,7 @@ public class AccountController {
     private final JwtService jwtService;
     private final com.kyb.lifeinframap.storage.service.StorageService storageService;
     private final com.kyb.lifeinframap.account.service.UserPayloadFactory userPayloadFactory;
+    private final Validator validator;
 
     public AccountController(
             UserRepository userRepository,
@@ -47,13 +50,15 @@ public class AccountController {
             PasswordEncoder passwordEncoder,
             JwtService jwtService,
             com.kyb.lifeinframap.storage.service.StorageService storageService,
-            com.kyb.lifeinframap.account.service.UserPayloadFactory userPayloadFactory) {
+            com.kyb.lifeinframap.account.service.UserPayloadFactory userPayloadFactory,
+            Validator validator) {
         this.userRepository = userRepository;
         this.profileRepository = profileRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
         this.storageService = storageService;
         this.userPayloadFactory = userPayloadFactory;
+        this.validator = validator;
     }
 
 
@@ -74,6 +79,16 @@ public class AccountController {
             @RequestParam(value = "profile_image", required = false)
             org.springframework.web.multipart.MultipartFile profileImage) {
 
+        SignupRequest signupRequest = new SignupRequest(username, nickname, email, password, passwordConfirm);
+        ResponseEntity<?> invalid = validateSignup(signupRequest);
+        if (invalid != null) {
+            return invalid;
+        }
+        invalid = accountConflict(signupRequest);
+        if (invalid != null) {
+            return invalid;
+        }
+
         String imageKey;
         try {
             imageKey = storageService.upload(profileImage, com.kyb.lifeinframap.storage.service.StorageService.PROFILE_IMAGE_PREFIX);
@@ -81,7 +96,7 @@ public class AccountController {
             return badRequest("profile_image", exception.getMessage());
         }
 
-        return createAccount(new SignupRequest(username, nickname, email, password, passwordConfirm), imageKey);
+        return persistAccount(signupRequest, imageKey);
     }
 
     @PostMapping("/signup")
@@ -91,6 +106,14 @@ public class AccountController {
     }
 
     private ResponseEntity<?> createAccount(SignupRequest request, String profileImageKey) {
+        ResponseEntity<?> invalid = accountConflict(request);
+        if (invalid != null) {
+            return invalid;
+        }
+        return persistAccount(request, profileImageKey);
+    }
+
+    private ResponseEntity<?> accountConflict(SignupRequest request) {
         if (!request.password().equals(request.passwordConfirm())) {
             return badRequest("passwordConfirm", "비밀번호가 일치하지 않습니다.");
         }
@@ -105,7 +128,11 @@ public class AccountController {
         if (profileRepository.existsByNickname(nickname)) {
             return badRequest("nickname", "이미 사용 중인 닉네임입니다.");
         }
+        return null;
+    }
 
+    private ResponseEntity<?> persistAccount(SignupRequest request, String profileImageKey) {
+        String nickname = request.nickname().trim();
         User user = userRepository.save(
                 User.create(request.username(), request.email(), passwordEncoder.encode(request.password())));
         UserProfile profile = new UserProfile(user, nickname);
@@ -121,6 +148,18 @@ public class AccountController {
         body.put("expires_in", jwtService.getAccessTokenSeconds());
         body.put("user", userPayloadFactory.of(user, nickname, profileImageKey));
         return ResponseEntity.status(HttpStatus.CREATED).body(body);
+    }
+
+    private ResponseEntity<?> validateSignup(SignupRequest request) {
+        Map<String, java.util.List<String>> errors = new LinkedHashMap<>();
+        for (ConstraintViolation<SignupRequest> violation : validator.validate(request)) {
+            String field = violation.getPropertyPath().toString();
+            if ("passwordConfirm".equals(field)) {
+                field = "password_confirm";
+            }
+            errors.computeIfAbsent(field, key -> new java.util.ArrayList<>()).add(violation.getMessage());
+        }
+        return errors.isEmpty() ? null : ResponseEntity.badRequest().body(errors);
     }
 
     @PatchMapping("/me/password")
@@ -168,6 +207,13 @@ public class AccountController {
 
 
     private ResponseEntity<Map<String, Object>> badRequest(String field, String message) {
+        if ("passwordConfirm".equals(field)) {
+            field = "password_confirm";
+        } else if ("currentPassword".equals(field)) {
+            field = "current_password";
+        } else if ("newPasswordConfirm".equals(field)) {
+            field = "new_password_confirm";
+        }
         return ResponseEntity.badRequest().body(Map.of(field, java.util.List.of(message)));
     }
 }

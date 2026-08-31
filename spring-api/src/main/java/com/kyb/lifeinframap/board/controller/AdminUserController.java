@@ -9,6 +9,7 @@ import com.kyb.lifeinframap.account.domain.User;
 import com.kyb.lifeinframap.account.repository.UserProfileRepository;
 import com.kyb.lifeinframap.account.repository.UserRepository;
 import com.kyb.lifeinframap.tier.service.ContributionService;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
@@ -120,7 +121,7 @@ public class AdminUserController {
     @PostMapping("/{userId}/penalties")
     @Transactional
     public ResponseEntity<?> createPenalty(@PathVariable Integer userId,
-                                           @RequestBody PenaltyRequest request,
+                                           @Valid @RequestBody PenaltyRequest request,
                                            Authentication authentication) {
         ResponseEntity<?> denied = requireStaff(authentication);
         if (denied != null) {
@@ -132,17 +133,18 @@ public class AdminUserController {
         }
         User admin = currentUser(authentication);
 
+        String penaltyType = normalizePenaltyType(request.penaltyType(), request.days());
         Integer days = request.days() == null
-                ? defaultPenaltyDays(request.penaltyType()) : request.days();
+                ? defaultPenaltyDays(penaltyType) : request.days();
         // 경고는 이력과 알림만 남기고 활동을 차단하지 않습니다.
-        OffsetDateTime endAt = "warning".equals(request.penaltyType())
+        OffsetDateTime endAt = "warning".equals(penaltyType)
                 ? OffsetDateTime.now()
                 : days == null || days <= 0 ? null : OffsetDateTime.now().plusDays(days);
         UserPenalty penalty = penaltyRepository.save(
-                UserPenalty.create(target, admin, request.penaltyType(), request.reason(), endAt));
+                UserPenalty.create(target, admin, penaltyType, request.reason(), endAt));
 
         notificationRepository.save(Notification.create(
-                target, admin, "penalty", "제재가 적용되었어요.", request.reason(), null, null));
+                target, admin, "penalty_notice", "제재가 적용되었어요.", request.reason(), null, null));
         return ResponseEntity.status(HttpStatus.CREATED).body(serializePenalty(penalty));
     }
 
@@ -157,10 +159,23 @@ public class AdminUserController {
         };
     }
 
+    private String normalizePenaltyType(String penaltyType, Integer days) {
+        if (!"suspend".equals(penaltyType)) {
+            return penaltyType;
+        }
+        return switch (days == null ? 0 : days) {
+            case 3 -> "suspend_3_days";
+            case 7 -> "suspend_7_days";
+            case 30 -> "suspend_30_days";
+            case 365 -> "suspend_1_year";
+            default -> "permanent_ban";
+        };
+    }
+
     @PostMapping("/{userId}/notifications")
     @Transactional
     public ResponseEntity<?> createNotification(@PathVariable Integer userId,
-                                                @RequestBody NotificationRequest request,
+                                                @Valid @RequestBody NotificationRequest request,
                                                 Authentication authentication) {
         ResponseEntity<?> denied = requireStaff(authentication);
         if (denied != null) {
@@ -171,7 +186,7 @@ public class AdminUserController {
             return notFound();
         }
         Notification notification = notificationRepository.save(Notification.create(
-                target, currentUser(authentication), "admin_message",
+                target, currentUser(authentication), "system",
                 request.title(), request.message(), null, null));
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(Map.of("id", notification.getId(), "message", "알림을 보냈습니다."));

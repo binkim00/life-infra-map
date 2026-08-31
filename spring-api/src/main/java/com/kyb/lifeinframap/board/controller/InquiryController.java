@@ -7,6 +7,7 @@ import com.kyb.lifeinframap.board.dto.*;
 
 import com.kyb.lifeinframap.account.domain.User;
 import com.kyb.lifeinframap.account.repository.UserRepository;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -42,7 +43,7 @@ public class InquiryController {
 
     @PostMapping("/inquiries")
     @Transactional
-    public ResponseEntity<?> create(@RequestBody InquiryRequest request, Authentication authentication) {
+    public ResponseEntity<?> create(@Valid @RequestBody InquiryRequest request, Authentication authentication) {
         User user = currentUser(authentication);
         if (user == null) {
             return unauthorized();
@@ -115,7 +116,7 @@ public class InquiryController {
     @PatchMapping("/admin/inquiries/{inquiryId}")
     @Transactional
     public ResponseEntity<?> adminReply(@PathVariable Long inquiryId,
-                                        @RequestBody InquiryReplyRequest request,
+                                        @Valid @RequestBody InquiryReplyRequest request,
                                         Authentication authentication) {
         User user = currentUser(authentication);
         if (user == null) {
@@ -130,6 +131,11 @@ public class InquiryController {
         }
         String status = request.status() == null || request.status().isBlank()
                 ? "answered" : request.status();
+        if ("answered".equals(status)
+                && (request.adminReply() == null || request.adminReply().isBlank())) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("admin_reply", List.of("답변 내용을 입력해주세요.")));
+        }
         inquiry.reply(user, status, request.adminReply());
 
         if (request.adminReply() != null && !request.adminReply().isBlank()) {

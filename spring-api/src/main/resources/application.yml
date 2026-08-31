@@ -10,6 +10,10 @@ spring:
     url: jdbc:postgresql://${POSTGRES_HOST:127.0.0.1}:${POSTGRES_PORT:5432}/${POSTGRES_DB:life_infra_map}
     username: ${POSTGRES_USER:life_infra_map}
     password: ${POSTGRES_PASSWORD:life_infra_map}
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 11MB
   jackson:
     # Django 가 Asia/Seoul 기준 오프셋(+09:00)으로 내려주므로 표기를 맞춥니다.
     time-zone: Asia/Seoul
@@ -26,6 +30,9 @@ spring:
     open-in-view: false
 
 app:
+  rate-limit:
+    login-per-minute: ${LOGIN_RATE_LIMIT_PER_MINUTE:20}
+    signup-per-minute: ${SIGNUP_RATE_LIMIT_PER_MINUTE:5}
   storage:
     # Django 와 같은 버킷을 씁니다. 값도 backend/.env 와 맞춰야 합니다.
     endpoint: ${S3_ENDPOINT_URL:http://127.0.0.1:9000}

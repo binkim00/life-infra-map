@@ -489,8 +489,8 @@ Spring이 발급한 토큰을 Django도 검증합니다. `backend/accounts/authe
 
 | 확인 항목 | 결과 |
 |---|---|
-| Django 테스트 | 363개 실행, 실패 0 (21개 skip) |
-| **Spring 테스트** | **97개 통과** |
+| Django 테스트 | 738개 실행, 실패 0 (21개 skip) |
+| **Spring 테스트** | **103개 통과** |
 | **Spring 부팅** | 성공 — `ddl-auto: validate`가 실제 Django 스키마를 통과 |
 | **교차 인증** | Spring이 발급한 JWT를 Django `SharedJWTAuthentication`이 검증 성공. 클레임 `{sub, username, iat, exp}` 확인 |
 | 프론트 라우팅 | `serviceRoutes.js`의 경로 분기, `Bearer` 헤더 전환, Spring 후행 슬래시 제거 동작 |
@@ -499,16 +499,18 @@ Spring이 발급한 토큰을 Django도 검증합니다. `backend/accounts/authe
 
 ### Spring 테스트 구성
 
-`@SpringBootTest` + `MockMvc` 로 개발용 Postgres 에 붙고 테스트마다 롤백합니다. 스키마 주인이 Django 라 Hibernate 가 테이블을 만들 수 없으므로(`validate`) 별도 테스트 스키마를 쓰지 않습니다. 실행 전에 `docker compose up -d db` 가 필요합니다.
+`@SpringBootTest` + `MockMvc`는 `src/test/resources/application.yml`의 일회성 H2 데이터베이스를 사용하고 테스트마다 롤백합니다. 따라서 개발용·운영용 Postgres가 없어도 전체 회귀 테스트를 실행할 수 있습니다. 실제 PostgreSQL 스키마 호환성은 Spring 운영 부팅의 `ddl-auto: validate`와 배포 smoke test로 별도 확인합니다.
 
 | 클래스 | 개수 | 범위 |
 |---|---|---|
 | `AuthApiTest` | 21 | 로그인·회원가입·내정보·비밀번호·닉네임·프로필·마이페이지·로그아웃 |
 | `BoardApiTest` | 17 | 글·댓글·반응, 수정·삭제 권한, 비로그인 조회 |
-| `AdminApiTest` | 17 | 관리자 권한 경계, 목록 응답 형태, 등급 조회 인증 |
+| `AdminApiTest` | 18 | 관리자 권한 경계, 목록 응답 형태, 등급 조회 인증 |
 | `UserDataApiTest` | 18 | 알림·문의·저장 장소의 사용자별 격리 |
 | `ReportApiTest` | 12 | 신고 규칙(본인·중복), 처리 권한, 관리자 알림 |
-| `MultipartUploadApiTest` | 3 | 회원가입 프로필 이미지·프로필 이미지 변경·게시글 이미지 업로드 |
+| `MultipartUploadApiTest` | 5 | 이미지 업로드와 실패 요청의 업로드 선실행 방지 |
+| `ApiContractCompatibilityTest` | 3 | Django식 스네이크 입력, 신고 PATCH 처리, 입력 검증 |
+| `StorageServiceValidationTest` | 1 | 이미지 확장자로 위장한 비이미지 차단 |
 | `ContributionRulesTest` · `DjangoPasswordEncoderTest` | 8 | 기여도 규칙, Django 해시 호환 |
 
 ### 테스트로 찾은 결함
