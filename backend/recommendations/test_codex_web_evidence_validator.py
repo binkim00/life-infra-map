@@ -8,6 +8,7 @@ from django.test import TestCase
 
 from recommendations.management.commands.validate_codex_web_evidence import (
     close_research_requests,
+    preserve_unavailable_candidate,
     related_rule_evidences,
 )
 from recommendations.models import Place, PlaceTagEvidence, Tag, TagEnrichmentRequest
@@ -39,6 +40,53 @@ class CodexWebEvidenceValidatorTests(TestCase):
         row = self.row()
         row["page_verified"] = False
         self.assertEqual(validate_candidate(row)["reason"], "PAGE_NOT_VERIFIED")
+
+    def test_page_unavailable_is_preserved_as_retry_candidate(self):
+        row = self.row()
+        row.update({
+            "research_status": "PAGE_UNAVAILABLE",
+            "page_verified": False,
+            "source_candidate_only": True,
+            "candidate_sources": [{
+                "url": "https://example.com/review?utm_source=search",
+                "title": "서면 테스트카페 후기",
+                "snippet": "콘센트가 있다는 검색 결과 문구",
+                "source_type": "blog",
+                "access_error": "PAGE_BLOCKED",
+            }],
+            "failure_detail": "본문을 다시 열 수 없음",
+        })
+
+        result = validate_candidate(row, live_verify=True)
+
+        self.assertEqual(result["status"], "candidate_pending")
+        self.assertEqual(result["candidate_sources"][0]["url"], "https://example.com/review")
+
+    def test_preserved_retry_candidate_is_queued_without_creating_evidence(self):
+        row = self.row()
+        row.update({
+            "research_status": "PAGE_UNAVAILABLE",
+            "failure_detail": "본문을 다시 열 수 없음",
+            "candidate_sources": [{
+                "url": "https://example.com/review",
+                "title": "서면 테스트카페 후기",
+                "snippet": "콘센트가 있다는 검색 결과 문구",
+                "source_type": "blog",
+                "access_error": "PAGE_BLOCKED",
+            }],
+        })
+        result = validate_candidate(row)
+
+        saved = preserve_unavailable_candidate(row, result)
+
+        request = TagEnrichmentRequest.objects.get(place=self.place, tag_name="콘센트있음")
+        self.assertEqual(saved, 1)
+        self.assertEqual(request.status, "queued")
+        self.assertEqual(
+            request.context["codex_candidate_research"]["sources"][0]["url"],
+            "https://example.com/review",
+        )
+        self.assertFalse(PlaceTagEvidence.objects.exists())
 
     def test_rejects_polarity_not_supported_by_rule(self):
         row = self.row()

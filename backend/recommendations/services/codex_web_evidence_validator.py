@@ -30,6 +30,11 @@ def validate_candidate(row, *, now=None, live_verify=False):
     if research_status not in VALID_RESEARCH_STATUSES:
         result["reason"] = "INVALID_RESEARCH_STATUS"
         return result
+    if research_status == "PAGE_UNAVAILABLE":
+        result["status"] = "candidate_pending"
+        result["reason"] = research_status
+        result["candidate_sources"] = normalize_candidate_sources(row)
+        return result
     if research_status != "FOUND":
         result["status"] = "ambiguous" if research_status == "AMBIGUOUS" else "rejected"
         result["reason"] = research_status
@@ -190,3 +195,28 @@ def verify_live_source(place, row):
 
 def _compact(value):
     return "".join(character.lower() for character in str(value or "") if character.isalnum())
+
+
+def normalize_candidate_sources(row):
+    """Retain safe retry metadata without treating snippets as tag evidence."""
+    normalized = []
+    seen = set()
+    sources = row.get("candidate_sources")
+    if not isinstance(sources, list):
+        sources = []
+    for source in sources[:5]:
+        if not isinstance(source, dict):
+            continue
+        url = canonical_url(source.get("url"))
+        if not url or url in seen:
+            continue
+        seen.add(url)
+        source_type = str(source.get("source_type") or "")
+        normalized.append({
+            "url": url,
+            "title": str(source.get("title") or "")[:180],
+            "snippet": str(source.get("snippet") or "")[:500],
+            "source_type": source_type if source_type in VALID_SOURCE_TYPES else "",
+            "access_error": str(source.get("access_error") or "")[:120],
+        })
+    return normalized

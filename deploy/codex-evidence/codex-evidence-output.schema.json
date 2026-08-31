@@ -22,6 +22,23 @@
           "identity_confidence": { "type": "integer", "minimum": 0, "maximum": 100 },
           "page_verified": { "type": "boolean" },
           "source_candidate_only": { "type": "boolean" },
+          "candidate_sources": {
+            "type": "array",
+            "maxItems": 5,
+            "items": {
+              "type": "object",
+              "properties": {
+                "url": { "type": "string" },
+                "title": { "type": "string" },
+                "snippet": { "type": "string" },
+                "source_type": { "enum": ["", "official", "public", "brand_official", "blog", "news", "web_content"] },
+                "access_error": { "type": "string" }
+              },
+              "required": ["url", "title", "snippet", "source_type", "access_error"],
+              "additionalProperties": false
+            }
+          },
+          "failure_detail": { "type": "string" },
           "research_status": {
             "enum": ["FOUND", "NO_RESULT", "PAGE_UNAVAILABLE", "IDENTITY_MISMATCH", "NO_FEATURE_EVIDENCE", "AMBIGUOUS", "STALE_ONLY"]
           },
@@ -31,7 +48,7 @@
           "place_id", "place_name", "category", "target_tag", "extracted_tag", "polarity",
           "source_url", "source_title", "source_type", "evidence_span", "published_at",
           "identity_status", "identity_confidence", "page_verified", "source_candidate_only",
-          "research_status", "notes"
+          "candidate_sources", "failure_detail", "research_status", "notes"
         ],
         "additionalProperties": false
       }

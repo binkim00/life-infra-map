@@ -11,15 +11,16 @@ For every input place:
 6. Every FOUND row must cite a short exact Korean evidence_span that appears verbatim in the opened page body. Search snippets and generated summaries are not evidence.
 7. The selected tag must be copied into both target_tag and extracted_tag. It must be one of that place's target_tags. Do not invent a new tag.
 8. The same URL may support multiple distinct tags only when each row has its own directly relevant exact evidence_span. Do not emit duplicate rows for the same tag, URL, polarity, and quote.
-9. Prefer official/public/brand pages, then stable public blog, news, restaurant directory, or reservation pages. Avoid Naver Blog, login walls, and pages the server will not be able to fetch again.
+9. Prefer official/public/brand pages, then stable public blogs, news, restaurant directories, reservation pages, and review pages. An official page is optional: never fail or discard a place only because it has no official website. Avoid Naver Blog because that source is handled by a separate collector.
 10. For FOUND set page_verified=true, source_candidate_only=false, identity_status=verified, and fill every schema field accurately.
+11. For FOUND set candidate_sources=[] and failure_detail="".
 
 Failure output:
 - If no tag is found, emit exactly one failure row for the place using its first target_tag.
 - Use NO_RESULT only after searching and finding no usable page.
-- Use PAGE_UNAVAILABLE when plausible pages exist but cannot be opened.
+- Use PAGE_UNAVAILABLE only after trying the plausible page and searching for at least two alternative non-official sources. Preserve up to 5 plausible pages in candidate_sources with URL, title, search snippet, source type, and the access failure. Search snippets are retry hints, not verified evidence.
 - Use NO_FEATURE_EVIDENCE when identity is verified but no exact sentence supports any target_tag.
 - Use IDENTITY_MISMATCH or AMBIGUOUS when venue identity is wrong or uncertain.
-- For non-FOUND rows, leave extracted_tag, polarity, source_url, source_title, source_type, evidence_span, and identity_status empty; set page_verified=false.
+- For non-FOUND rows, leave extracted_tag, polarity, source_url, source_title, source_type, evidence_span, and identity_status empty; set page_verified=false. Set source_candidate_only=true only for PAGE_UNAVAILABLE, otherwise false. Use candidate_sources=[] for failures other than PAGE_UNAVAILABLE. Explain the final failure in failure_detail and notes.
 
 Return only JSON matching the provided output schema.

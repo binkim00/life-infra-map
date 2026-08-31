@@ -4,9 +4,10 @@ from pathlib import Path
 
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
+from django.utils import timezone
 
 from recommendations.management.commands.process_tag_enrichment_queue import save_place_candidate_evidence
-from recommendations.models import TagEnrichmentRequest
+from recommendations.models import Place, TagEnrichmentRequest
 from recommendations.services.codex_web_evidence_validator import validate_candidate
 from recommendations.services.naver_tag_evidence_provider import polarity_assessment
 from recommendations.services.place_tag_collection import requested_tags_for_category
@@ -39,12 +40,23 @@ class Command(BaseCommand):
         related_saved = 0
         requests_completed = 0
         requests_closed_without_evidence = 0
+        candidates_preserved = 0
+        candidate_pages = []
         for row in rows:
             result = validate_candidate(row, live_verify=options["live_verify"])
             counts[result["status"]] += 1
             if result["reason"]:
                 reasons[result["reason"]] += 1
-            if options["apply"] and result["status"] in {"rejected", "ambiguous"}:
+            if result["status"] == "candidate_pending":
+                candidate_pages.extend({
+                    "place_id": row.get("place_id"),
+                    "place_name": str(row.get("place_name") or "")[:200],
+                    "target_tag": str(row.get("target_tag") or "")[:50],
+                    **source,
+                } for source in result.get("candidate_sources") or [])
+                if options["apply"]:
+                    candidates_preserved += preserve_unavailable_candidate(row, result)
+            elif options["apply"] and result["status"] in {"rejected", "ambiguous"}:
                 requests_closed_without_evidence += close_research_requests(row, result["reason"])
             if options["apply"] and result["status"] in {"accepted", "needs_verification"}:
                 normalized = result["normalized"]
@@ -94,6 +106,7 @@ class Command(BaseCommand):
             "rows": len(rows),
             "accepted": counts["accepted"],
             "needs_verification": counts["needs_verification"],
+            "candidate_pending": counts["candidate_pending"],
             "rejected": counts["rejected"],
             "ambiguous": counts["ambiguous"],
             "duplicate": counts["duplicate"],
@@ -102,6 +115,8 @@ class Command(BaseCommand):
             "related_saved": related_saved,
             "requests_completed": requests_completed,
             "requests_closed_without_evidence": requests_closed_without_evidence,
+            "candidates_preserved": candidates_preserved,
+            "candidate_pages": candidate_pages[:20],
             "reasons": dict(reasons),
         }, ensure_ascii=False, indent=2))
 
@@ -165,3 +180,48 @@ def close_research_requests(row, reason):
         ])
         closed += 1
     return closed
+
+
+def preserve_unavailable_candidate(row, result):
+    """Keep inaccessible pages as retry hints, never as searchable evidence."""
+    try:
+        place = Place.objects.get(id=int(row.get("place_id")))
+    except (Place.DoesNotExist, TypeError, ValueError):
+        return 0
+    if str(row.get("place_name") or "").strip() != place.name:
+        return 0
+    if str(row.get("category") or "").strip() != place.category:
+        return 0
+    tag_name = str(row.get("target_tag") or "").strip()
+    if not tag_name:
+        return 0
+    request, _ = TagEnrichmentRequest.objects.get_or_create(
+        place=place,
+        tag_name=tag_name,
+        defaults={"status": "queued", "priority": 1},
+    )
+    context = dict(request.context or {})
+    previous = dict(context.get("codex_candidate_research") or {})
+    merged = {}
+    for source in [*(previous.get("sources") or []), *(result.get("candidate_sources") or [])]:
+        url = str(source.get("url") or "")
+        if url:
+            merged[url] = source
+    context["codex_candidate_research"] = {
+        "status": "PAGE_UNAVAILABLE",
+        "attempt_count": int(previous.get("attempt_count") or 0) + 1,
+        "last_attempted_at": timezone.now().isoformat(),
+        "failure_detail": str(row.get("failure_detail") or row.get("notes") or "")[:1000],
+        "sources": list(merged.values())[-10:],
+    }
+    request.status = "queued"
+    request.priority = min(100000, max(1, request.priority) + 1)
+    request.next_attempt_at = None
+    request.locked_at = None
+    request.error_message = "codex_cli:PAGE_UNAVAILABLE_RETRY"
+    request.context = context
+    request.save(update_fields=[
+        "status", "priority", "next_attempt_at", "locked_at", "error_message",
+        "context", "last_requested_at", "updated_at",
+    ])
+    return 1

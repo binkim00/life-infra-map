@@ -10,7 +10,9 @@ from recommendations.management.commands.prepare_codex_web_research import (
     seed_row,
     source_hints_for_places,
 )
-from recommendations.models import Place, PlaceTagCollectionJob, PlaceTagEvidence, Tag
+from recommendations.models import (
+    Place, PlaceTagCollectionJob, PlaceTagEvidence, Tag, TagEnrichmentRequest,
+)
 
 
 class PrepareCodexWebResearchTests(TestCase):
@@ -108,6 +110,27 @@ class PrepareCodexWebResearchTests(TestCase):
 
         self.assertEqual(hints[self.place.id], [])
 
+    def test_source_hints_reuse_page_unavailable_retry_candidates(self):
+        TagEnrichmentRequest.objects.create(
+            place=self.place,
+            tag_name="조용함",
+            status="queued",
+            context={
+                "codex_candidate_research": {
+                    "sources": [{
+                        "url": "https://reviews.example.com/retry",
+                        "title": "서면 연구카페 후기",
+                        "snippet": "조용하다는 검색 결과 문구",
+                    }],
+                },
+            },
+        )
+
+        hints = source_hints_for_places([self.place.id])
+
+        self.assertEqual(hints[self.place.id][0]["url"], "https://reviews.example.com/retry")
+        self.assertEqual(hints[self.place.id][0]["hint_origin"], "page_unavailable_retry")
+
     def test_prefer_source_ready_fills_reachable_rows_first(self):
         cold = {"place": self.place, "source_hints": []}
         ready = {"place": self.place, "source_hints": [{"url": "https://example.com"}]}
@@ -115,6 +138,22 @@ class PrepareCodexWebResearchTests(TestCase):
         selected = prefer_source_ready([cold, ready], 1)
 
         self.assertEqual(selected, [ready])
+
+    def test_prefer_source_ready_keeps_unreachable_retry_ahead_of_coverage(self):
+        retry = {
+            "place": self.place,
+            "source_hints": [],
+            "launch_demand": {"조용함": 11},
+        }
+        coverage = {
+            "place": self.place,
+            "source_hints": [{"url": "https://example.com"}],
+            "launch_demand": {},
+        }
+
+        selected = prefer_source_ready([coverage, retry], 1)
+
+        self.assertEqual(selected, [retry])
 
     def test_seed_exposes_multiple_missing_tags_and_source_hints(self):
         row = seed_row({
@@ -128,6 +167,8 @@ class PrepareCodexWebResearchTests(TestCase):
         self.assertEqual(row["target_tag"], "분위기좋음")
         self.assertEqual(row["target_tags"], ["분위기좋음", "사진찍기좋음", "조용함"])
         self.assertEqual(row["source_hints"][0]["url"], "https://blog.example.com/right-place")
+        self.assertEqual(row["candidate_sources"], [])
+        self.assertEqual(row["failure_detail"], "")
 
     def test_preflight_keeps_only_pages_readable_by_production_fetcher(self):
         selected = [{

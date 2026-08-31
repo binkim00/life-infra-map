@@ -115,8 +115,19 @@ class Command(BaseCommand):
 
 
 def prefer_source_ready(rows, limit):
-    """Keep selection order inside each tier while filling reachable pages first."""
-    return sorted(rows, key=lambda row: not bool(row.get("source_hints")))[:limit]
+    """Prefer reachable launch gaps, then retryable launch gaps, then coverage."""
+    def tier(row):
+        has_source = bool(row.get("source_hints"))
+        has_demand = bool(row.get("launch_demand"))
+        if has_source and has_demand:
+            return 0
+        if has_demand:
+            return 1
+        if has_source:
+            return 2
+        return 3
+
+    return sorted(rows, key=tier)[:limit]
 
 
 def select_places(category, limit, allocation, *, exclude_place_ids=None):
@@ -222,12 +233,18 @@ def launch_demand_context(category):
     ).values("place_id", "tag_name", "priority", "demand_count", "context")
     demands = defaultdict(dict)
     for request in requests:
-        launch = (request.get("context") or {}).get("launch_quality")
-        if not isinstance(launch, dict) or request["tag_name"] not in CATEGORY_TAGS.get(category, ()):
+        context = request.get("context") or {}
+        launch = context.get("launch_quality")
+        retry_candidate = context.get("codex_candidate_research")
+        if request["tag_name"] not in CATEGORY_TAGS.get(category, ()):
             continue
-        demands[request["place_id"]][request["tag_name"]] = (
-            int(request.get("priority") or 0) + int(request.get("demand_count") or 0)
-        )
+        if isinstance(launch, dict):
+            score = int(request.get("priority") or 0) + int(request.get("demand_count") or 0)
+        elif isinstance(retry_candidate, dict):
+            score = int(request.get("priority") or 0) + 10
+        else:
+            continue
+        demands[request["place_id"]][request["tag_name"]] = score
     return demands
 
 
@@ -297,6 +314,28 @@ def source_hints_for_places(place_ids):
             "description": str(evidence.get("evidence") or "")[:500],
             "hint_origin": "stored_evidence",
         })
+    retry_requests = TagEnrichmentRequest.objects.filter(
+        place_id__in=place_ids,
+        status="queued",
+    ).order_by("-updated_at").values("place_id", "context")
+    for request in retry_requests:
+        place_id = request["place_id"]
+        candidate = (request.get("context") or {}).get("codex_candidate_research") or {}
+        for source in candidate.get("sources") or []:
+            url = str(source.get("url") or "").strip()
+            if len(hints[place_id]) >= MAX_SOURCE_HINTS or url in seen[place_id]:
+                continue
+            if not url.startswith(("http://", "https://")):
+                continue
+            if urlparse(url).hostname in CODEX_UNREADABLE_HOSTS:
+                continue
+            seen[place_id].add(url)
+            hints[place_id].append({
+                "url": url,
+                "title": str(source.get("title") or "")[:180],
+                "description": str(source.get("snippet") or "")[:500],
+                "hint_origin": "page_unavailable_retry",
+            })
     jobs = PlaceTagCollectionJob.objects.filter(
         place_id__in=place_ids,
         provider="naver_search",
@@ -360,6 +399,8 @@ def seed_row(item):
         "freshness": "unknown",
         "page_verified": False,
         "source_candidate_only": False,
+        "candidate_sources": [],
+        "failure_detail": "",
         "research_status": "NO_RESULT",
         "notes": "",
     }

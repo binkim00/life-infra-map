@@ -28,7 +28,7 @@ if [ -r "$RUNTIME_DIR/latest.json" ]; then
 fi
 
 db_json="$(docker exec "$API_CONTAINER" python manage.py report_daily_collection --date "$report_date")"
-codex_json='{"runs":0,"rows":0,"accepted":0,"needs_verification":0,"rejected":0,"saved":0,"primary_saved":0,"related_saved":0,"reasons":{}}'
+codex_json='{"runs":0,"rows":0,"accepted":0,"needs_verification":0,"candidate_pending":0,"candidates_preserved":0,"candidate_pages":[],"rejected":0,"saved":0,"primary_saved":0,"related_saved":0,"reasons":{}}'
 mapfile -d '' validation_files < <(
   find "$CODEX_DIR" -maxdepth 1 -type f -name 'validation-*.json' \
     -newermt "$codex_window_start" -print0 2>/dev/null || true
@@ -38,6 +38,9 @@ if [ "${#validation_files[@]}" -gt 0 ]; then
     def merge_counts: reduce .[] as $item ({}; reduce ($item | to_entries[]) as $pair (.; .[$pair.key] = ((.[$pair.key] // 0) + $pair.value)));
     {runs:length, rows:(map(.rows // 0)|add), accepted:(map(.accepted // 0)|add),
      needs_verification:(map(.needs_verification // 0)|add), rejected:(map(.rejected // 0)|add),
+     candidate_pending:(map(.candidate_pending // 0)|add),
+     candidates_preserved:(map(.candidates_preserved // 0)|add),
+     candidate_pages:(map(.candidate_pages // [])|add|unique_by(.url)|.[0:10]),
      saved:(map(.saved // 0)|add), primary_saved:(map(.primary_saved // .saved // 0)|add),
      related_saved:(map(.related_saved // 0)|add), reasons:(map(.reasons // {})|merge_counts)}
   ' "${validation_files[@]}")"
