@@ -1,0 +1,12 @@
+[Unit]
+Description=Check Life Infra Map Codex evidence freshness after boot and periodically
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=30min
+AccuracySec=1min
+Persistent=true
+Unit=life-infra-map-codex-evidence-catchup.service
+
+[Install]
+WantedBy=timers.target

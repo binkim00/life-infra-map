@@ -30,10 +30,15 @@ Codex 결과는 곧바로 신뢰하지 않는다. Django 검증기가 서버에�
 
 ```bash
 sudo install -m 0755 deploy/codex-evidence/run-codex-evidence.sh /home/ubuntu/life-infra-map/app/deploy/codex-evidence/run-codex-evidence.sh
+sudo install -m 0755 deploy/codex-evidence/start-catchup-if-stale.sh /home/ubuntu/life-infra-map/app/deploy/codex-evidence/start-catchup-if-stale.sh
+sudo install -m 0755 deploy/codex-evidence/publish_failure_alert.py /home/ubuntu/life-infra-map/app/deploy/codex-evidence/publish_failure_alert.py
 sudo install -m 0644 deploy/codex-evidence/life-infra-map-codex-evidence.service /etc/systemd/system/
 sudo install -m 0644 deploy/codex-evidence/life-infra-map-codex-evidence.timer /etc/systemd/system/
+sudo install -m 0644 deploy/codex-evidence/life-infra-map-codex-evidence-failure.service /etc/systemd/system/
+sudo install -m 0644 deploy/codex-evidence/life-infra-map-codex-evidence-catchup.service /etc/systemd/system/
+sudo install -m 0644 deploy/codex-evidence/life-infra-map-codex-evidence-catchup.timer /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable --now life-infra-map-codex-evidence.timer
+sudo systemctl enable --now life-infra-map-codex-evidence.timer life-infra-map-codex-evidence-catchup.timer
 ```
 
 ## 소규모 수동 검증
@@ -47,3 +52,15 @@ sudo journalctl -u life-infra-map-codex-evidence.service -n 100 --no-pager
 
 원본 후보와 결과 JSON은 `/home/ubuntu/life-infra-map/runtime/codex-evidence`에 14일 보관한다.
 API 키는 사용하지 않으며, 실행량은 ChatGPT 플랜의 Codex 사용 한도에 포함된다.
+
+수집 실패 시 서비스는 15분 간격으로 최대 3회 실행을 시도한다. 첫 실패 알림은 SNS
+`life-infra-map-alerts`로 전송하고 6시간 동안 중복 알림을 억제한다. 네트워크 장애 때문에
+즉시 보내지 못한 알림 서비스는 5분마다 다시 시도한다.
+
+`life-infra-map-codex-evidence-catchup.timer`는 부팅 5분 뒤부터 30분마다 마지막 검증 성공
+결과를 확인한다. 성공 결과가 14시간 이상 오래되었으면 수집 서비스를 한 번 시작하여
+서버 중단 중 놓친 주기를 보충한다. 이 기준은 `CODEX_EVIDENCE_MAX_AGE_SECONDS`로 조정한다.
+
+CloudWatch 경보 `life-infra-map-ec2-status-check-failed`는 `StatusCheckFailed > 0`이 2분
+지속되면 SNS 알림과 함께 EC2 재부팅 작업을 실행하도록 유지한다. 정상 전환 알림도 같은
+SNS 주제로 전송하여 자동 복구 완료 여부를 확인할 수 있게 한다.

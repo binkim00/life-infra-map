@@ -1,0 +1,22 @@
+[Unit]
+Description=Notify Life Infra Map Codex evidence collection failure
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/life-infra-map/app
+Environment=COLLECTION_ALERT_SNS_TOPIC_ARN=arn:aws:sns:ap-northeast-2:497902501857:life-infra-map-alerts
+ExecStartPre=+/usr/bin/install -d -o ubuntu -g ubuntu -m 0700 /home/ubuntu/life-infra-map/runtime/codex-evidence
+ExecStart=/usr/bin/python3 /home/ubuntu/life-infra-map/app/deploy/codex-evidence/publish_failure_alert.py
+Restart=on-failure
+RestartSec=5min
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/ubuntu/life-infra-map/runtime/codex-evidence
+InaccessiblePaths=-/home/ubuntu/.ssh -/home/ubuntu/.aws -/home/ubuntu/life-infra-map/app/backend/.env -/home/ubuntu/life-infra-map/app/deploy/db/.env

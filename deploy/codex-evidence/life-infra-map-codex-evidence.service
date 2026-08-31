@@ -3,6 +3,9 @@ Description=Life Infra Map Codex web evidence collection
 After=docker.service network-online.target
 Wants=network-online.target
 Requires=docker.service
+OnFailure=life-infra-map-codex-evidence-failure.service
+StartLimitIntervalSec=3h
+StartLimitBurst=3
 
 [Service]
 Type=oneshot
@@ -13,6 +16,8 @@ Environment=HOME=/home/ubuntu
 Environment=CODEX_HOME=/home/ubuntu/.codex
 ExecStart=/usr/bin/flock -n /run/lock/life-infra-map-codex-evidence.lock /home/ubuntu/life-infra-map/app/deploy/codex-evidence/run-codex-evidence.sh
 TimeoutStartSec=45min
+Restart=on-failure
+RestartSec=15min
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict

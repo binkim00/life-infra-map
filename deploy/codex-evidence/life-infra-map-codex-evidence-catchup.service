@@ -1,0 +1,14 @@
+[Unit]
+Description=Start stale Life Infra Map Codex evidence collection
+After=docker.service network-online.target
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/home/ubuntu/life-infra-map/app/deploy/codex-evidence/start-catchup-if-stale.sh
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/ubuntu/life-infra-map/runtime/codex-evidence /run/systemd
