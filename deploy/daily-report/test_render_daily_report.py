@@ -4,7 +4,7 @@ from render_daily_report import render_report
 
 
 def metric(value, numerator, denominator):
-    return {"measured": True, "value": value, "numerator": numerator, "denominator": denominator}
+    return {"value": value, "numerator": numerator, "denominator": denominator}
 
 
 class RenderDailyReportTests(unittest.TestCase):

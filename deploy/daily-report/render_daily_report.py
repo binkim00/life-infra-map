@@ -29,7 +29,7 @@ def value(data, *keys, default=0):
 
 
 def metric_text(metric):
-    if not isinstance(metric, dict) or not metric.get("measured"):
+    if not isinstance(metric, dict) or "value" not in metric or metric.get("measured") is False:
         return "집계 전"
     metric_value = metric.get("value")
     rendered = "{:.1f}%".format(metric_value * 100) if isinstance(metric_value, (int, float)) else str(metric_value)
