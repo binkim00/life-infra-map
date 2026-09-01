@@ -6,7 +6,7 @@ from pathlib import Path
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 
-from recommendations.services.ai_search_orchestrator import run_ai_search
+from recommendations.services.ai_search_orchestrator import _result_building_key, run_ai_search
 from recommendations.services.tag_utils import get_category_display_name
 
 
@@ -867,6 +867,26 @@ def _evaluation_metrics(rows):
         if row.get("action") == "search" and not row.get("allow_empty")
     ]
     top_five_ready = sum(len(row.get("top_results") or []) >= 5 for row in search_rows)
+    building_diversity_rows = []
+    unique_building_slots = 0
+    building_slots = 0
+    for row in search_rows:
+        top_five = (row.get("top_results") or [])[:5]
+        building_keys = [
+            _result_building_key(item)
+            for item in top_five
+            if _result_building_key(item)
+        ]
+        if len(building_keys) < 3:
+            continue
+        unique_count = len(set(building_keys))
+        building_diversity_rows.append((unique_count, len(building_keys)))
+        unique_building_slots += unique_count
+        building_slots += len(building_keys)
+    diverse_top_five_queries = sum(
+        unique_count >= min(3, result_count)
+        for unique_count, result_count in building_diversity_rows
+    )
     non_feature_constraints = {
         "가까운곳", "긴급", "실내", "식사가능", "음료마실수있음", "음료구매가능",
     }
@@ -953,6 +973,19 @@ def _evaluation_metrics(rows):
             measured=bool(search_rows),
             numerator=top_five_ready,
             denominator=len(search_rows),
+        ),
+        "top_five_building_diversity_rate": _metric(
+            round(unique_building_slots / building_slots, 4) if building_slots else 0,
+            measured=bool(building_slots),
+            numerator=unique_building_slots,
+            denominator=building_slots,
+        ),
+        "diverse_top_five_query_rate": _metric(
+            round(diverse_top_five_queries / len(building_diversity_rows), 4)
+            if building_diversity_rows else 0,
+            measured=bool(building_diversity_rows),
+            numerator=diverse_top_five_queries,
+            denominator=len(building_diversity_rows),
         ),
         "feature_query_hit_at_5_rate": _metric(
             round(feature_queries_with_hit / len(feature_search_rows), 4)

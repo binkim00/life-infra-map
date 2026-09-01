@@ -93,6 +93,8 @@ def render_report(payload):
         "- 오늘 신규 통합 태그: {}개, 장소 {}곳".format(tags["new_place_tags"], tags["new_tagged_places"]),
         "- 검색 가능 장소 증감: 카페 {}, 식당 {}".format(value(quality, "daily_delta", "cafe_searchable_places", default=unknown), value(quality, "daily_delta", "restaurant_searchable_places", default=unknown)),
         "- 검색마다 상위 5개 제공: {}".format(metric_text(value(quality, "search", "top_five_coverage_rate", default={}))),
+        "- 상위 5개 건물 다양성: {}".format(metric_text(value(quality, "search", "top_five_building_diversity_rate", default={}))),
+        "- 서로 다른 건물 3곳 이상인 검색 비율: {}".format(metric_text(value(quality, "search", "diverse_top_five_query_rate", default={}))),
         "- 조건 검색 중 검증 근거 결과가 1개 이상인 비율: {}".format(metric_text(value(quality, "search", "feature_query_hit_at_5_rate", default={}))),
         "- 상위 5개 중 조건을 검증 근거로 만족한 결과 비율: {}".format(metric_text(value(quality, "search", "verified_feature_result_rate_at_5", default={}))),
         "- 근거가 부족할 때 부족함을 밝힌 비율: {}".format(metric_text(value(quality, "search", "honest_no_hit_fallback_rate", default={}))),

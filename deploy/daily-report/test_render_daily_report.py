@@ -20,7 +20,7 @@ class RenderDailyReportTests(unittest.TestCase):
             "quality": {
                 "daily_delta": {"cafe_searchable_places": 2, "restaurant_searchable_places": 1},
                 "search": {
-                    "top_five_coverage_rate": metric(1, 24, 24), "feature_query_hit_at_5_rate": metric(0.2, 4, 20), "verified_feature_result_rate_at_5": metric(0.05, 5, 100), "honest_no_hit_fallback_rate": metric(1, 20, 20), "reason_transparency_rate": metric(1, 120, 120), "hard_violation_rate": metric(0, 0, 120), "latency_ms": {"measured": True, "value": {"average": 1100.5, "p95": 2689.5}},
+                    "top_five_coverage_rate": metric(1, 24, 24), "top_five_building_diversity_rate": metric(0.8, 96, 120), "diverse_top_five_query_rate": metric(0.875, 21, 24), "feature_query_hit_at_5_rate": metric(0.2, 4, 20), "verified_feature_result_rate_at_5": metric(0.05, 5, 100), "honest_no_hit_fallback_rate": metric(1, 20, 20), "reason_transparency_rate": metric(1, 120, 120), "hard_violation_rate": metric(0, 0, 120), "latency_ms": {"measured": True, "value": {"average": 1100.5, "p95": 2689.5}},
                 },
                 "release_gate": {"ready": False, "consecutive_ready_days": 0, "thresholds": {"top_five_coverage_rate": 1, "feature_query_hit_at_5_rate": 1, "verified_feature_result_rate_at_5_min": 0.6, "reason_transparency_rate": 1, "hard_violation_rate_max": 0, "latency_p95_ms_max": 3000}},
             },
@@ -30,6 +30,8 @@ class RenderDailyReportTests(unittest.TestCase):
         self.assertIn("DB에 근거 후보로 저장: 7개", rendered)
         self.assertIn("집계 시작: 2026-08-31T06:00:00Z", rendered)
         self.assertIn("검색마다 상위 5개 제공: 100.0% (24 / 24)", rendered)
+        self.assertIn("상위 5개 건물 다양성: 80.0% (96 / 120)", rendered)
+        self.assertIn("서로 다른 건물 3곳 이상인 검색 비율: 87.5% (21 / 24)", rendered)
         self.assertIn("검색 속도: 평균 1100.5ms, p95 2689.5ms", rendered)
         failures = rendered.split("현재 미충족 항목:", 1)[1]
         self.assertIn("각 조건 검색에 검증 근거 결과 포함", failures)

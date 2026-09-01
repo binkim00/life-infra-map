@@ -59,6 +59,25 @@ class SearchEvaluationMetricTests(SimpleTestCase):
         self.assertEqual(metrics["verified_feature_result_rate_at_5"]["value"], 0.5)
         self.assertEqual(metrics["honest_no_hit_fallback_rate"]["value"], 0.0)
 
+    def test_building_diversity_metrics_use_normalized_top_five_addresses(self):
+        rows = [{
+            "action": "search",
+            "frame": {"candidate_category_codes": ["cafe"]},
+            "top_results": [
+                {"address": "부산 중앙대로 672 1층"},
+                {"address": "부산 중앙대로 672 2층"},
+                {"address": "부산 중앙대로 680"},
+                {"address": "부산 중앙대로 690"},
+                {"address": "부산 중앙대로 700"},
+            ],
+            "timing_ms": {"total_observed": 100},
+        }]
+
+        metrics = _evaluation_metrics(rows)
+
+        self.assertEqual(metrics["top_five_building_diversity_rate"]["value"], 0.8)
+        self.assertEqual(metrics["diverse_top_five_query_rate"]["value"], 1.0)
+
     def test_refinement_expectation_accepts_executed_search_action(self):
         self.assertTrue(_matches_expected_action("refine_previous_search", "search"))
         self.assertFalse(_matches_expected_action("compare_previous_results", "search"))
