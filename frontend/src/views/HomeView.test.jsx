@@ -129,6 +129,8 @@ describe('HomeView', () => {
   })
 
   it('검색하면 AI 추천 결과와 개수를 표시합니다', async () => {
+    const getCurrentPosition = vi.fn((_success, failure) => failure(new Error('denied')))
+    navigator.geolocation.getCurrentPosition = getCurrentPosition
     aiSearchRecommendations.mockResolvedValue({
       results: [
         {
@@ -167,6 +169,7 @@ describe('HomeView', () => {
     await waitFor(() => {
       expect(aiSearchRecommendations).toHaveBeenCalledTimes(1)
     })
+    expect(getCurrentPosition).not.toHaveBeenCalled()
 
     await waitFor(() => {
       expect(screen.getByText('서면 조용한 카페')).toBeInTheDocument()

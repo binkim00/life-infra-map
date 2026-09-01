@@ -3480,7 +3480,16 @@ export const useHomeSearch = ({ initialTab = 'search' } = {}) => {
 
       const placesService = new window.kakao.maps.services.Places()
       const geocoder = new window.kakao.maps.services.Geocoder()
-      const currentContext = await getSearchCenterForRecommendation()
+      const localLocationPlan = buildSearchPlan(keyword)
+      const explicitLocationQuery = shouldResolveBaseLocation(localLocationPlan)
+        ? getResolvedSearchPlanLocationQuery(localLocationPlan)
+        : ''
+      const currentContext = explicitLocationQuery
+        ? {
+          center: s.mapCenter,
+          baseLabel: `${explicitLocationQuery} 기준`,
+        }
+        : await getSearchCenterForRecommendation()
       const backendOnlyPlan = {
         originalQuery: keyword,
         targetQuery: keyword,
