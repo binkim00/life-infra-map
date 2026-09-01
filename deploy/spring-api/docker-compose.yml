@@ -16,6 +16,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-life_infra_map}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
       SPRING_PORT: 8081
+      JAVA_TOOL_OPTIONS: ${SPRING_JAVA_TOOL_OPTIONS:--Xms128m -Xmx384m}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
       S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-http://storage:9000}
       S3_BUCKET: ${S3_BUCKET:-life-infra-map-media}
@@ -27,6 +28,7 @@ services:
       - runtime-db
     ports:
       - "${SPRING_BIND_IP:-127.0.0.1}:${SPRING_PORT:-8081}:8081"
+    mem_limit: ${SPRING_MEMORY_LIMIT:-512m}
     healthcheck:
       test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8081/api/health"]
       interval: 15s

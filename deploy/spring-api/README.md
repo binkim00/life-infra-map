@@ -21,3 +21,6 @@ docker compose \
 
 Keep `JWT_SECRET` identical to Django. Bind to the Tailscale address for private
 remote access and do not expose port 8081 publicly without TLS termination.
+The default deployment limits Gradle to one worker and the Spring container to
+512 MB (`-Xmx384m`) so it can coexist with the database and collection workers
+on a small EC2 host.
