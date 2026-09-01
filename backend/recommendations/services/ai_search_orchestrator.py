@@ -3,6 +3,7 @@ import logging
 import math
 import re
 import time
+import unicodedata
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from django.conf import settings
@@ -4115,6 +4116,187 @@ def _candidate_result_quality(candidate, frame, *, best_available=False):
     }
 
 
+RESULT_DIVERSITY_CATEGORY_CODES = frozenset({
+    "cafe",
+    "restaurant",
+    "shopping",
+    "tourism",
+})
+RESULT_DIVERSITY_NEAREST_MARKERS = frozenset({
+    "가장가까운",
+    "제일가까운",
+    "최단거리",
+    "거리순",
+    "긴급",
+    "급함",
+    "급해",
+    "바로앞",
+})
+RESULT_DIVERSITY_FRANCHISES = (
+    "스타벅스",
+    "투썸플레이스",
+    "메가mgc커피",
+    "메가커피",
+    "컴포즈커피",
+    "이디야커피",
+    "이디야",
+    "빽다방",
+    "파스쿠찌",
+    "할리스",
+    "엔제리너스",
+    "커피빈",
+    "카페베네",
+    "더벤티",
+    "매머드커피",
+    "폴바셋",
+    "탐앤탐스",
+    "공차",
+    "블루샥",
+    "롯데리아",
+    "맥도날드",
+    "버거킹",
+    "맘스터치",
+    "서브웨이",
+    "kfc",
+)
+
+
+def _result_building_key(candidate):
+    raw_address = _clean_text(
+        candidate.get("road_address")
+        or candidate.get("road_address_name")
+        or candidate.get("address")
+        or candidate.get("detail_location"),
+        300,
+    )
+    if not raw_address:
+        return ""
+    normalized = unicodedata.normalize("NFKC", raw_address).lower()
+    normalized = re.sub(r"\(.*?\)", " ", normalized)
+    road_match = re.search(
+        r"([0-9a-z가-힣]+(?:대로|로|길))\s*(\d+(?:-\d+)?)",
+        normalized,
+    )
+    if road_match:
+        return _compact(" ".join(road_match.groups()))
+    lot_match = re.search(r"([0-9a-z가-힣]+동)\s*(\d+(?:-\d+)?)", normalized)
+    if lot_match:
+        return _compact(" ".join(lot_match.groups()))
+    return normalize_address(normalized)
+
+
+def _result_franchise_key(candidate):
+    name_key = normalize_name(candidate.get("name"))
+    if not name_key:
+        return ""
+    for franchise in RESULT_DIVERSITY_FRANCHISES:
+        franchise_key = normalize_name(franchise)
+        if franchise_key and franchise_key in name_key:
+            return franchise_key
+    return ""
+
+
+def _result_diversity_enabled(frame):
+    category_codes = set([
+        *_frame_category_codes(frame),
+        *_target_consensus_category_codes(frame),
+    ])
+    if not category_codes.intersection(RESULT_DIVERSITY_CATEGORY_CODES):
+        return False
+    request_text = _compact(" ".join([
+        *_frame_terms(frame, "constraints"),
+        *_frame_terms(frame, "result_match_terms", "resultMatchTerms"),
+    ]))
+    return not any(marker in request_text for marker in RESULT_DIVERSITY_NEAREST_MARKERS)
+
+
+def _diversify_ordered_results(candidates, frame, *, limit):
+    """Promote distinct buildings and brands without crossing quality strata."""
+    ordered = list(candidates or [])
+    top_window = min(max(_as_int(limit, 15), 1), 5, len(ordered))
+    if top_window < 3 or not _result_diversity_enabled(frame):
+        return ordered
+
+    strata = []
+    for candidate in ordered:
+        key = (
+            _as_int(candidate.get("result_quality_sort_key"), 9),
+            _as_int(candidate.get("condition_match_count"), 0),
+        )
+        if not strata or strata[-1][0] != key:
+            strata.append((key, []))
+        strata[-1][1].append(candidate)
+
+    selected = []
+    building_counts = {}
+    franchise_counts = {}
+    for _, stratum in strata:
+        remaining = list(stratum)
+        while remaining and len(selected) < top_window:
+            chosen_index = next((
+                index
+                for index, candidate in enumerate(remaining)
+                if (
+                    not _result_building_key(candidate)
+                    or building_counts.get(_result_building_key(candidate), 0) < 1
+                )
+                and (
+                    not _result_franchise_key(candidate)
+                    or franchise_counts.get(_result_franchise_key(candidate), 0) < 2
+                )
+            ), None)
+            if chosen_index is None:
+                chosen_index = next((
+                    index
+                    for index, candidate in enumerate(remaining)
+                    if (
+                        not _result_building_key(candidate)
+                        or building_counts.get(_result_building_key(candidate), 0) < 2
+                    )
+                    and (
+                        not _result_franchise_key(candidate)
+                        or franchise_counts.get(_result_franchise_key(candidate), 0) < 3
+                    )
+                ), 0)
+            candidate = remaining.pop(chosen_index)
+            selected.append(candidate)
+            building_key = _result_building_key(candidate)
+            franchise_key = _result_franchise_key(candidate)
+            if building_key:
+                building_counts[building_key] = building_counts.get(building_key, 0) + 1
+            if franchise_key:
+                franchise_counts[franchise_key] = franchise_counts.get(franchise_key, 0) + 1
+            if len(selected) >= top_window:
+                selected_object_ids = {id(item) for item in selected}
+                return [
+                    *selected,
+                    *(item for item in ordered if id(item) not in selected_object_ids),
+                ]
+    selected_object_ids = {id(item) for item in selected}
+    return [*selected, *(item for item in ordered if id(item) not in selected_object_ids)]
+
+
+def _result_diversity_summary(candidates, frame):
+    top_results = list(candidates or [])[:5]
+    building_counts = {}
+    franchise_counts = {}
+    for candidate in top_results:
+        building_key = _result_building_key(candidate)
+        franchise_key = _result_franchise_key(candidate)
+        if building_key:
+            building_counts[building_key] = building_counts.get(building_key, 0) + 1
+        if franchise_key:
+            franchise_counts[franchise_key] = franchise_counts.get(franchise_key, 0) + 1
+    return {
+        "enabled": _result_diversity_enabled(frame),
+        "window_count": len(top_results),
+        "unique_building_count": len(building_counts),
+        "same_building_max_count": max(building_counts.values(), default=0),
+        "unique_franchise_count": len(franchise_counts),
+        "same_franchise_max_count": max(franchise_counts.values(), default=0),
+    }
+
+
 def _complete_and_order_results(
     ranked_candidates,
     candidate_pool,
@@ -4189,6 +4371,7 @@ def _complete_and_order_results(
         -float(candidate.get("score") or 0),
         _clean_text(candidate.get("name")),
     ))
+    decorated = _diversify_ordered_results(decorated, frame, limit=limit)
     ordered = [
         {
             **candidate,
@@ -5477,6 +5660,7 @@ def run_ai_search(request_data, *, user=None):
             for candidate in results
         ),
         "fallback_applied": bool(best_available_candidates),
+        "diversity": _result_diversity_summary(results, frame),
     }
 
     serialization_started = time.perf_counter()

@@ -137,6 +137,7 @@ import {
   isRecommendationQueryText,
   makeLocationChoiceClarificationPlan,
   mergeRequestedConditionReview,
+  parseMapSearchInput,
   shouldAskLocationChoiceBeforeSearch,
   toArray,
 } from '@/utils/homeSearchPlanning'
@@ -3480,9 +3481,9 @@ export const useHomeSearch = ({ initialTab = 'search' } = {}) => {
 
       const placesService = new window.kakao.maps.services.Places()
       const geocoder = new window.kakao.maps.services.Geocoder()
-      const localLocationPlan = buildSearchPlan(keyword)
-      const explicitLocationQuery = shouldResolveBaseLocation(localLocationPlan)
-        ? getResolvedSearchPlanLocationQuery(localLocationPlan)
+      const lightweightLocationHint = parseMapSearchInput(keyword)
+      const explicitLocationQuery = lightweightLocationHint.hasBaseLocation
+        ? lightweightLocationHint.locationQuery
         : ''
       const currentContext = explicitLocationQuery
         ? {
