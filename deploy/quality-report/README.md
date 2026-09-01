@@ -1,8 +1,9 @@
 # Daily launch quality report
 
 This timer runs after the daily Codex evidence collection and measures the
-Busan launch cohort against 24 cafe and restaurant feature queries. It writes
-coverage, full evaluation output, prioritized collection feedback, and a compact release-gate summary under
+Busan launch cohort against 59 cafe, restaurant, pharmacy, toilet, parking,
+smoking-area, shelter, walk, and shopping queries. It writes overall and per-cohort
+metrics, full evaluation output, prioritized collection feedback, and a compact release-gate summary under
 `/home/ubuntu/life-infra-map/runtime/quality-reports`.
 The coverage step uses a launch-only aggregate instead of the much heavier
 cross-city, per-tag operations report.

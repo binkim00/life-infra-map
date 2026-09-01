@@ -738,6 +738,7 @@ def _case_summary(case, data, elapsed_ms, top_n):
 
     return {
         "id": case.get("id") or "",
+        "cohort": case.get("cohort") or "unclassified",
         "case_id": case.get("case_id") or case.get("id") or "",
         "case_label": case.get("case_label") or case.get("label") or "",
         "demo_note": case.get("demo_note") or "",
@@ -827,6 +828,16 @@ def _metric(value, *, measured, numerator=None, denominator=None):
 
 
 def _evaluation_metrics(rows):
+    status_rows = [row for row in rows if row.get("status")]
+    passed_rows = sum(row.get("status") == "ok" for row in status_rows)
+    identity_rows = [
+        row for row in rows
+        if (row.get("quality") or {}).get("top3_expected_match_count") is not None
+    ]
+    identity_hits = sum(
+        (row.get("quality") or {}).get("top3_expected_match_count", 0) > 0
+        for row in identity_rows
+    )
     intent_rows = [row for row in rows if row.get("expected_action")]
     intent_hits = sum(row.get("action") == row.get("expected_action") for row in intent_rows)
     region_rows = [row for row in rows if row.get("expected_anchor_location")]
@@ -960,6 +971,18 @@ def _evaluation_metrics(rows):
         ndcgs.append(0 if not idcg else dcg / idcg)
 
     return {
+        "case_pass_rate": _metric(
+            round(passed_rows / len(status_rows), 4) if status_rows else 0,
+            measured=bool(status_rows),
+            numerator=passed_rows,
+            denominator=len(status_rows),
+        ),
+        "expected_identity_hit_at_3_rate": _metric(
+            round(identity_hits / len(identity_rows), 4) if identity_rows else 0,
+            measured=bool(identity_rows),
+            numerator=identity_hits,
+            denominator=len(identity_rows),
+        ),
         "intent_accuracy": _metric(round(intent_hits / len(intent_rows), 4) if intent_rows else 0, measured=bool(intent_rows), numerator=intent_hits, denominator=len(intent_rows)),
         "region_accuracy": _metric(round(region_hits / len(region_rows), 4) if region_rows else 0, measured=bool(region_rows), numerator=region_hits, denominator=len(region_rows)),
         "candidate_recall": "NOT_MEASURED",
@@ -1033,6 +1056,20 @@ def _evaluation_metrics(rows):
             "average": round(sum(latencies) / len(latencies), 2),
             "p95": round(latencies[min(len(latencies) - 1, math.ceil(len(latencies) * 0.95) - 1)], 2),
         }, measured=bool(latencies)),
+    }
+
+
+def _evaluation_metrics_by_cohort(rows):
+    cohorts = sorted({
+        row.get("cohort") or "unclassified"
+        for row in rows
+    })
+    return {
+        cohort: _evaluation_metrics([
+            row for row in rows
+            if (row.get("cohort") or "unclassified") == cohort
+        ])
+        for cohort in cohorts
     }
 
 
@@ -1217,8 +1254,8 @@ def _markdown_for_run(payload):
         f"- 실행 케이스: {payload['count']}개",
         f"- 점검 필요: {payload['needs_review_count']}개",
         "",
-        "| 상태 | 품질 | 지역 | 문장 | 해석 | 검색어 | 후보수 | 상위 결과 | 이슈 |",
-        "|---|---|---|---|---|---|---:|---|---|",
+        "| 상태 | 품질 | 지역 | 업종군 | 문장 | 해석 | 검색어 | 후보수 | 상위 결과 | 이슈 |",
+        "|---|---|---|---|---|---|---|---:|---|---|",
     ]
     for row in payload["results"]:
         frame = row.get("frame") or {}
@@ -1232,10 +1269,11 @@ def _markdown_for_run(payload):
         ) or "-"
         issues = "<br>".join(row.get("issues") or []) if row.get("issues") else "-"
         lines.append(
-            "| {status} | {quality} | {area} | `{query}` | {interpreted} | {queries} | {count} | {top} | {issues} |".format(
+            "| {status} | {quality} | {area} | {cohort} | `{query}` | {interpreted} | {queries} | {count} | {top} | {issues} |".format(
                 status=row.get("status", "-"),
                 quality=(row.get("quality") or {}).get("label", "-"),
                 area=row.get("area") or "-",
+                cohort=row.get("cohort") or "-",
                 query=(row.get("raw_query") or "").replace("|", "\\|"),
                 interpreted=interpreted.replace("|", "\\|"),
                 queries=queries.replace("|", "\\|"),
@@ -1330,6 +1368,7 @@ class Command(BaseCommand):
                         elapsed_ms = round((time.perf_counter() - started) * 1000, 2)
                         row = {
                             "id": request_case.get("id") or f"case_{case_index}",
+                            "cohort": request_case.get("cohort") or case.get("cohort") or "unclassified",
                             "case_id": request_case.get("case_id") or request_case.get("id") or "",
                             "case_label": request_case.get("case_label") or request_case.get("label") or "",
                             "demo_note": request_case.get("demo_note") or "",
@@ -1374,6 +1413,7 @@ class Command(BaseCommand):
             "needs_review_count": sum(1 for row in rows if row["status"] != "ok"),
             "case_success_rates": _case_success_rates(rows),
             "metrics": _evaluation_metrics(rows),
+            "metrics_by_cohort": _evaluation_metrics_by_cohort(rows),
             "results": rows,
         }
 

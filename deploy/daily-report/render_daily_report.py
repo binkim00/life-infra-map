@@ -18,6 +18,20 @@ REASON_LABELS = {
     "STALE_ONLY": "오래된 근거만 발견",
 }
 
+COHORT_LABELS = {
+    "cafe": "카페",
+    "restaurant": "식당",
+    "pharmacy": "약국",
+    "toilet": "화장실",
+    "parking": "주차장",
+    "smoking_area": "흡연구역",
+    "shelter": "쉼터",
+    "walk": "산책",
+    "shopping": "쇼핑",
+    "unclassified": "미분류",
+}
+COHORT_ORDER = tuple(COHORT_LABELS)
+
 
 def value(data, *keys, default=0):
     current = data
@@ -54,6 +68,28 @@ def release_gate_failures(quality):
     return [label for label, actual, target, predicate in checks if actual is not None and target is not None and not predicate(actual, target)]
 
 
+def cohort_quality_lines(quality):
+    cohorts = quality.get("search_by_cohort") or {}
+    keys = [key for key in COHORT_ORDER if key in cohorts]
+    keys.extend(sorted(key for key in cohorts if key not in keys))
+    lines = []
+    for key in keys:
+        metrics = cohorts.get(key) or {}
+        latency = value(metrics, "latency_ms", "value", default={})
+        lines.append(
+            "- {}: 정상 {} / 목적 일치 {} / 상위 5개 {} / 조건 근거 {} / 위반 {} / p95 {}ms".format(
+                COHORT_LABELS.get(key, key),
+                metric_text(metrics.get("case_pass_rate")),
+                metric_text(metrics.get("expected_identity_hit_at_3_rate")),
+                metric_text(metrics.get("top_five_coverage_rate")),
+                metric_text(metrics.get("feature_query_hit_at_5_rate")),
+                metric_text(metrics.get("hard_violation_rate")),
+                latency.get("p95", "집계 전") if isinstance(latency, dict) else "집계 전",
+            )
+        )
+    return lines
+
+
 def render_report(payload):
     collection = payload["collection"]
     naver = collection["naver"]
@@ -73,6 +109,7 @@ def render_report(payload):
     ready_text = "통과" if ready else "미통과 (연속 {}일)".format(value(quality, "release_gate", "consecutive_ready_days"))
     latency = value(quality, "search", "latency_ms", "value", default={})
     gate_failures = release_gate_failures(quality)
+    cohort_lines = cohort_quality_lines(quality)
     lines = [
         "여기일지도 일일 수집 보고서 ({})".format(collection["date"]),
         "", "[네이버 블로그 수집]",
@@ -101,6 +138,7 @@ def render_report(payload):
         "- 추천 사유에 충족/부족 조건을 표시한 비율: {}".format(metric_text(value(quality, "search", "reason_transparency_rate", default={}))),
         "- 필수 조건 위반률: {}".format(metric_text(value(quality, "search", "hard_violation_rate", default={}))),
         "- 검색 속도: 평균 {}ms, p95 {}ms".format(latency.get("average", unknown), latency.get("p95", unknown)),
+        *(["- 업종별 검색 품질:", *["  " + line for line in cohort_lines]] if cohort_lines else []),
         "- 1차 배포 게이트: {}".format(ready_text),
         "- 현재 미충족 항목: {}".format(", ".join(gate_failures) if gate_failures else "없음"),
         "", "생성 시각: {}".format(collection["generated_at"]),

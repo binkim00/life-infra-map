@@ -4,7 +4,7 @@ set -Eeuo pipefail
 APP_ROOT="${QUALITY_REPORT_APP_ROOT:-/home/ubuntu/life-infra-map/app}"
 API_CONTAINER="${QUALITY_REPORT_API_CONTAINER:-life-infra-map-django-api}"
 RUNTIME_DIR="${QUALITY_REPORT_RUNTIME_DIR:-/home/ubuntu/life-infra-map/runtime/quality-reports}"
-CASE_FILE="recommendations/evaluation_cases/busan_launch_quality_24.json"
+CASE_FILE="recommendations/evaluation_cases/busan_launch_quality_59.json"
 
 if [ "$(docker inspect -f '{{.State.Running}}' "$API_CONTAINER" 2>/dev/null || true)" != "true" ]; then
   echo "API container is not running: $API_CONTAINER" >&2
@@ -66,6 +66,7 @@ jq -n \
       restaurant: $coverage[0].categories.restaurant
     },
     search: $evaluation[0].metrics,
+    search_by_cohort: $evaluation[0].metrics_by_cohort,
     collection_feedback: $priority[0],
     release_gate: {
       criteria_met_today: (
@@ -105,4 +106,4 @@ jq -n \
 
 ln -sfn "$summary_name" "${RUNTIME_DIR}/latest-summary.json"
 find "$RUNTIME_DIR" -maxdepth 1 -type f \( -name 'coverage-*.json' -o -name 'evaluation-*.json' -o -name 'priority-*.json' -o -name 'summary-*.json' \) -mtime +30 -delete
-jq '{generated_at, release_gate, daily_delta, collection_feedback: {demand_places: .collection_feedback.demand_places, demand_tags: .collection_feedback.demand_tags, requests_created: .collection_feedback.requests_created, requests_updated: .collection_feedback.requests_updated, top_missing_tags: .collection_feedback.top_missing_tags}, search: {top_five_coverage_rate: .search.top_five_coverage_rate, top_five_building_diversity_rate: .search.top_five_building_diversity_rate, diverse_top_five_query_rate: .search.diverse_top_five_query_rate, feature_query_hit_at_5_rate: .search.feature_query_hit_at_5_rate, verified_feature_result_rate_at_5: .search.verified_feature_result_rate_at_5, honest_no_hit_fallback_rate: .search.honest_no_hit_fallback_rate, hard_violation_rate: .search.hard_violation_rate, reason_transparency_rate: .search.reason_transparency_rate, latency_ms: .search.latency_ms}}' "${RUNTIME_DIR}/${summary_name}"
+jq '{generated_at, release_gate, daily_delta, collection_feedback: {demand_places: .collection_feedback.demand_places, demand_tags: .collection_feedback.demand_tags, requests_created: .collection_feedback.requests_created, requests_updated: .collection_feedback.requests_updated, top_missing_tags: .collection_feedback.top_missing_tags}, search: {case_pass_rate: .search.case_pass_rate, expected_identity_hit_at_3_rate: .search.expected_identity_hit_at_3_rate, top_five_coverage_rate: .search.top_five_coverage_rate, top_five_building_diversity_rate: .search.top_five_building_diversity_rate, diverse_top_five_query_rate: .search.diverse_top_five_query_rate, feature_query_hit_at_5_rate: .search.feature_query_hit_at_5_rate, verified_feature_result_rate_at_5: .search.verified_feature_result_rate_at_5, honest_no_hit_fallback_rate: .search.honest_no_hit_fallback_rate, hard_violation_rate: .search.hard_violation_rate, reason_transparency_rate: .search.reason_transparency_rate, latency_ms: .search.latency_ms}, search_by_cohort}' "${RUNTIME_DIR}/${summary_name}"

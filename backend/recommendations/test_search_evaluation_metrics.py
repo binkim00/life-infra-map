@@ -2,6 +2,7 @@ from django.test import SimpleTestCase
 
 from recommendations.management.commands.evaluate_ai_search import (
     _evaluation_metrics,
+    _evaluation_metrics_by_cohort,
     _issues_for_case,
     _matches_expected_action,
     _matches_expected_conversation_scenario,
@@ -9,6 +10,49 @@ from recommendations.management.commands.evaluate_ai_search import (
 
 
 class SearchEvaluationMetricTests(SimpleTestCase):
+    def test_reports_case_and_expected_identity_quality_by_cohort(self):
+        rows = [
+            {
+                "cohort": "pharmacy",
+                "status": "ok",
+                "action": "search",
+                "quality": {"top3_expected_match_count": 2},
+                "frame": {},
+                "top_results": [{"reason": "약국입니다."}],
+                "timing_ms": {"total_observed": 100},
+            },
+            {
+                "cohort": "pharmacy",
+                "status": "needs_review",
+                "action": "search",
+                "quality": {"top3_expected_match_count": 0},
+                "frame": {},
+                "top_results": [],
+                "timing_ms": {"total_observed": 200},
+            },
+            {
+                "cohort": "cafe",
+                "status": "ok",
+                "action": "search",
+                "quality": {"top3_expected_match_count": None},
+                "frame": {},
+                "top_results": [],
+                "timing_ms": {"total_observed": 50},
+            },
+        ]
+
+        metrics = _evaluation_metrics(rows)
+        by_cohort = _evaluation_metrics_by_cohort(rows)
+
+        self.assertEqual(
+            metrics["case_pass_rate"],
+            {"value": 0.6667, "numerator": 2, "denominator": 3},
+        )
+        self.assertEqual(metrics["expected_identity_hit_at_3_rate"]["value"], 0.5)
+        self.assertEqual(by_cohort["pharmacy"]["case_pass_rate"]["value"], 0.5)
+        self.assertEqual(by_cohort["pharmacy"]["expected_identity_hit_at_3_rate"]["value"], 0.5)
+        self.assertEqual(by_cohort["cafe"]["expected_identity_hit_at_3_rate"], "NOT_MEASURED")
+
     def test_feature_metrics_do_not_treat_five_unmatched_results_as_quality(self):
         rows = [{
             "action": "search",

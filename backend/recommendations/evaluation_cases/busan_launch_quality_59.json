@@ -1,0 +1,73 @@
+{
+  "version": 2,
+  "description": "부산 1차 출시용 카페·식당·생활 인프라 검색 결과 품질 59문항",
+  "cases": [
+    {"id":"cafe_seomyeon_work","area":"서면","query":"서면에서 조용하고 콘센트 있고 오래 머물기 좋은 카페","lat":35.1579,"lng":129.0592,"expected_action":"search","expected_anchor_location":"서면","cohort":"cafe"},
+    {"id":"cafe_hadan_solo_work","area":"하단","query":"하단에서 혼자 노트북 작업하기 편하고 좌석이 편한 카페","lat":35.1062,"lng":128.9667,"expected_action":"search","expected_anchor_location":"하단","cohort":"cafe"},
+    {"id":"cafe_pnu_quiet_wifi","area":"부산대","query":"부산대 근처 조용하고 와이파이 되는 작업 카페","lat":35.2307,"lng":129.0843,"expected_action":"search","expected_anchor_location":"부산대","cohort":"cafe"},
+    {"id":"cafe_kyungsung_long_stay","area":"경성대","query":"경성대에서 테이블 넓고 오래 앉아 있기 좋은 카페","lat":35.1378,"lng":129.1008,"expected_action":"search","expected_anchor_location":"경성대","cohort":"cafe"},
+    {"id":"cafe_haeundae_view_photo","area":"해운대","query":"해운대에서 바다 보이고 사진 찍기 좋은 카페","lat":35.1631,"lng":129.1636,"expected_action":"search","expected_anchor_location":"해운대","cohort":"cafe"},
+    {"id":"cafe_gwangalli_view_date","area":"광안리","query":"광안리에서 전망 좋고 데이트하기 좋은 카페","lat":35.1532,"lng":129.1187,"expected_action":"search","expected_anchor_location":"광안리","cohort":"cafe"},
+    {"id":"cafe_haeundae_sunlight_dessert","area":"해운대","query":"해운대에서 자연광 좋고 디저트가 특별한 카페","lat":35.1631,"lng":129.1636,"expected_action":"search","expected_anchor_location":"해운대","cohort":"cafe"},
+    {"id":"cafe_gwangalli_pet_outdoor","area":"광안리","query":"광안리에서 반려동물과 야외 좌석을 이용할 수 있는 카페","lat":35.1532,"lng":129.1187,"expected_action":"search","expected_anchor_location":"광안리","cohort":"cafe"},
+    {"id":"cafe_nampo_talk","area":"남포동","query":"남포동에서 좌석 간격 넓고 대화하기 좋은 카페","lat":35.0988,"lng":129.0305,"expected_action":"search","expected_anchor_location":"남포동","cohort":"cafe"},
+    {"id":"cafe_busan_station_solo","area":"부산역","query":"부산역 근처 혼자 이용하기 좋고 조용한 카페","lat":35.1151,"lng":129.0414,"expected_action":"search","expected_anchor_location":"부산역","cohort":"cafe"},
+    {"id":"cafe_sasang_coffee_dessert","area":"사상","query":"사상에서 커피 맛 좋고 디저트가 특별한 카페","lat":35.1629,"lng":128.9846,"expected_action":"search","expected_anchor_location":"사상","cohort":"cafe"},
+    {"id":"cafe_yeonsan_group_room","area":"연산","query":"연산동에서 단체석이나 개별룸이 있고 대화하기 좋은 카페","lat":35.1865,"lng":129.0815,"expected_action":"search","expected_anchor_location":"연산동","cohort":"cafe"},
+
+    {"id":"restaurant_seomyeon_solo_wait","area":"서면","query":"서면에서 혼자 밥먹기 편하고 웨이팅 적은 식당","lat":35.1579,"lng":129.0592,"expected_action":"search","expected_anchor_location":"서면","cohort":"restaurant"},
+    {"id":"restaurant_hadan_value_solo","area":"하단","query":"하단에서 혼밥하기 좋고 가성비 좋은 식당","lat":35.1062,"lng":128.9667,"expected_action":"search","expected_anchor_location":"하단","cohort":"restaurant"},
+    {"id":"restaurant_pnu_menu_value","area":"부산대","query":"부산대 근처 대표메뉴가 뚜렷하고 가성비 좋은 식당","lat":35.2307,"lng":129.0843,"expected_action":"search","expected_anchor_location":"부산대","cohort":"restaurant"},
+    {"id":"restaurant_kyungsung_date_quiet","area":"경성대","query":"경성대에서 데이트하기 좋고 너무 시끄럽지 않은 식당","lat":35.1378,"lng":129.1008,"expected_action":"search","expected_anchor_location":"경성대","cohort":"restaurant"},
+    {"id":"restaurant_haeundae_family_seating","area":"해운대","query":"해운대에서 아이와 가기 좋고 좌석 넓은 식당","lat":35.1631,"lng":129.1636,"expected_action":"search","expected_anchor_location":"해운대","cohort":"restaurant"},
+    {"id":"restaurant_gwangalli_group_view","area":"광안리","query":"광안리에서 전망 좋고 여럿이 먹기 좋은 메뉴가 있는 식당","lat":35.1532,"lng":129.1187,"expected_action":"search","expected_anchor_location":"광안리","cohort":"restaurant"},
+    {"id":"restaurant_nampo_family_room","area":"남포동","query":"남포동에서 가족과 조용히 먹을 개별룸 있는 식당","lat":35.0988,"lng":129.0305,"expected_action":"search","expected_anchor_location":"남포동","cohort":"restaurant"},
+    {"id":"restaurant_busan_station_group_reservation","area":"부산역","query":"부산역 근처 단체석 있고 예약 가능한 식당","lat":35.1151,"lng":129.0414,"expected_action":"search","expected_anchor_location":"부산역","cohort":"restaurant"},
+    {"id":"restaurant_sasang_stroller_child","area":"사상","query":"사상에서 유모차로 들어가기 쉽고 유아의자 있는 식당","lat":35.1629,"lng":128.9846,"expected_action":"search","expected_anchor_location":"사상","cohort":"restaurant"},
+    {"id":"restaurant_yeonsan_accessible","area":"연산","query":"연산동에서 단차 없이 들어가고 엘리베이터 있는 식당","lat":35.1865,"lng":129.0815,"expected_action":"search","expected_anchor_location":"연산동","cohort":"restaurant"},
+    {"id":"restaurant_seomyeon_menu_range","area":"서면","query":"서면에서 메뉴 선택 폭이 넓고 대화하기 좋은 식당","lat":35.1579,"lng":129.0592,"expected_action":"search","expected_anchor_location":"서면","cohort":"restaurant"},
+    {"id":"restaurant_haeundae_wait_parking_tradeoff","area":"해운대","query":"해운대에서 웨이팅이 적고 주차가 어렵지 않은 식당","lat":35.1631,"lng":129.1636,"expected_action":"search","expected_anchor_location":"해운대","cohort":"restaurant"},
+
+    {"id":"pharmacy_seomyeon_nearest","area":"서면","query":"서면역에서 가장 가까운 약국","lat":35.1578,"lng":129.0590,"expected_action":"search","expected_anchor_location":"서면역","expected_any_terms":["약국"],"cohort":"pharmacy"},
+    {"id":"pharmacy_busan_station_open_now","area":"부산역","query":"부산역 근처 지금 문 연 약국","lat":35.1151,"lng":129.0414,"expected_action":"search","expected_anchor_location":"부산역","expected_any_terms":["약국"],"cohort":"pharmacy"},
+    {"id":"pharmacy_haeundae_night","area":"해운대","query":"해운대에서 야간에도 이용 가능한 약국","lat":35.1631,"lng":129.1636,"expected_action":"search","expected_anchor_location":"해운대","expected_any_terms":["약국"],"cohort":"pharmacy"},
+    {"id":"pharmacy_hadan_weekend","area":"하단","query":"하단역 근처 주말에 여는 약국","lat":35.1062,"lng":128.9667,"expected_action":"search","expected_anchor_location":"하단역","expected_any_terms":["약국"],"cohort":"pharmacy"},
+    {"id":"pharmacy_yeonsan_accessible","area":"연산","query":"연산동에서 휠체어로 들어가기 쉬운 약국","lat":35.1865,"lng":129.0815,"expected_action":"search","expected_anchor_location":"연산동","expected_any_terms":["약국"],"cohort":"pharmacy"},
+
+    {"id":"toilet_seomyeon_nearest","area":"서면","query":"서면역에서 가장 가까운 공중화장실","lat":35.1578,"lng":129.0590,"expected_action":"search","expected_anchor_location":"서면역","expected_any_terms":["화장실"],"cohort":"toilet"},
+    {"id":"toilet_busan_station_accessible","area":"부산역","query":"부산역 근처 장애인 화장실","lat":35.1151,"lng":129.0414,"expected_action":"search","expected_anchor_location":"부산역","expected_any_terms":["화장실"],"cohort":"toilet"},
+    {"id":"toilet_gwangalli_baby","area":"광안리","query":"광안리에서 기저귀 교환대 있는 화장실","lat":35.1532,"lng":129.1187,"expected_action":"search","expected_anchor_location":"광안리","expected_any_terms":["화장실"],"cohort":"toilet"},
+    {"id":"toilet_haeundae_always_open","area":"해운대","query":"해운대에서 밤에도 이용 가능한 개방화장실","lat":35.1631,"lng":129.1636,"expected_action":"search","expected_anchor_location":"해운대","expected_any_terms":["화장실"],"cohort":"toilet"},
+    {"id":"toilet_nampo_clean_access","area":"남포동","query":"남포동에서 찾기 쉽고 깨끗한 공중화장실","lat":35.0988,"lng":129.0305,"expected_action":"search","expected_anchor_location":"남포동","expected_any_terms":["화장실"],"cohort":"toilet"},
+
+    {"id":"parking_seomyeon_nearest","area":"서면","query":"서면역에서 가장 가까운 주차장","lat":35.1578,"lng":129.0590,"expected_action":"search","expected_anchor_location":"서면역","expected_any_terms":["주차"],"cohort":"parking"},
+    {"id":"parking_haeundae_value","area":"해운대","query":"해운대에서 요금이 저렴하고 넓은 주차장","lat":35.1631,"lng":129.1636,"expected_action":"search","expected_anchor_location":"해운대","expected_any_terms":["주차"],"cohort":"parking"},
+    {"id":"parking_gwangalli_always_open","area":"광안리","query":"광안리에서 24시간 이용 가능한 주차장","lat":35.1532,"lng":129.1187,"expected_action":"search","expected_anchor_location":"광안리","expected_any_terms":["주차"],"cohort":"parking"},
+    {"id":"parking_busan_station_accessible","area":"부산역","query":"부산역 근처 장애인 주차구역이 있는 주차장","lat":35.1151,"lng":129.0414,"expected_action":"search","expected_anchor_location":"부산역","expected_any_terms":["주차"],"cohort":"parking"},
+    {"id":"parking_nampo_large_vehicle","area":"남포동","query":"남포동에서 대형차도 들어갈 수 있는 주차장","lat":35.0988,"lng":129.0305,"expected_action":"search","expected_anchor_location":"남포동","expected_any_terms":["주차"],"cohort":"parking"},
+
+    {"id":"smoking_yeonsan_outdoor","area":"연산","query":"연산동 실외 흡연구역","lat":35.1865,"lng":129.0815,"expected_action":"search","expected_anchor_location":"연산동","expected_any_terms":["흡연"],"cohort":"smoking_area"},
+    {"id":"smoking_seomyeon_indoor","area":"서면","query":"서면역 근처 실내 흡연실","lat":35.1578,"lng":129.0590,"expected_action":"search","expected_anchor_location":"서면역","expected_any_terms":["흡연"],"cohort":"smoking_area"},
+    {"id":"smoking_busan_station_outdoor","area":"부산역","query":"부산역에서 가장 가까운 실외 흡연구역","lat":35.1151,"lng":129.0414,"expected_action":"search","expected_anchor_location":"부산역","expected_any_terms":["흡연"],"cohort":"smoking_area"},
+    {"id":"smoking_haeundae_outdoor","area":"해운대","query":"해운대에서 건물 밖에 있는 흡연구역","lat":35.1631,"lng":129.1636,"expected_action":"search","expected_anchor_location":"해운대","expected_any_terms":["흡연"],"cohort":"smoking_area"},
+    {"id":"smoking_gwangalli_sheltered","area":"광안리","query":"광안리에서 비를 피할 수 있는 실외 흡연구역","lat":35.1532,"lng":129.1187,"expected_action":"search","expected_anchor_location":"광안리","expected_any_terms":["흡연"],"cohort":"smoking_area"},
+
+    {"id":"shelter_seomyeon_rain","area":"서면","query":"서면역 근처 비 피하면서 앉아 있을 실내 쉼터","lat":35.1578,"lng":129.0590,"expected_action":"search","expected_anchor_location":"서면역","expected_any_terms":["쉼터","휴식","도서관","실내"],"cohort":"shelter"},
+    {"id":"shelter_busan_station_free","area":"부산역","query":"부산역 근처 무료로 앉아 쉴 실내 장소","lat":35.1151,"lng":129.0414,"expected_action":"search","expected_anchor_location":"부산역","expected_any_terms":["쉼터","휴식","도서관","실내"],"cohort":"shelter"},
+    {"id":"shelter_centum_child_rain","area":"센텀","query":"비 오는 날 센텀에서 아이와 갈 실내 휴식 공간","lat":35.1692,"lng":129.1305,"expected_action":"search","expected_anchor_location":"센텀","expected_any_terms":["쉼터","휴식","도서관","실내"],"cohort":"shelter"},
+    {"id":"shelter_haeundae_heat","area":"해운대","query":"해운대에서 더위를 피하고 앉아 있을 실내 장소","lat":35.1631,"lng":129.1636,"expected_action":"search","expected_anchor_location":"해운대","expected_any_terms":["쉼터","휴식","도서관","실내"],"cohort":"shelter"},
+    {"id":"shelter_sasang_cold","area":"사상","query":"사상역 근처 추위를 피할 수 있는 쉼터","lat":35.1629,"lng":128.9846,"expected_action":"search","expected_anchor_location":"사상역","expected_any_terms":["쉼터","휴식","도서관","실내"],"cohort":"shelter"},
+
+    {"id":"walk_gwangalli_waterfront","area":"광안리","query":"광안리에서 바다 보며 걷기 좋은 산책로","lat":35.1532,"lng":129.1187,"expected_action":"search","expected_anchor_location":"광안리","expected_any_terms":["공원","산책","해변","해수욕장"],"cohort":"walk"},
+    {"id":"walk_hadan_quiet_park","area":"하단","query":"하단역 근처 조용히 걷기 좋은 공원","lat":35.1062,"lng":128.9667,"expected_action":"search","expected_anchor_location":"하단역","expected_any_terms":["공원","산책"],"cohort":"walk"},
+    {"id":"walk_haeundae_stroller","area":"해운대","query":"해운대에서 유모차로 다니기 편한 산책로","lat":35.1631,"lng":129.1636,"expected_action":"search","expected_anchor_location":"해운대","expected_any_terms":["공원","산책","해변","해수욕장"],"cohort":"walk"},
+    {"id":"walk_yeonsan_flat","area":"연산","query":"연산동에서 경사가 적고 걷기 편한 산책 장소","lat":35.1865,"lng":129.0815,"expected_action":"search","expected_anchor_location":"연산동","expected_any_terms":["공원","산책"],"cohort":"walk"},
+    {"id":"walk_nampo_night_view","area":"남포동","query":"남포동에서 야경 보며 산책하기 좋은 곳","lat":35.0988,"lng":129.0305,"expected_action":"search","expected_anchor_location":"남포동","expected_any_terms":["공원","산책","전망"],"cohort":"walk"},
+
+    {"id":"shopping_seomyeon_mall","area":"서면","query":"서면에서 백화점이나 쇼핑몰 찾아줘","lat":35.1579,"lng":129.0592,"expected_action":"search","expected_anchor_location":"서면","expected_any_terms":["쇼핑","백화점","아울렛","마트"],"cohort":"shopping"},
+    {"id":"shopping_centum_indoor","area":"센텀","query":"센텀에서 비 오는 날 둘러볼 실내 쇼핑 장소","lat":35.1692,"lng":129.1305,"expected_action":"search","expected_anchor_location":"센텀","expected_any_terms":["쇼핑","백화점","아울렛","마트"],"cohort":"shopping"},
+    {"id":"shopping_busan_station_gift","area":"부산역","query":"부산역 근처 기념품을 살 수 있는 쇼핑 장소","lat":35.1151,"lng":129.0414,"expected_action":"search","expected_anchor_location":"부산역","expected_any_terms":["쇼핑","백화점","아울렛","마트","기념품"],"cohort":"shopping"},
+    {"id":"shopping_sasang_parking","area":"사상","query":"사상에서 주차하기 편한 대형 쇼핑몰","lat":35.1629,"lng":128.9846,"expected_action":"search","expected_anchor_location":"사상","expected_any_terms":["쇼핑","백화점","아울렛","마트"],"cohort":"shopping"},
+    {"id":"shopping_haeundae_exclude_market","area":"해운대","query":"해운대에서 시장 말고 실내 쇼핑할 곳","lat":35.1631,"lng":129.1636,"expected_action":"search","expected_anchor_location":"해운대","expected_any_terms":["쇼핑","백화점","아울렛","마트"],"blocked_terms":["시장"],"cohort":"shopping"}
+  ]
+}
