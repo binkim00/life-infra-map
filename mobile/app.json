@@ -8,7 +8,8 @@
     "scheme": "lifeinframap",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "icon": "./assets/expo.icon",
+      "bundleIdentifier": "com.binkim00.lifeinframap"
     },
     "android": {
       "adaptiveIcon": {
@@ -17,6 +18,10 @@
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
+      "package": "com.binkim00.lifeinframap",
+      "blockedPermissions": [
+        "android.permission.RECORD_AUDIO"
+      ],
       "predictiveBackGestureEnabled": false
     },
     "web": {
@@ -44,7 +49,8 @@
         {
           "photosPermission": "프로필, 게시글, 장소 제보 사진을 선택하기 위해 사진 접근 권한을 사용합니다."
         }
-      ]
+      ],
+      "expo-secure-store"
     ],
     "experiments": {
       "typedRoutes": true,

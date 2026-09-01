@@ -76,3 +76,18 @@ Django `http://100.71.169.91:8000/api`, 로그인·게시판·저장 장소는 S
 활성화됩니다. 공개 배포 전에 HTTPS 주소로 바꾸면 이 예외는 적용되지 않습니다.
 
 연결 전 `npm run check:server`로 Django와 Spring의 health 응답을 확인할 수 있습니다.
+
+## 모바일 빌드
+
+네이티브 앱의 로그인 토큰은 `expo-secure-store`를 통해 Android Keystore와 iOS
+Keychain에 보관합니다. 기존 개발 빌드의 AsyncStorage 토큰은 최초 실행 시 자동으로
+이관됩니다. 웹 빌드는 브라우저 저장소를 계속 사용합니다.
+
+`eas.json`에는 개발, 내부 테스트 APK, 스토어 배포 프로필이 준비돼 있습니다. 공개
+빌드 전 EAS의 `preview`와 `production` 환경에 아래 값을 HTTPS 주소로 등록해야 합니다.
+
+- `EXPO_PUBLIC_DJANGO_API_BASE_URL`
+- `EXPO_PUBLIC_SPRING_API_BASE_URL`
+- `EXPO_PUBLIC_KAKAO_MAP_EMBED_URL`
+
+현재 Tailscale HTTP 주소는 로컬 개발용이며 스토어 배포 주소로 사용하지 않습니다.

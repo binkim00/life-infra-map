@@ -1,4 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as SecureStore from "expo-secure-store";
+import { Platform } from "react-native";
 
 export const DJANGO_API = (
   process.env.EXPO_PUBLIC_DJANGO_API_BASE_URL ||
@@ -22,6 +24,35 @@ const SPRING_PREFIXES = [
 const AUTH_TOKEN_KEY = "authToken";
 const AUTH_USER_KEY = "authUser";
 
+const readAuthToken = async () => {
+  if (Platform.OS === "web") return AsyncStorage.getItem(AUTH_TOKEN_KEY);
+
+  const secureToken = await SecureStore.getItemAsync(AUTH_TOKEN_KEY);
+  if (secureToken) return secureToken;
+
+  // 기존 개발 빌드의 AsyncStorage 토큰을 한 번만 안전 저장소로 옮깁니다.
+  const legacyToken = await AsyncStorage.getItem(AUTH_TOKEN_KEY);
+  if (legacyToken) {
+    await SecureStore.setItemAsync(AUTH_TOKEN_KEY, legacyToken);
+    await AsyncStorage.removeItem(AUTH_TOKEN_KEY);
+  }
+  return legacyToken;
+};
+
+const writeAuthToken = async (token: string) => {
+  if (Platform.OS === "web") {
+    await AsyncStorage.setItem(AUTH_TOKEN_KEY, token);
+    return;
+  }
+  await SecureStore.setItemAsync(AUTH_TOKEN_KEY, token);
+  await AsyncStorage.removeItem(AUTH_TOKEN_KEY);
+};
+
+const clearAuthToken = async () => {
+  await AsyncStorage.removeItem(AUTH_TOKEN_KEY);
+  if (Platform.OS !== "web") await SecureStore.deleteItemAsync(AUTH_TOKEN_KEY);
+};
+
 export class ApiError extends Error {
   status: number;
   data: unknown;
@@ -36,7 +67,7 @@ export class ApiError extends Error {
 export const authStorage = {
   async read() {
     const [token, rawUser] = await Promise.all([
-      AsyncStorage.getItem(AUTH_TOKEN_KEY),
+      readAuthToken(),
       AsyncStorage.getItem(AUTH_USER_KEY),
     ]);
     try {
@@ -46,13 +77,16 @@ export const authStorage = {
     }
   },
   async write(token: string, user: unknown) {
-    await AsyncStorage.multiSet([
-      [AUTH_TOKEN_KEY, token],
-      [AUTH_USER_KEY, JSON.stringify(user)],
+    await Promise.all([
+      writeAuthToken(token),
+      AsyncStorage.setItem(AUTH_USER_KEY, JSON.stringify(user)),
     ]);
   },
   async clear() {
-    await AsyncStorage.multiRemove([AUTH_TOKEN_KEY, AUTH_USER_KEY]);
+    await Promise.all([
+      clearAuthToken(),
+      AsyncStorage.removeItem(AUTH_USER_KEY),
+    ]);
   },
 };
 

@@ -1,6 +1,23 @@
 const DEFAULT_DJANGO_API = "http://100.71.169.91:8000/api";
+const PUBLIC_API_ENV_NAMES = [
+  "EXPO_PUBLIC_DJANGO_API_BASE_URL",
+  "EXPO_PUBLIC_SPRING_API_BASE_URL",
+  "EXPO_PUBLIC_KAKAO_MAP_EMBED_URL",
+];
 
 module.exports = ({ config }) => {
+  if (process.env.EAS_BUILD_PROFILE === "production") {
+    const invalidNames = PUBLIC_API_ENV_NAMES.filter((name) => {
+      const value = process.env[name] || "";
+      return !value.startsWith("https://");
+    });
+    if (invalidNames.length) {
+      throw new Error(
+        `Production builds require HTTPS values for: ${invalidNames.join(", ")}`,
+      );
+    }
+  }
+
   const djangoApi =
     process.env.EXPO_PUBLIC_DJANGO_API_BASE_URL || DEFAULT_DJANGO_API;
   const allowHttpApi = djangoApi.startsWith("http://");
