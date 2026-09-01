@@ -2696,12 +2696,46 @@ def collect_db_candidates(frame, *, lat=None, lng=None, limit=50, radius=None):
         # scan the global GiST order almost completely because category is not
         # part of that index. Sorting the bounded slim rows in Python preserves
         # exact nearest-N selection without loading Place.raw or joining tags.
-            coordinate_rows = list(queryset.values_list("id", "lat", "lng"))
+            coordinate_rows = list(queryset.values_list(
+                "id", "lat", "lng", "address", "detail_location", "name",
+                "data_quality_score",
+            ))
             coordinate_rows.sort(
                 key=lambda row: _distance(lat, lng, row[1], row[2])
                 if row[1] is not None and row[2] is not None else float("inf")
             )
-            ordered_ids = [row[0] for row in coordinate_rows[:candidate_limit]]
+            candidate_rows = coordinate_rows[:candidate_limit]
+            hydration_rows = candidate_rows
+            if _result_diversity_enabled(frame) and len(candidate_rows) > max(limit * 2, 90):
+                nearest_count = min(len(candidate_rows), max(limit, 60))
+                quality_count = min(len(candidate_rows), max(math.ceil(limit / 2), 20))
+                quality_rows = sorted(
+                    candidate_rows,
+                    key=lambda row: -_as_int(row[6], 0),
+                )[:quality_count]
+                slim_candidates = [{
+                    "id": f"db:{row[0]}",
+                    "name": row[5],
+                    "address": row[3] or row[4] or "",
+                    "category": direct_category_codes[0] if len(direct_category_codes) == 1 else "",
+                } for row in candidate_rows]
+                diverse_ids = {
+                    _as_int(_clean_text(candidate.get("id")).split(":")[-1], 0)
+                    for candidate in _balance_candidate_pool_for_diversity(
+                        slim_candidates,
+                        frame,
+                        limit=limit,
+                    )
+                }
+                hydration_ids = {
+                    *(row[0] for row in candidate_rows[:nearest_count]),
+                    *(row[0] for row in quality_rows),
+                    *diverse_ids,
+                }
+                hydration_rows = [
+                    row for row in candidate_rows if row[0] in hydration_ids
+                ]
+            ordered_ids = [row[0] for row in hydration_rows]
             places_by_id = {
                 place.id: place
                 for place in detail_queryset(
