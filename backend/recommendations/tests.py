@@ -56,7 +56,10 @@ class RecommendationSearchTests(TestCase):
     REPO_ROOT = Path(__file__).resolve().parents[2]
 
     def _repo_file_text(self, relative_path):
-        return (self.REPO_ROOT / relative_path).read_text(encoding="utf-8")
+        path = self.REPO_ROOT / relative_path
+        if not path.exists():
+            self.skipTest(f"Repository source is not included in this backend-only image: {relative_path}")
+        return path.read_text(encoding="utf-8")
 
     def setUp(self):
         self._media_root = tempfile.mkdtemp()

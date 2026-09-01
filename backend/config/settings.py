@@ -16,6 +16,7 @@ from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+IS_TESTING = "test" in sys.argv
 
 load_dotenv(BASE_DIR / ".env")
 
@@ -60,7 +61,11 @@ def _env_list(name, default=()):
 
 
 KAKAO_REST_API_KEY = os.getenv("KAKAO_REST_API_KEY")
-AI_PROVIDER = os.getenv("AI_PROVIDER", "openai").strip().lower()
+AI_PROVIDER = (
+    os.getenv("TEST_AI_PROVIDER", "gms")
+    if IS_TESTING
+    else os.getenv("AI_PROVIDER", "openai")
+).strip().lower()
 AI_WEB_SEARCH_ENABLED = _env_bool("AI_WEB_SEARCH_ENABLED", False)
 AI_WEB_SEARCH_PROVIDER = os.getenv("AI_WEB_SEARCH_PROVIDER", "naver_search").strip().lower()
 AI_WEB_SEARCH_SUMMARY_PROVIDER = os.getenv("AI_WEB_SEARCH_SUMMARY_PROVIDER", "").strip().lower()
@@ -188,7 +193,6 @@ TAG_COLLECTION_READINESS_THRESHOLDS = {
     "max_stale": _env_float("TAG_COLLECTION_READY_MAX_STALE", 0.40, 0, 1),
 }
 OPENAI_API_BASE_URL = os.getenv("OPENAI_API_BASE_URL", "https://api.openai.com/v1")
-IS_TESTING = "test" in sys.argv
 AI_PROVIDER_CONFIGURED = (
     (
         AI_PROVIDER == "gms"
