@@ -2696,15 +2696,28 @@ def collect_db_candidates(frame, *, lat=None, lng=None, limit=50, radius=None):
         # scan the global GiST order almost completely because category is not
         # part of that index. Sorting the bounded slim rows in Python preserves
         # exact nearest-N selection without loading Place.raw or joining tags.
-            coordinate_rows = list(queryset.values_list(
-                "id", "lat", "lng", "address", "detail_location", "name",
-                "data_quality_score",
-            ))
+            coordinate_rows = list(queryset.values_list("id", "lat", "lng"))
             coordinate_rows.sort(
                 key=lambda row: _distance(lat, lng, row[1], row[2])
                 if row[1] is not None and row[2] is not None else float("inf")
             )
-            candidate_rows = coordinate_rows[:candidate_limit]
+            candidate_coordinate_rows = coordinate_rows[:candidate_limit]
+            candidate_ids = [row[0] for row in candidate_coordinate_rows]
+            slim_rows_by_id = {
+                row[0]: row
+                for row in Place.objects.filter(id__in=candidate_ids).values_list(
+                    "id", "address", "detail_location", "name", "data_quality_score",
+                )
+            }
+            candidate_rows = [
+                (
+                    row[0], row[1], row[2],
+                    slim_rows_by_id[row[0]][1], slim_rows_by_id[row[0]][2],
+                    slim_rows_by_id[row[0]][3], slim_rows_by_id[row[0]][4],
+                )
+                for row in candidate_coordinate_rows
+                if row[0] in slim_rows_by_id
+            ]
             hydration_rows = candidate_rows
             if _result_diversity_enabled(frame) and len(candidate_rows) > max(limit * 2, 90):
                 nearest_count = min(len(candidate_rows), max(limit, 60))
