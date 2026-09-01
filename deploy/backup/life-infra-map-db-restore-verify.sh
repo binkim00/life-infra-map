@@ -14,9 +14,15 @@ backup_file="${work_dir}/latest.dump"
 metadata_file="${work_dir}/metadata.json"
 
 cleanup() {
+  exit_code=$?
+  if [ "$exit_code" -ne 0 ] && docker inspect "$container_name" >/dev/null 2>&1; then
+    echo "Restore verification container logs:" >&2
+    docker logs --tail 80 "$container_name" >&2 || true
+  fi
   docker rm -f -- "$container_name" >/dev/null 2>&1 || true
   docker volume rm -- "$volume_name" >/dev/null 2>&1 || true
   rm -rf -- "$work_dir"
+  return "$exit_code"
 }
 trap cleanup EXIT
 
@@ -52,7 +58,7 @@ with open(os.environ["metadata_file"], "w", encoding="utf-8") as handle:
 PY
 
 docker volume create "$volume_name" >/dev/null
-docker run -d --name "$container_name" --network none \
+docker run -d --name "$container_name" --network none --shm-size=512m \
   -e POSTGRES_PASSWORD=restore_verify_only \
   -e POSTGRES_DB=life_infra_restore \
   -v "${volume_name}:/var/lib/postgresql/data" \
