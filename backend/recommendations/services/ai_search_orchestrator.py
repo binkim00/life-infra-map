@@ -8,6 +8,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from django.conf import settings
 from django.db.models import Q
 from django.db.models.expressions import RawSQL
+from django.db.models.fields.json import KeyTextTransform
 
 from recommendations.models import Place
 from recommendations.services.ai_candidate_reranker import _hybrid_score, semantic_rerank_candidates
@@ -2395,9 +2396,8 @@ def _restaurant_business_profile(place):
     if place.category != "restaurant":
         return {"excluded": False, "score": 0, "reason": "not_restaurant"}
 
-    raw = place.raw if isinstance(place.raw, dict) else {}
-    business_type = _clean_text(raw.get("business_type"))
-    dataset = _clean_text(raw.get("dataset")).lower()
+    business_type = _clean_text(getattr(place, "collect_business_type", ""))
+    dataset = _clean_text(getattr(place, "collect_source_dataset", "")).lower()
     name = _clean_text(place.name)
     upper_name = name.upper()
     compact_name = re.sub(r"[\s_-]+", "", upper_name)
@@ -2619,19 +2619,20 @@ def collect_db_candidates(frame, *, lat=None, lng=None, limit=50, radius=None):
             lng__lte=bounds["lng_max"],
         )
 
-    candidate_limit = max(limit * 5, 100)
+    candidate_limit = max(limit * 3, 100)
     # Exact category searches do not need a five-times-wide hydrated Place
     # window: non-restaurant rows are neither business-profile filtered nor
     # evidence-sorted before the final slice. Keep a small margin for the
     # rectangular bounds versus the exact radius, while avoiding decoding the
     # large raw JSON field and prefetching tags for rows that can never surface.
     if direct_category_codes and not restaurant_search and "pharmacy" not in direct_category_codes:
-        candidate_limit = max(limit * 2, 60)
+        candidate_limit = max(math.ceil(limit * 4 / 3), 60)
 
     def detail_queryset(queryset):
-        if restaurant_search:
-            return queryset
-        return queryset.defer("raw")
+        return queryset.annotate(
+            collect_business_type=KeyTextTransform("business_type", "raw"),
+            collect_source_dataset=KeyTextTransform("dataset", "raw"),
+        ).defer("raw")
 
     if direct_category_codes and bounds and lat is not None and lng is not None:
         bounded_count = queryset.count()
@@ -2707,7 +2708,6 @@ def collect_db_candidates(frame, *, lat=None, lng=None, limit=50, radius=None):
         confidence_level = "high" if level == "strong" else "medium" if level == "medium" else "low"
         if policy_unmet:
             confidence_level = "low"
-        raw_metadata = place.raw if restaurant_search and isinstance(place.raw, dict) else {}
         candidate = {
             **_candidate_base(
                 f"db:{place.id}",
@@ -2722,12 +2722,8 @@ def collect_db_candidates(frame, *, lat=None, lng=None, limit=50, radius=None):
             "place_id": place.id,
             "external_id": place.external_id,
             "source_name": place.source_name,
-            "business_type": _clean_text(
-                raw_metadata.get("business_type")
-            ),
-            "source_dataset": _clean_text(
-                raw_metadata.get("dataset")
-            ),
+            "business_type": _clean_text(getattr(place, "collect_business_type", "")),
+            "source_dataset": _clean_text(getattr(place, "collect_source_dataset", "")),
             "db_business_fit_score": business_profile["score"],
             "db_business_fit_reason": business_profile["reason"],
             "data_quality_score": place.data_quality_score,
