@@ -71,7 +71,18 @@ def has_kakao_source_hint(place):
 
 
 def get_kakao_place_url(place):
-    raw_url = _find_kakao_place_url(getattr(place, "raw", {}) or {})
+    annotated_url = _find_kakao_place_url({
+        "kakao_place_url": getattr(place, "collect_kakao_place_url", ""),
+        "kakao_url": getattr(place, "collect_kakao_url", ""),
+        "place_url": getattr(place, "collect_place_url", ""),
+        "detail_url": getattr(place, "collect_detail_url", ""),
+    })
+    if annotated_url:
+        return annotated_url
+
+    # A deferred JSON field must remain deferred here; touching it would issue
+    # one query per result during recommendation serialization.
+    raw_url = _find_kakao_place_url(place.__dict__.get("raw", {}) or {})
     if raw_url:
         return raw_url
 

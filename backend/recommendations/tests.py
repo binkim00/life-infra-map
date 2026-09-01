@@ -3437,6 +3437,27 @@ class RecommendationSearchTests(TestCase):
         self.assertIn("toilet", codes)
         self.assertNotIn("cafe", codes)
 
+    def test_kakao_place_url_uses_annotation_without_loading_deferred_raw(self):
+        from recommendations.services.place_urls import get_kakao_place_url
+
+        class DeferredPlace:
+            source = "kakao_local"
+            source_name = "카카오"
+            external_id = "987654321"
+            collect_kakao_place_url = ""
+            collect_kakao_url = ""
+            collect_place_url = "https://place.map.kakao.com/987654321"
+            collect_detail_url = ""
+
+            @property
+            def raw(self):
+                raise AssertionError("deferred raw must not be loaded")
+
+        self.assertEqual(
+            get_kakao_place_url(DeferredPlace()),
+            "https://place.map.kakao.com/987654321",
+        )
+
     def test_collect_db_candidates_prefers_direct_category_over_tag_only_for_cafe(self):
         from recommendations.services.ai_search_orchestrator import collect_db_candidates
 

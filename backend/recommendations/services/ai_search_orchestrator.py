@@ -2667,6 +2667,10 @@ def collect_db_candidates(frame, *, lat=None, lng=None, limit=50, radius=None):
         return queryset.annotate(
             collect_business_type=KeyTextTransform("business_type", "raw"),
             collect_source_dataset=KeyTextTransform("dataset", "raw"),
+            collect_kakao_place_url=KeyTextTransform("kakao_place_url", "raw"),
+            collect_kakao_url=KeyTextTransform("kakao_url", "raw"),
+            collect_place_url=KeyTextTransform("place_url", "raw"),
+            collect_detail_url=KeyTextTransform("detail_url", "raw"),
         ).defer("raw")
 
     if direct_category_codes and bounds and lat is not None and lng is not None:
