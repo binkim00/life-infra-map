@@ -147,6 +147,30 @@ class CommonSearchHardGateTests(TestCase):
                 removed[0]["hard_gate_violations"][0]["type"], "category",
             )
 
+    def test_weather_shelter_allows_planned_category_alternatives(self):
+        candidates = [
+            self._candidate(candidate_source="kakao", category="카페"),
+            self._candidate(candidate_source="kakao", category="문화,예술 > 도서관"),
+            self._candidate(candidate_source="kakao", category="가정,생활 > 쇼핑센터"),
+            self._candidate(candidate_source="kakao", category="음식점 > 한식"),
+        ]
+        frame = {
+            "situation": "weather_shelter",
+            "candidate_category_codes": ["cafe", "library", "shelter", "shopping"],
+        }
+
+        kept, removed, _ = apply_common_hard_gate(
+            candidates,
+            "비 피하면서 앉아 있을 실내 쉼터",
+            frame,
+        )
+
+        self.assertEqual(
+            {row["category"] for row in kept},
+            {"카페", "문화,예술 > 도서관", "가정,생활 > 쇼핑센터"},
+        )
+        self.assertEqual([row["category"] for row in removed], ["음식점 > 한식"])
+
     def test_explicit_region_rejects_other_region(self):
         candidate = self._candidate(address="부산광역시 부산진구")
         kept, removed, _ = apply_common_hard_gate([candidate], "서울 카페", {})

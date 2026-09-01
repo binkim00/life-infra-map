@@ -27,9 +27,14 @@ PLACE_CATEGORY_ALIASES = {
     "beach": ["beach", "해수욕장", "해변", "바다"],
     "parking": ["parking", "주차", "주차장"],
     "city_park": ["city_park", "citypark", "공원", "도시공원"],
+    "library": ["library", "도서관", "공공도서관", "작은도서관"],
     "tourism": ["tourism", "관광", "관광지", "여행", "명소"],
     "cafe": ["cafe", "카페", "커피", "커피숍", "카페테리아"],
     "shelter": ["shelter", "쉼터", "무더위쉼터", "한파쉼터"],
+    "shopping": [
+        "shopping", "쇼핑", "쇼핑몰", "백화점", "아울렛",
+        "복합쇼핑몰", "쇼핑센터", "대형마트", "마트",
+    ],
     "pharmacy": ["pharmacy", "약국"],
     "hospital": ["hospital", "병원", "의원", "응급실"],
 }

@@ -133,6 +133,18 @@ def explicit_region(query):
 def hard_gate_requirements(query, frame):
     frame = frame or {}
     query_categories = explicit_query_categories(query)
+    if (
+        query_categories == ["shelter"]
+        and compact(frame.get("situation")) == "weathershelter"
+    ):
+        # In weather-avoidance requests, "쉼터" describes the purpose rather
+        # than requiring a facility whose canonical category is shelter. The
+        # intent planner deliberately routes cafes, libraries and shopping
+        # facilities as honest alternatives when their indoor suitability is
+        # not yet verified.
+        query_categories = list(dict.fromkeys(
+            frame.get("candidate_category_codes") or query_categories
+        ))
     frame_categories = []
     if not query_categories:
         direct_text = compact(" ".join([
