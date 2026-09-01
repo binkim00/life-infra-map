@@ -53,10 +53,16 @@ sudo install -m 0644 deploy/backup/life-infra-map-db-backup.service \
   /etc/systemd/system/life-infra-map-db-backup.service
 sudo install -m 0644 deploy/backup/life-infra-map-db-backup.timer \
   /etc/systemd/system/life-infra-map-db-backup.timer
+sudo install -m 0755 deploy/backup/life-infra-map-db-restore-verify.sh \
+  /usr/local/bin/life-infra-map-db-restore-verify.sh
+sudo install -m 0644 deploy/backup/life-infra-map-db-restore-verify.service \
+  /etc/systemd/system/life-infra-map-db-restore-verify.service
+sudo install -m 0644 deploy/backup/life-infra-map-db-restore-verify.timer \
+  /etc/systemd/system/life-infra-map-db-restore-verify.timer
 sudo install -m 0600 deploy/backup/life-infra-map-db-backup.env.example \
   /etc/default/life-infra-map-db-backup
 sudo systemctl daemon-reload
-sudo systemctl enable --now life-infra-map-db-backup.timer
+sudo systemctl enable --now life-infra-map-db-backup.timer life-infra-map-db-restore-verify.timer
 ```
 
 기본 실행 시각은 매일 UTC 02:30, 한국 시각 11:30이며 최대 10분의 무작위
@@ -74,3 +80,7 @@ sudo journalctl -u life-infra-map-db-backup.service --no-pager -n 100
 업로드 전 `pg_restore --list`로 archive를 읽을 수 있는지 검사합니다. 최초 구성
 시에는 S3 객체를 다시 내려받아 별도 임시 DB에 복원하고 주요 테이블 건수와
 PostGIS 동작을 확인합니다.
+
+`life-infra-map-db-restore-verify.timer`는 매월 첫 일요일에 최신 S3 dump를 내려받아
+운영 DB 네트워크와 분리된 임시 PostGIS 컨테이너에 복원합니다. 장소·근거 테이블 건수와
+PostGIS 확장을 확인한 뒤 임시 컨테이너, 볼륨, dump를 모두 삭제합니다.

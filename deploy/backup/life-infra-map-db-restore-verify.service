@@ -1,0 +1,13 @@
+[Unit]
+Description=Verify the latest life-infra-map database backup by isolated restore
+After=docker.service network-online.target
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/default/life-infra-map-db-backup
+ExecStart=/usr/local/bin/life-infra-map-db-restore-verify.sh
+TimeoutStartSec=45min
+NoNewPrivileges=true
+

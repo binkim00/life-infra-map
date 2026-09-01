@@ -1,0 +1,11 @@
+[Unit]
+Description=Verify a life-infra-map database backup monthly
+
+[Timer]
+OnCalendar=Sun *-*-01..07 04:30:00 UTC
+RandomizedDelaySec=15m
+Persistent=true
+Unit=life-infra-map-db-restore-verify.service
+
+[Install]
+WantedBy=timers.target
