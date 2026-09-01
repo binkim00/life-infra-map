@@ -35,24 +35,4 @@ export const AI_SEARCH_PRESETS = [
     label: '흡연 가능한 곳',
     query: '흡연 가능한 곳',
   },
-  {
-    label: '근처 화장실',
-    query: '근처 화장실 찾아줘',
-  },
-  {
-    label: '가까운 편의점',
-    query: '가까운 편의점 찾아줘',
-  },
-  {
-    label: '근처 약국',
-    query: '근처 약국 찾아줘',
-  },
-  {
-    label: '주차장',
-    query: '근처 주차장 찾아줘',
-  },
-  {
-    label: '주변 공원',
-    query: '주변 공원 찾아줘',
-  },
 ]

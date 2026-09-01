@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 
 import { searchMapPlaces } from '@/api/recommendation'
 import KakaoMap from '@/components/KakaoMap'
@@ -127,6 +127,8 @@ const normalizePlace = (place, index) => {
 
 const MapSearchView = () => {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const initialQueryRef = useRef(searchParams.get('q')?.trim() || '')
   const {
     savingPlaceId,
     saveMessage,
@@ -135,14 +137,14 @@ const MapSearchView = () => {
     savePlace: handleSavePlace,
   } = useSavedPlaceActions()
 
-  const [query, setQuery] = useState('')
+  const [query, setQuery] = useState(initialQueryRef.current)
   const [source, setSource] = useState('all')
   const [places, setPlaces] = useState([])
   const [selectedPlace, setSelectedPlace] = useState(null)
   const [fitBoundsKey, setFitBoundsKey] = useState(0)
   const [isLoading, setIsLoading] = useState(false)
   const [message, setMessage] = useState(
-    '장소명, 주소, 태그를 그대로 검색할 수 있어요. 여러 단어를 함께 써도 됩니다.',
+    '장소명, 주소, 업종을 빠르게 검색할 수 있어요.',
   )
   const [counts, setCounts] = useState({ db: 0, kakao: 0, db_total: 0 })
   const [droppedTokens, setDroppedTokens] = useState([])
@@ -213,6 +215,14 @@ const MapSearchView = () => {
     }
   }
 
+  useEffect(() => {
+    if (!initialQueryRef.current) return
+    initialQueryRef.current = ''
+    runSearch()
+    // URL에서 전달된 최초 검색어는 화면 진입 시 한 번만 실행합니다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const handleCenterChange = ({ center }) => {
     if (!center) return
     mapCenterRef.current = {
@@ -259,7 +269,7 @@ const MapSearchView = () => {
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 type="search"
-                placeholder="예: 서면 조용한 카페, 주차장 말고 화장실, 부산시청"
+                placeholder="예: 서면역 약국, 광안리 주차장, 부산시청"
               />
             </label>
 

@@ -20,6 +20,8 @@ urlpatterns = [
 
     # 검색
     path("places/", views.place_list),
+    path("place-search/", views.map_place_search),
+    # 이전 웹 클라이언트와 운영 도구의 호환 경로입니다.
     path("map-search/", views.map_place_search),
     path("search/", views.recommendation_search),
     path("ai-search/candidates/", views.ai_recommendation_candidates),

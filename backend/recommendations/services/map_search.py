@@ -30,6 +30,8 @@ PLACE_CATEGORY_ALIASES = {
     "tourism": ["tourism", "관광", "관광지", "여행", "명소"],
     "cafe": ["cafe", "카페", "커피", "커피숍", "카페테리아"],
     "shelter": ["shelter", "쉼터", "무더위쉼터", "한파쉼터"],
+    "pharmacy": ["pharmacy", "약국"],
+    "hospital": ["hospital", "병원", "의원", "응급실"],
 }
 
 PLACE_CATEGORY_ALIASES["restaurant"] = [

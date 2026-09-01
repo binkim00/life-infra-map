@@ -30,8 +30,10 @@ from .serializers import (
 )
 from .services.kakao_local import search_places_by_keyword
 from .services.map_search import (
+    get_matching_categories,
     load_places_by_ids,
     search_saved_places,
+    tokenize_query,
 )
 from .services.operations_dashboard import build_operations_dashboard
 from .services.place_mapper import (
@@ -883,14 +885,39 @@ def map_place_search(request):
     query_info = {}
     kakao_results = []
     kakao_error = ""
+    is_separated_place_search = request.path.rstrip("/").endswith("place-search")
+    basic_db_skipped = False
 
-    if source in {"all", "db"}:
+    db_queryset = None
+    if is_separated_place_search and keyword and source == "all":
+        include_tokens, _ = tokenize_query(keyword)
+        matched_basic_categories = get_matching_categories(keyword)
+        public_infra_categories = set(DB_MARKER_ALLOWED_CATEGORIES) | {"shelter"}
+        usable_db_categories = [
+            category for category in matched_basic_categories
+            if category in public_infra_categories
+        ]
+
+        # 일반 상호명·업종 검색은 최신성과 속도가 중요한 카카오 결과를 우선합니다.
+        # 공공 생활시설은 DB가 더 풍부하므로, 위치 표현이 따로 섞이지 않은 경우만
+        # 카테고리+공간 인덱스로 좁혀 함께 조회합니다.
+        has_location_anchor = any(
+            token.endswith(("역", "동", "구", "시", "군", "읍", "면", "리"))
+            for token in include_tokens
+        )
+        if usable_db_categories and not has_location_anchor:
+            db_queryset = Place.objects.filter(category__in=usable_db_categories)
+        else:
+            basic_db_skipped = True
+
+    if source in {"all", "db"} and not basic_db_skipped:
         db_results, db_total_count, query_info = search_saved_map_places(
             keyword=keyword,
             lat=lat,
             lng=lng,
             radius=radius,
             limit=limit,
+            queryset=db_queryset,
         )
 
     if keyword and source in {"all", "kakao"}:
@@ -945,6 +972,9 @@ def map_place_search(request):
     ]
 
     return Response({
+        "search_mode": "place_search",
+        "recommendation_applied": False,
+        "db_search_skipped": basic_db_skipped,
         "query": keyword,
         "count": len(combined_results),
         "candidate_counts": {

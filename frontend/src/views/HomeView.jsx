@@ -1,4 +1,5 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 
 import KakaoMap from '@/components/KakaoMap'
 import {
@@ -36,8 +37,10 @@ const isSearchErrorMessage = (message = '') => {
 }
 
 const HomeView = ({ initialTab = 'search' }) => {
+  const navigate = useNavigate()
   const home = useHomeSearch({ initialTab })
   const { state: s, setStateValue } = home
+  const [placeSearchKeyword, setPlaceSearchKeyword] = useState('')
 
   const {
     savingPlaceId,
@@ -340,6 +343,12 @@ const HomeView = ({ initialTab = 'search' }) => {
 
   const isIdleLanding = s.activeTab === 'search' && !hasSearchExperienceContent
 
+  const openPlaceSearch = (event) => {
+    event?.preventDefault?.()
+    const query = placeSearchKeyword.trim()
+    navigate(query ? `/map?q=${encodeURIComponent(query)}` : '/map')
+  }
+
   return (
     <main className={mainClassName}>
       {isIdleLanding ? (
@@ -348,7 +357,7 @@ const HomeView = ({ initialTab = 'search' }) => {
             <p className="eyebrow">상황 기반 장소 추천 지도 서비스</p>
             <h1>지금 필요한 장소를 검색해보세요</h1>
             <p className="description">
-              예: 조용히 노트북 할 카페, 근처 화장실, 산책하기 좋은 곳
+              예: 조용히 노트북 할 카페, 비 오는 날 쉴 곳, 산책하기 좋은 곳
             </p>
           </div>
 
@@ -382,8 +391,24 @@ const HomeView = ({ initialTab = 'search' }) => {
           </div>
 
           <p className="search-idle-hint">
-            검색하면 지도와 추천 결과를 한 화면에서 함께 보여드릴게요.
+            상황과 조건을 분석해 이유가 있는 추천을 보여드릴게요.
           </p>
+
+          <form className="place-search-entry" onSubmit={openPlaceSearch}>
+            <div>
+              <strong>장소명이나 업종만 찾고 있나요?</strong>
+              <span>추천 분석 없이 카페·약국·주차장 같은 장소를 빠르게 검색합니다.</span>
+            </div>
+            <label htmlFor="landing-place-search">일반 장소 검색</label>
+            <input
+              id="landing-place-search"
+              value={placeSearchKeyword}
+              onChange={(event) => setPlaceSearchKeyword(event.target.value)}
+              type="search"
+              placeholder="예: 서면역 약국, 광안리 주차장"
+            />
+            <button type="submit">일반 검색</button>
+          </form>
         </section>
       ) : (
         <section

@@ -7420,6 +7420,8 @@ class RecommendationSearchTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         data = response.json()
+        self.assertEqual(data["search_mode"], "place_search")
+        self.assertFalse(data["recommendation_applied"])
         sources = {item["result_source"] for item in data["results"]}
         self.assertIn("db", sources)
         self.assertIn("kakao", sources)
@@ -7428,6 +7430,41 @@ class RecommendationSearchTests(TestCase):
         self.assertEqual(kakao_result["place_url"], "https://place.map.kakao.com/987654321")
         self.assertEqual(kakao_result["kakao_place_url"], "https://place.map.kakao.com/987654321")
         self.assertEqual(kakao_result["source_label"], "카카오 장소")
+
+    @patch("recommendations.views.search_saved_map_places")
+    @patch("recommendations.views.search_places_by_keyword")
+    def test_separated_place_search_uses_fast_kakao_path_for_basic_business_search(
+        self,
+        mock_kakao,
+        mock_db_search,
+    ):
+        mock_kakao.return_value = {
+            "documents": [{
+                "id": "pharmacy-1",
+                "place_name": "서면 빠른약국",
+                "category_name": "의료,건강 > 약국",
+                "road_address_name": "부산 부산진구 중앙대로 1",
+                "address_name": "부산 부산진구",
+                "x": "129.0590",
+                "y": "35.1577",
+                "distance": "120",
+                "place_url": "https://place.map.kakao.com/pharmacy-1",
+            }]
+        }
+
+        response = self.client.get(
+            "/api/recommendations/place-search/",
+            {"q": "서면역 약국", "source": "all", "lat": 35.1577, "lng": 129.0590},
+            HTTP_HOST="localhost",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["search_mode"], "place_search")
+        self.assertFalse(data["recommendation_applied"])
+        self.assertTrue(data["db_search_skipped"])
+        self.assertEqual(data["results"][0]["name"], "서면 빠른약국")
+        mock_db_search.assert_not_called()
 
     @patch("recommendations.views.search_places_by_keyword")
     def test_general_map_search_removes_kakao_duplicate_when_db_has_external_id(self, mock_kakao):

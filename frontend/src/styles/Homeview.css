@@ -139,6 +139,79 @@ h1 {
   font-weight: 800;
 }
 
+.place-search-entry {
+  width: min(720px, 100%);
+  margin-top: 24px;
+  padding: 16px;
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(180px, 1.1fr) auto;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid #d8e2de;
+  border-radius: 18px;
+  background: rgba(247, 251, 250, 0.94);
+}
+
+.place-search-entry div {
+  display: grid;
+  gap: 5px;
+}
+
+.place-search-entry strong {
+  color: #222222;
+  font-size: 14px;
+}
+
+.place-search-entry span {
+  color: #667085;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.place-search-entry label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+}
+
+.place-search-entry input {
+  min-width: 0;
+  padding: 13px 14px;
+  border: 1px solid #cfd9d5;
+  border-radius: 12px;
+  outline: none;
+  background: #ffffff;
+  color: #222222;
+  font-size: 13px;
+}
+
+.place-search-entry input:focus {
+  border-color: #0f766e;
+}
+
+.place-search-entry button {
+  min-height: 44px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 12px;
+  background: #0f766e;
+  color: #ffffff;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+@media (max-width: 720px) {
+  .place-search-entry {
+    grid-template-columns: 1fr;
+  }
+
+  .place-search-entry button {
+    min-height: 46px;
+  }
+}
+
 .map-section-wrap {
   width: 100%;
   max-width: none;

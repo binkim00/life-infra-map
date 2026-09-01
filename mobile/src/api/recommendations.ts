@@ -1,9 +1,9 @@
-import { apiRequest } from "./client";
+import { ApiError, apiRequest } from "./client";
 import type { MapSearchResponse } from "@/types/place";
 
 export const recommendationApi = {
   mapSearch: (params: Record<string, unknown>, signal?: AbortSignal) =>
-    apiRequest<MapSearchResponse>("/recommendations/map-search/", {
+    apiRequest<MapSearchResponse>("/recommendations/place-search/", {
       params: params as Record<string, string | number>,
       signal,
     }),
@@ -108,8 +108,15 @@ export async function searchMapPlaces({
   limit?: number;
   signal?: AbortSignal;
 }) {
-  return recommendationApi.mapSearch(
-    { q: query.trim(), source: "all", lat, lng, limit },
-    signal,
-  );
+  const params = { q: query.trim(), source: "all", lat, lng, limit };
+  try {
+    return await recommendationApi.mapSearch(params, signal);
+  } catch (error) {
+    if (!(error instanceof ApiError) || ![404, 405].includes(error.status))
+      throw error;
+    return apiRequest<MapSearchResponse>("/recommendations/map-search/", {
+      params,
+      signal,
+    });
+  }
 }

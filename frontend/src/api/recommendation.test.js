@@ -1,16 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { post } = vi.hoisted(() => ({ post: vi.fn() }))
+const { get, post } = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }))
 
 vi.mock('@/api/axios', () => ({
-  default: { post },
+  default: { get, post },
 }))
 
-import { aiSearchRecommendations, startNewConversationSession } from './recommendation'
+import {
+  aiSearchRecommendations,
+  searchMapPlaces,
+  startNewConversationSession,
+} from './recommendation'
 
 describe('conversation search API', () => {
   beforeEach(() => {
     post.mockReset()
+    get.mockReset()
     sessionStorage.clear()
     startNewConversationSession()
   })
@@ -61,5 +66,38 @@ describe('conversation search API', () => {
     startNewConversationSession()
 
     expect(sessionStorage.getItem('lifeInfraMap.conversationSession.v1')).toBeNull()
+  })
+})
+
+describe('general place search API', () => {
+  beforeEach(() => {
+    get.mockReset()
+  })
+
+  it('uses the separated place-search contract', async () => {
+    get.mockResolvedValueOnce({ data: { search_mode: 'place_search', results: [] } })
+
+    await searchMapPlaces({ q: '서면역 약국' })
+
+    expect(get).toHaveBeenCalledTimes(1)
+    expect(get).toHaveBeenCalledWith(
+      '/recommendations/place-search/',
+      expect.objectContaining({ params: expect.objectContaining({ q: '서면역 약국' }) }),
+    )
+  })
+
+  it('retries the legacy map-search endpoint while the server is rolling out', async () => {
+    get
+      .mockRejectedValueOnce({ response: { status: 404 } })
+      .mockResolvedValueOnce({ data: { results: [{ id: 1, name: '동보약국' }] } })
+
+    const result = await searchMapPlaces({ q: '서면역 약국' })
+
+    expect(result.results[0].name).toBe('동보약국')
+    expect(get).toHaveBeenNthCalledWith(
+      2,
+      '/recommendations/map-search/',
+      expect.objectContaining({ params: expect.objectContaining({ q: '서면역 약국' }) }),
+    )
   })
 })

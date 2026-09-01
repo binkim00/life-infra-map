@@ -42,6 +42,7 @@ describe('isSpringPath - Django 가 계속 담당하는 경로', () => {
     '/recommendations/conversational-search-plan/',
     '/recommendations/ai-web-search/',
     '/recommendations/places/',
+    '/recommendations/place-search/',
     '/recommendations/map-search/',
     '/recommendations/kakao-place-tags/',
     '/recommendations/search-logs/',

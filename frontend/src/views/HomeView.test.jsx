@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import HomeView from './HomeView'
@@ -29,9 +29,15 @@ vi.mock('@/api/recommendation', () => ({
   saveUserSavedPlace: () => Promise.resolve({}),
 }))
 
+const LocationProbe = () => {
+  const location = useLocation()
+  return <output data-testid="location-probe">{location.pathname}{location.search}</output>
+}
+
 const renderHome = () => render(
   <MemoryRouter initialEntries={['/']}>
     <HomeView initialTab="search" />
+    <LocationProbe />
   </MemoryRouter>,
 )
 
@@ -105,6 +111,21 @@ describe('HomeView', () => {
 
     expect(screen.getByText('지금 필요한 장소를 검색해보세요')).toBeInTheDocument()
     expect(screen.getByPlaceholderText('지금 어떤 장소가 필요하신가요?')).toBeInTheDocument()
+    expect(screen.getByPlaceholderText('예: 서면역 약국, 광안리 주차장')).toBeInTheDocument()
+  })
+
+  it('일반 장소 검색은 추천 API를 호출하지 않고 지도 검색으로 이동합니다', async () => {
+    const user = userEvent.setup()
+    renderHome()
+
+    await user.type(
+      screen.getByPlaceholderText('예: 서면역 약국, 광안리 주차장'),
+      '서면역 약국',
+    )
+    await user.click(screen.getByRole('button', { name: '일반 검색' }))
+
+    expect(screen.getByTestId('location-probe')).toHaveTextContent('/map?q=%EC%84%9C%EB%A9%B4%EC%97%AD%20%EC%95%BD%EA%B5%AD')
+    expect(aiSearchRecommendations).not.toHaveBeenCalled()
   })
 
   it('검색하면 AI 추천 결과와 개수를 표시합니다', async () => {

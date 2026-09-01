@@ -74,7 +74,7 @@ const AppHeader = ({
               <path d="M15 6v15" />
             </svg>
           </span>
-          <span className="nav-text">지도</span>
+          <span className="nav-text">일반 검색</span>
         </NavLink>
 
         <NavLink to="/boards/notice" className={navLinkClassName}>

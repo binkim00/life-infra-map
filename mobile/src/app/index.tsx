@@ -38,13 +38,22 @@ const formatDistance = (distance?: number) => {
 
 export default function HomeScreen() {
   const [query, setQuery] = useState("");
+  const [placeQuery, setPlaceQuery] = useState("");
   const [nearbyPlaces, setNearbyPlaces] = useState<Place[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const openSearch = (nextQuery = query) => {
+  const openRecommendation = (nextQuery = query) => {
     const trimmed = nextQuery.trim();
     if (!trimmed) return;
     router.push({ pathname: "/recommend", params: { q: trimmed } });
+  };
+
+  const openPlaceSearch = (nextQuery = placeQuery) => {
+    const trimmed = nextQuery.trim();
+    router.push({
+      pathname: "/explore",
+      params: trimmed ? { q: trimmed } : {},
+    });
   };
 
   useEffect(() => {
@@ -72,17 +81,17 @@ export default function HomeScreen() {
 
           <View style={styles.hero}>
             <Text style={styles.title}>
-              지금 필요한 장소를{`\n`}가까운 순서로.
+              지금 상황에 맞는 장소를{`\n`}이유와 함께.
             </Text>
             <Text style={styles.description}>
-              생활 시설 데이터를 한곳에서 검색하고 실제 위치를 확인하세요.
+              원하는 분위기와 조건을 말하면 근거를 확인해 추천합니다.
             </Text>
             <View style={styles.searchBox}>
               <TextInput
                 value={query}
                 onChangeText={setQuery}
-                onSubmitEditing={() => openSearch()}
-                placeholder="장소나 상황을 검색하세요"
+                onSubmitEditing={() => openRecommendation()}
+                placeholder="예: 조용히 오래 작업할 수 있는 카페"
                 placeholderTextColor="#8A918E"
                 returnKeyType="search"
                 style={styles.searchInput}
@@ -90,7 +99,7 @@ export default function HomeScreen() {
               <Pressable
                 accessibilityRole="button"
                 disabled={!query.trim()}
-                onPress={() => openSearch()}
+                onPress={() => openRecommendation()}
                 style={({ pressed }) => [
                   styles.searchButton,
                   !query.trim() && styles.buttonDisabled,
@@ -102,13 +111,39 @@ export default function HomeScreen() {
             </View>
           </View>
 
+          <View style={styles.placeSearchCard}>
+            <View>
+              <Text style={styles.placeSearchTitle}>일반 장소 검색</Text>
+              <Text style={styles.placeSearchDescription}>
+                장소명이나 업종을 가까운 순서로 빠르게 찾습니다.
+              </Text>
+            </View>
+            <View style={styles.placeSearchBox}>
+              <TextInput
+                value={placeQuery}
+                onChangeText={setPlaceQuery}
+                onSubmitEditing={() => openPlaceSearch()}
+                placeholder="예: 서면역 약국, 광안리 주차장"
+                placeholderTextColor="#8A918E"
+                returnKeyType="search"
+                style={styles.placeSearchInput}
+              />
+              <Pressable
+                onPress={() => openPlaceSearch()}
+                style={styles.placeSearchButton}
+              >
+                <Text style={styles.placeSearchButtonLabel}>일반 검색</Text>
+              </Pressable>
+            </View>
+          </View>
+
           <View>
             <Text style={styles.sectionLabel}>빠른 탐색</Text>
             <View style={styles.categoryGrid}>
               {CATEGORIES.map((item) => (
                 <Pressable
                   key={item.label}
-                  onPress={() => openSearch(item.query)}
+                  onPress={() => openPlaceSearch(item.query)}
                   style={styles.categoryCard}
                 >
                   <View style={styles.categorySymbol}>
@@ -128,7 +163,7 @@ export default function HomeScreen() {
                   서버에서 불러온 가까운 장소
                 </Text>
               </View>
-              <Pressable onPress={() => openSearch("공원")}>
+              <Pressable onPress={() => openPlaceSearch("공원")}>
                 <Text style={styles.more}>전체 보기</Text>
               </Pressable>
             </View>
@@ -241,6 +276,42 @@ const styles = StyleSheet.create({
   },
   searchButtonLabel: { color: "#FFFFFF", fontSize: 14, fontWeight: "800" },
   buttonDisabled: { opacity: 0.45 },
+  placeSearchCard: {
+    padding: 16,
+    gap: 12,
+    borderWidth: 1,
+    borderColor: "#DCE5E1",
+    borderRadius: Radius.medium,
+    backgroundColor: "#F8FBFA",
+  },
+  placeSearchTitle: { color: Palette.ink, fontSize: 15, fontWeight: "900" },
+  placeSearchDescription: {
+    marginTop: 5,
+    color: Palette.muted,
+    fontSize: 11,
+    lineHeight: 17,
+  },
+  placeSearchBox: { flexDirection: "row", gap: 8 },
+  placeSearchInput: {
+    minWidth: 0,
+    height: 44,
+    paddingHorizontal: 13,
+    flex: 1,
+    borderWidth: 1,
+    borderColor: "#D2DDD8",
+    borderRadius: Radius.small,
+    backgroundColor: Palette.surface,
+    color: Palette.ink,
+    fontSize: 12,
+  },
+  placeSearchButton: {
+    minWidth: 78,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: Radius.small,
+    backgroundColor: Palette.accent,
+  },
+  placeSearchButtonLabel: { color: "#FFFFFF", fontSize: 11, fontWeight: "900" },
   sectionHeader: {
     flexDirection: "row",
     alignItems: "flex-end",

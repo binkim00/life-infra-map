@@ -188,6 +188,16 @@ export default function ExploreScreen() {
             </Pressable>
           </View>
 
+          <Pressable
+            onPress={() => router.push("/recommend")}
+            style={styles.recommendationLink}
+          >
+            <Text style={styles.recommendationLinkTitle}>상황에 맞는 추천이 필요한가요?</Text>
+            <Text style={styles.recommendationLinkText}>
+              분위기·작업·동행 조건을 말하고 추천받기
+            </Text>
+          </Pressable>
+
           <View style={styles.searchBox}>
             <TextInput
               value={query}
@@ -404,6 +414,15 @@ const styles = StyleSheet.create({
     letterSpacing: -0.7,
   },
   baseLocation: { color: Palette.muted, fontSize: 11, fontWeight: "700" },
+  recommendationLink: {
+    padding: 14,
+    borderWidth: 1,
+    borderColor: "#D7E4DF",
+    borderRadius: Radius.medium,
+    backgroundColor: "#F5FAF8",
+  },
+  recommendationLinkTitle: { color: Palette.accent, fontSize: 13, fontWeight: "900" },
+  recommendationLinkText: { marginTop: 5, color: Palette.muted, fontSize: 11 },
   searchBox: {
     marginTop: 10,
     padding: 5,

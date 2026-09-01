@@ -23,6 +23,8 @@ export type Place = {
 };
 
 export type MapSearchResponse = {
+  search_mode?: "place_search";
+  recommendation_applied?: false;
   query: string;
   count: number;
   results: Place[];

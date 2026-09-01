@@ -163,10 +163,18 @@ export default function RecommendScreen() {
   return (
     <View style={styles.root}>
       <Screen
-        title="AI 장소 추천"
-        subtitle="상황과 조건을 이해해 결과를 정렬합니다."
+        title="상황 기반 장소 추천"
+        subtitle="상황과 조건을 이해해 이유가 있는 결과를 정렬합니다."
         back
       >
+        <Pressable
+          onPress={() => router.push("/explore")}
+          style={styles.modeLink}
+        >
+          <Text style={styles.modeLinkText}>
+            장소명·업종만 찾는다면 일반 장소 검색으로 이동
+          </Text>
+        </Pressable>
         <View style={ui.row}>
           <TextInput
             value={query}
@@ -317,6 +325,14 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 12,
   },
+  modeLink: {
+    padding: 12,
+    borderWidth: 1,
+    borderColor: "#D7E4DF",
+    borderRadius: 12,
+    backgroundColor: "#F5FAF8",
+  },
+  modeLinkText: { color: "#0F766E", fontSize: 11, fontWeight: "800" },
   map: { overflow: "hidden", borderRadius: 20, backgroundColor: "#FFFFFF" },
   mapFooter: {
     padding: 14,

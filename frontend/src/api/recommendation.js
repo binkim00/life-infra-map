@@ -221,11 +221,15 @@ export const searchMapPlaces = async ({
     params.radius = radius
   }
 
-  const response = await api.get('/recommendations/map-search/', {
-    params,
-  })
-
-  return response.data
+  try {
+    const response = await api.get('/recommendations/place-search/', { params })
+    return response.data
+  } catch (error) {
+    // 새 일반 검색 계약이 배포되기 전 서버와도 연결을 유지합니다.
+    if (![404, 405].includes(error?.response?.status)) throw error
+    const response = await api.get('/recommendations/map-search/', { params })
+    return response.data
+  }
 }
 
 export const getKakaoPlaceTags = async (externalIds = []) => {
