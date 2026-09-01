@@ -92,6 +92,37 @@ class ResultDiversityTests(SimpleTestCase):
             ["dense-0", "dense-1", "alternative-0", "alternative-1", "alternative-2"],
         )
 
+    def test_requested_verified_evidence_is_preserved_before_diversity_fill(self):
+        dense = [
+            _candidate(
+                f"dense-{index}",
+                name=f"백화점 카페 {index}",
+                address=f"부산 중앙대로 672 {index + 1}층",
+            )
+            for index in range(20)
+        ]
+        dense[-1]["verified_tags"] = ["조용함"]
+        alternatives = [
+            _candidate(
+                f"alternative-{index}",
+                name=f"골목 카페 {index}",
+                address=f"부산 중앙대로 {680 + index * 10}",
+            )
+            for index in range(5)
+        ]
+
+        balanced = _balance_candidate_pool_for_diversity(
+            [*dense, *alternatives],
+            self.frame,
+            limit=5,
+        )
+
+        self.assertIn("dense-19", [item["id"] for item in balanced])
+        self.assertGreaterEqual(
+            len({_result_building_key(item) for item in balanced}),
+            4,
+        )
+
     def test_quality_strata_remain_a_hard_ordering_boundary(self):
         candidates = [
             _candidate("strict1", name="카페 A1", address="부산 중앙대로 672 1층"),

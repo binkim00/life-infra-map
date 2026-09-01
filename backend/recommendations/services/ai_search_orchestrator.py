@@ -4225,6 +4225,42 @@ def _balance_candidate_pool_for_diversity(candidates, frame, *, limit):
     selected_object_ids = set()
     building_counts = {}
     franchise_counts = {}
+    requested_conditions = _requested_result_conditions(frame)
+
+    def has_verified_requested_support(candidate):
+        if not requested_conditions:
+            return False
+        verified_values = [
+            *_as_list(candidate.get("verified_tags"), max_items=50),
+            *_as_list(candidate.get("verified_tag_labels"), max_items=50),
+        ]
+        verified_values.extend(
+            evidence.get("value") or evidence.get("label")
+            for evidence in candidate.get("matched_evidence") or []
+            if isinstance(evidence, dict)
+            and evidence.get("source_strength") == "verified"
+        )
+        return any(
+            _condition_supported(condition, verified_values)
+            for condition in requested_conditions
+        )
+
+    # Evidence that directly answers the user's request is stronger than the
+    # diversity preference and must remain available to the hard gate/ranker.
+    for candidate in ordered:
+        if not has_verified_requested_support(candidate):
+            continue
+        selected.append(candidate)
+        selected_object_ids.add(id(candidate))
+        building_key = _result_building_key(candidate)
+        franchise_key = _result_franchise_key(candidate)
+        if building_key:
+            building_counts[building_key] = building_counts.get(building_key, 0) + 1
+        if franchise_key:
+            franchise_counts[franchise_key] = franchise_counts.get(franchise_key, 0) + 1
+        if len(selected) >= limit:
+            return selected
+
     for building_cap, franchise_cap in ((2, 4), (5, 8), (None, None)):
         for candidate in ordered:
             if id(candidate) in selected_object_ids:
