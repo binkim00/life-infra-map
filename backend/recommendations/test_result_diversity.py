@@ -1,6 +1,7 @@
 from django.test import SimpleTestCase
 
 from recommendations.services.ai_search_orchestrator import (
+    _balance_candidate_pool_for_diversity,
     _diversify_ordered_results,
     _result_building_key,
 )
@@ -61,6 +62,35 @@ class ResultDiversityTests(SimpleTestCase):
         diversified = _diversify_ordered_results(candidates, self.frame, limit=4)
 
         self.assertEqual([item["id"] for item in diversified], ["s1", "s2", "local", "s3"])
+
+    def test_dense_building_does_not_consume_collector_window(self):
+        dense = [
+            _candidate(
+                f"dense-{index}",
+                name=f"백화점 카페 {index}",
+                address=f"부산 중앙대로 672 {index + 1}층",
+            )
+            for index in range(20)
+        ]
+        alternatives = [
+            _candidate(
+                f"alternative-{index}",
+                name=f"골목 카페 {index}",
+                address=f"부산 중앙대로 {680 + index * 10}",
+            )
+            for index in range(5)
+        ]
+
+        balanced = _balance_candidate_pool_for_diversity(
+            [*dense, *alternatives],
+            self.frame,
+            limit=5,
+        )
+
+        self.assertEqual(
+            [item["id"] for item in balanced],
+            ["dense-0", "dense-1", "alternative-0", "alternative-1", "alternative-2"],
+        )
 
     def test_quality_strata_remain_a_hard_ordering_boundary(self):
         candidates = [

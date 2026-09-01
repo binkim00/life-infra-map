@@ -2663,6 +2663,10 @@ def collect_db_candidates(frame, *, lat=None, lng=None, limit=50, radius=None):
     # large raw JSON field and prefetching tags for rows that can never surface.
     if direct_category_codes and not restaurant_search and "pharmacy" not in direct_category_codes:
         candidate_limit = max(math.ceil(limit * 4 / 3), 60)
+        if _result_diversity_enabled(frame):
+            # Dense department-store tenant records can otherwise consume the
+            # entire nearest window before other buildings are hydrated.
+            candidate_limit = max(limit * 4, 180)
 
     def detail_queryset(queryset):
         return queryset.annotate(
@@ -2813,7 +2817,7 @@ def collect_db_candidates(frame, *, lat=None, lng=None, limit=50, radius=None):
             candidate.get("distance") if candidate.get("distance") is not None else float("inf"),
             _clean_text(candidate.get("name")),
         ))
-    return candidates[:limit]
+    return _balance_candidate_pool_for_diversity(candidates, frame, limit=limit)
 
 
 def collect_semantic_candidates(
@@ -4208,6 +4212,46 @@ def _result_diversity_enabled(frame):
         *_frame_terms(frame, "result_match_terms", "resultMatchTerms"),
     ]))
     return not any(marker in request_text for marker in RESULT_DIVERSITY_NEAREST_MARKERS)
+
+
+def _balance_candidate_pool_for_diversity(candidates, frame, *, limit):
+    """Keep dense tenant datasets from crowding all other buildings out."""
+    ordered = list(candidates or [])
+    limit = max(_as_int(limit, 50), 1)
+    if not _result_diversity_enabled(frame):
+        return ordered[:limit]
+
+    selected = []
+    selected_object_ids = set()
+    building_counts = {}
+    franchise_counts = {}
+    for building_cap, franchise_cap in ((2, 4), (5, 8), (None, None)):
+        for candidate in ordered:
+            if id(candidate) in selected_object_ids:
+                continue
+            building_key = _result_building_key(candidate)
+            franchise_key = _result_franchise_key(candidate)
+            if (
+                building_cap is not None
+                and building_key
+                and building_counts.get(building_key, 0) >= building_cap
+            ):
+                continue
+            if (
+                franchise_cap is not None
+                and franchise_key
+                and franchise_counts.get(franchise_key, 0) >= franchise_cap
+            ):
+                continue
+            selected.append(candidate)
+            selected_object_ids.add(id(candidate))
+            if building_key:
+                building_counts[building_key] = building_counts.get(building_key, 0) + 1
+            if franchise_key:
+                franchise_counts[franchise_key] = franchise_counts.get(franchise_key, 0) + 1
+            if len(selected) >= limit:
+                return selected
+    return selected
 
 
 def _diversify_ordered_results(candidates, frame, *, limit):
