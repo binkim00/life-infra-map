@@ -3,8 +3,8 @@ import axios from 'axios'
 import { isSpringPath, stripTrailingSlash } from './serviceRoutes'
 
 // 검색은 Django, 나머지는 Spring 이 담당합니다.
-const DJANGO_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000/api'
-const SPRING_BASE_URL = import.meta.env.VITE_SPRING_API_BASE_URL || 'http://127.0.0.1:8081/api'
+const DJANGO_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://100.71.169.91:8000/api'
+const SPRING_BASE_URL = import.meta.env.VITE_SPRING_API_BASE_URL || 'http://100.71.169.91:8081/api'
 
 const api = axios.create({
   baseURL: DJANGO_BASE_URL,

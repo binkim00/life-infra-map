@@ -2,8 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import api, { setUnauthorizedHandler } from './axios'
 
-const DJANGO_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000/api'
-const SPRING_BASE_URL = import.meta.env.VITE_SPRING_API_BASE_URL || 'http://127.0.0.1:8081/api'
+const DJANGO_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://100.71.169.91:8000/api'
+const SPRING_BASE_URL = import.meta.env.VITE_SPRING_API_BASE_URL || 'http://100.71.169.91:8081/api'
 
 /**
  * 인터셉터가 실제로 baseURL 을 바꾸는지 확인합니다.

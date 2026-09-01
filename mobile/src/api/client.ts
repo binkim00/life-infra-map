@@ -1,14 +1,12 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { Platform } from "react-native";
 
-const defaultHost = Platform.OS === "android" ? "10.0.2.2" : "127.0.0.1";
 export const DJANGO_API = (
   process.env.EXPO_PUBLIC_DJANGO_API_BASE_URL ||
-  `http://${defaultHost}:8000/api`
+  "http://100.71.169.91:8000/api"
 ).replace(/\/$/, "");
 export const SPRING_API = (
   process.env.EXPO_PUBLIC_SPRING_API_BASE_URL ||
-  `http://${defaultHost}:8081/api`
+  "http://100.71.169.91:8081/api"
 ).replace(/\/$/, "");
 
 const SPRING_PREFIXES = [

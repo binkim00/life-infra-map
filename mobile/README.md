@@ -55,25 +55,24 @@ Join our community of developers creating universal apps.
 - [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
 - [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
 
-## EC2 백엔드 연결
+## 백엔드 연결
 
 휴대폰 또는 개발 PC가 EC2와 같은 Tailscale 네트워크에 연결돼 있어야 합니다.
 
 ```bash
-npm run start:server
-npm run android:server
-npm run ios:server
-npm run web:server
+npm run start
+npm run android
+npm run ios
+npm run web
 ```
 
-위 명령은 `.env.server`의 주소를 Expo 프로세스에 주입합니다. 검색·추천은
+기본 설정으로 검색·추천은
 Django `http://100.71.169.91:8000/api`, 로그인·게시판·저장 장소는 Spring
-`http://100.71.169.91:8081/api`를 사용합니다. 기본 `npm run start`는 기존처럼
-에뮬레이터 또는 로컬 PC의 백엔드를 사용합니다.
+`http://100.71.169.91:8081/api`를 사용합니다.
 
-현재 서버가 Tailscale 내부 HTTP이므로 `*:server` 명령으로 실행할 때만 Android와
-iOS 개발 빌드에서 cleartext 접속을 허용합니다. 기본 실행과 외부 공개 빌드에는 이
-예외가 적용되지 않습니다. Expo 웹은 기본 `localhost:8081` origin을 사용하므로
-서버 CORS도 해당 origin을 허용해야 합니다.
+다른 백엔드를 사용할 때만 `EXPO_PUBLIC_DJANGO_API_BASE_URL`과
+`EXPO_PUBLIC_SPRING_API_BASE_URL` 환경변수로 주소를 덮어씁니다. API 주소가
+`http://`일 때 Android와 iOS 개발 빌드의 cleartext 접속 설정도 자동으로
+활성화됩니다. 공개 배포 전에 HTTPS 주소로 바꾸면 이 예외는 적용되지 않습니다.
 
 연결 전 `npm run check:server`로 Django와 Spring의 health 응답을 확인할 수 있습니다.

@@ -1,5 +1,9 @@
+const DEFAULT_DJANGO_API = "http://100.71.169.91:8000/api";
+
 module.exports = ({ config }) => {
-  const allowHttpApi = process.env.EXPO_PUBLIC_ALLOW_HTTP_API === "true";
+  const djangoApi =
+    process.env.EXPO_PUBLIC_DJANGO_API_BASE_URL || DEFAULT_DJANGO_API;
+  const allowHttpApi = djangoApi.startsWith("http://");
 
   if (!allowHttpApi) return config;
 

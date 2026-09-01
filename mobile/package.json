@@ -40,14 +40,10 @@
   },
   "scripts": {
     "start": "expo start",
-    "start:server": "node ./scripts/start-server.mjs",
     "reset-project": "node ./scripts/reset-project.js",
     "android": "expo start --android",
-    "android:server": "node ./scripts/start-server.mjs --android",
     "ios": "expo start --ios",
-    "ios:server": "node ./scripts/start-server.mjs --ios",
     "web": "expo start --web",
-    "web:server": "node ./scripts/start-server.mjs --web",
     "check:server": "node ../scripts/check-server-apis.mjs",
     "lint": "expo lint"
   },
