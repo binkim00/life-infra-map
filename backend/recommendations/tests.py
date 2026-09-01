@@ -3401,6 +3401,42 @@ class RecommendationSearchTests(TestCase):
         self.assertIn(rice_noodle_place.name, candidate_names)
         self.assertNotIn(unrelated_cafe.name, candidate_names)
 
+    def test_direct_db_category_codes_infer_clear_target_without_planner_codes(self):
+        from recommendations.services.ai_search_orchestrator import _collector_direct_db_category_codes
+
+        self.assertEqual(
+            _collector_direct_db_category_codes({
+                "target_objects": ["카페"],
+                "result_match_terms": ["카페", "커피"],
+                "candidate_category_codes": [],
+            }),
+            ["cafe"],
+        )
+        self.assertEqual(
+            _collector_direct_db_category_codes({
+                "target_objects": ["식당"],
+                "result_match_terms": ["식당", "음식점"],
+                "candidate_category_codes": [],
+            }),
+            ["restaurant"],
+        )
+
+    def test_category_inference_uses_target_consensus_without_cafe_bleed(self):
+        from recommendations.services.ai_search_orchestrator import _collector_direct_db_category_codes
+
+        codes = _collector_direct_db_category_codes({
+            "target_objects": [
+                "공중화장실",
+                "편의점 화장실",
+                "카페 화장실",
+                "지하철역 화장실",
+            ],
+            "candidate_category_codes": [],
+        })
+
+        self.assertIn("toilet", codes)
+        self.assertNotIn("cafe", codes)
+
     def test_collect_db_candidates_prefers_direct_category_over_tag_only_for_cafe(self):
         from recommendations.services.ai_search_orchestrator import collect_db_candidates
 

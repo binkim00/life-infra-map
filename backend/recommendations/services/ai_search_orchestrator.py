@@ -913,6 +913,17 @@ def _frame_category_codes(frame):
     return _frame_terms(frame, "candidate_category_codes")
 
 
+def _target_consensus_category_codes(frame):
+    target_terms = _frame_terms(frame, "target_objects", "targetObjects")
+    matched_sets = []
+    for term in target_terms:
+        matched = set(get_matching_categories(term)) if term else set()
+        if matched:
+            matched_sets.append(matched)
+    inferred_codes = set.intersection(*matched_sets) if matched_sets else set()
+    return sorted(inferred_codes)
+
+
 def _db_first_category_codes(frame):
     return [
         code
@@ -938,6 +949,22 @@ def _direct_db_category_codes(frame):
         if (code_text and code_text in direct_text) or (label_text and label_text in direct_text):
             direct_codes.append(code)
 
+    return list(dict.fromkeys(direct_codes))
+
+
+def _collector_direct_db_category_codes(frame):
+    direct_codes = _direct_db_category_codes(frame)
+    direct_text = _compact(" ".join([
+        *_frame_terms(frame, "target_objects", "targetObjects"),
+        *_frame_terms(frame, "result_match_terms", "resultMatchTerms"),
+    ]))
+    for code in _target_consensus_category_codes(frame):
+        if code not in DB_CATEGORY_SEARCH_CODES:
+            continue
+        code_text = _compact(code)
+        label_text = _compact(get_category_display_name(code))
+        if (code_text and code_text in direct_text) or (label_text and label_text in direct_text):
+            direct_codes.append(code)
     return list(dict.fromkeys(direct_codes))
 
 
@@ -2201,13 +2228,21 @@ def _db_evidence(place, tag_lists, frame):
     direct_category_codes = _direct_db_category_codes(frame)
     category_label = _clean_text(get_category_display_name(place.category))
     category_text = " ".join([_clean_text(place.category), category_label])
+    loaded_raw = place.__dict__.get("raw")
+    if isinstance(loaded_raw, dict):
+        raw_text = _clean_text(json.dumps(loaded_raw, ensure_ascii=False), 500)
+    else:
+        raw_text = " ".join(filter(None, [
+            _clean_text(getattr(place, "collect_business_type", "")),
+            _clean_text(getattr(place, "collect_source_dataset", "")),
+        ]))
     text_fields = {
         "name": _clean_text(place.name),
         "category": _clean_text(place.category),
         "address": _clean_text(place.address),
         "detail_location": _clean_text(place.detail_location),
         "source_name": _clean_text(place.source_name),
-        "raw": _clean_text(json.dumps(place.raw or {}, ensure_ascii=False), 500),
+        "raw": raw_text,
     }
     matched = []
     level = "weak"
@@ -2565,7 +2600,7 @@ def collect_db_candidates(frame, *, lat=None, lng=None, limit=50, radius=None):
     terms = _db_evidence_terms(frame)
     search_terms = terms["search"]
     db_first_category_codes = _db_first_category_codes(frame)
-    direct_category_codes = _direct_db_category_codes(frame)
+    direct_category_codes = _collector_direct_db_category_codes(frame)
     restaurant_search = "restaurant" in direct_category_codes
     if "shopping" in direct_category_codes:
         derived = _collect_derived_shopping_candidates(
