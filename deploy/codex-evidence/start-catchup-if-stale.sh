@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 
 RUNTIME_DIR="${CODEX_EVIDENCE_RUNTIME_DIR:-/home/ubuntu/life-infra-map/runtime/codex-evidence}"
-MAX_AGE_SECONDS="${CODEX_EVIDENCE_MAX_AGE_SECONDS:-50400}"
+MAX_AGE_SECONDS="${CODEX_EVIDENCE_MAX_AGE_SECONDS:-93600}"
 SERVICE="life-infra-map-codex-evidence.service"
 
 if ! [[ "$MAX_AGE_SECONDS" =~ ^[1-9][0-9]*$ ]]; then

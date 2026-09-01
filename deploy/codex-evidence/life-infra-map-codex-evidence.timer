@@ -1,9 +1,8 @@
 [Unit]
-Description=Run Life Infra Map Codex web evidence collection twice daily
+Description=Run Life Infra Map Codex web evidence collection daily
 
 [Timer]
 OnCalendar=*-*-* 03:40:00 Asia/Seoul
-OnCalendar=*-*-* 15:40:00 Asia/Seoul
 RandomizedDelaySec=10m
 Persistent=true
 Unit=life-infra-map-codex-evidence.service

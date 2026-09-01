@@ -58,7 +58,7 @@ API 키는 사용하지 않으며, 실행량은 ChatGPT 플랜의 Codex 사용 �
 즉시 보내지 못한 알림 서비스는 5분마다 다시 시도한다.
 
 `life-infra-map-codex-evidence-catchup.timer`는 부팅 5분 뒤부터 30분마다 마지막 검증 성공
-결과를 확인한다. 성공 결과가 14시간 이상 오래되었으면 수집 서비스를 한 번 시작하여
+결과를 확인한다. 성공 결과가 26시간 이상 오래되었으면 수집 서비스를 한 번 시작하여
 서버 중단 중 놓친 주기를 보충한다. 이 기준은 `CODEX_EVIDENCE_MAX_AGE_SECONDS`로 조정한다.
 
 CloudWatch 경보 `life-infra-map-ec2-status-check-failed`는 `StatusCheckFailed > 0`이 2분
