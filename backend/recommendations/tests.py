@@ -11778,6 +11778,40 @@ class RecommendationSearchTests(TestCase):
         self.assertEqual(search_plan["resultPolicy"], frame["result_policy"])
 
     @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=False)
+    def test_ai_intent_planner_keeps_explicit_target_ahead_of_weather_context(self):
+        from recommendations.services.ai_intent_planner import build_ai_intent_plan
+
+        cases = [
+            ("광안리에서 비를 피할 수 있는 실외 흡연구역", "smoking_area", "흡연구역"),
+            ("센텀에서 비 오는 날 둘러볼 실내 쇼핑 장소", "shopping", "쇼핑몰"),
+        ]
+
+        for query, expected_category, expected_target in cases:
+            with self.subTest(query=query):
+                frame = build_ai_intent_plan(query, lat=35.1556, lng=129.0641)["frame"]
+
+                self.assertIn(expected_category, frame["candidate_category_codes"])
+                self.assertIn(expected_target, frame["target_objects"])
+
+    @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=False)
+    def test_ai_intent_planner_handles_weather_and_free_indoor_rest_requests(self):
+        from recommendations.services.ai_intent_planner import build_ai_intent_plan
+
+        queries = [
+            "부산역 근처 무료로 앉아 쉴 실내 장소",
+            "해운대에서 더위를 피하고 앉아 있을 실내 장소",
+            "사상역 근처 추위를 피할 수 있는 쉼터",
+        ]
+
+        for query in queries:
+            with self.subTest(query=query):
+                plan = build_ai_intent_plan(query, lat=35.1556, lng=129.0641)
+
+                self.assertEqual(plan["action"], "search")
+                self.assertIn("shelter", plan["frame"]["candidate_category_codes"])
+                self.assertTrue(plan["frame"]["primary_search_queries"])
+
+    @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=False)
     def test_ai_intent_planner_asks_when_conditions_conflict(self):
         from recommendations.services.ai_intent_planner import build_ai_intent_plan
 

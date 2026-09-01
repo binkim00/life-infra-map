@@ -7,6 +7,9 @@ metrics, full evaluation output, prioritized collection feedback, and a compact 
 `/home/ubuntu/life-infra-map/runtime/quality-reports`.
 The coverage step uses a launch-only aggregate instead of the much heavier
 cross-city, per-tag operations report.
+The live evaluation keeps the production Kakao candidate fallback enabled so
+the report measures the same result path users receive; verified feature
+matches still require server-side evidence rather than Kakao category text.
 
 The release gate remains closed unless every query returns five results, every
 query has at least one verified feature match in its top five, at least 60% of

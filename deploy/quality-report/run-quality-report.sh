@@ -34,7 +34,6 @@ docker exec \
   -e AI_WEB_SEARCH_ENABLED=false \
   -e SEMANTIC_RETRIEVAL_ENABLED=false \
   -e SEMANTIC_CANDIDATE_INJECTION_ENABLED=false \
-  -e KAKAO_REST_API_KEY= \
   "$API_CONTAINER" python manage.py evaluate_ai_search \
     --case-file "$CASE_FILE" --top 5 --no-log --output "$container_evaluation"
 docker exec "$API_CONTAINER" python manage.py prioritize_launch_evidence \

@@ -1257,19 +1257,21 @@ def _local_rule_plan_for_known_intent(raw_query):
         )
 
     if (
-        _has_any(text, ["\ube44", "\ube44 \uc624", "\ube44\uc624", "\ub354\uc6cc", "\ub354\uc6b4", "\ucd94\uc6cc", "\ucd94\uc6b4"])
-        and _has_any(text, ["\uc26c", "\uc274", "\uc26c\uace0", "\uc26c\uc5b4", "\ud53c\ud560", "\ud53c\ud574", "비 피", "앉아 있", "\uc7a0\uae50"])
+        _has_any(text, ["\ube44", "\ube44 \uc624", "\ube44\uc624", "\ub354\uc6cc", "\ub354\uc6b4", "더위", "\ucd94\uc6cc", "\ucd94\uc6b4", "추위"])
+        and _has_any(text, ["\uc26c", "\uc274", "\uc26c\uace0", "\uc26c\uc5b4", "\ud53c\ud560", "\ud53c\ud574", "비 피", "앉아 있", "앉아 쉴", "\uc7a0\uae50"])
+        and not _has_any(text, ["흡연구역", "흡연장", "흡연실", "흡연", "담배"])
+        and not _has_any(text, ["쇼핑몰", "쇼핑할", "쇼핑 할", "쇼핑", "백화점", "아울렛"])
     ):
         plan = _local_rule_search_plan(
             text,
             normalized_query="\uc7a0\uae50 \uc26c\uc5b4\uac08 \uc2e4\ub0b4 \uc7a5\uc18c",
             target_objects=["\uc2e4\ub0b4 \uc26c\uc5b4\uac08 \uacf3"],
-            candidate_place_types=["\uce74\ud398", "\uacf5\uacf5\ub3c4\uc11c\uad00", "\uc1fc\ud551\ubab0", "\uc9c0\ud558\uc0c1\uac00"],
-            result_match_terms=["\uce74\ud398", "\ub3c4\uc11c\uad00", "\uc1fc\ud551\ubab0", "\uc9c0\ud558\uc0c1\uac00", "\uc2e4\ub0b4"],
-            primary_search_queries=["\uce74\ud398", "\uacf5\uacf5\ub3c4\uc11c\uad00", "\uc1fc\ud551\ubab0", "\uc9c0\ud558\uc0c1\uac00"],
+            candidate_place_types=["\uce74\ud398", "\uacf5\uacf5\ub3c4\uc11c\uad00", "실내 쉼터", "\uc1fc\ud551\ubab0", "\uc9c0\ud558\uc0c1\uac00"],
+            result_match_terms=["\uce74\ud398", "\ub3c4\uc11c\uad00", "쉼터", "\uc1fc\ud551\ubab0", "\uc9c0\ud558\uc0c1\uac00", "\uc2e4\ub0b4"],
+            primary_search_queries=["\uce74\ud398", "\uacf5\uacf5\ub3c4\uc11c\uad00", "실내 쉼터", "\uc1fc\ud551\ubab0", "\uc9c0\ud558\uc0c1\uac00"],
             constraints=["비 피하기", "실내"],
             exclusions=["\ub178\uc778\ud68c\uad00 \uc81c\uc678", "\uacbd\ub85c\ub2f9 \uc81c\uc678", "\uc0c1\ub2f4\uc13c\ud130 \uc81c\uc678", "\uc8fc\ucc28\uc7a5 \uc81c\uc678"],
-            candidate_category_codes=["cafe", "shopping"],
+            candidate_category_codes=["cafe", "shelter", "shopping"],
             ranking_policy="evidence_first",
         )
         plan["frame"]["situation"] = "weather_shelter"
@@ -1333,8 +1335,12 @@ def _local_rule_plan_for_known_intent(raw_query):
             ranking_policy="urgent_nearest",
         )
 
-    if _has_any(text, ["비 오", "비오", "비 와", "비와", "더워", "덥", "추워", "춥", "쉴 곳", "쉴곳", "쉬어갈", "쉬어 갈", "잠깐 쉴"]):
-        if _has_any(text, ["피할 곳", "피할곳", "쉴 곳", "쉴곳", "쉬어갈", "쉬어 갈", "잠깐 쉴", "실내"]):
+    if (
+        _has_any(text, ["비 오", "비오", "비 와", "비와", "더워", "덥", "더위", "추워", "춥", "추위", "쉴 ", "쉴 곳", "쉴곳", "쉬어갈", "쉬어 갈", "잠깐 쉴"])
+        and not _has_any(text, ["흡연구역", "흡연장", "흡연실", "흡연", "담배"])
+        and not _has_any(text, ["쇼핑몰", "쇼핑할", "쇼핑 할", "쇼핑", "백화점", "아울렛"])
+    ):
+        if _has_any(text, ["피할 곳", "피할곳", "피할 수", "쉴 ", "쉴 곳", "쉴곳", "쉬어갈", "쉬어 갈", "잠깐 쉴", "실내", "쉼터"]):
             plan = _local_rule_search_plan(
                 text,
                 normalized_query="잠깐 쉴 실내 장소",
