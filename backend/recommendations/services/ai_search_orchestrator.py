@@ -2566,6 +2566,7 @@ def collect_db_candidates(frame, *, lat=None, lng=None, limit=50, radius=None):
     search_terms = terms["search"]
     db_first_category_codes = _db_first_category_codes(frame)
     direct_category_codes = _direct_db_category_codes(frame)
+    restaurant_search = "restaurant" in direct_category_codes
     if "shopping" in direct_category_codes:
         derived = _collect_derived_shopping_candidates(
             lat=lat,
@@ -2619,6 +2620,19 @@ def collect_db_candidates(frame, *, lat=None, lng=None, limit=50, radius=None):
         )
 
     candidate_limit = max(limit * 5, 100)
+    # Exact category searches do not need a five-times-wide hydrated Place
+    # window: non-restaurant rows are neither business-profile filtered nor
+    # evidence-sorted before the final slice. Keep a small margin for the
+    # rectangular bounds versus the exact radius, while avoiding decoding the
+    # large raw JSON field and prefetching tags for rows that can never surface.
+    if direct_category_codes and not restaurant_search and "pharmacy" not in direct_category_codes:
+        candidate_limit = max(limit * 2, 60)
+
+    def detail_queryset(queryset):
+        if restaurant_search:
+            return queryset
+        return queryset.defer("raw")
+
     if direct_category_codes and bounds and lat is not None and lng is not None:
         bounded_count = queryset.count()
         category_count = Place.objects.filter(category__in=direct_category_codes).count()
@@ -2630,7 +2644,7 @@ def collect_db_candidates(frame, *, lat=None, lng=None, limit=50, radius=None):
         )
         if use_knn:
             candidate_places = _order_by_distance(
-                queryset, lat, lng, use_knn=True,
+                detail_queryset(queryset), lat, lng, use_knn=True,
             ).prefetch_related("place_tags__tag")[:candidate_limit]
         else:
         # Read only the indexed coordinates first. Category-filtered KNN can
@@ -2645,11 +2659,15 @@ def collect_db_candidates(frame, *, lat=None, lng=None, limit=50, radius=None):
             ordered_ids = [row[0] for row in coordinate_rows[:candidate_limit]]
             places_by_id = {
                 place.id: place
-                for place in Place.objects.filter(id__in=ordered_ids).prefetch_related("place_tags__tag")
+                for place in detail_queryset(
+                    Place.objects.filter(id__in=ordered_ids)
+                ).prefetch_related("place_tags__tag")
             }
             candidate_places = [places_by_id[place_id] for place_id in ordered_ids if place_id in places_by_id]
     else:
-        queryset = _order_by_distance(queryset, lat, lng).prefetch_related("place_tags__tag")
+        queryset = _order_by_distance(
+            detail_queryset(queryset), lat, lng
+        ).prefetch_related("place_tags__tag")
         candidate_places = queryset[:candidate_limit]
 
     from recommendations.services.place_evidence_completeness import quality_profiles_for_places
@@ -2657,7 +2675,6 @@ def collect_db_candidates(frame, *, lat=None, lng=None, limit=50, radius=None):
     candidate_places = list(candidate_places)
     evidence_quality_profiles = quality_profiles_for_places(candidate_places)
     candidates = []
-    restaurant_search = "restaurant" in direct_category_codes
     for place in candidate_places:
         distance = _distance(lat, lng, place.lat, place.lng)
         if distance is not None and distance > radius:
@@ -2690,6 +2707,7 @@ def collect_db_candidates(frame, *, lat=None, lng=None, limit=50, radius=None):
         confidence_level = "high" if level == "strong" else "medium" if level == "medium" else "low"
         if policy_unmet:
             confidence_level = "low"
+        raw_metadata = place.raw if restaurant_search and isinstance(place.raw, dict) else {}
         candidate = {
             **_candidate_base(
                 f"db:{place.id}",
@@ -2705,10 +2723,10 @@ def collect_db_candidates(frame, *, lat=None, lng=None, limit=50, radius=None):
             "external_id": place.external_id,
             "source_name": place.source_name,
             "business_type": _clean_text(
-                (place.raw if isinstance(place.raw, dict) else {}).get("business_type")
+                raw_metadata.get("business_type")
             ),
             "source_dataset": _clean_text(
-                (place.raw if isinstance(place.raw, dict) else {}).get("dataset")
+                raw_metadata.get("dataset")
             ),
             "db_business_fit_score": business_profile["score"],
             "db_business_fit_reason": business_profile["reason"],
