@@ -28,6 +28,32 @@ def value(data, *keys, default=0):
     return current
 
 
+def metric_text(metric):
+    if not isinstance(metric, dict) or not metric.get("measured"):
+        return "집계 전"
+    metric_value = metric.get("value")
+    rendered = "{:.1f}%".format(metric_value * 100) if isinstance(metric_value, (int, float)) else str(metric_value)
+    numerator = metric.get("numerator")
+    denominator = metric.get("denominator")
+    if numerator is not None and denominator is not None:
+        rendered += " ({} / {})".format(numerator, denominator)
+    return rendered
+
+
+def release_gate_failures(quality):
+    search = quality.get("search") or {}
+    thresholds = value(quality, "release_gate", "thresholds", default={})
+    checks = [
+        ("검색마다 상위 5개 제공", value(search, "top_five_coverage_rate", "value", default=None), thresholds.get("top_five_coverage_rate"), lambda actual, target: actual >= target),
+        ("각 조건 검색에 검증 근거 결과 포함", value(search, "feature_query_hit_at_5_rate", "value", default=None), thresholds.get("feature_query_hit_at_5_rate"), lambda actual, target: actual >= target),
+        ("상위 5개 검증 근거 비율", value(search, "verified_feature_result_rate_at_5", "value", default=None), thresholds.get("verified_feature_result_rate_at_5_min"), lambda actual, target: actual >= target),
+        ("추천 사유 투명성", value(search, "reason_transparency_rate", "value", default=None), thresholds.get("reason_transparency_rate"), lambda actual, target: actual >= target),
+        ("필수 조건 위반 없음", value(search, "hard_violation_rate", "value", default=None), thresholds.get("hard_violation_rate_max"), lambda actual, target: actual <= target),
+        ("검색 속도 p95", value(search, "latency_ms", "value", "p95", default=None), thresholds.get("latency_p95_ms_max"), lambda actual, target: actual <= target),
+    ]
+    return [label for label, actual, target, predicate in checks if actual is not None and target is not None and not predicate(actual, target)]
+
+
 def render_report(payload):
     collection = payload["collection"]
     naver = collection["naver"]
@@ -36,50 +62,46 @@ def render_report(payload):
     runs = payload["codex_runs"]
     quality = payload.get("quality") or {}
     reasons = sorted((runs.get("reasons") or {}).items(), key=lambda item: -item[1])[:5]
-    reason_text = ", ".join(
-        "{} {}\uac74".format(REASON_LABELS.get(name, name), count)
-        for name, count in reasons
-    ) or "\uc5c6\uc74c"
-    candidate_pages = runs.get("candidate_pages") or []
+    reason_text = ", ".join("{} {}건".format(REASON_LABELS.get(name, name), count) for name, count in reasons) or "없음"
     candidate_lines = []
-    for page in candidate_pages[:5]:
-        label = page.get("title") or page.get("url") or "\uc81c\ubaa9 \uc5c6\uc74c"
-        candidate_lines.append(
-            "  · {} / {} / {}".format(
-                page.get("place_name") or "\uc7a5\uc18c \ubbf8\uc0c1",
-                page.get("target_tag") or "\ud0dc\uadf8 \ubbf8\uc0c1",
-                label,
-            )
-        )
-    unknown = "\uc9d1\uacc4 \uc804"
+    for page in (runs.get("candidate_pages") or [])[:5]:
+        label = page.get("title") or page.get("url") or "제목 없음"
+        candidate_lines.append("  · {} / {} / {}".format(page.get("place_name") or "장소 미상", page.get("target_tag") or "태그 미상", label))
+
+    unknown = "집계 전"
     ready = value(quality, "release_gate", "ready", default=False)
-    ready_text = "\ud1b5\uacfc" if ready else "\ubbf8\ud1b5\uacfc (\uc5f0\uc18d {}\uc77c)".format(value(quality, "release_gate", "consecutive_ready_days"))
+    ready_text = "통과" if ready else "미통과 (연속 {}일)".format(value(quality, "release_gate", "consecutive_ready_days"))
+    latency = value(quality, "search", "latency_ms", "value", default={})
+    gate_failures = release_gate_failures(quality)
     lines = [
-        "\uc5ec\uae30\uc77c\uc9c0\ub3c4 \uc77c\uc77c \uc218\uc9d1 \ubcf4\uace0\uc11c ({})".format(collection["date"]),
-        "", "[\ub124\uc774\ubc84 \ube14\ub85c\uadf8 \uc218\uc9d1]",
-        "- \uacc4\ud68d/\uc644\ub8cc: {} / {}\uacf3".format(naver["planned_jobs"], naver["completed_jobs"]),
-        "- \uc720\ud6a8/\uadfc\uac70 \ubd80\uc871/\uc2e4\ud328: {} / {} / {}\uacf3".format(naver["useful_jobs"], naver["insufficient_jobs"], naver["failed_jobs"]),
-        "- API \uc694\uccad: {}\ud68c (\uc81c\ud55c \uc751\ub2f5 {}\ud68c)".format(naver["api_requests"], naver["rate_limited_requests"]),
-        "- \uc624\ub298 \uc2e0\uaddc \uadfc\uac70: {}\uac1c, \uc7a5\uc18c {}\uacf3, \ud0dc\uadf8 \uc885\ub958 {}\uac1c".format(naver["new_evidence_rows"], naver["new_evidence_places"], naver["new_evidence_tags"]),
-        "", "[Codex \uc6f9 \uc870\uc0ac]",
-        "- \uc2e4\ud589/\uac80\uc0ac \ud6c4\ubcf4: {}\ud68c / {}\uac1c".format(runs["runs"], runs["rows"]),
-        "- \ucc44\ud0dd/\ud655\uc778 \ud544\uc694/\uc7ac\uc870\uc0ac \ud6c4\ubcf4/\ud0c8\ub77d: {} / {} / {} / {}\uac1c".format(
-            runs["accepted"], runs["needs_verification"],
-            runs.get("candidate_pending", 0), runs["rejected"],
-        ),
-        "- \uc811\uadfc \uc2e4\ud328 \ud6c4\ubcf4 \ubcf4\uc874: {}\uac74".format(runs.get("candidates_preserved", 0)),
-        "- \uc0c8\ub85c \uc800\uc7a5: {}\uac1c (\uc8fc \uadfc\uac70 {}, \uad00\ub828 \ud0dc\uadf8 \ud30c\uc0dd {})".format(runs["saved"], runs.get("primary_saved", runs["saved"]), runs.get("related_saved", 0)),
-        "- \uc624\ub298 DB \uc2e0\uaddc \uadfc\uac70: {}\uac1c, \uc7a5\uc18c {}\uacf3".format(web["new_evidence_rows"], web["new_evidence_places"]),
-        "- \uc8fc\uc694 \uac80\uc0ac \uc0ac\uc720: {}".format(reason_text),
-        *( ["- \uc7ac\uc870\uc0ac \ud6c4\ubcf4 \ud398\uc774\uc9c0:", *candidate_lines] if candidate_lines else [] ),
-        "", "[\uac80\uc0c9 \ud488\uc9c8 \ubc18\uc601]",
-        "- \uc624\ub298 \uc2e0\uaddc \ud1b5\ud569 \ud0dc\uadf8: {}\uac1c, \uc7a5\uc18c {}\uacf3".format(tags["new_place_tags"], tags["new_tagged_places"]),
-        "- \uac80\uc0c9 \uac00\ub2a5 \uc7a5\uc18c \uc99d\uac10: \uce74\ud398 {}, \uc2dd\ub2f9 {}".format(value(quality, "daily_delta", "cafe_searchable_places", default=unknown), value(quality, "daily_delta", "restaurant_searchable_places", default=unknown)),
-        "- \uc870\uac74 \uac80\uc0c9 hit@5: {}".format(value(quality, "search", "feature_query_hit_at_5_rate", "value", default=unknown)),
-        "- \uac80\uc99d \uadfc\uac70 \uacb0\uacfc \ube44\uc728@5: {}".format(value(quality, "search", "verified_feature_result_rate_at_5", "value", default=unknown)),
-        "- \ud558\ub4dc \uc870\uac74 \uc704\ubc18\ub960: {}".format(value(quality, "search", "hard_violation_rate", "value", default=unknown)),
-        "- 1\ucc28 \ubc30\ud3ec \uac8c\uc774\ud2b8: {}".format(ready_text),
-        "", "\uc0dd\uc131 \uc2dc\uac01: {}".format(collection["generated_at"]),
+        "여기일지도 일일 수집 보고서 ({})".format(collection["date"]),
+        "", "[네이버 블로그 수집]",
+        "- 계획/완료: {} / {}곳".format(naver["planned_jobs"], naver["completed_jobs"]),
+        "- 유효/근거 부족/실패: {} / {} / {}곳".format(naver["useful_jobs"], naver["insufficient_jobs"], naver["failed_jobs"]),
+        "- API 요청: {}회 (제한 응답 {}회)".format(naver["api_requests"], naver["rate_limited_requests"]),
+        "- 오늘 신규 근거: {}개, 장소 {}곳, 태그 종류 {}개".format(naver["new_evidence_rows"], naver["new_evidence_places"], naver["new_evidence_tags"]),
+        "", "[Codex 웹 조사]",
+        "- 집계 시작: {}".format(runs.get("window_start") or unknown),
+        "- 실행/검사 후보: {}회 / {}개".format(runs["runs"], runs["rows"]),
+        "- 판정(즉시 확정 가능/확인 필요/재조사/탈락): {} / {} / {} / {}개".format(runs["accepted"], runs["needs_verification"], runs.get("candidate_pending", 0), runs["rejected"]),
+        "- 접근 실패 후보 보존: {}건".format(runs.get("candidates_preserved", 0)),
+        "- DB에 근거 후보로 저장: {}개 (주 근거 {}, 관련 태그 파생 {}, 추가 검증 포함)".format(runs["saved"], runs.get("primary_saved", runs["saved"]), runs.get("related_saved", 0)),
+        "- 오늘 DB 신규 근거: {}개, 장소 {}곳".format(web["new_evidence_rows"], web["new_evidence_places"]),
+        "- 주요 검사 사유: {}".format(reason_text),
+        *(["- 재조사 후보 페이지:", *candidate_lines] if candidate_lines else []),
+        "", "[검색 품질 반영]",
+        "- 오늘 신규 통합 태그: {}개, 장소 {}곳".format(tags["new_place_tags"], tags["new_tagged_places"]),
+        "- 검색 가능 장소 증감: 카페 {}, 식당 {}".format(value(quality, "daily_delta", "cafe_searchable_places", default=unknown), value(quality, "daily_delta", "restaurant_searchable_places", default=unknown)),
+        "- 검색마다 상위 5개 제공: {}".format(metric_text(value(quality, "search", "top_five_coverage_rate", default={}))),
+        "- 조건 검색 중 검증 근거 결과가 1개 이상인 비율: {}".format(metric_text(value(quality, "search", "feature_query_hit_at_5_rate", default={}))),
+        "- 상위 5개 중 조건을 검증 근거로 만족한 결과 비율: {}".format(metric_text(value(quality, "search", "verified_feature_result_rate_at_5", default={}))),
+        "- 근거가 부족할 때 부족함을 밝힌 비율: {}".format(metric_text(value(quality, "search", "honest_no_hit_fallback_rate", default={}))),
+        "- 추천 사유에 충족/부족 조건을 표시한 비율: {}".format(metric_text(value(quality, "search", "reason_transparency_rate", default={}))),
+        "- 필수 조건 위반률: {}".format(metric_text(value(quality, "search", "hard_violation_rate", default={}))),
+        "- 검색 속도: 평균 {}ms, p95 {}ms".format(latency.get("average", unknown), latency.get("p95", unknown)),
+        "- 1차 배포 게이트: {}".format(ready_text),
+        "- 현재 미충족 항목: {}".format(", ".join(gate_failures) if gate_failures else "없음"),
+        "", "생성 시각: {}".format(collection["generated_at"]),
     ]
     return "\n".join(lines)
 
