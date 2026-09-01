@@ -43,6 +43,7 @@ from .services.place_mapper import (
 from .services.tag_enrichment_queue import enqueue_tag_enrichment
 from .services.search_coverage_demand import safe_record_search_coverage_demand
 from .services.ai_situation_parser import parse_situation
+from .services.ai_intent_planner import _local_rule_anchor_location
 from .services.ai_web_search_provider import (
     get_ai_web_search_result,
 )
@@ -50,7 +51,11 @@ from .services.conversational_search_planner import (
     build_conversational_search_plan,
     sync_frame_location_to_search_plan,
 )
-from .services.ai_search_orchestrator import run_ai_search, run_ai_search_candidates
+from .services.ai_search_orchestrator import (
+    _resolve_anchor_location,
+    run_ai_search,
+    run_ai_search_candidates,
+)
 from .services.conversation_sessions import (
     build_previous_context,
     can_access_conversation_session,
@@ -887,6 +892,18 @@ def map_place_search(request):
     kakao_error = ""
     is_separated_place_search = request.path.rstrip("/").endswith("place-search")
     basic_db_skipped = False
+    anchor_location = ""
+    resolved_anchor = {}
+    search_lat = lat
+    search_lng = lng
+
+    if is_separated_place_search and keyword:
+        anchor_location = _local_rule_anchor_location(keyword)
+        if anchor_location:
+            resolved_anchor = _resolve_anchor_location(anchor_location, lat=lat, lng=lng)
+            if resolved_anchor.get("status") == "resolved":
+                search_lat = parse_optional_float(resolved_anchor.get("lat"))
+                search_lng = parse_optional_float(resolved_anchor.get("lng"))
 
     db_queryset = None
     if is_separated_place_search and keyword and source == "all":
@@ -913,8 +930,8 @@ def map_place_search(request):
     if source in {"all", "db"} and not basic_db_skipped:
         db_results, db_total_count, query_info = search_saved_map_places(
             keyword=keyword,
-            lat=lat,
-            lng=lng,
+            lat=search_lat,
+            lng=search_lng,
             radius=radius,
             limit=limit,
             queryset=db_queryset,
@@ -924,8 +941,8 @@ def map_place_search(request):
         try:
             kakao_data = search_places_by_keyword(
                 keyword=keyword,
-                lat=lat,
-                lng=lng,
+                lat=search_lat,
+                lng=search_lng,
                 radius=radius or None,
                 size=min(limit, 15),
             )
@@ -935,7 +952,7 @@ def map_place_search(request):
                 if place.get("source") == "kakao_local" and place.get("external_id")
             }
             kakao_results = [
-                serialize_kakao_map_place(place, lat=lat, lng=lng)
+                serialize_kakao_map_place(place, lat=search_lat, lng=search_lng)
                 for place in kakao_data.get("documents", [])
                 if str(place.get("id")) not in db_external_ids
             ]
@@ -945,7 +962,7 @@ def map_place_search(request):
 
     # 저장 장소는 관련도 순서를 그대로 유지하고, 카카오 장소만 거리순으로 정렬해 뒤에 붙입니다.
     # 여기서 전체를 거리순으로 다시 정렬하면 검색어와 정확히 맞는 장소가 밀려납니다.
-    if lat is not None and lng is not None:
+    if search_lat is not None and search_lng is not None:
         kakao_results = sorted(kakao_results, key=lambda place: (
             place.get("distance") is None,
             place.get("distance") if place.get("distance") is not None else 999999999,
@@ -991,6 +1008,14 @@ def map_place_search(request):
             "limit": limit,
         },
         "query_info": query_info,
+        "location_context": {
+            "anchor_location": anchor_location,
+            "anchor_resolved": resolved_anchor.get("status") == "resolved",
+            "center_source": resolved_anchor.get("source") or "map_center",
+            "center_label": resolved_anchor.get("label") or "",
+            "lat": search_lat,
+            "lng": search_lng,
+        },
         "kakao_error": kakao_error,
         "results": combined_results,
     })

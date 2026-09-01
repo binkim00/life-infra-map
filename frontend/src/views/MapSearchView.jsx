@@ -147,6 +147,7 @@ const MapSearchView = () => {
     '장소명, 주소, 업종을 빠르게 검색할 수 있어요.',
   )
   const [counts, setCounts] = useState({ db: 0, kakao: 0, db_total: 0 })
+  const [locationContext, setLocationContext] = useState({})
   const [droppedTokens, setDroppedTokens] = useState([])
   const [excludedTokens, setExcludedTokens] = useState([])
 
@@ -178,6 +179,7 @@ const MapSearchView = () => {
       })
 
       setCounts(data.candidate_counts || { db: 0, kakao: 0, db_total: 0 })
+      setLocationContext(data.location_context || {})
       setDroppedTokens(toArray(data.query_info?.dropped_tokens))
       setExcludedTokens(toArray(data.query_info?.exclude_tokens))
 
@@ -191,7 +193,9 @@ const MapSearchView = () => {
       let nextMessage
 
       if (nextPlaces.length) {
-        nextMessage = `${nextPlaces.length}곳을 찾았어요.`
+        nextMessage = data.location_context?.anchor_resolved && data.location_context?.center_label
+          ? `${data.location_context.center_label} 기준으로 ${nextPlaces.length}곳을 찾았어요.`
+          : `${nextPlaces.length}곳을 찾았어요.`
       } else if (!query.trim()) {
         nextMessage = '검색어를 입력하거나 지도 중심 기준으로 저장 장소를 둘러보세요.'
       } else {
@@ -207,6 +211,7 @@ const MapSearchView = () => {
       console.error(error)
       setPlaces([])
       setCounts({ db: 0, kakao: 0, db_total: 0 })
+      setLocationContext({})
       setDroppedTokens([])
       setExcludedTokens([])
       setMessage('지도 검색을 불러오지 못했습니다.')
@@ -295,6 +300,11 @@ const MapSearchView = () => {
             <strong>{message}</strong>
             {hasResults ? (
               <span>저장 장소 {counts.db || 0}곳 · 카카오 {counts.kakao || 0}곳</span>
+            ) : null}
+            {locationContext.anchor_location && !locationContext.anchor_resolved ? (
+              <span className={styles.queryNote}>
+                {locationContext.anchor_location} 위치를 확인하지 못해 현재 지도 중심으로 검색했어요.
+              </span>
             ) : null}
             {excludedTokens.length ? (
               <span className={styles.queryNote}>제외한 조건: {excludedTokens.join(', ')}</span>

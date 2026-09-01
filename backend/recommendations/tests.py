@@ -7490,11 +7490,20 @@ class RecommendationSearchTests(TestCase):
 
     @patch("recommendations.views.search_saved_map_places")
     @patch("recommendations.views.search_places_by_keyword")
+    @patch("recommendations.views._resolve_anchor_location")
     def test_separated_place_search_uses_fast_kakao_path_for_basic_business_search(
         self,
+        mock_resolve_anchor,
         mock_kakao,
         mock_db_search,
     ):
+        mock_resolve_anchor.return_value = {
+            "status": "resolved",
+            "source": "kakao_keyword",
+            "label": "서면역",
+            "lat": 35.1577,
+            "lng": 129.0590,
+        }
         mock_kakao.return_value = {
             "documents": [{
                 "id": "pharmacy-1",
@@ -7521,6 +7530,12 @@ class RecommendationSearchTests(TestCase):
         self.assertFalse(data["recommendation_applied"])
         self.assertTrue(data["db_search_skipped"])
         self.assertEqual(data["results"][0]["name"], "서면 빠른약국")
+        self.assertEqual(data["location_context"]["anchor_location"], "서면역")
+        self.assertTrue(data["location_context"]["anchor_resolved"])
+        self.assertEqual(data["location_context"]["center_source"], "kakao_keyword")
+        mock_resolve_anchor.assert_called_once_with("서면역", lat=35.1577, lng=129.0590)
+        self.assertEqual(mock_kakao.call_args.kwargs["lat"], 35.1577)
+        self.assertEqual(mock_kakao.call_args.kwargs["lng"], 129.0590)
         mock_db_search.assert_not_called()
 
     @patch("recommendations.views.search_places_by_keyword")
