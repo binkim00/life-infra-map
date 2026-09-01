@@ -65,7 +65,8 @@ docker run -d --name "$container_name" --network none --shm-size=512m \
   "$POSTGIS_IMAGE" >/dev/null
 
 for _attempt in $(seq 1 60); do
-  if docker exec "$container_name" pg_isready -U postgres -d life_infra_restore >/dev/null 2>&1; then
+  if docker logs "$container_name" 2>&1 | grep -q "PostgreSQL init process complete" \
+    && docker exec "$container_name" pg_isready -U postgres -d life_infra_restore >/dev/null 2>&1; then
     break
   fi
   sleep 2
