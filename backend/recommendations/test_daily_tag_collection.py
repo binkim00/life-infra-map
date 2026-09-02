@@ -461,13 +461,52 @@ class DailyTagCollectionTests(TestCase):
             self.make_place(71), strategy="adaptive",
             targeted_tags=["콘센트있음", "혼자이용좋음"],
         )
-        self.assertEqual(result["requests"], 1)
+        self.assertEqual(result["requests"], 2)
         self.assertEqual(result["miss_reason"], "IDENTITY_MISMATCH")
         first_query = request_channel.call_args_list[0].args[1]
-        self.assertNotIn("노트북", first_query)
+        second_query = request_channel.call_args_list[1].args[1]
+        self.assertIn("노트북", first_query)
+        self.assertNotIn("노트북", second_query)
         self.assertEqual(
-            result["search_attempts"][0]["query_stage"],
+            result["search_attempts"][1]["query_stage"],
             "identity_discovery",
+        )
+
+    @override_settings(TAG_COLLECTION_ADOPTED_TARGET_CLUSTERS=("work_sparse",))
+    @patch("recommendations.services.place_tag_collection._request_channel")
+    def test_adaptive_collection_uses_identity_fallback_before_targeted_query(
+        self, request_channel
+    ):
+        request_channel.side_effect = [
+            {"items": [{
+                "title": "전혀 다른 장소",
+                "description": "다른 지역 카페 후기",
+                "link": "https://example.com/wrong-feature",
+            }]},
+            {"items": [{
+                "title": "수집 테스트 79 서울 중구 카페",
+                "description": "매장 방문 후기",
+                "link": "https://example.com/identity-fallback",
+            }]},
+            {"items": [{
+                "title": "수집 테스트 79 서울 중구 카페",
+                "description": "노트북으로 작업하기 편하고 콘센트가 있다",
+                "link": "https://example.com/targeted-feature",
+            }]},
+        ]
+
+        result = collect_naver_place_evidence(
+            self.make_place(79),
+            strategy="adaptive",
+            targeted_tags=["콘센트있음", "노트북작업"],
+        )
+
+        self.assertEqual(result["requests"], 3)
+        self.assertEqual(result["error"], "")
+        self.assertTrue(
+            {"콘센트있음", "노트북작업"}.issubset(
+                {row["tag_name"] for row in result["evidences"]}
+            )
         )
 
     @override_settings(TAG_COLLECTION_ADOPTED_TARGET_CLUSTERS=("work_sparse", "solo"))

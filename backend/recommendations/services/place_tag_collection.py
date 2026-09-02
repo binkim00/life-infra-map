@@ -176,7 +176,13 @@ def collect_naver_place_evidence(
             profiles = additions
         else:
             seen_keywords = {keyword for _, keyword, _ in discovery}
-            profiles = discovery + [row for row in additions if row[1] not in seen_keywords]
+            identity_fallback = [
+                (f"{name}_identity_discovery", "", tags)
+                for name, _, tags in discovery
+            ]
+            profiles = discovery + identity_fallback + [
+                row for row in additions if row[1] not in seen_keywords
+            ]
 
     evidences = []
     seen = set()
@@ -194,18 +200,19 @@ def collect_naver_place_evidence(
     }
     discovery_identity_matches = None
     for profile_index, (pack_name, keyword, tag_names) in enumerate(profiles):
-        if strategy == "adaptive" and profile_index > 0 and not discovery_identity_matches:
-            break
+        if strategy == "adaptive":
+            # The ordinary feature query stays first because it may already
+            # identify the place and yield evidence. Use a name/location-only
+            # request only when that first query found no matching identity.
+            if profile_index == 1 and discovery_identity_matches:
+                continue
+            if profile_index > 1 and not discovery_identity_matches:
+                break
         # Naver treats a long list of semantic words as restrictive search terms.
         # Search with one representative word, then extract every tag in the pack
         # from the returned title/summary.
-        identity_discovery = strategy == "adaptive" and profile_index == 0
-        # The first adaptive request establishes that the result really belongs
-        # to this place. Adding a sparse feature such as "노트북" or "혼밥" at
-        # this stage often hides the exact-place result and falsely ends the
-        # whole collection as an identity miss. Feature terms are applied by
-        # the following targeted stages after identity has been established.
-        query = build_collection_query(place, "" if identity_discovery else keyword)
+        identity_discovery = strategy == "adaptive" and profile_index == 1
+        query = build_collection_query(place, keyword)
         profile_evidence_start = len(evidences)
         query_stage = (
             "identity_discovery"
@@ -369,7 +376,7 @@ def collect_naver_place_evidence(
             else:
                 result_audit["rejection_reason"] = "NO_FEATURE"
 
-        if profile_index == 0:
+        if strategy == "adaptive" and profile_index <= 1:
             discovery_identity_matches = diagnostics["identity_matches"]
         if pack_name.startswith("target_") and len(evidences) > profile_evidence_start:
             break
