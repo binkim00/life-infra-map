@@ -249,6 +249,23 @@ class DailyTagCollectionTests(TestCase):
         self.assertEqual(PlaceTagCollectionJob.objects.count(), 3)
 
     @override_settings(TAG_COLLECTION_DAILY_PLACE_LIMIT=2)
+    def test_scheduler_does_not_plan_when_existing_jobs_exceed_daily_cap(self):
+        for index in range(3):
+            place = self.make_place(650 + index)
+            PlaceTagCollectionJob.objects.create(
+                place=place,
+                provider="naver_search",
+                cycle_date=timezone.localdate(),
+                requested_tags=["조용함"],
+                planned_requests=1,
+            )
+
+        stats = scheduler_tick()
+
+        self.assertEqual(stats["planned"], 0)
+        self.assertEqual(PlaceTagCollectionJob.objects.count(), 3)
+
+    @override_settings(TAG_COLLECTION_DAILY_PLACE_LIMIT=2)
     def test_scheduler_reports_useful_completion_separately_from_empty_completion(self):
         useful_place = self.make_place(701)
         empty_place = self.make_place(702)

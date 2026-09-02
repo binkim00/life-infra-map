@@ -52,6 +52,11 @@ docker compose --env-file /home/ubuntu/life-infra-map/deploy/db/.env -f docker-c
 `TAG_COLLECTION_FOCUS_REGION`과 `TAG_COLLECTION_FOCUS_CATEGORIES`를 명시적으로 바꾸고,
 지역별 `recommendation_searchable_coverage_pct`를 확인한 뒤 재기동합니다.
 
+하루 신규 장소 작업은 기본 50곳으로 제한합니다. 운영에서 상한을 바꿀 때는
+`TAG_COLLECTION_DAILY_PLACE_LIMIT`를 명시하고, scheduler가 같은 날짜에 이미 만든
+작업 수도 이 상한에 포함되는지 로그의 `planned`, `queued`, `processing`, `completed`로
+확인합니다.
+
 ## 중지
 
 DB 컨테이너에는 영향을 주지 않고 scheduler와 worker만 중지합니다.
