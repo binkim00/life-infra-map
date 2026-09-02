@@ -294,12 +294,14 @@ class PrepareCodexWebResearchTests(TestCase):
             "active_tags": ["콘센트있음"],
             "source_hints": [{"url": "https://blog.example.com/right-place"}],
             "corroboration_tags": ["분위기좋음"],
+            "research_track": "corroboration",
         })
 
         self.assertEqual(row["target_tag"], "분위기좋음")
         self.assertEqual(row["target_tags"], ["분위기좋음", "사진찍기좋음", "조용함"])
         self.assertIn("감성적인", row["target_tag_search_terms"]["분위기좋음"])
         self.assertEqual(row["corroboration_tags"], ["분위기좋음"])
+        self.assertEqual(row["research_track"], "corroboration")
         self.assertEqual(row["source_hints"][0]["url"], "https://blog.example.com/right-place")
         self.assertEqual(row["candidate_sources"], [])
         self.assertEqual(row["failure_detail"], "")

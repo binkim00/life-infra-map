@@ -528,6 +528,7 @@ def seed_row(item):
         },
         "source_hints": item["source_hints"],
         "selection_reason": "launch_quality_gap" if item.get("launch_demand") else "coverage_gap",
+        "research_track": item.get("research_track") or "discovery",
         "launch_demand_tags": sorted(item.get("launch_demand") or {}, key=(item.get("launch_demand") or {}).get, reverse=True),
         "corroboration_tags": item.get("corroboration_tags") or [],
         "extracted_tag": "",
