@@ -39,6 +39,55 @@ RESEARCHABILITY_PRIORITY = (
 )
 RESEARCHABILITY_INDEX = {tag: index for index, tag in enumerate(RESEARCHABILITY_PRIORITY)}
 
+# Canonical tags are compact database labels, while public reviews usually use
+# ordinary Korean phrases.  Passing a small vocabulary with the seed lets the
+# researcher search for the meaning instead of the exact label only.
+TAG_SEARCH_TERMS = {
+    "분위기좋음": ("분위기가 좋", "분위기 있는", "감성적인"),
+    "데이트좋음": ("데이트", "커플", "둘이 가기"),
+    "혼자이용좋음": ("혼자", "혼카페", "1인 이용"),
+    "혼밥좋음": ("혼밥", "혼자 먹", "1인 식사"),
+    "대화하기좋음": ("대화하기 좋", "이야기하기 좋", "모임하기 좋"),
+    "사진찍기좋음": ("사진 찍기 좋", "포토존", "사진이 잘 나"),
+    "커피맛좋음": ("커피가 맛", "원두", "커피 맛집"),
+    "디저트특화": ("디저트", "베이커리", "케이크"),
+    "대표메뉴뚜렷함": ("대표 메뉴", "시그니처", "인기 메뉴"),
+    "가성비좋음": ("가성비", "가격이 저렴", "가격 대비"),
+    "메뉴선택폭넓음": ("메뉴가 다양", "메뉴 종류", "선택지가 많"),
+    "여럿이먹기좋은메뉴": ("여럿이", "함께 먹", "나눠 먹"),
+    "조용함": ("조용", "한적", "차분"),
+    "노트북작업": ("노트북", "랩탑", "카공"),
+    "작업하기좋음": ("작업하기 좋", "공부하기 좋", "업무 보기 좋"),
+    "장기체류좋음": ("오래 머물", "장시간", "오래 있기"),
+    "콘센트있음": ("콘센트", "전원", "충전"),
+    "와이파이있음": ("와이파이", "wifi", "무선 인터넷"),
+    "무료와이파이": ("무료 와이파이", "와이파이 비밀번호", "wifi 무료"),
+    "단체석있음": ("단체석", "단체 좌석", "단체 이용"),
+    "개별룸있음": ("개별 룸", "룸 있음", "프라이빗 룸"),
+    "넓은테이블": ("테이블이 넓", "큰 테이블", "넓은 탁자"),
+    "좌석간격넓음": ("좌석 간격", "테이블 간격", "자리 간격"),
+    "편한좌석": ("좌석이 편", "의자가 편", "소파 좌석"),
+    "야외좌석": ("야외 좌석", "테라스", "루프탑"),
+    "자연채광좋음": ("채광", "햇살", "통창"),
+    "반려동물동반": ("반려동물 동반", "애견 동반", "강아지 동반"),
+    "예약가능": ("예약 가능", "예약할 수", "예약하고"),
+    "예약필수": ("예약 필수", "예약해야", "사전 예약"),
+    "웨이팅많음": ("웨이팅", "대기 줄", "기다려야"),
+    "웨이팅적음": ("웨이팅 없", "대기 없이", "바로 입장"),
+    "시간제한있음": ("이용 시간 제한", "시간 제한", "2시간 이용"),
+    "테이크아웃전문": ("테이크아웃 전문", "포장 전문", "좌석 없는"),
+    "유아의자있음": ("유아 의자", "아기 의자", "하이체어"),
+    "아이메뉴있음": ("아이 메뉴", "어린이 메뉴", "키즈 메뉴"),
+    "유모차접근": ("유모차", "유모차 입장", "유모차 접근"),
+    "무단차접근": ("휠체어", "단차 없", "배리어프리"),
+    "엘리베이터있음": ("엘리베이터", "승강기"),
+    "주차어려움": ("주차 어려", "주차 공간 없", "주차 불가"),
+    "계단접근만가능": ("계단으로", "계단만", "엘리베이터 없"),
+    "좌석없음": ("좌석 없", "앉을 자리 없", "스탠딩"),
+    "혼잡함": ("붐비", "혼잡", "사람이 많"),
+    "소음큼": ("시끄럽", "소음", "북적"),
+}
+
 
 def research_priority(place, launch_demands, *, quality_score=0):
     """Prefer source-ready launch gaps, then source-ready coverage, then cold launch gaps."""
@@ -115,15 +164,15 @@ class Command(BaseCommand):
 
 
 def prefer_source_ready(rows, limit):
-    """Prefer reachable launch gaps, then retryable launch gaps, then coverage."""
+    """Prefer reachable pages; within each tier, keep launch gaps first."""
     def tier(row):
         has_source = bool(row.get("source_hints"))
         has_demand = bool(row.get("launch_demand"))
         if has_source and has_demand:
             return 0
-        if has_demand:
-            return 1
         if has_source:
+            return 1
+        if has_demand:
             return 2
         return 3
 
@@ -198,14 +247,12 @@ def select_places(category, limit, allocation, *, exclude_place_ids=None):
         ]
         if not missing:
             continue
-        ordered_missing = sorted(
+        ordered_missing = order_missing_tags(
             missing,
-            key=lambda value: (
-                -launch_demands.get(place.id, {}).get(value, 0),
-                allocation[(category, value)],
-                RESEARCHABILITY_INDEX.get(value, len(RESEARCHABILITY_INDEX)),
-                tags.index(value),
-            ),
+            category=category,
+            demand=launch_demands.get(place.id, {}),
+            allocation=allocation,
+            category_tags=tags,
         )
         tag = ordered_missing[0]
         allocation[(category, tag)] += 1
@@ -381,6 +428,10 @@ def seed_row(item):
         "existing_active_tags": "|".join(item["active_tags"]),
         "target_tag": item["tag"],
         "target_tags": item["target_tags"],
+        "target_tag_search_terms": {
+            tag: list(TAG_SEARCH_TERMS.get(tag, (tag,)))
+            for tag in item["target_tags"]
+        },
         "source_hints": item["source_hints"],
         "selection_reason": "launch_quality_gap" if item.get("launch_demand") else "coverage_gap",
         "launch_demand_tags": sorted(item.get("launch_demand") or {}, key=(item.get("launch_demand") or {}).get, reverse=True),
@@ -404,3 +455,16 @@ def seed_row(item):
         "research_status": "NO_RESULT",
         "notes": "",
     }
+
+
+def order_missing_tags(missing, *, category, demand, allocation, category_tags):
+    """Rank useful/researchable gaps before using allocation as a tie-breaker."""
+    return sorted(
+        missing,
+        key=lambda value: (
+            -int(demand.get(value, 0)),
+            RESEARCHABILITY_INDEX.get(value, len(RESEARCHABILITY_INDEX)),
+            allocation[(category, value)],
+            category_tags.index(value),
+        ),
+    )

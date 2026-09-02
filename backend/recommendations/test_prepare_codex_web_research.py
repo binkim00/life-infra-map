@@ -4,6 +4,7 @@ from django.test import TestCase
 
 from recommendations.management.commands.prepare_codex_web_research import (
     MAX_SOURCE_HINTS,
+    order_missing_tags,
     prefer_source_ready,
     preflight_source_hints,
     research_priority,
@@ -139,7 +140,7 @@ class PrepareCodexWebResearchTests(TestCase):
 
         self.assertEqual(selected, [ready])
 
-    def test_prefer_source_ready_keeps_unreachable_retry_ahead_of_coverage(self):
+    def test_prefer_source_ready_keeps_reachable_coverage_ahead_of_unreachable_retry(self):
         retry = {
             "place": self.place,
             "source_hints": [],
@@ -153,7 +154,33 @@ class PrepareCodexWebResearchTests(TestCase):
 
         selected = prefer_source_ready([coverage, retry], 1)
 
-        self.assertEqual(selected, [retry])
+        self.assertEqual(selected, [coverage])
+
+    def test_missing_tags_prioritize_researchability_before_forced_diversity(self):
+        ordered = order_missing_tags(
+            ["유모차접근", "분위기좋음", "사진찍기좋음"],
+            category="cafe",
+            demand={},
+            allocation={
+                ("cafe", "유모차접근"): 0,
+                ("cafe", "분위기좋음"): 10,
+                ("cafe", "사진찍기좋음"): 0,
+            },
+            category_tags=["분위기좋음", "사진찍기좋음", "유모차접근"],
+        )
+
+        self.assertEqual(ordered, ["분위기좋음", "사진찍기좋음", "유모차접근"])
+
+    def test_launch_demand_still_overrides_researchability(self):
+        ordered = order_missing_tags(
+            ["분위기좋음", "유모차접근"],
+            category="restaurant",
+            demand={"유모차접근": 50},
+            allocation={("restaurant", "분위기좋음"): 0, ("restaurant", "유모차접근"): 0},
+            category_tags=["분위기좋음", "유모차접근"],
+        )
+
+        self.assertEqual(ordered[0], "유모차접근")
 
     def test_seed_exposes_multiple_missing_tags_and_source_hints(self):
         row = seed_row({
@@ -166,6 +193,7 @@ class PrepareCodexWebResearchTests(TestCase):
 
         self.assertEqual(row["target_tag"], "분위기좋음")
         self.assertEqual(row["target_tags"], ["분위기좋음", "사진찍기좋음", "조용함"])
+        self.assertIn("감성적인", row["target_tag_search_terms"]["분위기좋음"])
         self.assertEqual(row["source_hints"][0]["url"], "https://blog.example.com/right-place")
         self.assertEqual(row["candidate_sources"], [])
         self.assertEqual(row["failure_detail"], "")
