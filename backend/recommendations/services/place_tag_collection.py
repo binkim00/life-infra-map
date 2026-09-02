@@ -199,9 +199,19 @@ def collect_naver_place_evidence(
         # Naver treats a long list of semantic words as restrictive search terms.
         # Search with one representative word, then extract every tag in the pack
         # from the returned title/summary.
-        query = build_collection_query(place, keyword)
+        identity_discovery = strategy == "adaptive" and profile_index == 0
+        # The first adaptive request establishes that the result really belongs
+        # to this place. Adding a sparse feature such as "노트북" or "혼밥" at
+        # this stage often hides the exact-place result and falsely ends the
+        # whole collection as an identity miss. Feature terms are applied by
+        # the following targeted stages after identity has been established.
+        query = build_collection_query(place, "" if identity_discovery else keyword)
         profile_evidence_start = len(evidences)
-        query_stage = pack_name.rsplit("_", 1)[-1] if pack_name.startswith("target_") else "direct"
+        query_stage = (
+            "identity_discovery"
+            if identity_discovery
+            else pack_name.rsplit("_", 1)[-1] if pack_name.startswith("target_") else "direct"
+        )
         attempt = {
             "place_id": place.id,
             "place_name": place.name,

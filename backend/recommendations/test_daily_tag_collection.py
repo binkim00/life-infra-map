@@ -463,6 +463,12 @@ class DailyTagCollectionTests(TestCase):
         )
         self.assertEqual(result["requests"], 1)
         self.assertEqual(result["miss_reason"], "IDENTITY_MISMATCH")
+        first_query = request_channel.call_args_list[0].args[1]
+        self.assertNotIn("노트북", first_query)
+        self.assertEqual(
+            result["search_attempts"][0]["query_stage"],
+            "identity_discovery",
+        )
 
     @override_settings(TAG_COLLECTION_ADOPTED_TARGET_CLUSTERS=("work_sparse", "solo"))
     @patch("recommendations.services.place_tag_collection._request_channel")
@@ -555,6 +561,29 @@ class DailyTagCollectionTests(TestCase):
         }]}
         result = collect_naver_place_evidence(self.make_place(1))
         self.assertEqual(result["miss_reason"], "IDENTITY_MISMATCH")
+
+    def test_review_phrases_extract_grounded_work_facility_tags(self):
+        from recommendations.services.naver_tag_evidence_provider import polarity_assessment
+
+        laptop = polarity_assessment(
+            "노트북작업",
+            "카페에서 노트북으로 작업하기 편했고 노트북 하기도 좋았다",
+            category="cafe",
+        )
+        wifi = polarity_assessment(
+            "와이파이있음",
+            "카운터 옆에 와이파이 비밀번호가 안내되어 있다",
+            category="cafe",
+        )
+        time_limit = polarity_assessment(
+            "시간제한있음",
+            "주말에는 좌석 시간 제한이 있지만 평일에는 시간 제한 없음",
+            category="cafe",
+        )
+
+        self.assertEqual(laptop["polarity"], "positive")
+        self.assertEqual(wifi["polarity"], "positive")
+        self.assertEqual(time_limit["polarity"], "unknown")
 
     @patch("recommendations.services.canonical_ai_evidence_extractor.extract_canonical_tags_from_evidence")
     @patch("recommendations.services.place_tag_collection._request_channel")
