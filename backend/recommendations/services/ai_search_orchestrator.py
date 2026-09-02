@@ -2599,6 +2599,7 @@ def _collect_derived_shopping_candidates(*, lat=None, lng=None, limit=50, radius
 
 SPARSE_BEST_AVAILABLE_CATEGORY_CODES = frozenset({"shopping", "smoking_area"})
 SPARSE_BEST_AVAILABLE_RADIUS = 20_000
+DEFAULT_DB_SEARCH_RADIUS = 3_000
 
 
 def _merge_expanded_candidates(nearby, expanded, *, original_radius, limit):
@@ -2629,13 +2630,14 @@ def collect_db_candidates(
     radius=None,
     _allow_sparse_expansion=True,
 ):
+    implicit_radius = radius in (None, "")
     terms = _db_evidence_terms(frame)
     search_terms = terms["search"]
     db_first_category_codes = _db_first_category_codes(frame)
     direct_category_codes = _collector_direct_db_category_codes(frame)
     restaurant_search = "restaurant" in direct_category_codes
     if "shopping" in direct_category_codes:
-        resolved_radius = _radius(radius)
+        resolved_radius = DEFAULT_DB_SEARCH_RADIUS if implicit_radius else _radius(radius)
         derived = _collect_derived_shopping_candidates(
             lat=lat,
             lng=lng,
@@ -2690,7 +2692,7 @@ def collect_db_candidates(
         if db_first_category_codes:
             query |= Q(category__in=db_first_category_codes)
 
-    radius = _radius(radius)
+    radius = DEFAULT_DB_SEARCH_RADIUS if implicit_radius else _radius(radius)
     bounds = _nearby_bounds(lat, lng, radius)
     queryset = Place.objects.filter(query)
     # Direct category lookup has no multiplying join, so DISTINCT only forces a
@@ -2933,7 +2935,10 @@ def collect_db_candidates(
     if (
         _allow_sparse_expansion
         and len(balanced) < minimum
-        and set(direct_category_codes).intersection(SPARSE_BEST_AVAILABLE_CATEGORY_CODES)
+        and (
+            implicit_radius
+            or set(direct_category_codes).intersection(SPARSE_BEST_AVAILABLE_CATEGORY_CODES)
+        )
         and radius < SPARSE_BEST_AVAILABLE_RADIUS
     ):
         expanded = collect_db_candidates(

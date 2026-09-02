@@ -3648,6 +3648,48 @@ class RecommendationSearchTests(TestCase):
         self.assertTrue(expanded)
         self.assertTrue(all(candidate["expanded_from_radius_m"] == 2000 for candidate in expanded))
 
+    def test_implicit_direct_category_radius_expands_only_when_nearby_is_sparse(self):
+        from recommendations.services.ai_search_orchestrator import collect_db_candidates
+
+        for index in range(2):
+            self._create_place(
+                name=f"서면 근거리 식당 {index}",
+                category="restaurant",
+                external_id=f"near-restaurant-default-radius-{index}",
+                lat=35.1579 + index * 0.001,
+                lng=129.0592,
+                data_quality_score=70,
+            )
+        for index in range(3):
+            self._create_place(
+                name=f"부산 원거리 식당 {index}",
+                category="restaurant",
+                external_id=f"far-restaurant-default-radius-{index}",
+                lat=35.2079 + index * 0.001,
+                lng=129.0592,
+                data_quality_score=70,
+            )
+
+        candidates = collect_db_candidates(
+            {
+                "target_objects": ["식당"],
+                "result_match_terms": ["식당", "음식점"],
+                "candidate_category_codes": ["restaurant"],
+                "candidate_place_types": ["식당"],
+            },
+            lat=35.1579,
+            lng=129.0592,
+            limit=10,
+        )
+
+        self.assertGreaterEqual(len(candidates), 5)
+        self.assertFalse(candidates[0].get("expanded_search", False))
+        expanded = [candidate for candidate in candidates if candidate.get("expanded_search")]
+        self.assertTrue(expanded)
+        self.assertTrue(
+            all(candidate["expanded_from_radius_m"] == 3000 for candidate in expanded)
+        )
+
     def test_sparse_shopping_candidates_expand_radius_without_reordering_nearby(self):
         from recommendations.services.ai_search_orchestrator import collect_db_candidates
 
