@@ -291,6 +291,57 @@ class DailyTagCollectionTests(TestCase):
         self.assertEqual(stats["insufficient_evidence"], 1)
 
     @override_settings(
+        TAG_COLLECTION_DAILY_PLACE_LIMIT=1,
+        TAG_COLLECTION_SNAPSHOT_QUIET_MINUTES=10,
+    )
+    @patch(
+        "recommendations.management.commands.run_tag_collection_scheduler."
+        "refresh_operations_snapshot"
+    )
+    def test_scheduler_defers_dashboard_snapshot_until_collection_is_quiet(
+        self, refresh_snapshot
+    ):
+        place = self.make_place(750)
+        PlaceTagCollectionJob.objects.create(
+            place=place,
+            provider="naver_search",
+            cycle_date=timezone.localdate(),
+            status="completed",
+        )
+
+        stats = scheduler_tick()
+
+        self.assertFalse(stats["snapshot_refreshed"])
+        refresh_snapshot.assert_not_called()
+
+    @override_settings(
+        TAG_COLLECTION_DAILY_PLACE_LIMIT=1,
+        TAG_COLLECTION_SNAPSHOT_QUIET_MINUTES=10,
+    )
+    @patch(
+        "recommendations.management.commands.run_tag_collection_scheduler."
+        "refresh_operations_snapshot"
+    )
+    def test_scheduler_refreshes_dashboard_snapshot_after_quiet_period(
+        self, refresh_snapshot
+    ):
+        place = self.make_place(751)
+        job = PlaceTagCollectionJob.objects.create(
+            place=place,
+            provider="naver_search",
+            cycle_date=timezone.localdate(),
+            status="completed",
+        )
+        PlaceTagCollectionJob.objects.filter(pk=job.pk).update(
+            updated_at=timezone.now() - timedelta(minutes=11)
+        )
+
+        stats = scheduler_tick()
+
+        self.assertTrue(stats["snapshot_refreshed"])
+        refresh_snapshot.assert_called_once_with()
+
+    @override_settings(
         TAG_COLLECTION_MODE="bootstrap",
         TAG_COLLECTION_FOCUS_REGION="부산광역시",
         TAG_COLLECTION_FOCUS_CATEGORIES=("cafe", "restaurant"),

@@ -1,4 +1,5 @@
 import time
+from datetime import timedelta
 
 from django.conf import settings
 from django.core.management.base import BaseCommand
@@ -71,7 +72,14 @@ def scheduler_tick():
             cycle_date=today, status="completed",
         ).order_by("-updated_at").values_list("updated_at", flat=True).first()
         snapshot = OperationsDashboardSnapshot.objects.filter(snapshot_date=today).first()
-        if latest_completed and (not snapshot or snapshot.generated_at < latest_completed):
+        quiet_cutoff = timezone.now() - timedelta(
+            minutes=settings.TAG_COLLECTION_SNAPSHOT_QUIET_MINUTES
+        )
+        if (
+            latest_completed
+            and latest_completed <= quiet_cutoff
+            and (not snapshot or snapshot.generated_at < latest_completed)
+        ):
             refresh_operations_snapshot()
             snapshot_refreshed = True
     return {
