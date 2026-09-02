@@ -1,6 +1,11 @@
-from django.test import TestCase
+from datetime import timedelta
 
-from recommendations.models import Place, PlaceInteractionEvent, PlaceTag, Tag, TagEnrichmentRequest
+from django.test import TestCase
+from django.utils import timezone
+
+from recommendations.models import (
+    Place, PlaceInteractionEvent, PlaceTag, PlaceTagEvidence, Tag, TagEnrichmentRequest,
+)
 from recommendations.services.tag_enrichment_queue import enqueue_tag_enrichment, normalize_subjective_tags
 
 
@@ -51,3 +56,30 @@ class TagEnrichmentQueueTests(TestCase):
         enqueue_tag_enrichment([impression])
 
         self.assertFalse(TagEnrichmentRequest.objects.exists())
+
+    def test_does_not_reopen_request_while_fresh_evidence_exists(self):
+        tag = Tag.objects.create(name='조용함', tag_type='recommendation')
+        PlaceTagEvidence.objects.create(
+            place=self.place,
+            tag=tag,
+            source='web_search',
+            source_reference='https://example.com/fresh-evidence',
+            polarity='positive',
+            evidence='조용하게 이용하기 좋다는 최근 근거',
+            expires_at=timezone.now() + timedelta(days=30),
+        )
+        request = TagEnrichmentRequest.objects.create(
+            place=self.place,
+            tag_name='조용함',
+            status='completed',
+        )
+        impression = PlaceInteractionEvent.objects.create(
+            event_type='impression', search_id='search-3', place=self.place,
+            query='조용한 식당', requested_tags=['조용함'],
+        )
+
+        enqueue_tag_enrichment([impression])
+
+        request.refresh_from_db()
+        self.assertEqual(request.status, 'completed')
+        self.assertEqual(request.demand_count, 1)

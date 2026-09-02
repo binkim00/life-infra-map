@@ -1,4 +1,9 @@
+from datetime import timedelta
+from io import StringIO
+
+from django.core.management import call_command
 from django.test import TestCase
+from django.utils import timezone
 
 from recommendations.management.commands.process_tag_enrichment_queue import process_queue
 from recommendations.models import Place, PlaceTag, PlaceTagEvidence, TagEnrichmentRequest
@@ -91,3 +96,29 @@ class TagEnrichmentWorkerTests(TestCase):
 
         self.assertEqual(PlaceTagEvidence.objects.count(), 4)
         self.assertEqual(PlaceTag.objects.get().confidence, 66)
+
+    def test_reconciliation_closes_request_with_active_evidence(self):
+        tag = self._create_active_evidence()
+        output = StringIO()
+
+        call_command("reconcile_tag_enrichment_requests", "--apply", stdout=output)
+
+        self.request.refresh_from_db()
+        self.assertEqual(self.request.status, "completed")
+        self.assertIn("matched=1 updated=1", output.getvalue())
+        self.assertEqual(PlaceTagEvidence.objects.get().tag, tag)
+
+    def _create_active_evidence(self):
+        from recommendations.models import Tag
+
+        tag = Tag.objects.create(name="조용함", tag_type="recommendation")
+        PlaceTagEvidence.objects.create(
+            place=self.place,
+            tag=tag,
+            source="web_search",
+            source_reference="https://example.com/already-collected",
+            polarity="positive",
+            evidence="이미 수집된 유효 근거",
+            expires_at=timezone.now() + timedelta(days=30),
+        )
+        return tag

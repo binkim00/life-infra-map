@@ -12,7 +12,9 @@ from recommendations.management.commands.process_tag_enrichment_queue import (
     save_place_candidate_evidence,
 )
 from recommendations.management.commands.generate_meaningful_place_tags import generate_meaningful_tags
-from recommendations.models import Place, PlaceTag, PlaceTagCollectionJob, ProviderQuotaUsage
+from recommendations.models import (
+    Place, PlaceTag, PlaceTagCollectionJob, ProviderQuotaUsage, TagEnrichmentRequest,
+)
 from recommendations.services.place_tag_collection import collect_naver_place_evidence
 
 
@@ -103,6 +105,7 @@ def process_jobs(*, limit=10, worker_id="worker", collector=None):
         ai_new_evidences = 0
         ai_active_evidences = 0
         strength_counts = {}
+        satisfied_tag_names = set()
         for evidence in evidences:
             observed_at = _observed_at(evidence.get("observed_date"))
             saved, created = save_place_candidate_evidence(
@@ -122,6 +125,20 @@ def process_jobs(*, limit=10, worker_id="worker", collector=None):
                 ai_saved_evidences += 1
                 ai_new_evidences += int(created)
                 ai_active_evidences += int(is_active)
+            if is_active and saved.polarity in {"positive", "negative"}:
+                satisfied_tag_names.add(saved.tag.name)
+        completed_requests = 0
+        if satisfied_tag_names:
+            completed_requests = TagEnrichmentRequest.objects.filter(
+                place_id=job.place_id,
+                tag_name__in=satisfied_tag_names,
+            ).exclude(status="completed").update(
+                status="completed",
+                next_attempt_at=None,
+                locked_at=None,
+                error_message="",
+                updated_at=timezone.now(),
+            )
         stats["evidences"] += len(evidences)
         error = str(result.get("error") or "")
         if error in {"", "insufficient_evidence"}:
@@ -146,6 +163,7 @@ def process_jobs(*, limit=10, worker_id="worker", collector=None):
             "new_evidences": new_evidences,
             "active_evidences": active_evidences,
             "new_active_evidences": new_active_evidences,
+            "completed_enrichment_requests": completed_requests,
             "structured_evidences": structured_evidences,
             "ai_calls": int(result.get("ai_calls") or 0),
             "ai_metrics": result.get("ai_metrics") or {},

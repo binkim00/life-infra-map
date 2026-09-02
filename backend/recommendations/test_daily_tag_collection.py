@@ -17,6 +17,7 @@ from recommendations.models import (
     PlaceTagCollectionJob,
     PlaceTagEvidence,
     ProviderQuotaUsage,
+    TagEnrichmentRequest,
 )
 from recommendations.services.place_tag_collection import collect_naver_place_evidence
 from recommendations.services.place_tag_collection import requested_tags_for_category
@@ -309,6 +310,11 @@ class DailyTagCollectionTests(TestCase):
 
     def test_worker_collects_multiple_tags_and_accounts_for_quota(self):
         place = self.make_place(1)
+        request = TagEnrichmentRequest.objects.create(
+            place=place,
+            tag_name="조용함",
+            status="queued",
+        )
         PlaceTagCollectionJob.objects.create(
             place=place,
             provider="naver_search",
@@ -346,6 +352,9 @@ class DailyTagCollectionTests(TestCase):
             set(PlaceTagEvidence.objects.values_list("source", flat=True)),
             {"web_search"},
         )
+        request.refresh_from_db()
+        self.assertEqual(request.status, "completed")
+        self.assertEqual(job.stats["completed_enrichment_requests"], 1)
 
     @patch("recommendations.services.place_tag_collection._request_channel")
     def test_place_collection_queries_one_representative_keyword_per_pack(self, request_channel):

@@ -2679,23 +2679,26 @@ def collect_db_candidates(frame, *, lat=None, lng=None, limit=50, radius=None):
         ).defer("raw")
 
     if direct_category_codes and bounds and lat is not None and lng is not None:
-        bounded_count = queryset.count()
-        category_count = Place.objects.filter(category__in=direct_category_codes).count()
-        total_place_count = Place.objects.count()
-        use_knn = (
-            bounded_count >= candidate_limit
-            and category_count >= candidate_limit * 20
-            and category_count * 10 >= total_place_count
-        )
-        if use_knn:
-            candidate_places = _order_by_distance(
-                detail_queryset(queryset), lat, lng, use_knn=True,
-            ).prefetch_related("place_tags__tag")[:candidate_limit]
+        if supports_postgis():
+            # The production table contains more than a million rows. Exact
+            # COUNT probes and category-filtered geography KNN both become
+            # multi-second scans as the dataset grows. The rectangular bounds
+            # are already covered by the (category, lat, lng) index, so sort
+            # only that bounded set with an equirectangular approximation and
+            # hydrate the small result window. Exact haversine distance and
+            # radius filtering are still applied below.
+            lng_scale = math.cos(math.radians(float(lat)))
+            candidate_places = detail_queryset(queryset).annotate(
+                collect_bounded_distance=RawSQL(
+                    "POWER(lat - %s, 2) + POWER((lng - %s) * %s, 2)",
+                    (lat, lng, lng_scale),
+                ),
+            ).order_by("collect_bounded_distance").prefetch_related(
+                "place_tags__tag",
+            )[:candidate_limit]
         else:
-        # Read only the indexed coordinates first. Category-filtered KNN can
-        # scan the global GiST order almost completely because category is not
-        # part of that index. Sorting the bounded slim rows in Python preserves
-        # exact nearest-N selection without loading Place.raw or joining tags.
+            # SQLite/local tests have no PostGIS expressions. Read only the
+            # coordinates and preserve exact nearest-N selection in Python.
             coordinate_rows = list(queryset.values_list("id", "lat", "lng"))
             coordinate_rows.sort(
                 key=lambda row: _distance(lat, lng, row[1], row[2])
