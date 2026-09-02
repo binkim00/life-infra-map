@@ -4,11 +4,11 @@ import { Platform } from "react-native";
 
 export const DJANGO_API = (
   process.env.EXPO_PUBLIC_DJANGO_API_BASE_URL ||
-  "http://100.71.169.91:8000/api"
+  "https://life-infra-map-db.taile29cc8.ts.net/django/api"
 ).replace(/\/$/, "");
 export const SPRING_API = (
   process.env.EXPO_PUBLIC_SPRING_API_BASE_URL ||
-  "http://100.71.169.91:8081/api"
+  "https://life-infra-map-db.taile29cc8.ts.net/spring/api"
 ).replace(/\/$/, "");
 
 const SPRING_PREFIXES = [

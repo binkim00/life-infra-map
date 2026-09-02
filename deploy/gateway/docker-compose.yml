@@ -1,0 +1,20 @@
+name: life-infra-map-gateway
+
+services:
+  gateway:
+    build:
+      context: ../..
+      dockerfile: deploy/gateway/Dockerfile
+    container_name: life-infra-map-gateway
+    restart: unless-stopped
+    init: true
+    ports:
+      - "127.0.0.1:${GATEWAY_PORT:-3000}:3000"
+    networks:
+      - runtime-db
+    mem_limit: ${GATEWAY_MEMORY_LIMIT:-128m}
+
+networks:
+  runtime-db:
+    external: true
+    name: life-infra-map-runtime-db_default

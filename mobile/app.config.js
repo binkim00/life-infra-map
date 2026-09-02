@@ -1,4 +1,5 @@
-const DEFAULT_DJANGO_API = "http://100.71.169.91:8000/api";
+const DEFAULT_DJANGO_API =
+  "https://life-infra-map-db.taile29cc8.ts.net/django/api";
 const PUBLIC_API_ENV_NAMES = [
   "EXPO_PUBLIC_DJANGO_API_BASE_URL",
   "EXPO_PUBLIC_SPRING_API_BASE_URL",
