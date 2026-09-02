@@ -2738,14 +2738,25 @@ def collect_db_candidates(
             # hydrate the small result window. Exact haversine distance and
             # radius filtering are still applied below.
             lng_scale = math.cos(math.radians(float(lat)))
-            candidate_places = detail_queryset(queryset).annotate(
+            ordered_ids = list(queryset.annotate(
                 collect_bounded_distance=RawSQL(
                     "POWER(lat - %s, 2) + POWER((lng - %s) * %s, 2)",
                     (lat, lng, lng_scale),
                 ),
-            ).order_by("collect_bounded_distance").prefetch_related(
-                "place_tags__tag",
-            )[:candidate_limit]
+            ).order_by("collect_bounded_distance").values_list(
+                "id", flat=True,
+            )[:candidate_limit])
+            places_by_id = {
+                place.id: place
+                for place in detail_queryset(
+                    Place.objects.filter(id__in=ordered_ids)
+                ).prefetch_related("place_tags__tag")
+            }
+            candidate_places = [
+                places_by_id[place_id]
+                for place_id in ordered_ids
+                if place_id in places_by_id
+            ]
         else:
             # SQLite/local tests have no PostGIS expressions. Read only the
             # coordinates and preserve exact nearest-N selection in Python.
