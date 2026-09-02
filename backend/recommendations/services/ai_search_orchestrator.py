@@ -2597,19 +2597,69 @@ def _collect_derived_shopping_candidates(*, lat=None, lng=None, limit=50, radius
     return candidates[:max(_as_int(limit, 50), 1)]
 
 
-def collect_db_candidates(frame, *, lat=None, lng=None, limit=50, radius=None):
+SPARSE_BEST_AVAILABLE_CATEGORY_CODES = frozenset({"shopping", "smoking_area"})
+SPARSE_BEST_AVAILABLE_RADIUS = 20_000
+
+
+def _merge_expanded_candidates(nearby, expanded, *, original_radius, limit):
+    merged = list(nearby or [])
+    seen = {_clean_text(candidate.get("id")) for candidate in merged}
+    for candidate in expanded or []:
+        candidate_id = _clean_text(candidate.get("id"))
+        if not candidate_id or candidate_id in seen:
+            continue
+        merged.append({
+            **candidate,
+            "expanded_search": True,
+            "expanded_from_radius_m": original_radius,
+            "best_available_reason": "가까운 범위에 후보가 부족해 더 넓은 범위에서 찾은 차선 후보예요.",
+        })
+        seen.add(candidate_id)
+        if len(merged) >= max(_as_int(limit, 50), 1):
+            break
+    return merged
+
+
+def collect_db_candidates(
+    frame,
+    *,
+    lat=None,
+    lng=None,
+    limit=50,
+    radius=None,
+    _allow_sparse_expansion=True,
+):
     terms = _db_evidence_terms(frame)
     search_terms = terms["search"]
     db_first_category_codes = _db_first_category_codes(frame)
     direct_category_codes = _collector_direct_db_category_codes(frame)
     restaurant_search = "restaurant" in direct_category_codes
     if "shopping" in direct_category_codes:
+        resolved_radius = _radius(radius)
         derived = _collect_derived_shopping_candidates(
             lat=lat,
             lng=lng,
             limit=limit,
-            radius=_radius(radius),
+            radius=resolved_radius,
         )
+        minimum = min(5, max(_as_int(limit, 50), 1))
+        if (
+            _allow_sparse_expansion
+            and len(derived) < minimum
+            and resolved_radius < SPARSE_BEST_AVAILABLE_RADIUS
+        ):
+            expanded = _collect_derived_shopping_candidates(
+                lat=lat,
+                lng=lng,
+                limit=limit,
+                radius=SPARSE_BEST_AVAILABLE_RADIUS,
+            )
+            derived = _merge_expanded_candidates(
+                derived,
+                expanded,
+                original_radius=resolved_radius,
+                limit=limit,
+            )
         if derived:
             return derived
     if not search_terms and not db_first_category_codes and not direct_category_codes:
@@ -2867,7 +2917,29 @@ def collect_db_candidates(frame, *, lat=None, lng=None, limit=50, radius=None):
             candidate.get("distance") if candidate.get("distance") is not None else float("inf"),
             _clean_text(candidate.get("name")),
         ))
-    return _balance_candidate_pool_for_diversity(candidates, frame, limit=limit)
+    balanced = _balance_candidate_pool_for_diversity(candidates, frame, limit=limit)
+    minimum = min(5, max(_as_int(limit, 50), 1))
+    if (
+        _allow_sparse_expansion
+        and len(balanced) < minimum
+        and set(direct_category_codes).intersection(SPARSE_BEST_AVAILABLE_CATEGORY_CODES)
+        and radius < SPARSE_BEST_AVAILABLE_RADIUS
+    ):
+        expanded = collect_db_candidates(
+            frame,
+            lat=lat,
+            lng=lng,
+            limit=limit,
+            radius=SPARSE_BEST_AVAILABLE_RADIUS,
+            _allow_sparse_expansion=False,
+        )
+        return _merge_expanded_candidates(
+            balanced,
+            expanded,
+            original_radius=radius,
+            limit=limit,
+        )
+    return balanced
 
 
 def collect_semantic_candidates(
@@ -4100,6 +4172,8 @@ def _candidate_result_quality(candidate, frame, *, best_available=False):
         for item in _as_list(candidate.get("pre_ai_unmet_constraints"), max_items=20)
         if _display_gap_label(item)
     )
+    if candidate.get("expanded_search"):
+        missing.append("가까운 범위 내 후보")
     missing = list(dict.fromkeys(missing))
     if best_available and not missing:
         missing = ["세부 적합성 근거"]

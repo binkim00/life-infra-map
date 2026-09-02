@@ -3608,6 +3608,83 @@ class RecommendationSearchTests(TestCase):
             nearby_candidate["matched_evidence"],
         )
 
+    def test_sparse_smoking_candidates_expand_radius_as_labeled_best_available(self):
+        from recommendations.services.ai_search_orchestrator import collect_db_candidates
+
+        for index in range(4):
+            self._create_place(
+                name=f"연산 근거리 흡연구역 {index}",
+                category="smoking_area",
+                external_id=f"near-smoking-radius-{index}",
+                lat=35.176 + index * 0.001,
+                lng=129.08,
+                data_quality_score=70,
+            )
+        for index in range(2):
+            self._create_place(
+                name=f"부산 원거리 흡연구역 {index}",
+                category="smoking_area",
+                external_id=f"far-smoking-radius-{index}",
+                lat=35.25 + index * 0.001,
+                lng=129.08,
+                data_quality_score=70,
+            )
+
+        candidates = collect_db_candidates(
+            {
+                "target_objects": ["흡연구역"],
+                "result_match_terms": ["흡연구역"],
+                "candidate_category_codes": ["smoking_area"],
+                "candidate_place_types": ["흡연구역"],
+            },
+            lat=35.176,
+            lng=129.08,
+            limit=10,
+            radius=2000,
+        )
+
+        self.assertGreaterEqual(len(candidates), 5)
+        expanded = [candidate for candidate in candidates if candidate.get("expanded_search")]
+        self.assertTrue(expanded)
+        self.assertTrue(all(candidate["expanded_from_radius_m"] == 2000 for candidate in expanded))
+
+    def test_sparse_shopping_candidates_expand_radius_without_reordering_nearby(self):
+        from recommendations.services.ai_search_orchestrator import collect_db_candidates
+
+        venues = [
+            ("롯데백화점 부산본점 매장", 35.1579),
+            ("서면 삼정타워 매장", 35.1589),
+            ("롯데백화점 광복점 매장", 35.10),
+            ("신세계백화점 센텀시티점 매장", 35.17),
+            ("롯데백화점 동래점 매장", 35.205),
+        ]
+        for index, (name, venue_lat) in enumerate(venues):
+            self._create_place(
+                name=name,
+                category="restaurant",
+                external_id=f"shopping-radius-{index}",
+                lat=venue_lat,
+                lng=129.0592,
+                data_quality_score=70,
+            )
+
+        candidates = collect_db_candidates(
+            {
+                "target_objects": ["쇼핑몰"],
+                "result_match_terms": ["쇼핑몰", "백화점"],
+                "candidate_category_codes": ["shopping"],
+                "candidate_place_types": ["쇼핑몰"],
+            },
+            lat=35.1579,
+            lng=129.0592,
+            limit=10,
+            radius=3000,
+        )
+
+        self.assertGreaterEqual(len(candidates), 5)
+        self.assertFalse(candidates[0].get("expanded_search", False))
+        self.assertTrue(any(candidate.get("expanded_search") for candidate in candidates[2:]))
+
     def test_db_evidence_uses_frame_candidate_type_category_label_without_db_first(self):
         from recommendations.services.ai_search_orchestrator import _db_evidence
 
