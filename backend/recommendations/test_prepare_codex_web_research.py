@@ -4,6 +4,7 @@ from django.test import TestCase
 
 from recommendations.management.commands.prepare_codex_web_research import (
     MAX_SOURCE_HINTS,
+    corroboration_tags,
     order_missing_tags,
     prefer_source_ready,
     preflight_source_hints,
@@ -182,6 +183,41 @@ class PrepareCodexWebResearchTests(TestCase):
 
         self.assertEqual(ordered[0], "유모차접근")
 
+    def test_single_positive_web_source_is_prioritized_for_corroboration(self):
+        observations = [
+            {
+                "tag_name": "콘센트있음", "polarity": "positive",
+                "source": "web_search", "source_reference": "https://one.example/cafe",
+            },
+            {
+                "tag_name": "분위기좋음", "polarity": "positive",
+                "source": "field_rule", "source_reference": "field:category",
+            },
+        ]
+
+        corroboration = corroboration_tags(observations)
+        ordered = order_missing_tags(
+            ["분위기좋음", "콘센트있음"],
+            category="cafe",
+            demand={},
+            allocation={("cafe", "분위기좋음"): 0, ("cafe", "콘센트있음"): 0},
+            category_tags=["분위기좋음", "콘센트있음"],
+            corroboration=corroboration,
+        )
+
+        self.assertEqual(corroboration, ["콘센트있음"])
+        self.assertEqual(ordered[0], "콘센트있음")
+
+    def test_conflicted_or_already_independent_tags_do_not_need_corroboration(self):
+        rows = [
+            {"tag_name": "조용함", "polarity": "positive", "source": "web_search", "source_reference": "https://one.example"},
+            {"tag_name": "조용함", "polarity": "negative", "source": "naver_blog_search", "source_reference": "https://two.example"},
+            {"tag_name": "데이트좋음", "polarity": "positive", "source": "web_search", "source_reference": "https://three.example"},
+            {"tag_name": "데이트좋음", "polarity": "positive", "source": "naver_blog_search", "source_reference": "https://four.example"},
+        ]
+
+        self.assertEqual(corroboration_tags(rows), [])
+
     def test_seed_exposes_multiple_missing_tags_and_source_hints(self):
         row = seed_row({
             "place": self.place,
@@ -189,11 +225,13 @@ class PrepareCodexWebResearchTests(TestCase):
             "target_tags": ["분위기좋음", "사진찍기좋음", "조용함"],
             "active_tags": ["콘센트있음"],
             "source_hints": [{"url": "https://blog.example.com/right-place"}],
+            "corroboration_tags": ["분위기좋음"],
         })
 
         self.assertEqual(row["target_tag"], "분위기좋음")
         self.assertEqual(row["target_tags"], ["분위기좋음", "사진찍기좋음", "조용함"])
         self.assertIn("감성적인", row["target_tag_search_terms"]["분위기좋음"])
+        self.assertEqual(row["corroboration_tags"], ["분위기좋음"])
         self.assertEqual(row["source_hints"][0]["url"], "https://blog.example.com/right-place")
         self.assertEqual(row["candidate_sources"], [])
         self.assertEqual(row["failure_detail"], "")

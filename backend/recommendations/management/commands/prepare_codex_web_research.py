@@ -245,6 +245,8 @@ def select_places(category, limit, allocation, *, exclude_place_ids=None):
             tag for tag in target_tags_for_gaps(category, active[place.id], limit=len(tags))
             if tag in tags
         ]
+        corroboration = corroboration_tags(active[place.id])
+        missing = list(dict.fromkeys([*corroboration, *missing]))
         if not missing:
             continue
         ordered_missing = order_missing_tags(
@@ -253,6 +255,7 @@ def select_places(category, limit, allocation, *, exclude_place_ids=None):
             demand=launch_demands.get(place.id, {}),
             allocation=allocation,
             category_tags=tags,
+            corroboration=corroboration,
         )
         tag = ordered_missing[0]
         allocation[(category, tag)] += 1
@@ -264,6 +267,7 @@ def select_places(category, limit, allocation, *, exclude_place_ids=None):
             "active_tags": sorted({row["tag_name"] for row in active[place.id]}),
             "source_hints": [],
             "launch_demand": launch_demands.get(place.id, {}),
+            "corroboration_tags": corroboration,
         })
         if len(selected) >= limit:
             break
@@ -435,6 +439,7 @@ def seed_row(item):
         "source_hints": item["source_hints"],
         "selection_reason": "launch_quality_gap" if item.get("launch_demand") else "coverage_gap",
         "launch_demand_tags": sorted(item.get("launch_demand") or {}, key=(item.get("launch_demand") or {}).get, reverse=True),
+        "corroboration_tags": item.get("corroboration_tags") or [],
         "extracted_tag": "",
         "polarity": "",
         "source_url": "",
@@ -457,14 +462,39 @@ def seed_row(item):
     }
 
 
-def order_missing_tags(missing, *, category, demand, allocation, category_tags):
+def order_missing_tags(
+    missing, *, category, demand, allocation, category_tags, corroboration=(),
+):
     """Rank useful/researchable gaps before using allocation as a tie-breaker."""
+    corroboration = set(corroboration)
     return sorted(
         missing,
         key=lambda value: (
             -int(demand.get(value, 0)),
+            0 if value in corroboration else 1,
             RESEARCHABILITY_INDEX.get(value, len(RESEARCHABILITY_INDEX)),
             allocation[(category, value)],
             category_tags.index(value),
         ),
     )
+
+
+def corroboration_tags(observations):
+    """Return positive web tags that need one more independent URL."""
+    positive_sources = defaultdict(set)
+    negative_tags = set()
+    for row in observations or ():
+        if row.get("source") not in WEB_EVIDENCE_SOURCES:
+            continue
+        tag = str(row.get("tag_name") or row.get("tag__name") or "").strip()
+        reference = str(row.get("source_reference") or "").strip()
+        if not tag or not reference:
+            continue
+        if row.get("polarity") == "positive":
+            positive_sources[tag].add(reference)
+        elif row.get("polarity") == "negative":
+            negative_tags.add(tag)
+    return [
+        tag for tag, references in positive_sources.items()
+        if len(references) == 1 and tag not in negative_tags
+    ]
