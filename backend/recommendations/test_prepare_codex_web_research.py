@@ -1,16 +1,20 @@
+from collections import Counter
 from datetime import date
 
 from django.test import TestCase
 
 from recommendations.management.commands.prepare_codex_web_research import (
     MAX_SOURCE_HINTS,
+    allocate_corroboration_quotas,
     corroboration_tags,
     order_missing_tags,
+    mixed_research_selection,
     prefer_source_ready,
     preflight_source_hints,
     research_priority,
     seed_row,
     source_hints_for_places,
+    select_places,
 )
 from recommendations.models import (
     Place, PlaceTagCollectionJob, PlaceTagEvidence, Tag, TagEnrichmentRequest,
@@ -50,6 +54,70 @@ class PrepareCodexWebResearchTests(TestCase):
         )
 
         self.assertEqual([place.id for place in ordered], [1, 2, 3])
+
+    def test_daily_corroboration_quota_is_split_across_categories(self):
+        quotas = allocate_corroboration_quotas(
+            {"cafe": 25, "restaurant": 25}, 25,
+        )
+
+        self.assertEqual(quotas, {"cafe": 13, "restaurant": 12})
+
+    def test_mixed_selection_fills_missing_corroboration_with_discovery(self):
+        corroboration = [{"id": 1}, {"id": 2}]
+        discovery = [{"id": value} for value in range(3, 10)]
+
+        selected = mixed_research_selection(
+            corroboration, discovery, limit=6, corroboration_limit=3,
+        )
+
+        self.assertEqual(len(selected), 6)
+        self.assertEqual([row["id"] for row in selected], [1, 2, 3, 4, 5, 6])
+
+    def test_mixed_selection_fills_missing_discovery_with_corroboration(self):
+        corroboration = [{"id": value} for value in range(1, 7)]
+        discovery = [{"id": 7}]
+
+        selected = mixed_research_selection(
+            corroboration, discovery, limit=5, corroboration_limit=2,
+        )
+
+        self.assertEqual(len(selected), 5)
+        self.assertEqual([row["id"] for row in selected], [1, 2, 7, 3, 4])
+
+    def test_database_selection_reserves_one_corroboration_and_one_discovery_place(self):
+        discovery = Place.objects.create(
+            name="서면 신규카페",
+            category="cafe",
+            address="부산광역시 부산진구 중앙대로 2",
+            lat=35.1580,
+            lng=129.0593,
+            source="semas",
+            external_id="codex-research-discovery",
+        )
+        for index, place in enumerate((self.place, discovery), start=1):
+            PlaceTagCollectionJob.objects.create(
+                place=place,
+                provider="naver_search",
+                cycle_date=date(2026, 9, index),
+                status="completed",
+                stats={"diagnostics": {"identity_matches": 1}},
+            )
+        tag = Tag.objects.create(name="조용함")
+        PlaceTagEvidence.objects.create(
+            place=self.place,
+            tag=tag,
+            source="web_search",
+            source_reference="https://one.example/quiet",
+            polarity="positive",
+            evidence="조용한 카페",
+        )
+
+        selected = select_places("cafe", 2, Counter(), corroboration_limit=1)
+
+        self.assertEqual(Counter(row["research_track"] for row in selected), {
+            "corroboration": 1,
+            "discovery": 1,
+        })
 
     def test_source_hints_reuse_only_identity_matched_public_urls(self):
         PlaceTagCollectionJob.objects.create(

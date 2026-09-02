@@ -110,6 +110,10 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument("--cafe", type=int, default=50)
         parser.add_argument("--restaurant", type=int, default=50)
+        parser.add_argument(
+            "--corroboration", type=int, default=0,
+            help="Total places reserved for adding a second independent web source.",
+        )
         parser.add_argument("--output", default="tmp/codex_web_evidence_busan_pilot.json")
         parser.add_argument("--exclude-place-ids", default="")
         parser.add_argument("--preflight-source-hints", action="store_true")
@@ -123,10 +127,29 @@ class Command(BaseCommand):
             if value.strip().isdigit()
         }
         for category in ("cafe", "restaurant"):
+            requested_limits[category] = max(0, int(options[category]))
+        requested_total = sum(requested_limits.values())
+        corroboration_total = int(options["corroboration"] or 0)
+        if corroboration_total < 0 or corroboration_total > requested_total:
+            raise CommandError("--corroboration must be between 0 and the total place limit")
+        corroboration_quotas = allocate_corroboration_quotas(
+            requested_limits, corroboration_total,
+        )
+        mixed_selection = corroboration_total > 0
+        for category in ("cafe", "restaurant"):
             limit = max(0, int(options[category]))
-            requested_limits[category] = limit
-            pool_limit = limit * PREFLIGHT_POOL_MULTIPLIER if options["preflight_source_hints"] else limit
-            rows = select_places(category, pool_limit, allocation, exclude_place_ids=excluded)
+            pool_limit = (
+                limit
+                if mixed_selection
+                else limit * PREFLIGHT_POOL_MULTIPLIER if options["preflight_source_hints"] else limit
+            )
+            rows = select_places(
+                category,
+                pool_limit,
+                allocation,
+                exclude_place_ids=excluded,
+                corroboration_limit=(corroboration_quotas[category] if mixed_selection else None),
+            )
             if len(rows) < limit:
                 raise CommandError("Only {} eligible {} places found".format(len(rows), category))
             candidates.extend(rows)
@@ -136,7 +159,11 @@ class Command(BaseCommand):
         selected = []
         for category in ("cafe", "restaurant"):
             category_rows = [row for row in candidates if row["place"].category == category]
-            selected.extend(prefer_source_ready(category_rows, requested_limits[category]))
+            selected.extend(
+                category_rows
+                if mixed_selection
+                else prefer_source_ready(category_rows, requested_limits[category])
+            )
         payload = {
             "region": "부산",
             "generated_at": timezone.now().isoformat(),
@@ -158,6 +185,9 @@ class Command(BaseCommand):
             "categories": dict(Counter(row["place"].category for row in selected)),
             "target_tags": dict(Counter(row["tag"] for row in selected)),
             "launch_priority_places": sum(bool(row.get("launch_demand")) for row in selected),
+            "research_mix": dict(Counter(row.get("research_track") for row in selected)),
+            "requested_corroboration": corroboration_total,
+            "corroboration_quotas": corroboration_quotas,
             "source_hint_preflight": preflight,
             "json": str(path), "csv": str(csv_path),
         }, ensure_ascii=False))
@@ -179,7 +209,9 @@ def prefer_source_ready(rows, limit):
     return sorted(rows, key=tier)[:limit]
 
 
-def select_places(category, limit, allocation, *, exclude_place_ids=None):
+def select_places(
+    category, limit, allocation, *, exclude_place_ids=None, corroboration_limit=None,
+):
     tags = CATEGORY_TAGS[category]
     exclude_place_ids = exclude_place_ids or set()
     launch_demands = launch_demand_context(category)
@@ -236,6 +268,8 @@ def select_places(category, limit, allocation, *, exclude_place_ids=None):
     ):
         active[row["place_id"]].append({**row, "tag_name": row["tag__name"]})
     selected = []
+    corroboration_candidates = []
+    discovery_candidates = []
     seen_names = set()
     for place in places:
         normalized_name = "".join(str(place.name or "").lower().split())
@@ -260,7 +294,7 @@ def select_places(category, limit, allocation, *, exclude_place_ids=None):
         tag = ordered_missing[0]
         allocation[(category, tag)] += 1
         seen_names.add(normalized_name)
-        selected.append({
+        candidate = {
             "place": place,
             "tag": tag,
             "target_tags": [tag] + [value for value in ordered_missing if value != tag][:MAX_TARGET_TAGS - 1],
@@ -268,12 +302,68 @@ def select_places(category, limit, allocation, *, exclude_place_ids=None):
             "source_hints": [],
             "launch_demand": launch_demands.get(place.id, {}),
             "corroboration_tags": corroboration,
-        })
-        if len(selected) >= limit:
+            "research_track": "corroboration" if corroboration else "discovery",
+        }
+        if corroboration_limit is None:
+            selected.append(candidate)
+            if len(selected) >= limit:
+                break
+            continue
+        bucket = corroboration_candidates if corroboration else discovery_candidates
+        if len(bucket) < limit:
+            bucket.append(candidate)
+        discovery_limit = max(0, limit - corroboration_limit)
+        if (
+            len(corroboration_candidates) >= corroboration_limit
+            and len(discovery_candidates) >= discovery_limit
+        ):
             break
+    if corroboration_limit is not None:
+        selected = mixed_research_selection(
+            corroboration_candidates,
+            discovery_candidates,
+            limit=limit,
+            corroboration_limit=corroboration_limit,
+        )
     source_hints = source_hints_for_places([row["place"].id for row in selected])
     for row in selected:
         row["source_hints"] = source_hints.get(row["place"].id, [])
+    return selected
+
+
+def allocate_corroboration_quotas(requested_limits, corroboration_total):
+    """Distribute a global corroboration quota proportionally by category."""
+    requested_total = sum(max(0, int(value)) for value in requested_limits.values())
+    if not requested_total or corroboration_total <= 0:
+        return {category: 0 for category in requested_limits}
+    exact = {
+        category: corroboration_total * max(0, int(limit)) / requested_total
+        for category, limit in requested_limits.items()
+    }
+    quotas = {category: int(value) for category, value in exact.items()}
+    remainder = corroboration_total - sum(quotas.values())
+    ranked = sorted(
+        requested_limits,
+        key=lambda category: (-(exact[category] - quotas[category]), category),
+    )
+    for category in ranked[:remainder]:
+        quotas[category] += 1
+    return quotas
+
+
+def mixed_research_selection(corroboration, discovery, *, limit, corroboration_limit):
+    """Honor the requested mix and fill a shortage from the other track."""
+    selected = [
+        *corroboration[:corroboration_limit],
+        *discovery[:max(0, limit - corroboration_limit)],
+    ]
+    selected_ids = {id(row) for row in selected}
+    for row in [*corroboration, *discovery]:
+        if len(selected) >= limit:
+            break
+        if id(row) not in selected_ids:
+            selected.append(row)
+            selected_ids.add(id(row))
     return selected
 
 
