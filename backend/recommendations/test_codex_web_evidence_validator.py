@@ -12,7 +12,7 @@ from recommendations.management.commands.validate_codex_web_evidence import (
     related_rule_evidences,
 )
 from recommendations.models import Place, PlaceTagEvidence, Tag, TagEnrichmentRequest
-from recommendations.services.codex_web_evidence_validator import validate_candidate
+from recommendations.services.codex_web_evidence_validator import validate_candidate, verify_live_source
 
 
 class CodexWebEvidenceValidatorTests(TestCase):
@@ -171,6 +171,25 @@ class CodexWebEvidenceValidatorTests(TestCase):
         result = validate_candidate(row, live_verify=True)
         self.assertEqual(result["status"], "needs_verification")
         self.assertEqual(result["normalized"]["identity"]["score"], 90)
+
+    @patch("recommendations.services.codex_web_evidence_validator.fetch_public_page")
+    def test_live_verification_reuses_one_fetch_for_multiple_tags_on_same_page(self, fetch):
+        fetch.return_value = {
+            "ok": True,
+            "url": self.row()["source_url"],
+            "title": self.place.name,
+            "text": "{} 자리마다 콘센트가 있다 조용하다".format(self.place.name),
+            "published_at": "2026-08-01",
+        }
+        cache = {}
+
+        first, first_reason = verify_live_source(self.place, self.row(), page_cache=cache)
+        second_row = {**self.row(), "target_tag": "조용함", "extracted_tag": "조용함", "evidence_span": "조용하다"}
+        second, second_reason = verify_live_source(self.place, second_row, page_cache=cache)
+
+        self.assertEqual((first_reason, second_reason), ("", ""))
+        self.assertEqual(first["source_url"], second["source_url"])
+        fetch.assert_called_once()
 
     @patch("recommendations.services.codex_web_evidence_validator.fetch_public_page")
     def test_apply_completes_matching_launch_enrichment_request(self, fetch):

@@ -23,7 +23,7 @@ VALID_RESEARCH_STATUSES = {
 }
 
 
-def validate_candidate(row, *, now=None, live_verify=False):
+def validate_candidate(row, *, now=None, live_verify=False, live_page_cache=None):
     now = now or timezone.now()
     result = {"status": "rejected", "reason": "", "candidate": row}
     research_status = str(row.get("research_status") or "").strip().upper()
@@ -58,7 +58,7 @@ def validate_candidate(row, *, now=None, live_verify=False):
         result["reason"] = "NON_CANONICAL_OR_CATEGORY_TAG"
         return result
     if live_verify:
-        verified, reason = verify_live_source(place, row)
+        verified, reason = verify_live_source(place, row, page_cache=live_page_cache)
         if reason:
             result["reason"] = reason
             return result
@@ -160,9 +160,15 @@ def validate_candidate(row, *, now=None, live_verify=False):
     return result
 
 
-def verify_live_source(place, row):
+def verify_live_source(place, row, *, page_cache=None):
     """Re-fetch the cited page and replace model-reported verification fields."""
-    page = fetch_public_page(row.get("source_url"))
+    cache_key = canonical_url(row.get("source_url"))
+    if page_cache is not None and cache_key in page_cache:
+        page = page_cache[cache_key]
+    else:
+        page = fetch_public_page(row.get("source_url"))
+        if page_cache is not None and cache_key:
+            page_cache[cache_key] = page
     if not page.get("ok"):
         return None, "LIVE_{}".format(page.get("error") or "FETCH_FAILED")
 

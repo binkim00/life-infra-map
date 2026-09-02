@@ -42,8 +42,13 @@ class Command(BaseCommand):
         requests_closed_without_evidence = 0
         candidates_preserved = 0
         candidate_pages = []
+        live_page_cache = {}
         for row in rows:
-            result = validate_candidate(row, live_verify=options["live_verify"])
+            result = validate_candidate(
+                row,
+                live_verify=options["live_verify"],
+                live_page_cache=live_page_cache,
+            )
             counts[result["status"]] += 1
             if result["reason"]:
                 reasons[result["reason"]] += 1
