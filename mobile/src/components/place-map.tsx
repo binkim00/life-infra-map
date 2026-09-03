@@ -27,6 +27,8 @@ export function PlaceMap({
   currentLocation?: { lat: number; lng: number } | null;
 }) {
   const webViewRef = useRef<WebView>(null);
+  const lastPlacesSignatureRef = useRef("");
+  const lastSelectedIdRef = useRef<string | null>(null);
   const validPlaces = useMemo(() => {
     const candidates = places.length ? places : place ? [place] : [];
     return candidates.filter(
@@ -47,6 +49,17 @@ export function PlaceMap({
   }, [displayMode, place, validPlaces]);
 
   const sendState = useCallback(() => {
+    const placesSignature = mapPlaces
+      .map((item) => `${item.id}:${item.lat}:${item.lng}`)
+      .join("|");
+    const selectedId = place ? String(place.id) : null;
+    const shouldFocusSelected = Boolean(
+      selectedId &&
+        lastPlacesSignatureRef.current === placesSignature &&
+        lastSelectedIdRef.current !== selectedId,
+    );
+    lastPlacesSignatureRef.current = placesSignature;
+    lastSelectedIdRef.current = selectedId;
     const payload = {
       type: "life-infra-map:set-places",
       places: mapPlaces.map((item) => ({
@@ -57,7 +70,7 @@ export function PlaceMap({
         lng: Number(item.lng),
         label: String(validPlaces.findIndex((candidate) => String(candidate.id) === String(item.id)) + 1),
       })),
-      selectedId: place ? String(place.id) : null,
+      selectedId,
       viewportMode: displayMode,
       currentLocation:
         currentLocation &&
@@ -68,12 +81,30 @@ export function PlaceMap({
     };
     const encodedPayload = encodeURIComponent(JSON.stringify(payload));
     webViewRef.current?.injectJavaScript(`
-      window.dispatchEvent(new MessageEvent("message", {
-        data: JSON.parse(decodeURIComponent("${encodedPayload}"))
-      }));
+      (function () {
+        window.dispatchEvent(new MessageEvent("message", {
+          data: JSON.parse(decodeURIComponent("${encodedPayload}"))
+        }));
+        const controls = document.getElementById("controls");
+        if (controls) controls.style.bottom = "${expanded ? 252 : 18}px";
+        if (${shouldFocusSelected}) {
+          const focusedPlace = state.places.find(
+            (item) => String(item.id) === String(state.selectedId)
+          );
+          if (focusedPlace && state.map) {
+            const focusedPosition = new kakao.maps.LatLng(
+              focusedPlace.lat,
+              focusedPlace.lng
+            );
+            if (state.map.getLevel() > 4) state.map.setLevel(4);
+            state.map.setCenter(focusedPosition);
+            state.map.panBy(0, 45);
+          }
+        }
+      })();
       true;
     `);
-  }, [currentLocation, displayMode, mapPlaces, place, validPlaces]);
+  }, [currentLocation, displayMode, expanded, mapPlaces, place, validPlaces]);
 
   const receiveMessage = useCallback(
     (event: WebViewMessageEvent) => {

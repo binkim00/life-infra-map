@@ -3,7 +3,6 @@ import * as Location from "expo-location";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
-  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -103,7 +102,6 @@ export default function ExploreScreen() {
   const [selectedPlace, setSelectedPlace] = useState<Place | null>(null);
   const [detailPlace, setDetailPlace] = useState<Place | null>(null);
   const [detailVisible, setDetailVisible] = useState(false);
-  const [mapExpanded, setMapExpanded] = useState(false);
   const [radius, setRadius] = useState(3000);
   const [locationStatus, setLocationStatus] = useState<
     "requesting" | "ready" | "unavailable"
@@ -312,22 +310,31 @@ export default function ExploreScreen() {
 
   return (
     <View style={styles.screen}>
-      <SafeAreaView style={styles.safeArea} edges={["top", "left", "right"]}>
-        <ScrollView
-          contentContainerStyle={styles.content}
-          keyboardShouldPersistTaps="handled"
-        >
-          <View style={styles.header}>
-            <View>
-              <Text style={styles.kicker}>EXPLORE</Text>
-              <Text style={styles.title}>생활 시설 찾기</Text>
-            </View>
-            <Pressable onPress={() => void requestCurrentLocation()} style={styles.locationPill}>
-              <View style={[styles.locationDot, locationStatus === "ready" && styles.locationDotReady]} />
-              <Text style={styles.baseLocation}>{center.label}</Text>
-            </Pressable>
+      <View style={styles.mapCanvas}>
+        <PlaceMap
+          expanded
+          place={selectedPlace}
+          places={places}
+          displayMode="overview"
+          onSelectPlace={setSelectedPlace}
+          currentLocation={currentMapLocation}
+        />
+        {!selectedPlace && !currentMapLocation ? (
+          <View pointerEvents="none" style={styles.fullMapPlaceholder}>
+            <Text style={styles.mapPlaceholderTitle}>
+              {locationStatus === "requesting"
+                ? "현재 위치를 확인하고 있습니다."
+                : "지도를 표시할 위치가 필요합니다."}
+            </Text>
+            <Text style={styles.mapPlaceholderText}>
+              위치 권한을 허용하거나 지역과 시설을 검색해 주세요.
+            </Text>
           </View>
+        ) : null}
+      </View>
 
+      <SafeAreaView pointerEvents="box-none" style={styles.mapOverlay} edges={["top", "left", "right"]}>
+        <View style={styles.searchControls}>
           <View style={styles.searchBox}>
             <TextInput
               value={query}
@@ -349,39 +356,38 @@ export default function ExploreScreen() {
             </Pressable>
           </View>
 
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.filters}
-          >
-            {FILTERS.map((filter) => {
-              const active = activeFilter === filter.label;
-              return (
-                <Pressable
-                  key={filter.label}
-                  onPress={() =>
-                    filter.query ? runSearch(filter.query) : resetSearch()
-                  }
-                  style={[styles.filter, active && styles.filterActive]}
-                >
-                  <Text
-                    style={[
-                      styles.filterLabel,
-                      active && styles.filterLabelActive,
-                    ]}
+          <View style={styles.filterRow}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.filters}
+            >
+              {FILTERS.map((filter) => {
+                const active = activeFilter === filter.label;
+                return (
+                  <Pressable
+                    key={filter.label}
+                    onPress={() =>
+                      filter.query ? runSearch(filter.query) : resetSearch()
+                    }
+                    style={[styles.filter, active && styles.filterActive]}
                   >
-                    {filter.label}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </ScrollView>
+                    <Text style={[styles.filterLabel, active && styles.filterLabelActive]}>
+                      {filter.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+            <Pressable onPress={() => void requestCurrentLocation()} style={styles.locationPill}>
+              <View style={[styles.locationDot, locationStatus === "ready" && styles.locationDotReady]} />
+              <Text style={styles.baseLocation}>내 위치</Text>
+            </Pressable>
+          </View>
 
-          <View style={styles.scopeRow}>
-            <Text style={styles.scopeLabel}>
-              {usesNearbyRadius ? "주변 검색 범위" : "장소명·지역 전체 검색"}
-            </Text>
-            {usesNearbyRadius ? (
+          {usesNearbyRadius ? (
+            <View style={styles.radiusBar}>
+              <Text style={styles.scopeLabel}>주변 범위</Text>
               <View style={styles.radiusOptions}>
                 {RADIUS_OPTIONS.map((option) => (
                   <Pressable
@@ -393,89 +399,63 @@ export default function ExploreScreen() {
                   </Pressable>
                 ))}
               </View>
-            ) : (
-              <Text style={styles.globalScopeText}>현재 위치 반경 제한 없음</Text>
-            )}
-          </View>
-
-          <View style={styles.mapSection}>
-            <PlaceMap
-              place={selectedPlace}
-              places={places}
-              displayMode="overview"
-              onSelectPlace={setSelectedPlace}
-              currentLocation={currentMapLocation}
-            />
-            {selectedPlace || currentMapLocation ? (
-              <Pressable
-                onPress={() => setMapExpanded(true)}
-                style={styles.mapExpandButton}
-              >
-                <Text style={styles.mapExpandButtonLabel}>지도 크게</Text>
-              </Pressable>
-            ) : null}
-            {!selectedPlace && !currentMapLocation ? (
-              <View pointerEvents="none" style={styles.mapPlaceholder}>
-                <Text style={styles.mapPlaceholderTitle}>
-                  {locationStatus === "requesting"
-                    ? "현재 위치를 확인하고 있습니다."
-                    : "지도를 표시할 위치가 필요합니다."}
-                </Text>
-                <Text style={styles.mapPlaceholderText}>
-                  위치 권한을 허용하거나 지역과 시설을 검색해 주세요.
-                </Text>
-              </View>
-            ) : null}
-            {selectedPlace ? (
-              <View style={styles.selectedSummary}>
-                <View style={styles.selectedCopy}>
-                  <Text numberOfLines={1} style={styles.selectedName}>
-                    {selectedPlace.name}
-                  </Text>
-                  <Text numberOfLines={1} style={styles.selectedAddress}>
-                    {selectedPlace.address || selectedPlace.category_label}
-                  </Text>
-                </View>
-                <Pressable
-                  onPress={() => openPlaceDetails(selectedPlace)}
-                  style={styles.routeButton}
-                >
-                  <Text style={styles.routeButtonLabel}>상세보기</Text>
-                </Pressable>
-              </View>
-            ) : null}
-          </View>
-
-          <View style={styles.resultHeader}>
-            <Text style={styles.resultTitle}>
-              {submittedQuery ? `'${submittedQuery}' 결과` : "검색 결과"}
-            </Text>
-            <Text style={styles.resultCount}>{places.length}곳</Text>
-          </View>
-
-          {status === "loading" ? (
-            <View style={styles.stateBox}>
-              <ActivityIndicator color={Palette.accent} />
-              <Text style={styles.stateText}>장소를 찾고 있습니다.</Text>
             </View>
-          ) : message ? (
-            <View style={styles.stateBox}>
-              <Text style={styles.stateText}>{message}</Text>
-            </View>
-          ) : status === "idle" ? (
-            <View style={styles.stateBox}>
-              <Text style={styles.stateText}>
-                지역명·장소명·시설 종류로 검색해 보세요.
+          ) : null}
+        </View>
+      </SafeAreaView>
+
+      <View style={styles.resultSheet}>
+        <View style={styles.sheetHandle} />
+        {selectedPlace ? (
+          <View style={styles.selectedSummary}>
+            <View style={styles.selectedNumber}>
+              <Text style={styles.selectedNumberText}>
+                {places.findIndex((item) => String(item.id) === String(selectedPlace.id)) + 1}
               </Text>
             </View>
-          ) : (
-            <View style={styles.resultList}>
+            <View style={styles.selectedCopy}>
+              <Text numberOfLines={1} style={styles.selectedName}>{selectedPlace.name}</Text>
+              <Text numberOfLines={1} style={styles.selectedAddress}>
+                {selectedPlace.address || selectedPlace.category_label}
+              </Text>
+            </View>
+            <Pressable onPress={() => openPlaceDetails(selectedPlace)} style={styles.routeButton}>
+              <Text style={styles.routeButtonLabel}>상세보기</Text>
+            </Pressable>
+          </View>
+        ) : null}
+
+        <View style={styles.resultHeader}>
+          <Text style={styles.resultTitle}>
+            {submittedQuery ? `'${submittedQuery}' 결과` : "주변 장소 검색"}
+          </Text>
+          <Text style={styles.resultCount}>{places.length ? `${places.length}곳` : ""}</Text>
+        </View>
+
+        {status === "loading" ? (
+          <View style={styles.compactStateBox}>
+            <ActivityIndicator color={Palette.accent} />
+            <Text style={styles.stateText}>장소를 찾고 있습니다.</Text>
+          </View>
+        ) : message ? (
+          <View style={styles.compactStateBox}><Text style={styles.stateText}>{message}</Text></View>
+        ) : status === "idle" ? (
+          <View style={styles.compactStateBox}>
+            <Text style={styles.stateText}>검색하거나 위의 빠른 필터를 선택해 보세요.</Text>
+          </View>
+        ) : (
+          <ScrollView
+            horizontal
+            keyboardShouldPersistTaps="handled"
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.horizontalResults}
+          >
               {places.map((place, index) => {
                 const selected = selectedPlace?.id === place.id;
                 return (
                   <Pressable
                     key={`${place.result_source}-${place.id}`}
-                    onPress={() => openPlaceDetails(place)}
+                    onPress={() => setSelectedPlace(place)}
                     style={[
                       styles.resultCard,
                       selected && styles.resultCardSelected,
@@ -506,77 +486,15 @@ export default function ExploreScreen() {
                         </Text>
                       </View>
                       <Text numberOfLines={1} style={styles.resultMeta}>
-                        {place.category_label || place.category} ·{" "}
-                        {place.address || "주소 정보 없음"}
+                        {place.category_label || place.category}
                       </Text>
-                      {place.tags?.length ? (
-                        <View style={styles.tags}>
-                          {place.tags.slice(0, 3).map((tag) => (
-                            <Text
-                              key={`${place.id}-${tag.id ?? tag.name}`}
-                              style={styles.tag}
-                            >
-                              {tag.name}
-                            </Text>
-                          ))}
-                        </View>
-                      ) : null}
                     </View>
                   </Pressable>
                 );
               })}
-            </View>
-          )}
-        </ScrollView>
-      </SafeAreaView>
-      <Modal
-        animationType="slide"
-        onRequestClose={() => setMapExpanded(false)}
-        visible={mapExpanded}
-      >
-        <SafeAreaView style={styles.mapModal} edges={["top", "bottom", "left", "right"]}>
-          <View style={styles.mapModalHeader}>
-            <View style={styles.mapModalTitleCopy}>
-              <Text style={styles.mapModalTitle}>지도에서 보기</Text>
-              <Text numberOfLines={1} style={styles.mapModalSubtitle}>
-                {submittedQuery ? `'${submittedQuery}' 검색 결과` : "검색 결과"}
-              </Text>
-            </View>
-            <Pressable onPress={() => setMapExpanded(false)} style={styles.mapCloseButton}>
-              <Text style={styles.mapCloseButtonLabel}>닫기</Text>
-            </Pressable>
-          </View>
-          <View style={styles.expandedMapBody}>
-            <PlaceMap
-              expanded
-              place={selectedPlace}
-              places={places}
-              displayMode="overview"
-              onSelectPlace={setSelectedPlace}
-              currentLocation={currentMapLocation}
-            />
-          </View>
-          {selectedPlace ? (
-            <View style={styles.mapModalPlace}>
-              <View style={styles.selectedCopy}>
-                <Text numberOfLines={1} style={styles.selectedName}>{selectedPlace.name}</Text>
-                <Text numberOfLines={1} style={styles.selectedAddress}>
-                  {selectedPlace.address || selectedPlace.category_label}
-                </Text>
-              </View>
-              <Pressable
-                onPress={() => {
-                  setMapExpanded(false);
-                  openPlaceDetails(selectedPlace);
-                }}
-                style={styles.routeButton}
-              >
-                <Text style={styles.routeButtonLabel}>상세보기</Text>
-              </Pressable>
-            </View>
-          ) : null}
-        </SafeAreaView>
-      </Modal>
+          </ScrollView>
+        )}
+      </View>
       <PlaceDetailSheet
         place={detailPlace}
         visible={detailVisible}
@@ -591,6 +509,47 @@ export default function ExploreScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: "#F5F7F6" },
+  mapCanvas: { position: "absolute", inset: 0, backgroundColor: Palette.map },
+  mapOverlay: { position: "absolute", inset: 0, justifyContent: "flex-start" },
+  searchControls: {
+    width: "100%",
+    maxWidth: 760,
+    alignSelf: "center",
+    paddingHorizontal: 12,
+    paddingTop: 8,
+    gap: 8,
+  },
+  filterRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  radiusBar: {
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    padding: 6,
+    paddingLeft: 12,
+    borderRadius: Radius.pill,
+    backgroundColor: "rgba(255,255,255,0.96)",
+    boxShadow: Shadow.card,
+  },
+  resultSheet: {
+    position: "absolute",
+    left: 12,
+    right: 12,
+    bottom: 96,
+    maxWidth: 736,
+    alignSelf: "center",
+    paddingTop: 8,
+    paddingBottom: 12,
+    borderWidth: 1,
+    borderColor: "#E1E6E3",
+    borderRadius: Radius.large,
+    backgroundColor: "rgba(255,255,255,0.98)",
+    boxShadow: Shadow.card,
+  },
+  sheetHandle: { width: 36, height: 4, alignSelf: "center", marginBottom: 5, borderRadius: 2, backgroundColor: "#CFD8D4" },
+  horizontalResults: { gap: 8, paddingHorizontal: 12, paddingBottom: 2 },
+  compactStateBox: { minHeight: 54, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 9, paddingHorizontal: 16 },
+  fullMapPlaceholder: { position: "absolute", inset: 0, alignItems: "center", justifyContent: "center", gap: 8, backgroundColor: Palette.map },
   safeArea: { flex: 1 },
   content: {
     width: "100%",
@@ -625,13 +584,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 8,
     borderRadius: Radius.pill,
-    backgroundColor: "#E9EFEC",
+    backgroundColor: "rgba(255,255,255,0.96)",
+    boxShadow: Shadow.card,
   },
   locationDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: "#A7B0AC" },
   locationDotReady: { backgroundColor: Palette.accent },
   baseLocation: { color: Palette.muted, fontSize: 11, fontWeight: "800" },
   searchBox: {
-    marginTop: 10,
     padding: 5,
     flexDirection: "row",
     borderRadius: 15,
@@ -654,7 +613,7 @@ const styles = StyleSheet.create({
     backgroundColor: Palette.accent,
   },
   searchButtonLabel: { color: "#FFFFFF", fontSize: 13, fontWeight: "800" },
-  filters: { gap: 8, paddingVertical: 2, paddingRight: Spacing.four },
+  filters: { gap: 8, paddingVertical: 2, paddingRight: 4 },
   filter: {
     paddingHorizontal: 15,
     paddingVertical: 9,
@@ -712,7 +671,8 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   selectedSummary: {
-    padding: 15,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
@@ -731,6 +691,8 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: "#E3E8E5",
   },
+  selectedNumber: { width: 32, height: 32, alignItems: "center", justifyContent: "center", borderRadius: 16, backgroundColor: Palette.accent },
+  selectedNumberText: { color: "#FFFFFF", fontSize: 11, fontWeight: "900" },
   mapModalTitleCopy: { minWidth: 0, flex: 1 },
   mapModalTitle: { color: Palette.ink, fontSize: 18, fontWeight: "900" },
   mapModalSubtitle: { marginTop: 3, color: Palette.muted, fontSize: 11 },
@@ -759,12 +721,13 @@ const styles = StyleSheet.create({
   },
   routeButtonLabel: { color: Palette.accent, fontSize: 11, fontWeight: "900" },
   resultHeader: {
-    marginTop: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
   },
-  resultTitle: { color: Palette.ink, fontSize: 18, fontWeight: "900" },
+  resultTitle: { color: Palette.ink, fontSize: 13, fontWeight: "900" },
   resultCount: { color: Palette.muted, fontSize: 12, fontWeight: "700" },
   stateBox: {
     minHeight: 140,
@@ -777,13 +740,14 @@ const styles = StyleSheet.create({
   stateText: { color: Palette.muted, fontSize: 13 },
   resultList: { gap: 9 },
   resultCard: {
-    padding: 14,
+    width: 238,
+    padding: 11,
     flexDirection: "row",
     alignItems: "flex-start",
     gap: 12,
     borderWidth: 1,
     borderColor: "#E3E8E5",
-    borderRadius: Radius.medium,
+    borderRadius: Radius.small,
     backgroundColor: Palette.surface,
   },
   resultCardSelected: {
