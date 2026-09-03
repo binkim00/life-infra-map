@@ -22,7 +22,7 @@ const embedUrl =
   "http://localhost:5173/kakao-map-embed.html";
 const versionedEmbedUrl = `${embedUrl}${embedUrl.includes("?") ? "&" : "?"}v=compact-map-2`;
 
-const MAX_VISIBLE_MARKERS = 8;
+const MAX_VISIBLE_MARKERS = 20;
 
 export function PlaceMap({
   place,

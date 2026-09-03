@@ -402,7 +402,7 @@ export default function ExploreScreen() {
             <PlaceMap
               place={selectedPlace}
               places={places}
-              displayMode={usesNearbyRadius ? "overview" : "selected"}
+              displayMode="overview"
               onSelectPlace={setSelectedPlace}
               currentLocation={currentMapLocation}
             />

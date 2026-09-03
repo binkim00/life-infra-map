@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { StyleSheet } from "react-native";
 import { WebView, type WebViewMessageEvent } from "react-native-webview";
 
@@ -9,7 +9,7 @@ const embedUrl =
   "https://life-infra-map-db.taile29cc8.ts.net/kakao-map-embed.html";
 const versionedEmbedUrl = `${embedUrl}${embedUrl.includes("?") ? "&" : "?"}v=compact-map-2`;
 
-const MAX_VISIBLE_MARKERS = 8;
+const MAX_VISIBLE_MARKERS = 20;
 
 export function PlaceMap({
   place,
@@ -94,6 +94,12 @@ export function PlaceMap({
     },
     [onSelectPlace, sendState, validPlaces],
   );
+
+  // WebView가 이미 열린 뒤 검색 결과나 선택 장소가 바뀌는 경우에도
+  // 최신 장소 목록을 다시 전달해야 마커와 지도 중심이 갱신됩니다.
+  useEffect(() => {
+    sendState();
+  }, [sendState]);
 
   return (
     <WebView
