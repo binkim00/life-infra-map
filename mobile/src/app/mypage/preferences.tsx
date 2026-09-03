@@ -4,7 +4,13 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { recommendationApi } from "@/api/recommendations";
 import { Screen, ui } from "@/components/screen";
 
-type Tag = { id: number; name?: string; label?: string; group?: string };
+type Tag = {
+  id: number;
+  name?: string;
+  label?: string;
+  display_name?: string;
+  group?: string;
+};
 type Preference = {
   id: number;
   key?: string;
@@ -24,7 +30,10 @@ export default function PreferencesScreen() {
         recommendationApi.preferences({ page: 1, page_size: 100 }),
       ])
         .then(([tagData, prefData]) => {
-          setTags(tagData as Tag[]);
+          const tagResults = Array.isArray(tagData)
+            ? tagData
+            : (tagData as { results?: Tag[] }).results;
+          setTags(Array.isArray(tagResults) ? (tagResults as Tag[]) : []);
           setPreferences(
             (prefData as { results?: Preference[] }).results || [],
           );
@@ -100,7 +109,7 @@ export default function PreferencesScreen() {
                   <Text
                     style={[styles.tagText, active && styles.tagTextActive]}
                   >
-                    {tag.name || tag.label}
+                    {tag.display_name || tag.name || tag.label}
                   </Text>
                 </Pressable>
               );

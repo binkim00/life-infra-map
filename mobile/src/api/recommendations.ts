@@ -44,7 +44,9 @@ export const recommendationApi = {
       params: params as Record<string, string | number>,
     }),
   preferenceTags: () =>
-    apiRequest<unknown[]>("/recommendations/preference-tags/"),
+    apiRequest<{ results?: unknown[] } | unknown[]>(
+      "/recommendations/preference-tags/",
+    ),
   createPreference: (body: unknown) =>
     apiRequest("/recommendations/preferences/", { method: "POST", body }),
   deletePreference: (id: number | string) =>
