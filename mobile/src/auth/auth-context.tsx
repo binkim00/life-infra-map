@@ -8,7 +8,7 @@ import {
   useState,
 } from "react";
 
-import { apiRequest, authStorage } from "@/api/client";
+import { ApiError, apiRequest, authStorage } from "@/api/client";
 
 export type AuthUser = {
   id?: number;
@@ -38,17 +38,54 @@ type AuthContextValue = {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+const unwrapUser = (
+  data: AuthUser | { user?: AuthUser },
+): AuthUser | null => {
+  if (Object.prototype.hasOwnProperty.call(data, "user")) {
+    return (data as { user?: AuthUser }).user || null;
+  }
+  return data as AuthUser;
+};
+
 export function AuthProvider({ children }: PropsWithChildren) {
   const [user, setUserState] = useState<AuthUser | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    authStorage.read().then((stored) => {
-      setToken(stored.token);
-      setUserState(stored.user);
-      setReady(true);
-    });
+    let active = true;
+    const restore = async () => {
+      const stored = await authStorage.read();
+      if (!stored.token) {
+        if (active) setReady(true);
+        return;
+      }
+      try {
+        const response = await apiRequest<AuthUser | { user?: AuthUser }>(
+          "/accounts/me/",
+        );
+        const nextUser = unwrapUser(response);
+        if (nextUser) await authStorage.write(stored.token, nextUser);
+        if (active) {
+          setToken(stored.token);
+          setUserState(nextUser || stored.user);
+        }
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 401) {
+          await authStorage.clear();
+        } else if (active) {
+          // 일시적인 네트워크 장애에서는 유효할 수 있는 세션을 지우지 않습니다.
+          setToken(stored.token);
+          setUserState(stored.user);
+        }
+      } finally {
+        if (active) setReady(true);
+      }
+    };
+    void restore();
+    return () => {
+      active = false;
+    };
   }, []);
 
   const applyAuth = async (data: Record<string, unknown>) => {
@@ -97,9 +134,13 @@ export function AuthProvider({ children }: PropsWithChildren) {
       },
       refreshMe: async () => {
         if (!token) return;
-        const data = await apiRequest<{ user: AuthUser }>("/accounts/me/");
-        await authStorage.write(token, data.user);
-        setUserState(data.user);
+        const data = await apiRequest<AuthUser | { user?: AuthUser }>(
+          "/accounts/me/",
+        );
+        const nextUser = unwrapUser(data);
+        if (!nextUser) return;
+        await authStorage.write(token, nextUser);
+        setUserState(nextUser);
       },
       setUser: async (nextUser) => {
         setUserState(nextUser);

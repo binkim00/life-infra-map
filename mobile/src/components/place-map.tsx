@@ -22,6 +22,10 @@ export function PlaceMap({
     const candidates = places.length ? places : place ? [place] : [];
     return candidates.filter(
       (item) =>
+        item.lat !== null &&
+        item.lat !== undefined &&
+        item.lng !== null &&
+        item.lng !== undefined &&
         Number.isFinite(Number(item.lat)) && Number.isFinite(Number(item.lng)),
     );
   }, [place, places]);

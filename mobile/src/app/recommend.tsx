@@ -37,9 +37,21 @@ type AiResponse = {
   search_plan?: Record<string, unknown>;
 };
 
+const formatDistance = (place: AiPlace) => {
+  const distance = place.distance_m ?? place.distance;
+  if (distance === undefined || distance === null) return "거리 정보 없음";
+  return distance < 1000
+    ? `${Math.round(distance)}m`
+    : `${(distance / 1000).toFixed(1)}km`;
+};
+
 export default function RecommendScreen() {
-  const params = useLocalSearchParams<{ q?: string }>();
+  const params = useLocalSearchParams<{ q?: string; lat?: string; lng?: string }>();
   const { requireLogin, isLoggedIn } = useAuth();
+  const initialLat = Number(params.lat);
+  const initialLng = Number(params.lng);
+  const hasInitialCenter =
+    Number.isFinite(initialLat) && Number.isFinite(initialLng);
   const [query, setQuery] = useState(params.q || "");
   const [submitted, setSubmitted] = useState(params.q || "");
   const [searchRequestId, setSearchRequestId] = useState(params.q ? 1 : 0);
@@ -47,7 +59,11 @@ export default function RecommendScreen() {
     lat: number | null;
     lng: number | null;
     label: string;
-  }>({ lat: null, lng: null, label: "지역 제한 없음" });
+  }>({
+    lat: hasInitialCenter ? initialLat : null,
+    lng: hasInitialCenter ? initialLng : null,
+    label: hasInitialCenter ? "현재 위치 기준" : "지역 제한 없음",
+  });
   const [results, setResults] = useState<AiPlace[]>([]);
   const [selected, setSelected] = useState<AiPlace | null>(null);
   const [message, setMessage] = useState("");
@@ -56,6 +72,11 @@ export default function RecommendScreen() {
     null,
   );
   const [webResults, setWebResults] = useState<AiPlace[]>([]);
+  const needsWebFallback =
+    results.length < 5 ||
+    results.slice(0, 5).every((place) =>
+      ["empty", "thin"].includes(place.evidence_quality_level || "empty"),
+    );
   const search = (next = query) => {
     if (!next.trim()) return;
     setMessage("");
@@ -148,7 +169,7 @@ export default function RecommendScreen() {
         data.error ||
           (next.length
             ? "웹 참고 후보를 불러왔습니다."
-            : "웹 참고 후보가 없습니다."),
+            : "추가로 확인된 후보는 없습니다. 현재 결과의 확인 필요 조건을 참고해 주세요."),
       );
     } catch {
       setMessage("웹 참고 검색에 실패했습니다.");
@@ -158,24 +179,28 @@ export default function RecommendScreen() {
   };
   const save = async () => {
     if (!selected || !requireLogin()) return;
-    await recommendationApi.savePlace({
-      placeKey: `${selected.source || "db"}:${selected.external_id || selected.place_id || selected.id}`,
-      placeId:
-        selected.place_id ||
-        Number(String(selected.id).replace("db:", "")) ||
-        null,
-      externalId: selected.external_id || "",
-      source: selected.source || "db",
-      name: selected.name,
-      category: selected.category,
-      address: selected.address,
-      lat: selected.lat,
-      lng: selected.lng,
-      detailUrl: selected.place_url || "",
-      kakaoPlaceUrl: selected.kakao_place_url || "",
-      raw: {},
-    });
-    setMessage("장소를 저장했습니다.");
+    try {
+      await recommendationApi.savePlace({
+        placeKey: `${selected.source || "db"}:${selected.external_id || selected.place_id || selected.id}`,
+        placeId:
+          selected.place_id ||
+          Number(String(selected.id).replace("db:", "")) ||
+          null,
+        externalId: selected.external_id || "",
+        source: selected.source || "db",
+        name: selected.name,
+        category: selected.category,
+        address: selected.address,
+        lat: selected.lat,
+        lng: selected.lng,
+        detailUrl: selected.place_url || "",
+        kakaoPlaceUrl: selected.kakao_place_url || "",
+        raw: {},
+      });
+      setMessage("장소를 저장했습니다.");
+    } catch {
+      setMessage("장소를 저장하지 못했습니다. 다시 시도해 주세요.");
+    }
   };
   const openMap = () => {
     if (!selected) return;
@@ -270,9 +295,11 @@ export default function RecommendScreen() {
                 </Pressable>
               </View>
             ) : null}
-            <Pressable onPress={searchWeb} style={ui.buttonSecondary}>
-              <Text style={ui.buttonSecondaryText}>웹 참고 후보 검색</Text>
-            </Pressable>
+            {submitted && needsWebFallback ? (
+              <Pressable onPress={searchWeb} style={ui.buttonSecondary}>
+                <Text style={ui.buttonSecondaryText}>부족한 결과 보강하기</Text>
+              </Pressable>
+            ) : null}
             <View style={styles.list}>
               {results.map((place, index) => (
                 <Pressable
@@ -287,8 +314,7 @@ export default function RecommendScreen() {
                     <View style={ui.grow}>
                       <Text style={styles.name}>{place.name}</Text>
                       <Text style={ui.muted}>
-                        {place.address} ·{" "}
-                        {Math.round(place.distance_m || place.distance || 0)}m
+                        {place.address} · {formatDistance(place)}
                       </Text>
                       {place.recommendation_reason ? (
                         <Text style={styles.reason}>

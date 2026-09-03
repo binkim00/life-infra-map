@@ -95,6 +95,15 @@ export default function ExploreScreen() {
     [query],
   );
 
+  const resetSearch = () => {
+    setQuery("");
+    setSubmittedQuery("");
+    setPlaces([]);
+    setSelectedPlace(null);
+    setMessage("");
+    setStatus("idle");
+  };
+
   useEffect(() => {
     if (!submittedQuery || !searchRequestId) return;
     const controller = new AbortController();
@@ -254,7 +263,7 @@ export default function ExploreScreen() {
                 <Pressable
                   key={filter.label}
                   onPress={() =>
-                    filter.query ? runSearch(filter.query) : setQuery("")
+                    filter.query ? runSearch(filter.query) : resetSearch()
                   }
                   style={[styles.filter, active && styles.filterActive]}
                 >
@@ -272,11 +281,22 @@ export default function ExploreScreen() {
           </ScrollView>
 
           <View style={styles.mapSection}>
-            <PlaceMap
-              place={selectedPlace}
-              places={places}
-              onSelectPlace={setSelectedPlace}
-            />
+            {selectedPlace ? (
+              <PlaceMap
+                place={selectedPlace}
+                places={places}
+                onSelectPlace={setSelectedPlace}
+              />
+            ) : (
+              <View style={styles.mapPlaceholder}>
+                <Text style={styles.mapPlaceholderTitle}>
+                  검색 결과가 지도에 표시됩니다.
+                </Text>
+                <Text style={styles.mapPlaceholderText}>
+                  지역과 시설을 검색하거나 현재 위치를 선택해 주세요.
+                </Text>
+              </View>
+            )}
             {selectedPlace ? (
               <View style={styles.selectedSummary}>
                 <View style={styles.selectedCopy}>
@@ -341,6 +361,12 @@ export default function ExploreScreen() {
           ) : message ? (
             <View style={styles.stateBox}>
               <Text style={styles.stateText}>{message}</Text>
+            </View>
+          ) : status === "idle" ? (
+            <View style={styles.stateBox}>
+              <Text style={styles.stateText}>
+                지역명·장소명·시설 종류로 검색해 보세요.
+              </Text>
             </View>
           ) : (
             <View style={styles.resultList}>
@@ -488,6 +514,24 @@ const styles = StyleSheet.create({
     borderRadius: Radius.large,
     backgroundColor: Palette.surface,
     boxShadow: Shadow.card,
+  },
+  mapPlaceholder: {
+    height: 320,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    borderRadius: Radius.large,
+    backgroundColor: Palette.map,
+  },
+  mapPlaceholderTitle: {
+    color: Palette.ink,
+    fontSize: 15,
+    fontWeight: "900",
+  },
+  mapPlaceholderText: {
+    color: Palette.muted,
+    fontSize: 12,
+    textAlign: "center",
   },
   selectedSummary: {
     padding: 15,

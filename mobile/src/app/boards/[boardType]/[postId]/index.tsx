@@ -64,9 +64,13 @@ export default function BoardDetailScreen() {
   }, [load]);
   const addComment = async () => {
     if (!requireLogin() || !comment.trim()) return;
-    await boardsApi.createComment(postId, { content: comment.trim() });
-    setComment("");
-    load();
+    try {
+      await boardsApi.createComment(postId, { content: comment.trim() });
+      setComment("");
+      void load();
+    } catch {
+      setError("댓글을 등록하지 못했습니다.");
+    }
   };
   const remove = async () => {
     await boardsApi.deletePost(postId);
@@ -98,8 +102,12 @@ export default function BoardDetailScreen() {
         <Pressable
           onPress={async () => {
             if (requireLogin()) {
-              await boardsApi.likePost(postId);
-              load();
+              try {
+                await boardsApi.likePost(postId);
+                void load();
+              } catch {
+                setError("좋아요를 반영하지 못했습니다.");
+              }
             }
           }}
           style={ui.buttonSecondary}
@@ -134,16 +142,24 @@ export default function BoardDetailScreen() {
         <Pressable
           onPress={async () => {
             if (!requireLogin() || !reportReason.trim()) return;
-            await boardsApi.reportPost(postId, { reason: reportReason.trim() });
-            setReportReason("");
-            setError("신고가 접수되었습니다.");
+            try {
+              await boardsApi.reportPost(postId, { reason: reportReason.trim() });
+              setReportReason("");
+              setError("신고가 접수되었습니다.");
+            } catch {
+              setError("신고를 접수하지 못했습니다.");
+            }
           }}
           style={ui.buttonSecondary}
         >
           <Text style={styles.deleteText}>게시글 신고</Text>
         </Pressable>
       </View>
-      {error ? <Text style={ui.success}>{error}</Text> : null}
+      {error ? (
+        <Text style={error === "신고가 접수되었습니다." ? ui.success : ui.error}>
+          {error}
+        </Text>
+      ) : null}
       <Text style={ui.sectionTitle}>댓글 {post.comments?.length || 0}</Text>
       <View style={ui.row}>
         <TextInput
@@ -188,8 +204,13 @@ export default function BoardDetailScreen() {
             <View style={ui.row}>
               <Pressable
                 onPress={async () => {
-                  await boardsApi.likeComment(item.id);
-                  load();
+                  if (!requireLogin()) return;
+                  try {
+                    await boardsApi.likeComment(item.id);
+                    void load();
+                  } catch {
+                    setError("댓글 좋아요를 반영하지 못했습니다.");
+                  }
                 }}
               >
                 <Text style={styles.action}>
@@ -198,8 +219,13 @@ export default function BoardDetailScreen() {
               </Pressable>
               <Pressable
                 onPress={async () => {
-                  await boardsApi.dislikeComment(item.id);
-                  load();
+                  if (!requireLogin()) return;
+                  try {
+                    await boardsApi.dislikeComment(item.id);
+                    void load();
+                  } catch {
+                    setError("댓글 싫어요를 반영하지 못했습니다.");
+                  }
                 }}
               >
                 <Text style={styles.action}>

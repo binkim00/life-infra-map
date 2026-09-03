@@ -52,14 +52,25 @@ export default function HomeScreen() {
   const openRecommendation = (nextQuery = query) => {
     const trimmed = nextQuery.trim();
     if (!trimmed) return;
-    router.push({ pathname: "/recommend", params: { q: trimmed } });
+    router.push({
+      pathname: "/recommend",
+      params: {
+        q: trimmed,
+        lat: nearbyCenter ? String(nearbyCenter.lat) : undefined,
+        lng: nearbyCenter ? String(nearbyCenter.lng) : undefined,
+      },
+    });
   };
 
   const openPlaceSearch = (nextQuery = placeQuery) => {
     const trimmed = nextQuery.trim();
     router.push({
       pathname: "/explore",
-      params: trimmed ? { q: trimmed } : {},
+      params: {
+        q: trimmed || undefined,
+        lat: nearbyCenter ? String(nearbyCenter.lat) : undefined,
+        lng: nearbyCenter ? String(nearbyCenter.lng) : undefined,
+      },
     });
   };
 

@@ -7,7 +7,8 @@ const PUBLIC_API_ENV_NAMES = [
 ];
 
 module.exports = ({ config }) => {
-  if (process.env.EAS_BUILD_PROFILE === "production") {
+  const isProduction = process.env.EAS_BUILD_PROFILE === "production";
+  if (isProduction) {
     const invalidNames = PUBLIC_API_ENV_NAMES.filter((name) => {
       const value = process.env[name] || "";
       return !value.startsWith("https://");
@@ -22,24 +23,31 @@ module.exports = ({ config }) => {
   const djangoApi =
     process.env.EXPO_PUBLIC_DJANGO_API_BASE_URL || DEFAULT_DJANGO_API;
   const allowHttpApi = djangoApi.startsWith("http://");
+  const nextConfig = {
+    ...config,
+    name: isProduction ? "생활 인프라 지도" : "생활 인프라 지도 (테스트)",
+    android: {
+      ...config.android,
+      package: isProduction
+        ? "com.binkim00.lifeinframap"
+        : "com.binkim00.lifeinframap.test",
+      ...(allowHttpApi ? { usesCleartextTraffic: true } : {}),
+    },
+  };
 
-  if (!allowHttpApi) return config;
+  if (!allowHttpApi) return nextConfig;
 
   return {
-    ...config,
+    ...nextConfig,
     ios: {
-      ...config.ios,
+      ...nextConfig.ios,
       infoPlist: {
-        ...config.ios?.infoPlist,
+        ...nextConfig.ios?.infoPlist,
         NSAppTransportSecurity: {
-          ...config.ios?.infoPlist?.NSAppTransportSecurity,
+          ...nextConfig.ios?.infoPlist?.NSAppTransportSecurity,
           NSAllowsArbitraryLoads: true,
         },
       },
-    },
-    android: {
-      ...config.android,
-      usesCleartextTraffic: true,
     },
   };
 };

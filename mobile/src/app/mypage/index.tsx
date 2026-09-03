@@ -41,7 +41,7 @@ const LINKS = [
 ] as const;
 
 export default function MypageScreen() {
-  const { user, isLoggedIn, isAdmin, logout, setUser } = useAuth();
+  const { user, ready, isLoggedIn, isAdmin, logout, setUser } = useAuth();
   const [nickname, setNickname] = useState(user?.nickname || "");
   const [places, setPlaces] = useState<SavedPlace[]>([]);
   const [profile, setProfile] = useState<MypageData>({});
@@ -62,6 +62,7 @@ export default function MypageScreen() {
     setPlaces((saved as { results?: SavedPlace[] }).results || []);
   };
   useEffect(() => {
+    if (!ready) return;
     if (!isLoggedIn) {
       router.replace("/login");
       return;
@@ -72,7 +73,7 @@ export default function MypageScreen() {
       .finally(() =>
         setLoading(false),
       ); /* eslint-disable-next-line react-hooks/exhaustive-deps */
-  }, [isLoggedIn]);
+  }, [isLoggedIn, ready]);
   const saveNickname = async () => {
     try {
       const data = (await boardsApi.updateNickname(nickname)) as {
