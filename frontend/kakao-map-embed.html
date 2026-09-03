@@ -75,6 +75,8 @@
         places: [],
         selectedId: null,
         viewportMode: "overview",
+        currentLocation: null,
+        currentMarker: null,
       };
 
       const postToHost = (message) => {
@@ -98,11 +100,41 @@
         );
       };
 
+      const currentLocationImage = () => {
+        const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="#2563EB" stroke="#FFFFFF" stroke-width="4"/><circle cx="12" cy="12" r="11" fill="none" stroke="#2563EB" stroke-opacity="0.25" stroke-width="2"/></svg>`;
+        return new kakao.maps.MarkerImage(
+          `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`,
+          new kakao.maps.Size(24, 24),
+          { offset: new kakao.maps.Point(12, 12) },
+        );
+      };
+
       const renderPlaces = () => {
         if (!state.map) return;
         state.markers.forEach((marker) => marker.setMap(null));
         state.markers = [];
+        if (state.currentMarker) state.currentMarker.setMap(null);
+        state.currentMarker = null;
         const bounds = new kakao.maps.LatLngBounds();
+        let boundsCount = 0;
+
+        if (state.currentLocation) {
+          const currentPosition = new kakao.maps.LatLng(
+            state.currentLocation.lat,
+            state.currentLocation.lng,
+          );
+          state.currentMarker = new kakao.maps.Marker({
+            map: state.map,
+            position: currentPosition,
+            image: currentLocationImage(),
+            title: "현재 위치",
+            zIndex: 20,
+          });
+          if (state.viewportMode === "overview") {
+            bounds.extend(currentPosition);
+            boundsCount += 1;
+          }
+        }
 
         state.places.forEach((place) => {
           const position = new kakao.maps.LatLng(place.lat, place.lng);
@@ -122,6 +154,7 @@
           });
           state.markers.push(marker);
           bounds.extend(position);
+          boundsCount += 1;
         });
 
         if (state.viewportMode === "selected" && state.places.length) {
@@ -130,10 +163,18 @@
           ) || state.places[0];
           state.map.setCenter(new kakao.maps.LatLng(selected.lat, selected.lng));
           state.map.setLevel(3);
-        } else if (state.places.length > 1) state.map.setBounds(bounds, 48, 48, 48, 48);
+        } else if (boundsCount > 1) state.map.setBounds(bounds, 48, 48, 48, 48);
         else if (state.places.length === 1) {
           state.map.setCenter(
             new kakao.maps.LatLng(state.places[0].lat, state.places[0].lng),
+          );
+          state.map.setLevel(4);
+        } else if (state.currentLocation) {
+          state.map.setCenter(
+            new kakao.maps.LatLng(
+              state.currentLocation.lat,
+              state.currentLocation.lng,
+            ),
           );
           state.map.setLevel(4);
         }
@@ -144,6 +185,14 @@
         state.places = Array.isArray(event.data.places) ? event.data.places : [];
         state.selectedId = event.data.selectedId;
         state.viewportMode = event.data.viewportMode === "selected" ? "selected" : "overview";
+        state.currentLocation =
+          Number.isFinite(Number(event.data.currentLocation?.lat)) &&
+          Number.isFinite(Number(event.data.currentLocation?.lng))
+            ? {
+                lat: Number(event.data.currentLocation.lat),
+                lng: Number(event.data.currentLocation.lng),
+              }
+            : null;
         renderPlaces();
       });
 
@@ -154,10 +203,10 @@
         if (state.map) state.map.setLevel(Math.min(14, state.map.getLevel() + 1));
       });
       document.getElementById("recenter").addEventListener("click", () => {
-        if (!state.map || !state.places.length) return;
+        if (!state.map || (!state.places.length && !state.currentLocation)) return;
         const selected = state.places.find(
           (place) => String(place.id) === String(state.selectedId),
-        ) || state.places[0];
+        ) || state.places[0] || state.currentLocation;
         state.map.panTo(new kakao.maps.LatLng(selected.lat, selected.lng));
       });
 

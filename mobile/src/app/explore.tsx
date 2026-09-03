@@ -302,6 +302,13 @@ export default function ExploreScreen() {
   );
   const usesNearbyRadius =
     !submittedQuery || isNearbyCategoryQuery(submittedQuery);
+  const currentMapLocation = useMemo(
+    () =>
+      usesNearbyRadius && center.lat !== null && center.lng !== null
+        ? { lat: center.lat, lng: center.lng }
+        : null,
+    [center.lat, center.lng, usesNearbyRadius],
+  );
 
   return (
     <View style={styles.screen}>
@@ -397,8 +404,9 @@ export default function ExploreScreen() {
               places={places}
               displayMode={usesNearbyRadius ? "overview" : "selected"}
               onSelectPlace={setSelectedPlace}
+              currentLocation={currentMapLocation}
             />
-            {selectedPlace ? (
+            {selectedPlace || currentMapLocation ? (
               <Pressable
                 onPress={() => setMapExpanded(true)}
                 style={styles.mapExpandButton}
@@ -406,13 +414,15 @@ export default function ExploreScreen() {
                 <Text style={styles.mapExpandButtonLabel}>지도 크게</Text>
               </Pressable>
             ) : null}
-            {!selectedPlace ? (
+            {!selectedPlace && !currentMapLocation ? (
               <View pointerEvents="none" style={styles.mapPlaceholder}>
                 <Text style={styles.mapPlaceholderTitle}>
-                  검색 결과가 지도에 표시됩니다.
+                  {locationStatus === "requesting"
+                    ? "현재 위치를 확인하고 있습니다."
+                    : "지도를 표시할 위치가 필요합니다."}
                 </Text>
                 <Text style={styles.mapPlaceholderText}>
-                  지역과 시설을 검색하거나 현재 위치를 선택해 주세요.
+                  위치 권한을 허용하거나 지역과 시설을 검색해 주세요.
                 </Text>
               </View>
             ) : null}
@@ -543,6 +553,7 @@ export default function ExploreScreen() {
               places={places}
               displayMode="overview"
               onSelectPlace={setSelectedPlace}
+              currentLocation={currentMapLocation}
             />
           </View>
           {selectedPlace ? (

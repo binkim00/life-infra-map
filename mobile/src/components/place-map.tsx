@@ -17,12 +17,14 @@ export function PlaceMap({
   onSelectPlace,
   displayMode = "overview",
   expanded = false,
+  currentLocation = null,
 }: {
   place?: Place | null;
   places?: Place[];
   onSelectPlace?: (place: Place) => void;
   displayMode?: "overview" | "selected";
   expanded?: boolean;
+  currentLocation?: { lat: number; lng: number } | null;
 }) {
   const webViewRef = useRef<WebView>(null);
   const validPlaces = useMemo(() => {
@@ -57,6 +59,12 @@ export function PlaceMap({
       })),
       selectedId: place ? String(place.id) : null,
       viewportMode: displayMode,
+      currentLocation:
+        currentLocation &&
+        Number.isFinite(currentLocation.lat) &&
+        Number.isFinite(currentLocation.lng)
+          ? currentLocation
+          : null,
     };
     const encodedPayload = encodeURIComponent(JSON.stringify(payload));
     webViewRef.current?.injectJavaScript(`
@@ -65,7 +73,7 @@ export function PlaceMap({
       }));
       true;
     `);
-  }, [displayMode, mapPlaces, place, validPlaces]);
+  }, [currentLocation, displayMode, mapPlaces, place, validPlaces]);
 
   const receiveMessage = useCallback(
     (event: WebViewMessageEvent) => {

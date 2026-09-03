@@ -14,6 +14,7 @@ type PlaceMapProps = {
   onSelectPlace?: (place: Place) => void;
   displayMode?: "overview" | "selected";
   expanded?: boolean;
+  currentLocation?: { lat: number; lng: number } | null;
 };
 
 const embedUrl =
@@ -29,6 +30,7 @@ export function PlaceMap({
   onSelectPlace,
   displayMode = "overview",
   expanded = false,
+  currentLocation = null,
 }: PlaceMapProps) {
   const frameRef = useRef<HTMLIFrameElement>(null);
   const validPlaces = useMemo(() => {
@@ -60,10 +62,16 @@ export function PlaceMap({
         })),
         selectedId: place ? String(place.id) : null,
         viewportMode: displayMode,
+        currentLocation:
+          currentLocation &&
+          Number.isFinite(currentLocation.lat) &&
+          Number.isFinite(currentLocation.lng)
+            ? currentLocation
+            : null,
       },
       new URL(embedUrl).origin,
     );
-  }, [displayMode, mapPlaces, place, validPlaces]);
+  }, [currentLocation, displayMode, mapPlaces, place, validPlaces]);
 
   useEffect(() => {
     const receive = (event: MessageEvent) => {
