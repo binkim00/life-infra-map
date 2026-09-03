@@ -41,6 +41,8 @@ export default function HomeScreen() {
   const [placeQuery, setPlaceQuery] = useState("");
   const [nearbyPlaces, setNearbyPlaces] = useState<Place[]>([]);
   const [loading, setLoading] = useState(true);
+  const [nearbyError, setNearbyError] = useState("");
+  const [nearbyReloadKey, setNearbyReloadKey] = useState(0);
 
   const openRecommendation = (nextQuery = query) => {
     const trimmed = nextQuery.trim();
@@ -58,14 +60,28 @@ export default function HomeScreen() {
 
   useEffect(() => {
     const controller = new AbortController();
+    let active = true;
     searchMapPlaces({ query: "공원", limit: 3, signal: controller.signal })
-      .then((data) => setNearbyPlaces(data.results))
-      .catch((error) => {
-        if (error?.name !== "AbortError") setNearbyPlaces([]);
+      .then((data) => {
+        if (active) setNearbyPlaces(data.results);
       })
-      .finally(() => setLoading(false));
-    return () => controller.abort();
-  }, []);
+      .catch((error) => {
+        if (!active || error?.name === "AbortError") return;
+        setNearbyPlaces([]);
+        setNearbyError(
+          error instanceof Error
+            ? error.message
+            : "주변 장소를 불러오지 못했습니다.",
+        );
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [nearbyReloadKey]);
 
   return (
     <View style={styles.screen}>
@@ -170,6 +186,20 @@ export default function HomeScreen() {
             {loading ? (
               <View style={styles.loading}>
                 <ActivityIndicator color={Palette.accent} />
+              </View>
+            ) : nearbyError ? (
+              <View style={styles.loadError}>
+                <Text style={styles.loadErrorText}>{nearbyError}</Text>
+                <Pressable
+                  onPress={() => {
+                    setLoading(true);
+                    setNearbyError("");
+                    setNearbyReloadKey((value) => value + 1);
+                  }}
+                  style={styles.retryButton}
+                >
+                  <Text style={styles.retryButtonLabel}>다시 시도</Text>
+                </Pressable>
               </View>
             ) : (
               <View style={styles.placeList}>
@@ -347,6 +377,20 @@ const styles = StyleSheet.create({
   },
   categoryLabel: { color: Palette.ink, fontSize: 12, fontWeight: "800" },
   loading: { height: 130, alignItems: "center", justifyContent: "center" },
+  loadError: {
+    height: 130,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 12,
+  },
+  loadErrorText: { color: Palette.muted, fontSize: 12 },
+  retryButton: {
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: Radius.small,
+    backgroundColor: Palette.accent,
+  },
+  retryButtonLabel: { color: "#FFFFFF", fontSize: 12, fontWeight: "800" },
   placeList: {
     marginTop: 13,
     overflow: "hidden",

@@ -95,43 +95,80 @@ const isSpringPath = (path: string) =>
 const springPath = (path: string) =>
   path.length > 1 ? path.replace(/\/+$/, "") : path;
 
-type RequestOptions = Omit<RequestInit, "body"> & {
+type RequestOptions = Omit<RequestInit, "body" | "signal"> & {
   body?: unknown;
   params?: Record<string, string | number | boolean | null | undefined>;
   auth?: boolean;
+  signal?: AbortSignal;
+  timeoutMs?: number;
 };
+
+// Funnel 경유 첫 요청이나 큰 검색 응답도 정상적으로 받을 수 있게 하되,
+// 연결이 끊긴 경우에는 무한 로딩으로 남지 않도록 상한을 둡니다.
+const DEFAULT_TIMEOUT_MS = 30_000;
 
 export async function apiRequest<T>(
   path: string,
   options: RequestOptions = {},
 ): Promise<T> {
+  const {
+    auth = true,
+    body,
+    headers: requestHeaders,
+    params,
+    signal: externalSignal,
+    timeoutMs = DEFAULT_TIMEOUT_MS,
+    ...requestOptions
+  } = options;
   const spring = isSpringPath(path);
   const normalizedPath = spring ? springPath(path) : path;
   const query = new URLSearchParams();
-  Object.entries(options.params || {}).forEach(([key, value]) => {
+  Object.entries(params || {}).forEach(([key, value]) => {
     if (value !== null && value !== undefined && value !== "")
       query.set(key, String(value));
   });
   const url = `${spring ? SPRING_API : DJANGO_API}${normalizedPath}${query.size ? `?${query}` : ""}`;
-  const headers = new Headers(options.headers);
+  const headers = new Headers(requestHeaders);
   const formData =
-    typeof FormData !== "undefined" && options.body instanceof FormData;
-  if (options.body !== undefined && !formData)
+    typeof FormData !== "undefined" && body instanceof FormData;
+  if (body !== undefined && !formData)
     headers.set("Content-Type", "application/json");
-  if (options.auth !== false) {
+  if (auth) {
     const { token } = await authStorage.read();
     if (token) headers.set("Authorization", `Bearer ${token}`);
   }
-  const response = await fetch(url, {
-    ...options,
-    headers,
-    body:
-      options.body === undefined
-        ? undefined
-        : formData
-          ? (options.body as FormData)
-          : JSON.stringify(options.body),
-  });
+  const requestController = new AbortController();
+  let didTimeout = false;
+  const abortFromExternalSignal = () =>
+    requestController.abort(externalSignal?.reason);
+  if (externalSignal?.aborted) abortFromExternalSignal();
+  else externalSignal?.addEventListener("abort", abortFromExternalSignal);
+  const timeoutId = setTimeout(() => {
+    didTimeout = true;
+    requestController.abort();
+  }, timeoutMs);
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      ...requestOptions,
+      headers,
+      signal: requestController.signal,
+      body:
+        body === undefined
+          ? undefined
+          : formData
+            ? (body as FormData)
+            : JSON.stringify(body),
+    });
+  } catch (error) {
+    if (didTimeout)
+      throw new ApiError(408, null, "서버 응답 시간이 초과되었습니다.");
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+    externalSignal?.removeEventListener("abort", abortFromExternalSignal);
+  }
   const contentType = response.headers.get("content-type") || "";
   const data =
     response.status === 204
@@ -140,7 +177,7 @@ export async function apiRequest<T>(
         ? await response.json()
         : await response.text();
   if (!response.ok) {
-    if (response.status === 401 && options.auth !== false)
+    if (response.status === 401 && auth)
       await authStorage.clear();
     const detail =
       data && typeof data === "object" && "detail" in data

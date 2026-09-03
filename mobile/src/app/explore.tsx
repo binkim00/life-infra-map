@@ -52,6 +52,7 @@ export default function ExploreScreen() {
   const initialQuery = typeof params.q === "string" ? params.q : "";
   const [query, setQuery] = useState(initialQuery);
   const [submittedQuery, setSubmittedQuery] = useState(initialQuery);
+  const [searchRequestId, setSearchRequestId] = useState(initialQuery ? 1 : 0);
   const [places, setPlaces] = useState<Place[]>([]);
   const [selectedPlace, setSelectedPlace] = useState<Place | null>(null);
   const [status, setStatus] = useState<
@@ -75,12 +76,14 @@ export default function ExploreScreen() {
       setStatus("loading");
       setMessage("");
       setSubmittedQuery(trimmed);
+      // 같은 검색어를 다시 눌러도 실제 요청을 새로 보냅니다.
+      setSearchRequestId((value) => value + 1);
     },
     [query],
   );
 
   useEffect(() => {
-    if (!submittedQuery) return;
+    if (!submittedQuery || !searchRequestId) return;
     const controller = new AbortController();
     searchMapPlaces({
       query: submittedQuery,
@@ -123,7 +126,14 @@ export default function ExploreScreen() {
         );
       });
     return () => controller.abort();
-  }, [submittedQuery, params.placeId, center.lat, center.lng, isLoggedIn]);
+  }, [
+    submittedQuery,
+    searchRequestId,
+    params.placeId,
+    center.lat,
+    center.lng,
+    isLoggedIn,
+  ]);
 
   const useCurrentLocation = async () => {
     const permission = await Location.requestForegroundPermissionsAsync();

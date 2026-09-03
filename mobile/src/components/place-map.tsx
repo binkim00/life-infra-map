@@ -1,6 +1,9 @@
-import MapView, { Marker } from "react-native-maps";
+import { useCallback, useMemo } from "react";
 import { StyleSheet } from "react-native";
+import { WebView, type WebViewMessageEvent } from "react-native-webview";
+
 import type { Place } from "@/types/place";
+import { buildPlaceMapHtml } from "./place-map-html";
 
 export function PlaceMap({
   place,
@@ -11,35 +14,62 @@ export function PlaceMap({
   places?: Place[];
   onSelectPlace?: (place: Place) => void;
 }) {
-  const lat = place?.lat ?? 37.5665;
-  const lng = place?.lng ?? 126.978;
-  const markers = places.length ? places : place ? [place] : [];
+  const validPlaces = useMemo(() => {
+    const candidates = places.length ? places : place ? [place] : [];
+    return candidates.filter(
+      (item) =>
+        Number.isFinite(Number(item.lat)) && Number.isFinite(Number(item.lng)),
+    );
+  }, [place, places]);
+
+  const mapHtml = useMemo(
+    () =>
+      buildPlaceMapHtml(
+        validPlaces.map((item, index) => ({
+        id: String(item.id),
+        name: item.name,
+        lat: Number(item.lat),
+        lng: Number(item.lng),
+        label: String(index + 1),
+        })),
+        place ? String(place.id) : null,
+      ),
+    [place, validPlaces],
+  );
+
+  const receiveMessage = useCallback(
+    (event: WebViewMessageEvent) => {
+      try {
+        const data = JSON.parse(event.nativeEvent.data);
+        if (data?.type !== "life-infra-map:select-place") return;
+        const selected = validPlaces.find(
+          (item) => String(item.id) === String(data.id),
+        );
+        if (selected) onSelectPlace?.(selected);
+      } catch {
+        // 지도 페이지가 보내지 않은 메시지는 무시합니다.
+      }
+    },
+    [onSelectPlace, validPlaces],
+  );
+
   return (
-    <MapView
-      key={`${lat}-${lng}`}
+    <WebView
+      source={{ html: mapHtml, baseUrl: "https://life-infra-map.app/" }}
       style={styles.map}
-      initialRegion={{
-        latitude: lat,
-        longitude: lng,
-        latitudeDelta: 0.02,
-        longitudeDelta: 0.02,
-      }}
-    >
-      {markers.map((item) => (
-        <Marker
-          key={String(item.id)}
-          coordinate={{
-            latitude: Number(item.lat),
-            longitude: Number(item.lng),
-          }}
-          title={item.name}
-          pinColor={
-            String(item.id) === String(place?.id) ? "#0F766E" : "#64748B"
-          }
-          onPress={() => onSelectPlace?.(item)}
-        />
-      ))}
-    </MapView>
+      javaScriptEnabled
+      domStorageEnabled
+      originWhitelist={["*"]}
+      onMessage={receiveMessage}
+    />
   );
 }
-const styles = StyleSheet.create({ map: { width: "100%", height: 300 } });
+
+const styles = StyleSheet.create({
+  map: {
+    width: "100%",
+    height: 320,
+    borderRadius: 20,
+    backgroundColor: "#E9ECEA",
+  },
+});
