@@ -12,6 +12,7 @@ type PlaceMapProps = {
   place?: Place | null;
   places?: Place[];
   onSelectPlace?: (place: Place) => void;
+  onCenterChange?: (center: { lat: number; lng: number }) => void;
   displayMode?: "overview" | "selected";
   expanded?: boolean;
   currentLocation?: { lat: number; lng: number } | null;
@@ -28,6 +29,7 @@ export function PlaceMap({
   place,
   places = [],
   onSelectPlace,
+  onCenterChange,
   displayMode = "overview",
   expanded = false,
   currentLocation = null,
@@ -58,7 +60,11 @@ export function PlaceMap({
           category: item.category_label || item.category || "",
           lat: Number(item.lat),
           lng: Number(item.lng),
-          label: String(validPlaces.findIndex((candidate) => String(candidate.id) === String(item.id)) + 1),
+          label: String(
+            validPlaces.findIndex(
+              (candidate) => String(candidate.id) === String(item.id),
+            ) + 1,
+          ),
         })),
         selectedId: place ? String(place.id) : null,
         viewportMode: displayMode,
@@ -77,6 +83,14 @@ export function PlaceMap({
     const receive = (event: MessageEvent) => {
       if (event.source !== frameRef.current?.contentWindow) return;
       if (event.data?.type === "life-infra-map:ready") sendState();
+      if (event.data?.type === "life-infra-map:center-changed") {
+        const lat = Number(event.data.lat);
+        const lng = Number(event.data.lng);
+        if (Number.isFinite(lat) && Number.isFinite(lng)) {
+          onCenterChange?.({ lat, lng });
+        }
+        return;
+      }
       if (event.data?.type !== "life-infra-map:select-place") return;
       const selected = validPlaces.find(
         (item) => String(item.id) === String(event.data.id),
@@ -86,7 +100,7 @@ export function PlaceMap({
     window.addEventListener("message", receive);
     sendState();
     return () => window.removeEventListener("message", receive);
-  }, [onSelectPlace, sendState, validPlaces]);
+  }, [onCenterChange, onSelectPlace, sendState, validPlaces]);
 
   return (
     <iframe

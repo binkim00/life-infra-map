@@ -218,6 +218,14 @@
             center: new kakao.maps.LatLng(36.35, 127.8),
             level: 5,
           });
+          kakao.maps.event.addListener(state.map, "idle", () => {
+            const center = state.map.getCenter();
+            postToHost({
+              type: "life-infra-map:center-changed",
+              lat: center.getLat(),
+              lng: center.getLng(),
+            });
+          });
           statusElement.classList.add("hidden");
           renderPlaces();
           postToHost({ type: "life-infra-map:ready" });

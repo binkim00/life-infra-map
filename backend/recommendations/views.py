@@ -35,6 +35,7 @@ from .services.map_search import (
     get_matching_categories,
     is_category_only_query,
     kakao_place_matches_categories,
+    kakao_place_matches_keyword,
     load_places_by_ids,
     search_saved_places,
     tokenize_query,
@@ -1030,6 +1031,11 @@ def map_place_search(request):
                 serialize_kakao_map_place(place, lat=search_lat, lng=search_lng)
                 for place in kakao_data.get("documents", [])
                 if kakao_place_matches_categories(place, matched_basic_categories)
+                if (
+                    not is_separated_place_search
+                    or matched_basic_categories
+                    or kakao_place_matches_keyword(place, keyword)
+                )
                 if str(place.get("id")) not in db_external_ids
             ]
         except Exception as exc:

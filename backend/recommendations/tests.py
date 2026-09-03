@@ -7742,6 +7742,45 @@ class RecommendationSearchTests(TestCase):
         self.assertEqual(data["results"][0]["result_source"], "kakao")
         mock_db_search.assert_not_called()
 
+    @patch("recommendations.views.search_saved_map_places")
+    @patch("recommendations.views.search_places_by_keyword")
+    def test_separated_named_place_search_filters_unrelated_nearby_places(
+        self,
+        mock_kakao,
+        mock_db_search,
+    ):
+        mock_kakao.return_value = {"documents": [
+            {
+                "id": "station-1",
+                "place_name": "사상역 부산2호선",
+                "category_name": "교통,수송 > 지하철역",
+                "address_name": "부산 사상구",
+                "x": "128.9846",
+                "y": "35.1622",
+            },
+            {
+                "id": "pub-1",
+                "place_name": "꼬댕이",
+                "category_name": "음식점 > 술집 > 오뎅바",
+                "address_name": "부산 사상구",
+                "x": "128.9970",
+                "y": "35.1530",
+            },
+        ]}
+
+        response = self.client.get(
+            "/api/recommendations/place-search/",
+            {"q": "사상역", "source": "all", "lat": 35.1530, "lng": 128.9970, "radius": 3000},
+            HTTP_HOST="localhost",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            [place["name"] for place in response.json()["results"]],
+            ["사상역 부산2호선"],
+        )
+        mock_db_search.assert_not_called()
+
     @patch("recommendations.views._resolve_anchor_location")
     @patch("recommendations.views.search_places_by_keyword")
     def test_separated_qualified_category_search_falls_back_to_nearby_category(

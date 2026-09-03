@@ -371,6 +371,21 @@ def kakao_place_matches_categories(place, categories):
     return False
 
 
+def kakao_place_matches_keyword(place, keyword):
+    """고유 장소명 검색에서 카카오의 주변 인기 장소가 섞이지 않게 한다."""
+    include_tokens, _ = tokenize_query(keyword)
+    if not include_tokens:
+        return True
+
+    searchable_text = normalize_compact(
+        f"{place.get('place_name') or ''} {place.get('category_name') or ''}"
+    )
+    return all(
+        normalize_compact(token) in searchable_text
+        for token in include_tokens
+    )
+
+
 def build_token_filter(token):
     """
     토큰 하나가 장소의 어느 필드에든 맞으면 통과하는 조건을 만든다.

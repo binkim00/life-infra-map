@@ -15,6 +15,7 @@ export function PlaceMap({
   place,
   places = [],
   onSelectPlace,
+  onCenterChange,
   displayMode = "overview",
   expanded = false,
   currentLocation = null,
@@ -22,6 +23,7 @@ export function PlaceMap({
   place?: Place | null;
   places?: Place[];
   onSelectPlace?: (place: Place) => void;
+  onCenterChange?: (center: { lat: number; lng: number }) => void;
   displayMode?: "overview" | "selected";
   expanded?: boolean;
   currentLocation?: { lat: number; lng: number } | null;
@@ -37,7 +39,8 @@ export function PlaceMap({
         item.lat !== undefined &&
         item.lng !== null &&
         item.lng !== undefined &&
-        Number.isFinite(Number(item.lat)) && Number.isFinite(Number(item.lng)),
+        Number.isFinite(Number(item.lat)) &&
+        Number.isFinite(Number(item.lng)),
     );
   }, [place, places]);
   const mapPlaces = useMemo(() => {
@@ -55,8 +58,8 @@ export function PlaceMap({
     const selectedId = place ? String(place.id) : null;
     const shouldFocusSelected = Boolean(
       selectedId &&
-        lastPlacesSignatureRef.current === placesSignature &&
-        lastSelectedIdRef.current !== selectedId,
+      lastPlacesSignatureRef.current === placesSignature &&
+      lastSelectedIdRef.current !== selectedId,
     );
     lastPlacesSignatureRef.current = placesSignature;
     lastSelectedIdRef.current = selectedId;
@@ -68,7 +71,11 @@ export function PlaceMap({
         category: item.category_label || item.category || "",
         lat: Number(item.lat),
         lng: Number(item.lng),
-        label: String(validPlaces.findIndex((candidate) => String(candidate.id) === String(item.id)) + 1),
+        label: String(
+          validPlaces.findIndex(
+            (candidate) => String(candidate.id) === String(item.id),
+          ) + 1,
+        ),
       })),
       selectedId,
       viewportMode: displayMode,
@@ -87,6 +94,19 @@ export function PlaceMap({
         }));
         const controls = document.getElementById("controls");
         if (controls) controls.style.bottom = "${expanded ? 252 : 18}px";
+        if (state.map && !window.__lifeInfraMapCenterListenerAdded) {
+          window.__lifeInfraMapCenterListenerAdded = true;
+          const reportMapCenter = function () {
+            const center = state.map.getCenter();
+            window.ReactNativeWebView?.postMessage(JSON.stringify({
+              type: "life-infra-map:center-changed",
+              lat: center.getLat(),
+              lng: center.getLng()
+            }));
+          };
+          kakao.maps.event.addListener(state.map, "idle", reportMapCenter);
+          reportMapCenter();
+        }
         if (${shouldFocusSelected}) {
           const focusedPlace = state.places.find(
             (item) => String(item.id) === String(state.selectedId)
@@ -114,6 +134,14 @@ export function PlaceMap({
           sendState();
           return;
         }
+        if (data?.type === "life-infra-map:center-changed") {
+          const lat = Number(data.lat);
+          const lng = Number(data.lng);
+          if (Number.isFinite(lat) && Number.isFinite(lng)) {
+            onCenterChange?.({ lat, lng });
+          }
+          return;
+        }
         if (data?.type !== "life-infra-map:select-place") return;
         const selected = validPlaces.find(
           (item) => String(item.id) === String(data.id),
@@ -123,7 +151,7 @@ export function PlaceMap({
         // 지도 페이지가 보내지 않은 메시지는 무시합니다.
       }
     },
-    [onSelectPlace, sendState, validPlaces],
+    [onCenterChange, onSelectPlace, sendState, validPlaces],
   );
 
   // WebView가 이미 열린 뒤 검색 결과나 선택 장소가 바뀌는 경우에도
