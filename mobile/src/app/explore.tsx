@@ -59,10 +59,14 @@ export default function ExploreScreen() {
     "idle" | "loading" | "success" | "error"
   >(initialQuery ? "loading" : "idle");
   const [message, setMessage] = useState("");
-  const [center, setCenter] = useState({
-    lat: 37.5665,
-    lng: 126.978,
-    label: "서울시청 기준",
+  const [center, setCenter] = useState<{
+    lat: number | null;
+    lng: number | null;
+    label: string;
+  }>({
+    lat: null,
+    lng: null,
+    label: "지역 제한 없음",
   });
 
   const runSearch = useCallback(
@@ -113,7 +117,8 @@ export default function ExploreScreen() {
           });
         if (!data.results.length)
           setMessage(
-            "조건에 맞는 장소가 없습니다. 다른 검색어를 입력해 보세요.",
+            data.message ||
+              "조건에 맞는 장소가 없습니다. 다른 검색어를 입력해 보세요.",
           );
       })
       .catch((error) => {

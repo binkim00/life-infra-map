@@ -1,6 +1,6 @@
 export const DEFAULT_CENTER = {
-  lat: 35.1796,
-  lng: 129.0756,
+  lat: 36.35,
+  lng: 127.8,
 }
 
 // 지도 검색 반경: 5km

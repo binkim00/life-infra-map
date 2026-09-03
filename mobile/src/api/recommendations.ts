@@ -97,14 +97,14 @@ export const recommendationApi = {
 
 export async function searchMapPlaces({
   query,
-  lat = 37.5665,
-  lng = 126.978,
+  lat,
+  lng,
   limit = 30,
   signal,
 }: {
   query: string;
-  lat?: number;
-  lng?: number;
+  lat?: number | null;
+  lng?: number | null;
   limit?: number;
   signal?: AbortSignal;
 }) {

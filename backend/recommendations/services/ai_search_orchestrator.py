@@ -189,6 +189,12 @@ def _is_current_context_anchor(value):
         "현재위치",
         "현위치",
         "내위치",
+        "내",
+        "내주변",
+        "내근처",
+        "여기",
+        "이근처",
+        "이주변",
     }
 
 
@@ -372,6 +378,8 @@ COMMERCIAL_ANCHOR_CATEGORY_HINTS = (
     "전자제품",
     "문구",
     "드럭스토어",
+    "주유소",
+    "충전소",
 )
 # 이 점수에 못 미치는 후보는 기준 위치로 쓰지 않습니다.
 # 엉뚱한 곳을 기준으로 검색하느니 위치를 못 찾았다고 알리는 편이 낫습니다.
@@ -439,6 +447,8 @@ def _anchor_location_aliases(anchor_location):
         })
 
     add_alias(text)
+    if compact_text.endswith("공항") and not compact_text.endswith("국제공항"):
+        add_alias(f"{text[:-2]}국제공항")
     tokens = [token for token in re.split(r"[\s,;/|]+", text) if _clean_text(token)]
     if len(tokens) >= 2 and _compact(tokens[-1]).endswith("역"):
         area_tokens = tokens[:-1]

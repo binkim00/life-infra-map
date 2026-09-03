@@ -1,4 +1,5 @@
 import { router, useLocalSearchParams } from "expo-router";
+import * as Location from "expo-location";
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -41,6 +42,12 @@ export default function RecommendScreen() {
   const { requireLogin, isLoggedIn } = useAuth();
   const [query, setQuery] = useState(params.q || "");
   const [submitted, setSubmitted] = useState(params.q || "");
+  const [searchRequestId, setSearchRequestId] = useState(params.q ? 1 : 0);
+  const [center, setCenter] = useState<{
+    lat: number | null;
+    lng: number | null;
+    label: string;
+  }>({ lat: null, lng: null, label: "지역 제한 없음" });
   const [results, setResults] = useState<AiPlace[]>([]);
   const [selected, setSelected] = useState<AiPlace | null>(null);
   const [message, setMessage] = useState("");
@@ -54,14 +61,15 @@ export default function RecommendScreen() {
     setMessage("");
     setLoading(true);
     setSubmitted(next.trim());
+    setSearchRequestId((value) => value + 1);
   };
   useEffect(() => {
-    if (!submitted) return;
+    if (!submitted || !searchRequestId) return;
     recommendationApi
       .aiSearch({
         query: submitted,
-        lat: 37.5665,
-        lng: 126.978,
+        lat: center.lat,
+        lng: center.lng,
         limit: 30,
         previous_search_context: searchPlan,
       })
@@ -79,8 +87,8 @@ export default function RecommendScreen() {
             scenario: data.clarification_question
               ? "ask_clarification"
               : "ai_place_search",
-            lat: 37.5665,
-            lng: 126.978,
+            lat: center.lat,
+            lng: center.lng,
             target_query: submitted,
             result_count: places.length,
             db_result_count: places.filter((place) => place.source === "db")
@@ -100,14 +108,31 @@ export default function RecommendScreen() {
       .finally(() => setLoading(false));
     // submitted query controls requests; searchPlan is the previous conversational context.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [submitted]);
+  }, [submitted, searchRequestId, center.lat, center.lng]);
+
+  const useCurrentLocation = async () => {
+    const permission = await Location.requestForegroundPermissionsAsync();
+    if (!permission.granted) {
+      setMessage("현재 위치를 사용하려면 위치 권한이 필요합니다.");
+      return;
+    }
+    const position = await Location.getCurrentPositionAsync({
+      accuracy: Location.Accuracy.Balanced,
+    });
+    setCenter({
+      lat: position.coords.latitude,
+      lng: position.coords.longitude,
+      label: "현재 위치 기준",
+    });
+    if (submitted) setSearchRequestId((value) => value + 1);
+  };
   const searchWeb = async () => {
     try {
       setLoading(true);
       const raw = await recommendationApi.aiWebSearch({
         query: submitted,
-        lat: 37.5665,
-        lng: 126.978,
+        lat: center.lat,
+        lng: center.lng,
         search_plan: searchPlan || {},
         condition: {},
         existing_results_summary: { count: results.length },
@@ -174,6 +199,9 @@ export default function RecommendScreen() {
           <Text style={styles.modeLinkText}>
             장소명·업종만 찾는다면 일반 장소 검색으로 이동
           </Text>
+        </Pressable>
+        <Pressable onPress={useCurrentLocation} style={styles.locationButton}>
+          <Text style={styles.locationButtonText}>{center.label}</Text>
         </Pressable>
         <View style={ui.row}>
           <TextInput
@@ -333,6 +361,14 @@ const styles = StyleSheet.create({
     backgroundColor: "#F5FAF8",
   },
   modeLinkText: { color: "#0F766E", fontSize: 11, fontWeight: "800" },
+  locationButton: {
+    alignSelf: "flex-start",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: "#E9F3EF",
+  },
+  locationButtonText: { color: "#0F766E", fontSize: 11, fontWeight: "800" },
   map: { overflow: "hidden", borderRadius: 20, backgroundColor: "#FFFFFF" },
   mapFooter: {
     padding: 14,

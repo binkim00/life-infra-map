@@ -33,6 +33,7 @@ from recommendations.services.ai_intent_planner import (
 from recommendations.services.ai_search_orchestrator import (
     _deterministic_category_codes,
     _deterministic_ranked_candidates,
+    _normalize_current_context_anchor_frame,
     _prioritize_direct_specific_targets,
     _resolve_anchor_location,
 )
@@ -1038,6 +1039,35 @@ class RecommendationSearchTests(TestCase):
         self.assertEqual(resolved["external_id"], "yeonsan-admin-area")
         self.assertEqual(resolved["lat"], 35.1844)
         self.assertEqual(resolved["lng"], 129.0831)
+
+    @patch("recommendations.services.ai_search_orchestrator.search_places_by_keyword")
+    def test_ai_search_anchor_resolution_prefers_international_airport_over_gas_station(self, mock_kakao):
+        def fake_kakao(*, keyword, **kwargs):
+            if keyword == "제주국제공항":
+                return {"documents": [{
+                    "id": "airport",
+                    "place_name": "제주국제공항",
+                    "category_name": "교통,수송 > 공항",
+                    "address_name": "제주특별자치도 제주시 공항로 2",
+                    "x": "126.4930",
+                    "y": "33.5104",
+                }]}
+            return {"documents": [{
+                "id": "gas-station",
+                "place_name": "제주공항주유소",
+                "category_name": "교통,수송 > 자동차 > 주유소",
+                "address_name": "제주특별자치도 제주시",
+                "x": "126.5027",
+                "y": "33.4990",
+            }]}
+
+        mock_kakao.side_effect = fake_kakao
+
+        resolved = _resolve_anchor_location("제주공항")
+
+        self.assertEqual(resolved["status"], "resolved")
+        self.assertEqual(resolved["external_id"], "airport")
+        self.assertEqual(resolved["label"], "제주국제공항")
 
     @patch("recommendations.services.ai_search_orchestrator.search_places_by_keyword")
     def test_ai_search_anchor_resolution_rejects_address_only_business_for_ambiguous_road(self, mock_kakao):
@@ -7660,6 +7690,72 @@ class RecommendationSearchTests(TestCase):
         self.assertEqual(mock_kakao.call_args.kwargs["lng"], 129.0590)
         mock_db_search.assert_not_called()
 
+    @patch("recommendations.views.search_saved_map_places")
+    @patch("recommendations.views.search_places_by_keyword")
+    def test_separated_category_only_search_requires_location(
+        self,
+        mock_kakao,
+        mock_db_search,
+    ):
+        response = self.client.get(
+            "/api/recommendations/place-search/",
+            {"q": "카페", "source": "all"},
+            HTTP_HOST="localhost",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data["needs_location"])
+        self.assertEqual(data["results"], [])
+        self.assertEqual(data["location_context"]["center_source"], "missing")
+        mock_kakao.assert_not_called()
+        mock_db_search.assert_not_called()
+
+    @patch("recommendations.views._resolve_anchor_location")
+    @patch("recommendations.views.search_places_by_keyword")
+    def test_separated_place_search_filters_wrong_kakao_category(
+        self,
+        mock_kakao,
+        mock_resolve_anchor,
+    ):
+        mock_resolve_anchor.return_value = {
+            "status": "resolved",
+            "source": "kakao_keyword",
+            "label": "광주송정역",
+            "lat": 35.1377,
+            "lng": 126.7908,
+        }
+        mock_kakao.return_value = {"documents": [
+            {
+                "id": "station",
+                "place_name": "광주송정역",
+                "category_group_code": "SW8",
+                "category_name": "교통,수송 > 기차역",
+                "address_name": "광주 광산구",
+                "x": "126.7908",
+                "y": "35.1377",
+            },
+            {
+                "id": "parking",
+                "place_name": "광주송정역 주차장",
+                "category_group_code": "PK6",
+                "category_name": "교통,수송 > 주차장",
+                "address_name": "광주 광산구",
+                "x": "126.7910",
+                "y": "35.1378",
+            },
+        ]}
+
+        response = self.client.get(
+            "/api/recommendations/place-search/",
+            {"q": "광주송정역 주차장", "source": "all", "limit": 10},
+            HTTP_HOST="localhost",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual([place["id"] for place in data["results"]], ["parking"])
+
     @patch("recommendations.views.search_places_by_keyword")
     def test_general_map_search_removes_kakao_duplicate_when_db_has_external_id(self, mock_kakao):
         kakao_synced_place = Place.objects.create(
@@ -12485,7 +12581,13 @@ class AnchorLocationParsingTests(TestCase):
                 self.assertEqual(_local_rule_anchor_location(query), "")
 
     def test_deictic_expression_is_not_treated_as_anchor_location(self):
-        for query in ("근처 화장실", "주변 주차장", "여기 약국"):
+        for query in (
+            "근처 화장실",
+            "주변 주차장",
+            "여기 약국",
+            "내 주변 산책하기 좋은 공원",
+            "내 근처 조용한 카페",
+        ):
             with self.subTest(query=query):
                 self.assertEqual(_local_rule_anchor_location(query), "")
 
@@ -12494,6 +12596,16 @@ class AnchorLocationParsingTests(TestCase):
         self.assertEqual(_local_rule_anchor_location("부산역 주차장"), "부산역")
         # `지금동`은 김포시 실제 지명이므로 정확히 일치할 때만 걸러야 한다.
         self.assertEqual(_local_rule_anchor_location("지금동 화장실"), "지금동")
+
+    def test_current_context_aliases_are_not_resolved_as_named_places(self):
+        for anchor in ("current_coordinates", "내 주변", "내 근처", "여기"):
+            with self.subTest(anchor=anchor):
+                frame = _normalize_current_context_anchor_frame({
+                    "location_mode": "explicit",
+                    "anchor_location": anchor,
+                })
+                self.assertEqual(frame["location_mode"], "current_context")
+                self.assertEqual(frame["anchor_location"], "")
 
 
 class DeterministicCategoryRoutingTests(TestCase):

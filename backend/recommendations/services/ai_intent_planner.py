@@ -550,7 +550,10 @@ def _local_rule_anchor_location(raw_query):
     text = _clean_text(raw_query, 500)
     if not text:
         return ""
-    current_context_markers = {"현재위치", "내위치", "여기", "지금위치", "currentlocation"}
+    current_context_markers = {
+        "현재위치", "내위치", "내", "내주변", "내근처", "여기", "이근처", "이주변",
+        "지금위치", "currentlocation",
+    }
     # 시간/지시 표현은 지명이 아니라 현재 위치 기준 요청이다. ("지금 화장실 급해")
     # 정확히 일치할 때만 걸러서 `지금동`, `구서동` 같은 실제 지명은 그대로 둔다.
     non_location_expressions = {

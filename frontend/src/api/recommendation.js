@@ -64,8 +64,8 @@ const postConversationTurn = async (payload, { retry = true } = {}) => {
 
 export const aiSearchRecommendations = async ({
   query,
-  lat = 37.5665,
-  lng = 126.9780,
+  lat = null,
+  lng = null,
   limit = 10,
   radius = null,
   ...extraPayload
@@ -92,8 +92,8 @@ export const aiSearchRecommendations = async ({
 
 export const aiSearchCandidateRecommendations = async ({
   query,
-  lat = 37.5665,
-  lng = 126.9780,
+  lat = null,
+  lng = null,
   limit = 10,
   radius = null,
   ...extraPayload

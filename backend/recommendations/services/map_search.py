@@ -46,6 +46,34 @@ PLACE_CATEGORY_ALIASES["restaurant"] = [
     "\ub9db\uc9d1",
     "\ubc25\uc9d1",
 ]
+PLACE_CATEGORY_ALIASES["convenience_store"] = ["convenience_store", "편의점"]
+
+KAKAO_CATEGORY_GROUPS = {
+    "cafe": {"CE7"},
+    "restaurant": {"FD6"},
+    "parking": {"PK6"},
+    "pharmacy": {"PM9"},
+    "hospital": {"HP8"},
+    "convenience_store": {"CS2"},
+}
+
+KAKAO_CATEGORY_TERMS = {
+    "toilet": ("화장실",),
+    "freewifi": ("와이파이", "wifi"),
+    "smoking_area": ("흡연",),
+    "beach": ("해수욕장", "해변"),
+    "parking": ("주차장", "주차"),
+    "city_park": ("공원",),
+    "library": ("도서관",),
+    "tourism": ("관광", "명소"),
+    "cafe": ("카페", "커피"),
+    "shelter": ("쉼터",),
+    "shopping": ("쇼핑", "백화점", "아울렛", "마트"),
+    "pharmacy": ("약국",),
+    "hospital": ("병원", "의원", "응급실"),
+    "restaurant": ("음식점", "식당", "레스토랑"),
+    "convenience_store": ("편의점",),
+}
 
 LOCATION_TOKEN_SUFFIXES = (
     "\uc2dc",
@@ -194,6 +222,39 @@ def get_matching_categories(keyword):
         for category, aliases in PLACE_CATEGORY_ALIASES.items()
         if any(normalize_compact(alias) in normalized_keyword for alias in aliases)
     ]
+
+
+def is_category_only_query(keyword):
+    """지역/상호 없이 업종만 입력한 검색인지 확인한다."""
+    include_tokens, _ = tokenize_query(keyword)
+    if not include_tokens:
+        return False
+
+    alias_keys = {
+        normalize_compact(alias)
+        for aliases in PLACE_CATEGORY_ALIASES.values()
+        for alias in aliases
+    }
+    return all(normalize_compact(token) in alias_keys for token in include_tokens)
+
+
+def kakao_place_matches_categories(place, categories):
+    """카카오 후보가 사용자가 요청한 업종 중 하나와 실제로 맞는지 확인한다."""
+    requested = [category for category in categories if category]
+    if not requested:
+        return True
+
+    group_code = str(place.get("category_group_code") or "").strip().upper()
+    searchable = normalize_compact(" ".join([
+        str(place.get("category_name") or ""),
+        str(place.get("place_name") or ""),
+    ]))
+    for category in requested:
+        if group_code and group_code in KAKAO_CATEGORY_GROUPS.get(category, set()):
+            return True
+        if any(normalize_compact(term) in searchable for term in KAKAO_CATEGORY_TERMS.get(category, ())):
+            return True
+    return False
 
 
 def build_token_filter(token):

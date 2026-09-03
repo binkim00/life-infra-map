@@ -188,8 +188,8 @@ const PlaceReportView = () => {
         return
       }
 
-      const startLat = Number(suggestedLat) || 35.1796
-      const startLng = Number(suggestedLng) || 129.0756
+      const startLat = Number(suggestedLat) || 36.35
+      const startLng = Number(suggestedLng) || 127.8
       const center = new window.kakao.maps.LatLng(startLat, startLng)
 
       mapRef.current = new window.kakao.maps.Map(mapContainerRef.current, {

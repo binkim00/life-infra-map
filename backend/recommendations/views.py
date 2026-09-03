@@ -31,6 +31,8 @@ from .serializers import (
 from .services.kakao_local import search_places_by_keyword
 from .services.map_search import (
     get_matching_categories,
+    is_category_only_query,
+    kakao_place_matches_categories,
     load_places_by_ids,
     search_saved_places,
     tokenize_query,
@@ -896,6 +898,7 @@ def map_place_search(request):
     resolved_anchor = {}
     search_lat = lat
     search_lng = lng
+    matched_basic_categories = get_matching_categories(keyword)
 
     if is_separated_place_search and keyword:
         anchor_location = _local_rule_anchor_location(keyword)
@@ -905,10 +908,47 @@ def map_place_search(request):
                 search_lat = parse_optional_float(resolved_anchor.get("lat"))
                 search_lng = parse_optional_float(resolved_anchor.get("lng"))
 
+    if (
+        is_separated_place_search
+        and keyword
+        and search_lat is None
+        and search_lng is None
+        and not anchor_location
+        and is_category_only_query(keyword)
+    ):
+        return Response({
+            "search_mode": "place_search",
+            "recommendation_applied": False,
+            "needs_location": True,
+            "message": "지역명과 함께 검색하거나 현재 위치를 선택해 주세요.",
+            "db_search_skipped": True,
+            "query": keyword,
+            "count": 0,
+            "candidate_counts": {"db": 0, "kakao": 0, "db_total": 0},
+            "filters": {
+                "q": keyword,
+                "source": source,
+                "lat": lat,
+                "lng": lng,
+                "radius": radius,
+                "limit": limit,
+            },
+            "query_info": {},
+            "location_context": {
+                "anchor_location": "",
+                "anchor_resolved": False,
+                "center_source": "missing",
+                "center_label": "",
+                "lat": None,
+                "lng": None,
+            },
+            "kakao_error": "",
+            "results": [],
+        })
+
     db_queryset = None
     if is_separated_place_search and keyword and source == "all":
         include_tokens, _ = tokenize_query(keyword)
-        matched_basic_categories = get_matching_categories(keyword)
         public_infra_categories = set(DB_MARKER_ALLOWED_CATEGORIES) | {"shelter"}
         usable_db_categories = [
             category for category in matched_basic_categories
@@ -954,6 +994,7 @@ def map_place_search(request):
             kakao_results = [
                 serialize_kakao_map_place(place, lat=search_lat, lng=search_lng)
                 for place in kakao_data.get("documents", [])
+                if kakao_place_matches_categories(place, matched_basic_categories)
                 if str(place.get("id")) not in db_external_ids
             ]
         except Exception as exc:

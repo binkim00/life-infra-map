@@ -6,7 +6,8 @@ import styles from './KakaoMap.module.css'
 import './kakaoMarkerChoice.css'
 
 const MARKER_OVERLAP_PIXEL_THRESHOLD = 30
-const DEFAULT_CENTER = { lat: 37.5665, lng: 126.9780 }
+// 위치를 아직 받지 못한 지도는 특정 도시가 아닌 대한민국 중심을 보여줍니다.
+const DEFAULT_CENTER = { lat: 36.35, lng: 127.8 }
 
 const nextFrame = () => new Promise((resolve) => {
   if (typeof window === 'undefined' || !window.requestAnimationFrame) {

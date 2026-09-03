@@ -8,8 +8,8 @@ import { useSavedPlaceActions } from '@/hooks/useSavedPlaceActions'
 import styles from './MapSearchView.module.css'
 
 const DEFAULT_CENTER = {
-  lat: 35.1796,
-  lng: 129.0756,
+  lat: 36.35,
+  lng: 127.8,
 }
 
 const SOURCE_OPTIONS = [
@@ -152,7 +152,8 @@ const MapSearchView = () => {
   const [excludedTokens, setExcludedTokens] = useState([])
 
   // 지도 중심은 검색 파라미터로만 쓰이므로 렌더를 다시 돌릴 이유가 없습니다.
-  const mapCenterRef = useRef({ ...DEFAULT_CENTER })
+  const mapCenterRef = useRef(null)
+  const skipInitialMapCenterRef = useRef(true)
   const [mapCenter] = useState({ ...DEFAULT_CENTER })
 
   useEffect(() => {
@@ -173,8 +174,8 @@ const MapSearchView = () => {
       const data = await searchMapPlaces({
         q: query.trim(),
         source,
-        lat: mapCenterRef.current.lat,
-        lng: mapCenterRef.current.lng,
+        lat: mapCenterRef.current?.lat ?? null,
+        lng: mapCenterRef.current?.lng ?? null,
         limit: 40,
       })
 
@@ -196,6 +197,8 @@ const MapSearchView = () => {
         nextMessage = data.location_context?.anchor_resolved && data.location_context?.center_label
           ? `${data.location_context.center_label} 기준으로 ${nextPlaces.length}곳을 찾았어요.`
           : `${nextPlaces.length}곳을 찾았어요.`
+      } else if (data.needs_location) {
+        nextMessage = data.message || '지역명과 함께 검색하거나 지도에서 위치를 선택해 주세요.'
       } else if (!query.trim()) {
         nextMessage = '검색어를 입력하거나 지도 중심 기준으로 저장 장소를 둘러보세요.'
       } else {
@@ -230,6 +233,10 @@ const MapSearchView = () => {
 
   const handleCenterChange = ({ center }) => {
     if (!center) return
+    if (skipInitialMapCenterRef.current) {
+      skipInitialMapCenterRef.current = false
+      return
+    }
     mapCenterRef.current = {
       lat: center.lat,
       lng: center.lng,

@@ -63,7 +63,10 @@ export default function HomeScreen() {
     let active = true;
     searchMapPlaces({ query: "공원", limit: 3, signal: controller.signal })
       .then((data) => {
-        if (active) setNearbyPlaces(data.results);
+        if (active) {
+          setNearbyPlaces(data.results);
+          setNearbyError(data.message || "");
+        }
       })
       .catch((error) => {
         if (!active || error?.name === "AbortError") return;
@@ -92,7 +95,7 @@ export default function HomeScreen() {
         >
           <View style={styles.header}>
             <Text style={styles.brand}>LIFE MAP</Text>
-            <Text style={styles.location}>서울시청 기준</Text>
+            <Text style={styles.location}>전국 검색 · 위치 선택 가능</Text>
           </View>
 
           <View style={styles.hero}>
@@ -131,7 +134,7 @@ export default function HomeScreen() {
             <View>
               <Text style={styles.placeSearchTitle}>일반 장소 검색</Text>
               <Text style={styles.placeSearchDescription}>
-                장소명이나 업종을 가까운 순서로 빠르게 찾습니다.
+                장소명이나 지역·업종을 빠르게 찾습니다.
               </Text>
             </View>
             <View style={styles.placeSearchBox}>

@@ -27,6 +27,8 @@ export type MapSearchResponse = {
   recommendation_applied?: false;
   query: string;
   count: number;
+  needs_location?: boolean;
+  message?: string;
   results: Place[];
   candidate_counts?: {
     db?: number;
