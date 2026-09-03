@@ -19,6 +19,8 @@ export type Place = {
   external_id?: string;
   place_url?: string;
   kakao_place_url?: string;
+  phone?: string;
+  source_name?: string;
   tags?: PlaceTag[];
 };
 

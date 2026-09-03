@@ -3,7 +3,6 @@ import * as Location from "expo-location";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
-  Linking,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -16,6 +15,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { recommendationApi, searchMapPlaces } from "@/api/recommendations";
 import { useAuth } from "@/auth/auth-context";
 import { BottomNav } from "@/components/bottom-nav";
+import { PlaceDetailSheet } from "@/components/place-detail-sheet";
 import { PlaceMap } from "@/components/place-map";
 import {
   BottomTabInset,
@@ -34,17 +34,19 @@ const FILTERS = [
   { label: "쉼터", query: "쉼터" },
 ] as const;
 
+const RADIUS_OPTIONS = [
+  { label: "1km", value: 1000 },
+  { label: "3km", value: 3000 },
+  { label: "5km", value: 5000 },
+  { label: "10km", value: 10000 },
+] as const;
+
 const formatDistance = (distance?: number) =>
   distance === undefined
     ? "거리 정보 없음"
     : distance < 1000
       ? `${Math.round(distance)}m`
       : `${(distance / 1000).toFixed(1)}km`;
-
-const mapUrl = (place: Place) =>
-  place.place_url ||
-  place.kakao_place_url ||
-  `https://map.kakao.com/link/map/${encodeURIComponent(place.name)},${place.lat},${place.lng}`;
 
 export default function ExploreScreen() {
   const { requireLogin, isLoggedIn } = useAuth();
@@ -64,6 +66,12 @@ export default function ExploreScreen() {
   const [searchRequestId, setSearchRequestId] = useState(initialQuery ? 1 : 0);
   const [places, setPlaces] = useState<Place[]>([]);
   const [selectedPlace, setSelectedPlace] = useState<Place | null>(null);
+  const [detailPlace, setDetailPlace] = useState<Place | null>(null);
+  const [detailVisible, setDetailVisible] = useState(false);
+  const [radius, setRadius] = useState(3000);
+  const [locationStatus, setLocationStatus] = useState<
+    "requesting" | "ready" | "unavailable"
+  >(hasInitialCenter ? "ready" : "requesting");
   const [status, setStatus] = useState<
     "idle" | "loading" | "success" | "error"
   >(initialQuery ? "loading" : "idle");
@@ -75,8 +83,48 @@ export default function ExploreScreen() {
   }>({
     lat: hasInitialCenter ? initialLat : null,
     lng: hasInitialCenter ? initialLng : null,
-    label: hasInitialCenter ? "현재 위치 기준" : "지역 제한 없음",
+    label: hasInitialCenter ? "현재 위치" : "위치 확인 중",
   });
+
+  const requestCurrentLocation = useCallback(async (showError = true) => {
+    try {
+      const permission = await Location.requestForegroundPermissionsAsync();
+      if (!permission.granted) {
+        setLocationStatus("unavailable");
+        setCenter({ lat: null, lng: null, label: "위치 권한 필요" });
+        if (showError) {
+          setStatus("error");
+          setMessage("주변 검색을 사용하려면 현재 위치 권한을 허용해 주세요.");
+        }
+        return false;
+      }
+      const position = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+      setCenter({
+        lat: position.coords.latitude,
+        lng: position.coords.longitude,
+        label: "현재 위치",
+      });
+      setLocationStatus("ready");
+      setMessage("");
+      return true;
+    } catch {
+      setLocationStatus("unavailable");
+      setCenter({ lat: null, lng: null, label: "위치 확인 실패" });
+      if (showError) {
+        setStatus("error");
+        setMessage("현재 위치를 확인하지 못했습니다. 위치 설정을 확인해 주세요.");
+      }
+      return false;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (hasInitialCenter) return;
+    const timer = setTimeout(() => void requestCurrentLocation(true), 0);
+    return () => clearTimeout(timer);
+  }, [hasInitialCenter, requestCurrentLocation]);
 
   const runSearch = useCallback(
     (nextQuery = query) => {
@@ -106,11 +154,14 @@ export default function ExploreScreen() {
 
   useEffect(() => {
     if (!submittedQuery || !searchRequestId) return;
+    if (locationStatus === "requesting") return;
+    if (center.lat === null || center.lng === null) return;
     const controller = new AbortController();
     searchMapPlaces({
       query: submittedQuery,
       lat: center.lat,
       lng: center.lng,
+      radius,
       signal: controller.signal,
     })
       .then((data) => {
@@ -155,20 +206,29 @@ export default function ExploreScreen() {
     params.placeId,
     center.lat,
     center.lng,
+    radius,
     isLoggedIn,
+    locationStatus,
   ]);
 
-  const useCurrentLocation = async () => {
-    const permission = await Location.requestForegroundPermissionsAsync();
-    if (!permission.granted)
-      return setMessage("현재 위치를 사용하려면 위치 권한이 필요합니다.");
-    const position = await Location.getCurrentPositionAsync({
-      accuracy: Location.Accuracy.Balanced,
-    });
-    setCenter({
-      lat: position.coords.latitude,
-      lng: position.coords.longitude,
-      label: "현재 위치 기준",
+  const openPlaceDetails = (place: Place) => {
+    setSelectedPlace(place);
+    setDetailPlace(place);
+    setDetailVisible(true);
+  };
+
+  const reportSelectedPlace = () => {
+    if (!detailPlace || !requireLogin()) return;
+    setDetailVisible(false);
+    router.push({
+      pathname: "/place-report",
+      params: {
+        placeId: String(detailPlace.id),
+        name: detailPlace.name,
+        address: detailPlace.address || "",
+        lat: String(detailPlace.lat),
+        lng: String(detailPlace.lng),
+      },
     });
   };
 
@@ -216,20 +276,11 @@ export default function ExploreScreen() {
               <Text style={styles.kicker}>EXPLORE</Text>
               <Text style={styles.title}>생활 시설 찾기</Text>
             </View>
-            <Pressable onPress={useCurrentLocation}>
+            <Pressable onPress={() => void requestCurrentLocation()} style={styles.locationPill}>
+              <View style={[styles.locationDot, locationStatus === "ready" && styles.locationDotReady]} />
               <Text style={styles.baseLocation}>{center.label}</Text>
             </Pressable>
           </View>
-
-          <Pressable
-            onPress={() => router.push("/recommend")}
-            style={styles.recommendationLink}
-          >
-            <Text style={styles.recommendationLinkTitle}>상황에 맞는 추천이 필요한가요?</Text>
-            <Text style={styles.recommendationLinkText}>
-              분위기·작업·동행 조건을 말하고 추천받기
-            </Text>
-          </Pressable>
 
           <View style={styles.searchBox}>
             <TextInput
@@ -280,12 +331,27 @@ export default function ExploreScreen() {
             })}
           </ScrollView>
 
+          <View style={styles.scopeRow}>
+            <Text style={styles.scopeLabel}>검색 범위</Text>
+            <View style={styles.radiusOptions}>
+              {RADIUS_OPTIONS.map((option) => (
+                <Pressable
+                  key={option.value}
+                  onPress={() => setRadius(option.value)}
+                  style={[styles.radiusOption, radius === option.value && styles.radiusOptionActive]}
+                >
+                  <Text style={[styles.radiusText, radius === option.value && styles.radiusTextActive]}>{option.label}</Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+
           <View style={styles.mapSection}>
             {selectedPlace ? (
               <PlaceMap
                 place={selectedPlace}
                 places={places}
-                onSelectPlace={setSelectedPlace}
+                onSelectPlace={openPlaceDetails}
               />
             ) : (
               <View style={styles.mapPlaceholder}>
@@ -308,43 +374,14 @@ export default function ExploreScreen() {
                   </Text>
                 </View>
                 <Pressable
-                  onPress={() => Linking.openURL(mapUrl(selectedPlace))}
+                  onPress={() => openPlaceDetails(selectedPlace)}
                   style={styles.routeButton}
                 >
-                  <Text style={styles.routeButtonLabel}>지도 열기</Text>
+                  <Text style={styles.routeButtonLabel}>상세보기</Text>
                 </Pressable>
               </View>
             ) : null}
           </View>
-
-          {selectedPlace ? (
-            <View style={styles.placeActions}>
-              <Pressable
-                onPress={saveSelectedPlace}
-                style={[uiButton.secondary]}
-              >
-                <Text style={uiButton.secondaryText}>저장</Text>
-              </Pressable>
-              <Pressable
-                onPress={() =>
-                  requireLogin() &&
-                  router.push({
-                    pathname: "/place-report",
-                    params: {
-                      placeId: String(selectedPlace.id),
-                      name: selectedPlace.name,
-                      address: selectedPlace.address || "",
-                      lat: String(selectedPlace.lat),
-                      lng: String(selectedPlace.lng),
-                    },
-                  })
-                }
-                style={[uiButton.secondary]}
-              >
-                <Text style={uiButton.secondaryText}>정보 제보</Text>
-              </Pressable>
-            </View>
-          ) : null}
 
           <View style={styles.resultHeader}>
             <Text style={styles.resultTitle}>
@@ -375,7 +412,7 @@ export default function ExploreScreen() {
                 return (
                   <Pressable
                     key={`${place.result_source}-${place.id}`}
-                    onPress={() => setSelectedPlace(place)}
+                    onPress={() => openPlaceDetails(place)}
                     style={[
                       styles.resultCard,
                       selected && styles.resultCardSelected,
@@ -429,6 +466,13 @@ export default function ExploreScreen() {
           )}
         </ScrollView>
       </SafeAreaView>
+      <PlaceDetailSheet
+        place={detailPlace}
+        visible={detailVisible}
+        onClose={() => setDetailVisible(false)}
+        onSave={saveSelectedPlace}
+        onReport={reportSelectedPlace}
+      />
       <BottomNav />
     </View>
   );
@@ -463,16 +507,18 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     letterSpacing: -0.7,
   },
-  baseLocation: { color: Palette.muted, fontSize: 11, fontWeight: "700" },
-  recommendationLink: {
-    padding: 14,
-    borderWidth: 1,
-    borderColor: "#D7E4DF",
-    borderRadius: Radius.medium,
-    backgroundColor: "#F5FAF8",
+  locationPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: Radius.pill,
+    backgroundColor: "#E9EFEC",
   },
-  recommendationLinkTitle: { color: Palette.accent, fontSize: 13, fontWeight: "900" },
-  recommendationLinkText: { marginTop: 5, color: Palette.muted, fontSize: 11 },
+  locationDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: "#A7B0AC" },
+  locationDotReady: { backgroundColor: Palette.accent },
+  baseLocation: { color: Palette.muted, fontSize: 11, fontWeight: "800" },
   searchBox: {
     marginTop: 10,
     padding: 5,
@@ -509,6 +555,13 @@ const styles = StyleSheet.create({
   filterActive: { borderColor: Palette.ink, backgroundColor: Palette.ink },
   filterLabel: { color: Palette.muted, fontSize: 12, fontWeight: "700" },
   filterLabelActive: { color: Palette.surface },
+  scopeRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 },
+  scopeLabel: { color: Palette.muted, fontSize: 11, fontWeight: "800" },
+  radiusOptions: { flexDirection: "row", gap: 6 },
+  radiusOption: { paddingHorizontal: 10, paddingVertical: 7, borderRadius: Radius.pill, backgroundColor: "#E9EFEC" },
+  radiusOptionActive: { backgroundColor: Palette.accent },
+  radiusText: { color: Palette.muted, fontSize: 10, fontWeight: "800" },
+  radiusTextActive: { color: "#FFFFFF" },
   mapSection: {
     overflow: "hidden",
     borderRadius: Radius.large,
@@ -516,7 +569,7 @@ const styles = StyleSheet.create({
     boxShadow: Shadow.card,
   },
   mapPlaceholder: {
-    height: 320,
+    height: 390,
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
@@ -549,7 +602,6 @@ const styles = StyleSheet.create({
     backgroundColor: Palette.accentSoft,
   },
   routeButtonLabel: { color: Palette.accent, fontSize: 11, fontWeight: "900" },
-  placeActions: { flexDirection: "row", gap: 8 },
   resultHeader: {
     marginTop: 8,
     flexDirection: "row",
@@ -616,18 +668,4 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   pressed: { opacity: 0.65 },
-});
-
-const uiButton = StyleSheet.create({
-  secondary: {
-    flex: 1,
-    minHeight: 44,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "#DCE3DF",
-    borderRadius: Radius.small,
-    backgroundColor: Palette.surface,
-  },
-  secondaryText: { color: Palette.ink, fontSize: 12, fontWeight: "800" },
 });

@@ -7,6 +7,9 @@ import type { Place } from "@/types/place";
 const embedUrl =
   process.env.EXPO_PUBLIC_KAKAO_MAP_EMBED_URL ||
   "https://life-infra-map-db.taile29cc8.ts.net/kakao-map-embed.html";
+const versionedEmbedUrl = `${embedUrl}${embedUrl.includes("?") ? "&" : "?"}v=compact-map-1`;
+
+const MAX_VISIBLE_MARKERS = 12;
 
 export function PlaceMap({
   place,
@@ -29,17 +32,23 @@ export function PlaceMap({
         Number.isFinite(Number(item.lat)) && Number.isFinite(Number(item.lng)),
     );
   }, [place, places]);
+  const mapPlaces = useMemo(() => {
+    const visible = validPlaces.slice(0, MAX_VISIBLE_MARKERS);
+    if (!place || visible.some((item) => String(item.id) === String(place.id)))
+      return visible;
+    return [...visible.slice(0, MAX_VISIBLE_MARKERS - 1), place];
+  }, [place, validPlaces]);
 
   const sendState = useCallback(() => {
     const payload = {
       type: "life-infra-map:set-places",
-      places: validPlaces.map((item, index) => ({
+      places: mapPlaces.map((item) => ({
         id: String(item.id),
         name: item.name,
         category: item.category_label || item.category || "",
         lat: Number(item.lat),
         lng: Number(item.lng),
-        label: String(index + 1),
+        label: String(validPlaces.findIndex((candidate) => String(candidate.id) === String(item.id)) + 1),
       })),
       selectedId: place ? String(place.id) : null,
     };
@@ -50,7 +59,7 @@ export function PlaceMap({
       }));
       true;
     `);
-  }, [place, validPlaces]);
+  }, [mapPlaces, place, validPlaces]);
 
   const receiveMessage = useCallback(
     (event: WebViewMessageEvent) => {
@@ -75,10 +84,11 @@ export function PlaceMap({
   return (
     <WebView
       ref={webViewRef}
-      source={{ uri: embedUrl }}
+      source={{ uri: versionedEmbedUrl }}
       style={styles.map}
       javaScriptEnabled
       domStorageEnabled
+      cacheEnabled={false}
       originWhitelist={["https://*"]}
       onLoadEnd={sendState}
       onMessage={receiveMessage}
@@ -89,7 +99,7 @@ export function PlaceMap({
 const styles = StyleSheet.create({
   map: {
     width: "100%",
-    height: 320,
+    height: 390,
     borderRadius: 20,
     backgroundColor: "#E9ECEA",
   },

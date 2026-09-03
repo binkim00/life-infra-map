@@ -99,16 +99,18 @@ export async function searchMapPlaces({
   query,
   lat,
   lng,
+  radius,
   limit = 30,
   signal,
 }: {
   query: string;
   lat?: number | null;
   lng?: number | null;
+  radius?: number;
   limit?: number;
   signal?: AbortSignal;
 }) {
-  const params = { q: query.trim(), source: "all", lat, lng, limit };
+  const params = { q: query.trim(), source: "all", lat, lng, radius, limit };
   try {
     return await recommendationApi.mapSearch(params, signal);
   } catch (error) {

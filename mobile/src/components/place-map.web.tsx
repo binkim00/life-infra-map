@@ -17,6 +17,9 @@ type PlaceMapProps = {
 const embedUrl =
   process.env.EXPO_PUBLIC_KAKAO_MAP_EMBED_URL ||
   "http://localhost:5173/kakao-map-embed.html";
+const versionedEmbedUrl = `${embedUrl}${embedUrl.includes("?") ? "&" : "?"}v=compact-map-1`;
+
+const MAX_VISIBLE_MARKERS = 12;
 
 export function PlaceMap({ place, places = [], onSelectPlace }: PlaceMapProps) {
   const frameRef = useRef<HTMLIFrameElement>(null);
@@ -27,24 +30,30 @@ export function PlaceMap({ place, places = [], onSelectPlace }: PlaceMapProps) {
         Number.isFinite(Number(item.lat)) && Number.isFinite(Number(item.lng)),
     );
   }, [place, places]);
+  const mapPlaces = useMemo(() => {
+    const visible = validPlaces.slice(0, MAX_VISIBLE_MARKERS);
+    if (!place || visible.some((item) => String(item.id) === String(place.id)))
+      return visible;
+    return [...visible.slice(0, MAX_VISIBLE_MARKERS - 1), place];
+  }, [place, validPlaces]);
 
   const sendState = useCallback(() => {
     frameRef.current?.contentWindow?.postMessage(
       {
         type: "life-infra-map:set-places",
-        places: validPlaces.map((item, index) => ({
+        places: mapPlaces.map((item) => ({
           id: String(item.id),
           name: item.name,
           category: item.category_label || item.category || "",
           lat: Number(item.lat),
           lng: Number(item.lng),
-          label: String(index + 1),
+          label: String(validPlaces.findIndex((candidate) => String(candidate.id) === String(item.id)) + 1),
         })),
         selectedId: place ? String(place.id) : null,
       },
       new URL(embedUrl).origin,
     );
-  }, [place, validPlaces]);
+  }, [mapPlaces, place, validPlaces]);
 
   useEffect(() => {
     const receive = (event: MessageEvent) => {
@@ -64,7 +73,7 @@ export function PlaceMap({ place, places = [], onSelectPlace }: PlaceMapProps) {
   return (
     <iframe
       ref={frameRef}
-      src={embedUrl}
+      src={versionedEmbedUrl}
       title="카카오 장소 지도"
       onLoad={sendState}
       style={styles.frame}
@@ -75,7 +84,7 @@ export function PlaceMap({ place, places = [], onSelectPlace }: PlaceMapProps) {
 const styles: Record<string, CSSProperties> = {
   frame: {
     width: "100%",
-    height: 320,
+    height: 390,
     display: "block",
     border: 0,
     borderRadius: 20,

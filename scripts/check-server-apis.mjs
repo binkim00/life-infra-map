@@ -21,11 +21,33 @@ const checks = [
   },
   {
     name: "현재 위치 공원 검색",
-    url: `${publicBase}/django/api/recommendations/place-search/?q=${encodeURIComponent("공원")}&source=all&lat=35.1544&lng=129.0606&limit=6`,
+    url: `${publicBase}/django/api/recommendations/place-search/?q=${encodeURIComponent("공원")}&source=all&lat=35.1544&lng=129.0606&radius=3000&limit=6`,
     validate: (data) =>
       Array.isArray(data?.results) &&
       data.results.length > 0 &&
-      data.results.every((place) => Number(place.distance) >= 0),
+      data.results.every(
+        (place) => Number(place.distance) >= 0 && Number(place.distance) <= 3000,
+      ),
+  },
+  {
+    name: "주변 카페 검색",
+    url: `${publicBase}/django/api/recommendations/place-search/?q=${encodeURIComponent("카페")}&source=all&lat=35.1544&lng=129.0606&radius=3000&limit=6`,
+    validate: (data) =>
+      Array.isArray(data?.results) &&
+      data.results.length > 0 &&
+      data.results.every(
+        (place) => Number(place.distance) >= 0 && Number(place.distance) <= 3000,
+      ),
+  },
+  {
+    name: "주변 식당 검색",
+    url: `${publicBase}/django/api/recommendations/place-search/?q=${encodeURIComponent("식당")}&source=all&lat=35.1544&lng=129.0606&radius=3000&limit=6`,
+    validate: (data) =>
+      Array.isArray(data?.results) &&
+      data.results.length > 0 &&
+      data.results.every(
+        (place) => Number(place.distance) >= 0 && Number(place.distance) <= 3000,
+      ),
   },
   {
     name: "상황 기반 검색",
