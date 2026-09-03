@@ -3,6 +3,7 @@ import * as Location from "expo-location";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -102,6 +103,7 @@ export default function ExploreScreen() {
   const [selectedPlace, setSelectedPlace] = useState<Place | null>(null);
   const [detailPlace, setDetailPlace] = useState<Place | null>(null);
   const [detailVisible, setDetailVisible] = useState(false);
+  const [mapExpanded, setMapExpanded] = useState(false);
   const [radius, setRadius] = useState(3000);
   const [locationStatus, setLocationStatus] = useState<
     "requesting" | "ready" | "unavailable"
@@ -392,8 +394,17 @@ export default function ExploreScreen() {
             <PlaceMap
               place={selectedPlace}
               places={places}
-              onSelectPlace={openPlaceDetails}
+              displayMode={usesNearbyRadius ? "overview" : "selected"}
+              onSelectPlace={setSelectedPlace}
             />
+            {selectedPlace ? (
+              <Pressable
+                onPress={() => setMapExpanded(true)}
+                style={styles.mapExpandButton}
+              >
+                <Text style={styles.mapExpandButtonLabel}>지도 크게</Text>
+              </Pressable>
+            ) : null}
             {!selectedPlace ? (
               <View pointerEvents="none" style={styles.mapPlaceholder}>
                 <Text style={styles.mapPlaceholderTitle}>
@@ -507,6 +518,53 @@ export default function ExploreScreen() {
           )}
         </ScrollView>
       </SafeAreaView>
+      <Modal
+        animationType="slide"
+        onRequestClose={() => setMapExpanded(false)}
+        visible={mapExpanded}
+      >
+        <SafeAreaView style={styles.mapModal} edges={["top", "bottom", "left", "right"]}>
+          <View style={styles.mapModalHeader}>
+            <View style={styles.mapModalTitleCopy}>
+              <Text style={styles.mapModalTitle}>지도에서 보기</Text>
+              <Text numberOfLines={1} style={styles.mapModalSubtitle}>
+                {submittedQuery ? `'${submittedQuery}' 검색 결과` : "검색 결과"}
+              </Text>
+            </View>
+            <Pressable onPress={() => setMapExpanded(false)} style={styles.mapCloseButton}>
+              <Text style={styles.mapCloseButtonLabel}>닫기</Text>
+            </Pressable>
+          </View>
+          <View style={styles.expandedMapBody}>
+            <PlaceMap
+              expanded
+              place={selectedPlace}
+              places={places}
+              displayMode="overview"
+              onSelectPlace={setSelectedPlace}
+            />
+          </View>
+          {selectedPlace ? (
+            <View style={styles.mapModalPlace}>
+              <View style={styles.selectedCopy}>
+                <Text numberOfLines={1} style={styles.selectedName}>{selectedPlace.name}</Text>
+                <Text numberOfLines={1} style={styles.selectedAddress}>
+                  {selectedPlace.address || selectedPlace.category_label}
+                </Text>
+              </View>
+              <Pressable
+                onPress={() => {
+                  setMapExpanded(false);
+                  openPlaceDetails(selectedPlace);
+                }}
+                style={styles.routeButton}
+              >
+                <Text style={styles.routeButtonLabel}>상세보기</Text>
+              </Pressable>
+            </View>
+          ) : null}
+        </SafeAreaView>
+      </Modal>
       <PlaceDetailSheet
         place={detailPlace}
         visible={detailVisible}
@@ -610,6 +668,17 @@ const styles = StyleSheet.create({
     backgroundColor: Palette.surface,
     boxShadow: Shadow.card,
   },
+  mapExpandButton: {
+    position: "absolute",
+    top: 12,
+    right: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: Radius.pill,
+    backgroundColor: "rgba(255,255,255,0.94)",
+    boxShadow: Shadow.card,
+  },
+  mapExpandButtonLabel: { color: Palette.ink, fontSize: 11, fontWeight: "900" },
   mapPlaceholder: {
     position: "absolute",
     inset: 0,
@@ -639,6 +708,37 @@ const styles = StyleSheet.create({
   selectedCopy: { minWidth: 0, flex: 1 },
   selectedName: { color: Palette.ink, fontSize: 15, fontWeight: "900" },
   selectedAddress: { marginTop: 4, color: Palette.muted, fontSize: 11 },
+  mapModal: { flex: 1, backgroundColor: Palette.surface },
+  mapModalHeader: {
+    paddingHorizontal: Spacing.four,
+    paddingVertical: Spacing.three,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#E3E8E5",
+  },
+  mapModalTitleCopy: { minWidth: 0, flex: 1 },
+  mapModalTitle: { color: Palette.ink, fontSize: 18, fontWeight: "900" },
+  mapModalSubtitle: { marginTop: 3, color: Palette.muted, fontSize: 11 },
+  mapCloseButton: {
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: Radius.pill,
+    backgroundColor: "#EEF2F0",
+  },
+  mapCloseButtonLabel: { color: Palette.ink, fontSize: 12, fontWeight: "800" },
+  expandedMapBody: { flex: 1, backgroundColor: Palette.map },
+  mapModalPlace: {
+    padding: Spacing.four,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    borderTopWidth: 1,
+    borderTopColor: "#E3E8E5",
+    backgroundColor: Palette.surface,
+  },
   routeButton: {
     paddingHorizontal: 13,
     paddingVertical: 10,

@@ -7,18 +7,22 @@ import type { Place } from "@/types/place";
 const embedUrl =
   process.env.EXPO_PUBLIC_KAKAO_MAP_EMBED_URL ||
   "https://life-infra-map-db.taile29cc8.ts.net/kakao-map-embed.html";
-const versionedEmbedUrl = `${embedUrl}${embedUrl.includes("?") ? "&" : "?"}v=compact-map-1`;
+const versionedEmbedUrl = `${embedUrl}${embedUrl.includes("?") ? "&" : "?"}v=compact-map-2`;
 
-const MAX_VISIBLE_MARKERS = 12;
+const MAX_VISIBLE_MARKERS = 8;
 
 export function PlaceMap({
   place,
   places = [],
   onSelectPlace,
+  displayMode = "overview",
+  expanded = false,
 }: {
   place?: Place | null;
   places?: Place[];
   onSelectPlace?: (place: Place) => void;
+  displayMode?: "overview" | "selected";
+  expanded?: boolean;
 }) {
   const webViewRef = useRef<WebView>(null);
   const validPlaces = useMemo(() => {
@@ -33,11 +37,12 @@ export function PlaceMap({
     );
   }, [place, places]);
   const mapPlaces = useMemo(() => {
+    if (displayMode === "selected") return place ? [place] : [];
     const visible = validPlaces.slice(0, MAX_VISIBLE_MARKERS);
     if (!place || visible.some((item) => String(item.id) === String(place.id)))
       return visible;
     return [...visible.slice(0, MAX_VISIBLE_MARKERS - 1), place];
-  }, [place, validPlaces]);
+  }, [displayMode, place, validPlaces]);
 
   const sendState = useCallback(() => {
     const payload = {
@@ -51,6 +56,7 @@ export function PlaceMap({
         label: String(validPlaces.findIndex((candidate) => String(candidate.id) === String(item.id)) + 1),
       })),
       selectedId: place ? String(place.id) : null,
+      viewportMode: displayMode,
     };
     const encodedPayload = encodeURIComponent(JSON.stringify(payload));
     webViewRef.current?.injectJavaScript(`
@@ -59,7 +65,7 @@ export function PlaceMap({
       }));
       true;
     `);
-  }, [mapPlaces, place, validPlaces]);
+  }, [displayMode, mapPlaces, place, validPlaces]);
 
   const receiveMessage = useCallback(
     (event: WebViewMessageEvent) => {
@@ -85,10 +91,12 @@ export function PlaceMap({
     <WebView
       ref={webViewRef}
       source={{ uri: versionedEmbedUrl }}
-      style={styles.map}
+      style={[styles.map, expanded && styles.expandedMap]}
       javaScriptEnabled
       domStorageEnabled
       cacheEnabled={false}
+      nestedScrollEnabled
+      overScrollMode="never"
       originWhitelist={["https://*"]}
       onLoadEnd={sendState}
       onMessage={receiveMessage}
@@ -102,5 +110,10 @@ const styles = StyleSheet.create({
     height: 390,
     borderRadius: 20,
     backgroundColor: "#E9ECEA",
+  },
+  expandedMap: {
+    flex: 1,
+    height: "100%",
+    borderRadius: 0,
   },
 });

@@ -12,16 +12,24 @@ type PlaceMapProps = {
   place?: Place | null;
   places?: Place[];
   onSelectPlace?: (place: Place) => void;
+  displayMode?: "overview" | "selected";
+  expanded?: boolean;
 };
 
 const embedUrl =
   process.env.EXPO_PUBLIC_KAKAO_MAP_EMBED_URL ||
   "http://localhost:5173/kakao-map-embed.html";
-const versionedEmbedUrl = `${embedUrl}${embedUrl.includes("?") ? "&" : "?"}v=compact-map-1`;
+const versionedEmbedUrl = `${embedUrl}${embedUrl.includes("?") ? "&" : "?"}v=compact-map-2`;
 
-const MAX_VISIBLE_MARKERS = 12;
+const MAX_VISIBLE_MARKERS = 8;
 
-export function PlaceMap({ place, places = [], onSelectPlace }: PlaceMapProps) {
+export function PlaceMap({
+  place,
+  places = [],
+  onSelectPlace,
+  displayMode = "overview",
+  expanded = false,
+}: PlaceMapProps) {
   const frameRef = useRef<HTMLIFrameElement>(null);
   const validPlaces = useMemo(() => {
     const candidates = places.length ? places : place ? [place] : [];
@@ -31,11 +39,12 @@ export function PlaceMap({ place, places = [], onSelectPlace }: PlaceMapProps) {
     );
   }, [place, places]);
   const mapPlaces = useMemo(() => {
+    if (displayMode === "selected") return place ? [place] : [];
     const visible = validPlaces.slice(0, MAX_VISIBLE_MARKERS);
     if (!place || visible.some((item) => String(item.id) === String(place.id)))
       return visible;
     return [...visible.slice(0, MAX_VISIBLE_MARKERS - 1), place];
-  }, [place, validPlaces]);
+  }, [displayMode, place, validPlaces]);
 
   const sendState = useCallback(() => {
     frameRef.current?.contentWindow?.postMessage(
@@ -50,10 +59,11 @@ export function PlaceMap({ place, places = [], onSelectPlace }: PlaceMapProps) {
           label: String(validPlaces.findIndex((candidate) => String(candidate.id) === String(item.id)) + 1),
         })),
         selectedId: place ? String(place.id) : null,
+        viewportMode: displayMode,
       },
       new URL(embedUrl).origin,
     );
-  }, [mapPlaces, place, validPlaces]);
+  }, [displayMode, mapPlaces, place, validPlaces]);
 
   useEffect(() => {
     const receive = (event: MessageEvent) => {
@@ -76,7 +86,7 @@ export function PlaceMap({ place, places = [], onSelectPlace }: PlaceMapProps) {
       src={versionedEmbedUrl}
       title="카카오 장소 지도"
       onLoad={sendState}
-      style={styles.frame}
+      style={{ ...styles.frame, ...(expanded ? styles.expandedFrame : {}) }}
     />
   );
 }
@@ -89,5 +99,9 @@ const styles: Record<string, CSSProperties> = {
     border: 0,
     borderRadius: 20,
     background: "#E9ECEA",
+  },
+  expandedFrame: {
+    height: "100%",
+    borderRadius: 0,
   },
 };
