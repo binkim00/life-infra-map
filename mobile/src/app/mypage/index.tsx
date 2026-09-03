@@ -86,33 +86,46 @@ export default function MypageScreen() {
     }
   };
   const updateImage = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ["images"],
-      quality: 0.8,
-    });
-    if (result.canceled) return;
-    const image = result.assets[0];
-    const body = new FormData();
-    body.append("profile_image", {
-      uri: image.uri,
-      name: image.fileName || "profile.jpg",
-      type: image.mimeType || "image/jpeg",
-    } as unknown as Blob);
-    const data = (await boardsApi.updateProfileImage(body)) as {
-      user?: AuthUser;
-    };
-    if (data.user) await setUser(data.user);
-    setMessage("프로필 사진을 수정했습니다.");
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ["images"],
+        quality: 0.8,
+      });
+      if (result.canceled) return;
+      const image = result.assets[0];
+      const body = new FormData();
+      body.append("profile_image", {
+        uri: image.uri,
+        name: image.fileName || "profile.jpg",
+        type: image.mimeType || "image/jpeg",
+      } as unknown as Blob);
+      const data = (await boardsApi.updateProfileImage(body)) as {
+        user?: AuthUser;
+      };
+      if (data.user) await setUser(data.user);
+      setMessage("프로필 사진을 수정했습니다.");
+    } catch {
+      setMessage("프로필 사진을 수정하지 못했습니다.");
+    }
   };
   const saveMemo = async (id: number) => {
-    await recommendationApi.updateSavedPlace(id, {
-      memo: memoDrafts[id] || "",
-    });
-    setMessage("장소 메모를 저장했습니다.");
+    try {
+      await recommendationApi.updateSavedPlace(id, {
+        memo: memoDrafts[id] || "",
+      });
+      setMessage("장소 메모를 저장했습니다.");
+    } catch {
+      setMessage("장소 메모를 저장하지 못했습니다.");
+    }
   };
   const deletePlace = async (id: number) => {
-    await recommendationApi.deleteSavedPlace(id);
-    setPlaces((current) => current.filter((item) => item.id !== id));
+    try {
+      await recommendationApi.deleteSavedPlace(id);
+      setPlaces((current) => current.filter((item) => item.id !== id));
+      setMessage("저장한 장소에서 삭제했습니다.");
+    } catch {
+      setMessage("저장한 장소를 삭제하지 못했습니다.");
+    }
   };
   return (
     <View style={styles.root}>

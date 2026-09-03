@@ -2,6 +2,7 @@ import { router } from "expo-router";
 import { useEffect, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { boardsApi } from "@/api/boards";
+import { useAuth } from "@/auth/auth-context";
 import { Screen, ui } from "@/components/screen";
 type Notification = {
   id: number;
@@ -13,6 +14,7 @@ type Notification = {
   created_at?: string;
 };
 export default function NotificationsScreen() {
+  const { ready, isLoggedIn } = useAuth();
   const [items, setItems] = useState<Notification[]>([]);
   const [error, setError] = useState("");
   const load = () =>
@@ -21,8 +23,13 @@ export default function NotificationsScreen() {
       .then((data) => setItems(data as Notification[]))
       .catch(() => setError("알림을 불러오지 못했습니다."));
   useEffect(() => {
+    if (!ready) return;
+    if (!isLoggedIn) {
+      router.replace("/login");
+      return;
+    }
     void load();
-  }, []);
+  }, [isLoggedIn, ready]);
   const open = async (item: Notification) => {
     if (!item.is_read) await boardsApi.readNotification(item.id);
     if (item.target_route) router.push(item.target_route as never);

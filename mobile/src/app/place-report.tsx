@@ -1,8 +1,9 @@
 import * as ImagePicker from "expo-image-picker";
 import * as Location from "expo-location";
-import { router, useLocalSearchParams } from "expo-router";
+import { Redirect, router, useLocalSearchParams } from "expo-router";
 import { useState } from "react";
 import {
+  ActivityIndicator,
   Image,
   Pressable,
   StyleSheet,
@@ -11,6 +12,7 @@ import {
   View,
 } from "react-native";
 import { recommendationApi } from "@/api/recommendations";
+import { useAuth } from "@/auth/auth-context";
 import { Screen, ui } from "@/components/screen";
 
 const TYPES = [
@@ -31,6 +33,7 @@ const TAGS = [
 ];
 
 export default function PlaceReportScreen() {
+  const { ready, isLoggedIn } = useAuth();
   const params = useLocalSearchParams<{
     placeId?: string;
     name?: string;
@@ -51,20 +54,29 @@ export default function PlaceReportScreen() {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const locate = async () => {
-    const permission = await Location.requestForegroundPermissionsAsync();
-    if (!permission.granted) return setMessage("위치 권한이 필요합니다.");
-    const position = await Location.getCurrentPositionAsync({});
-    setLat(String(position.coords.latitude));
-    setLng(String(position.coords.longitude));
+    try {
+      const permission = await Location.requestForegroundPermissionsAsync();
+      if (!permission.granted) return setMessage("위치 권한이 필요합니다.");
+      const position = await Location.getCurrentPositionAsync({});
+      setLat(String(position.coords.latitude));
+      setLng(String(position.coords.longitude));
+      setMessage("현재 위치를 입력했습니다.");
+    } catch {
+      setMessage("현재 위치를 확인하지 못했습니다.");
+    }
   };
   const pick = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ["images"],
-      allowsMultipleSelection: true,
-      selectionLimit: 5,
-      quality: 0.8,
-    });
-    if (!result.canceled) setImages(result.assets);
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ["images"],
+        allowsMultipleSelection: true,
+        selectionLimit: 5,
+        quality: 0.8,
+      });
+      if (!result.canceled) setImages(result.assets);
+    } catch {
+      setMessage("사진을 불러오지 못했습니다.");
+    }
   };
   const submit = async () => {
     if (!name.trim() || !lat || !lng || !description.trim())
@@ -95,6 +107,16 @@ export default function PlaceReportScreen() {
       setLoading(false);
     }
   };
+  if (!ready) {
+    return (
+      <Screen title="장소 정보 제보" back>
+        <ActivityIndicator color="#0F766E" />
+      </Screen>
+    );
+  }
+  if (ready && !isLoggedIn) {
+    return <Redirect href="/login" />;
+  }
   return (
     <Screen
       title="장소 정보 제보"

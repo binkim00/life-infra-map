@@ -8089,6 +8089,146 @@ class RecommendationSearchTests(TestCase):
             [item["name"] for item in shelter_response.json()["results"]],
         )
 
+    @patch("recommendations.views.search_places_by_keyword")
+    def test_general_place_search_does_not_treat_park_named_facilities_as_parks(self, mock_kakao):
+        Place.objects.create(
+            name="전포돌산공원 공중화장실",
+            category="city_park",
+            address="부산 부산진구",
+            lat=35.2131,
+            lng=128.9801,
+            source="test",
+            external_id="misclassified-park-toilet",
+            source_name="test",
+        )
+        mock_kakao.return_value = {
+            "documents": [
+                {
+                    "id": "actual-park",
+                    "place_name": "대저생태공원",
+                    "category_name": "여행 > 관광,명소 > 공원",
+                    "category_group_code": "AT4",
+                    "address_name": "부산 강서구",
+                    "road_address_name": "",
+                    "x": "128.9800",
+                    "y": "35.2130",
+                    "distance": "180",
+                    "place_url": "https://place.map.kakao.com/actual-park",
+                },
+                {
+                    "id": "park-parking",
+                    "place_name": "강서체육공원 주차장",
+                    "category_name": "교통,수송 > 교통시설 > 주차장",
+                    "category_group_code": "PK6",
+                    "address_name": "부산 강서구",
+                    "road_address_name": "",
+                    "x": "128.9810",
+                    "y": "35.2140",
+                    "distance": "220",
+                    "place_url": "https://place.map.kakao.com/park-parking",
+                },
+                {
+                    "id": "park-office",
+                    "place_name": "대저생태공원 관리사무소",
+                    "category_name": "서비스,산업 > 관리,운영 > 공원관리운영",
+                    "category_group_code": "",
+                    "address_name": "부산 강서구",
+                    "road_address_name": "",
+                    "x": "128.9820",
+                    "y": "35.2140",
+                    "distance": "240",
+                    "place_url": "https://place.map.kakao.com/park-office",
+                },
+            ],
+        }
+
+        response = self.client.get(
+            "/api/recommendations/place-search/",
+            {"q": "공원", "source": "all", "lat": 35.212, "lng": 128.979, "radius": 3000},
+            HTTP_HOST="localhost",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        names = [item["name"] for item in response.json()["results"]]
+        self.assertIn("대저생태공원", names)
+        self.assertNotIn("강서체육공원 주차장", names)
+        self.assertNotIn("대저생태공원 관리사무소", names)
+        self.assertNotIn("전포돌산공원 공중화장실", names)
+
+    @patch("recommendations.views.search_places_by_keyword")
+    def test_general_place_search_separates_cafes_and_restaurants(self, mock_kakao):
+        documents = [
+            {
+                "id": "coffee",
+                "place_name": "동네커피",
+                "category_name": "음식점 > 카페 > 커피전문점",
+                "category_group_code": "CE7",
+                "address_name": "부산 부산진구",
+                "road_address_name": "",
+                "x": "129.0607",
+                "y": "35.1545",
+                "distance": "20",
+                "place_url": "https://place.map.kakao.com/coffee",
+            },
+            {
+                "id": "pc-cafe",
+                "place_name": "동네PC카페",
+                "category_name": "가정,생활 > 여가시설 > 게임방,PC방",
+                "category_group_code": "",
+                "address_name": "부산 부산진구",
+                "road_address_name": "",
+                "x": "129.0608",
+                "y": "35.1546",
+                "distance": "30",
+                "place_url": "https://place.map.kakao.com/pc-cafe",
+            },
+            {
+                "id": "room-cafe",
+                "place_name": "동네룸카페",
+                "category_name": "음식점 > 카페 > 테마카페",
+                "category_group_code": "CE7",
+                "address_name": "부산 부산진구",
+                "road_address_name": "",
+                "x": "129.06085",
+                "y": "35.15465",
+                "distance": "35",
+                "place_url": "https://place.map.kakao.com/room-cafe",
+            },
+            {
+                "id": "restaurant",
+                "place_name": "동네밥집",
+                "category_name": "음식점 > 한식",
+                "category_group_code": "FD6",
+                "address_name": "부산 부산진구",
+                "road_address_name": "",
+                "x": "129.0609",
+                "y": "35.1547",
+                "distance": "40",
+                "place_url": "https://place.map.kakao.com/restaurant",
+            },
+        ]
+        mock_kakao.return_value = {"documents": documents}
+
+        cafe_response = self.client.get(
+            "/api/recommendations/place-search/",
+            {"q": "카페", "source": "kakao", "lat": 35.1544, "lng": 129.0606},
+            HTTP_HOST="localhost",
+        )
+        restaurant_response = self.client.get(
+            "/api/recommendations/place-search/",
+            {"q": "식당", "source": "kakao", "lat": 35.1544, "lng": 129.0606},
+            HTTP_HOST="localhost",
+        )
+
+        self.assertEqual(
+            [item["name"] for item in cafe_response.json()["results"]],
+            ["동네커피"],
+        )
+        self.assertEqual(
+            [item["name"] for item in restaurant_response.json()["results"]],
+            ["동네밥집"],
+        )
+
     @patch("recommendations.views.search_places_by_keyword", return_value={"documents": []})
     def test_general_map_search_without_radius_does_not_apply_default_radius(self, mock_kakao):
         far_place = Place.objects.create(

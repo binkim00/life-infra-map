@@ -75,6 +75,40 @@ KAKAO_CATEGORY_TERMS = {
     "convenience_store": ("편의점",),
 }
 
+# 카카오 카테고리가 구체적이지 않아 장소명으로만 판별해야 하는 시설입니다.
+# 공원·주차장·카페처럼 카카오가 명확한 업종을 주는 경우에는 장소명만 보고
+# 통과시키면 `OO공원 주차장`, `OO공원 매점`까지 공원 결과에 섞입니다.
+KAKAO_NAME_FALLBACK_CATEGORIES = {"freewifi", "smoking_area", "shelter"}
+
+# 공원 자체가 아니라 공원 안의 부속 시설인데, 외부 데이터 매칭 과정에서
+# `city_park`로 저장된 항목을 일반 공원 검색에서 제외합니다.
+CITY_PARK_FACILITY_NAME_TERMS = (
+    "주차장",
+    "화장실",
+    "매점",
+    "관리사무소",
+    "출입구",
+    "농구장",
+    "수영장",
+    "풋살장",
+)
+
+KAKAO_NON_RESTAURANT_FOOD_SEGMENTS = (
+    "카페",
+    "간식",
+    "술집",
+    "제과",
+    "베이커리",
+)
+
+KAKAO_NON_COFFEE_CAFE_TERMS = (
+    "pc방",
+    "게임방",
+    "보드카페",
+    "룸카페",
+    "키즈카페",
+)
+
 LOCATION_TOKEN_SUFFIXES = (
     "\uc2dc",
     "\ub3c4",
@@ -245,14 +279,46 @@ def kakao_place_matches_categories(place, categories):
         return True
 
     group_code = str(place.get("category_group_code") or "").strip().upper()
-    searchable = normalize_compact(" ".join([
-        str(place.get("category_name") or ""),
-        str(place.get("place_name") or ""),
-    ]))
+    category_name = str(place.get("category_name") or "")
+    category_text = normalize_compact(category_name)
+    category_segments = [
+        normalize_compact(segment)
+        for segment in category_name.split(">")
+        if normalize_compact(segment)
+    ]
+    name_text = normalize_compact(str(place.get("place_name") or ""))
     for category in requested:
+        if category == "city_park":
+            if any(segment == "공원" or segment.endswith("공원") for segment in category_segments):
+                return True
+            continue
+        if category == "cafe":
+            if any(
+                excluded in f"{category_text}{name_text}"
+                for excluded in KAKAO_NON_COFFEE_CAFE_TERMS
+            ):
+                continue
+            if group_code == "CE7" or "카페" in category_segments:
+                return True
+            continue
+        if category == "restaurant":
+            if any(
+                excluded in segment
+                for segment in category_segments
+                for excluded in KAKAO_NON_RESTAURANT_FOOD_SEGMENTS
+            ):
+                continue
+            if group_code == "FD6" or "음식점" in category_segments:
+                return True
+            continue
         if group_code and group_code in KAKAO_CATEGORY_GROUPS.get(category, set()):
             return True
-        if any(normalize_compact(term) in searchable for term in KAKAO_CATEGORY_TERMS.get(category, ())):
+        terms = KAKAO_CATEGORY_TERMS.get(category, ())
+        if any(normalize_compact(term) in category_text for term in terms):
+            return True
+        if category in KAKAO_NAME_FALLBACK_CATEGORIES and any(
+            normalize_compact(term) in name_text for term in terms
+        ):
             return True
     return False
 
@@ -737,6 +803,12 @@ def search_saved_places(*, keyword="", lat=None, lng=None, radius=0, limit=30, q
     include_tokens, exclude_tokens = tokenize_query(keyword)
     matched_categories = get_matching_categories(keyword)
     source_queryset = Place.objects.all() if queryset is None else queryset
+    if "city_park" in matched_categories:
+        for facility_term in CITY_PARK_FACILITY_NAME_TERMS:
+            source_queryset = source_queryset.exclude(
+                category="city_park",
+                name__icontains=facility_term,
+            )
 
     deduped = run_search_pass(
         source_queryset=source_queryset,

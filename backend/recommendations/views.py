@@ -30,6 +30,7 @@ from .serializers import (
 )
 from .services.kakao_local import search_places_by_keyword
 from .services.map_search import (
+    KAKAO_CATEGORY_GROUPS,
     get_matching_categories,
     is_category_only_query,
     kakao_place_matches_categories,
@@ -979,12 +980,21 @@ def map_place_search(request):
 
     if keyword and source in {"all", "kakao"}:
         try:
+            kakao_category_group = ""
+            if len(matched_basic_categories) == 1:
+                group_codes = KAKAO_CATEGORY_GROUPS.get(
+                    matched_basic_categories[0],
+                    set(),
+                )
+                if len(group_codes) == 1:
+                    kakao_category_group = next(iter(group_codes))
             kakao_data = search_places_by_keyword(
                 keyword=keyword,
                 lat=search_lat,
                 lng=search_lng,
                 radius=radius or None,
                 size=min(limit, 15),
+                category_group_code=kakao_category_group or None,
             )
             db_external_ids = {
                 str(place.get("external_id"))
@@ -1028,6 +1038,7 @@ def map_place_search(request):
             for place in kakao_results
         ],
     ]
+    combined_results = combined_results[:limit]
 
     return Response({
         "search_mode": "place_search",

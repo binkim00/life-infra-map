@@ -155,7 +155,6 @@ export default function ExploreScreen() {
   useEffect(() => {
     if (!submittedQuery || !searchRequestId) return;
     if (locationStatus === "requesting") return;
-    if (center.lat === null || center.lng === null) return;
     const controller = new AbortController();
     searchMapPlaces({
       query: submittedQuery,
@@ -347,14 +346,13 @@ export default function ExploreScreen() {
           </View>
 
           <View style={styles.mapSection}>
-            {selectedPlace ? (
-              <PlaceMap
-                place={selectedPlace}
-                places={places}
-                onSelectPlace={openPlaceDetails}
-              />
-            ) : (
-              <View style={styles.mapPlaceholder}>
+            <PlaceMap
+              place={selectedPlace}
+              places={places}
+              onSelectPlace={openPlaceDetails}
+            />
+            {!selectedPlace ? (
+              <View pointerEvents="none" style={styles.mapPlaceholder}>
                 <Text style={styles.mapPlaceholderTitle}>
                   검색 결과가 지도에 표시됩니다.
                 </Text>
@@ -362,7 +360,7 @@ export default function ExploreScreen() {
                   지역과 시설을 검색하거나 현재 위치를 선택해 주세요.
                 </Text>
               </View>
-            )}
+            ) : null}
             {selectedPlace ? (
               <View style={styles.selectedSummary}>
                 <View style={styles.selectedCopy}>
@@ -569,6 +567,8 @@ const styles = StyleSheet.create({
     boxShadow: Shadow.card,
   },
   mapPlaceholder: {
+    position: "absolute",
+    inset: 0,
     height: 390,
     alignItems: "center",
     justifyContent: "center",

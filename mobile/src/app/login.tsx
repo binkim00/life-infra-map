@@ -39,8 +39,17 @@ export default function LoginScreen() {
       back
     >
       <View style={styles.form}>
+        <View style={styles.brandCard}>
+          <Text style={styles.brand}>LIFE MAP</Text>
+          <Text style={styles.brandTitle}>필요한 순간에 맞는 장소를 찾아보세요.</Text>
+          <Text style={styles.brandCopy}>
+            검색 기록과 선호 태그를 반영하고, 장소 저장·제보 내역을 한곳에서
+            관리합니다.
+          </Text>
+        </View>
         <TextInput
           autoCapitalize="none"
+          autoComplete="username"
           value={username}
           onChangeText={setUsername}
           placeholder="아이디"
@@ -51,6 +60,7 @@ export default function LoginScreen() {
           onChangeText={setPassword}
           onSubmitEditing={submit}
           placeholder="비밀번호"
+          autoComplete="current-password"
           secureTextEntry
           style={ui.input}
         />
@@ -70,6 +80,28 @@ export default function LoginScreen() {
 
 const styles = StyleSheet.create({
   form: { width: "100%", maxWidth: 480, alignSelf: "center", gap: 12 },
+  brandCard: {
+    marginBottom: 4,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: "#D9E6E2",
+    borderRadius: 18,
+    backgroundColor: "#EAF6F3",
+  },
+  brand: {
+    marginBottom: 10,
+    color: "#0F766E",
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 2,
+  },
+  brandTitle: {
+    marginBottom: 7,
+    color: "#17211D",
+    fontSize: 17,
+    fontWeight: "900",
+  },
+  brandCopy: { color: "#5F6B66", fontSize: 12, lineHeight: 19 },
   link: {
     padding: 10,
     textAlign: "center",
