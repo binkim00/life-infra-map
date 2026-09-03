@@ -65,11 +65,14 @@ const NEARBY_CATEGORY_QUERIES = new Set([
 ]);
 
 const isNearbyCategoryQuery = (value: string) => {
-  const normalized = value
-    .trim()
-    .replace(/^(내\s*주변|주변|근처|가까운)\s*/, "")
-    .replace(/\s+/g, "");
-  return NEARBY_CATEGORY_QUERIES.has(normalized);
+  // 특정 지역·장소가 없는 업종/조건 검색만 현재 위치 반경을 사용합니다.
+  // 목록에 없는 고유명사는 명시적인 장소명으로 보고 전국 검색합니다.
+  const normalized = value.replace(/\s+/g, "").trim();
+  const withoutGenericConditions = normalized.replace(
+    /(내주변|주변|근처|가까운|가까이|무료|유료|24시간|늦게까지|지금여는|영업중|조용한|넓은|쾌적한|저렴한|가성비좋은|아이와|가족과|혼자|데이트|갈만한|가기좋은|이용가능한|주차가능한|반려동물동반)/g,
+    "",
+  );
+  return NEARBY_CATEGORY_QUERIES.has(withoutGenericConditions);
 };
 
 const formatDistance = (distance?: number) =>
