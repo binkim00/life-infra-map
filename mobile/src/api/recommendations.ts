@@ -6,6 +6,7 @@ export const recommendationApi = {
     apiRequest<MapSearchResponse>("/recommendations/place-search/", {
       params: params as Record<string, string | number>,
       signal,
+      auth: false,
     }),
   aiSearch: (body: unknown) =>
     apiRequest<Record<string, unknown>>("/recommendations/ai-search/", {
@@ -121,6 +122,7 @@ export async function searchMapPlaces({
     return apiRequest<MapSearchResponse>("/recommendations/map-search/", {
       params,
       signal,
+      auth: false,
     });
   }
 }
