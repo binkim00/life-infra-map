@@ -48,8 +48,17 @@ const mapUrl = (place: Place) =>
 
 export default function ExploreScreen() {
   const { requireLogin, isLoggedIn } = useAuth();
-  const params = useLocalSearchParams<{ q?: string; placeId?: string }>();
+  const params = useLocalSearchParams<{
+    q?: string;
+    placeId?: string;
+    lat?: string;
+    lng?: string;
+  }>();
   const initialQuery = typeof params.q === "string" ? params.q : "";
+  const initialLat = Number(params.lat);
+  const initialLng = Number(params.lng);
+  const hasInitialCenter =
+    Number.isFinite(initialLat) && Number.isFinite(initialLng);
   const [query, setQuery] = useState(initialQuery);
   const [submittedQuery, setSubmittedQuery] = useState(initialQuery);
   const [searchRequestId, setSearchRequestId] = useState(initialQuery ? 1 : 0);
@@ -64,9 +73,9 @@ export default function ExploreScreen() {
     lng: number | null;
     label: string;
   }>({
-    lat: null,
-    lng: null,
-    label: "지역 제한 없음",
+    lat: hasInitialCenter ? initialLat : null,
+    lng: hasInitialCenter ? initialLng : null,
+    label: hasInitialCenter ? "현재 위치 기준" : "지역 제한 없음",
   });
 
   const runSearch = useCallback(

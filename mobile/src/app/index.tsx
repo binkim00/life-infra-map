@@ -1,4 +1,5 @@
 import { router } from "expo-router";
+import * as Location from "expo-location";
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -43,6 +44,10 @@ export default function HomeScreen() {
   const [loading, setLoading] = useState(true);
   const [nearbyError, setNearbyError] = useState("");
   const [nearbyReloadKey, setNearbyReloadKey] = useState(0);
+  const [nearbyCenter, setNearbyCenter] = useState<{
+    lat: number;
+    lng: number;
+  } | null>(null);
 
   const openRecommendation = (nextQuery = query) => {
     const trimmed = nextQuery.trim();
@@ -61,7 +66,31 @@ export default function HomeScreen() {
   useEffect(() => {
     const controller = new AbortController();
     let active = true;
-    searchMapPlaces({ query: "공원", limit: 3, signal: controller.signal })
+    const loadNearbyParks = async () => {
+      const permission = await Location.requestForegroundPermissionsAsync();
+      if (!permission.granted) {
+        throw new Error(
+          "주변 공원을 보려면 위치 권한이 필요합니다. 권한을 허용한 뒤 다시 시도해 주세요.",
+        );
+      }
+      const position = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+      const nextCenter = {
+        lat: position.coords.latitude,
+        lng: position.coords.longitude,
+      };
+      if (active) setNearbyCenter(nextCenter);
+      return searchMapPlaces({
+        query: "공원",
+        lat: nextCenter.lat,
+        lng: nextCenter.lng,
+        limit: 6,
+        signal: controller.signal,
+      });
+    };
+
+    loadNearbyParks()
       .then((data) => {
         if (active) {
           setNearbyPlaces(data.results);
@@ -71,6 +100,7 @@ export default function HomeScreen() {
       .catch((error) => {
         if (!active || error?.name === "AbortError") return;
         setNearbyPlaces([]);
+        setNearbyCenter(null);
         setNearbyError(
           error instanceof Error
             ? error.message
@@ -182,7 +212,18 @@ export default function HomeScreen() {
                   서버에서 불러온 가까운 장소
                 </Text>
               </View>
-              <Pressable onPress={() => openPlaceSearch("공원")}>
+              <Pressable
+                onPress={() =>
+                  router.push({
+                    pathname: "/explore",
+                    params: {
+                      q: "공원",
+                      lat: nearbyCenter ? String(nearbyCenter.lat) : undefined,
+                      lng: nearbyCenter ? String(nearbyCenter.lng) : undefined,
+                    },
+                  })
+                }
+              >
                 <Text style={styles.more}>전체 보기</Text>
               </Pressable>
             </View>
@@ -212,7 +253,12 @@ export default function HomeScreen() {
                     onPress={() =>
                       router.push({
                         pathname: "/explore",
-                        params: { q: "공원", placeId: String(place.id) },
+                        params: {
+                          q: "공원",
+                          placeId: String(place.id),
+                          lat: nearbyCenter ? String(nearbyCenter.lat) : undefined,
+                          lng: nearbyCenter ? String(nearbyCenter.lng) : undefined,
+                        },
                       })
                     }
                     style={({ pressed }) => [
