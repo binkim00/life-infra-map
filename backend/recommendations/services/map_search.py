@@ -132,6 +132,31 @@ SOFT_PREFERENCE_TOKENS = frozenset({
     "\ucd94\ucc9c",
 })
 
+# 업종 검색 앞뒤에 자주 붙지만 특정 지역이나 상호를 뜻하지 않는 표현입니다.
+# 이 토큰들만 업종명과 함께 있으면 현재 위치 기반의 일반 업종 검색으로 봅니다.
+CATEGORY_QUERY_MODIFIER_TOKENS = frozenset({
+    "내주변",
+    "무료",
+    "유료",
+    "24시간",
+    "늦게까지",
+    "지금여는",
+    "영업중",
+    "넓은",
+    "쾌적한",
+    "저렴한",
+    "가성비좋은",
+    "아이와",
+    "가족과",
+    "혼자",
+    "데이트",
+    "갈만한",
+    "가기좋은",
+    "이용가능한",
+    "주차가능한",
+    "반려동물동반",
+}) | SOFT_PREFERENCE_TOKENS
+
 # `주차장 말고 화장실`처럼 바로 앞 단어를 제외 조건으로 바꾸는 표현입니다.
 NEGATION_MARKERS = (
     "말고",
@@ -269,7 +294,30 @@ def is_category_only_query(keyword):
         for aliases in PLACE_CATEGORY_ALIASES.values()
         for alias in aliases
     }
-    return all(normalize_compact(token) in alias_keys for token in include_tokens)
+    modifier_keys = {
+        normalize_compact(token)
+        for token in CATEGORY_QUERY_MODIFIER_TOKENS | STOPWORD_TOKENS
+    }
+    normalized_tokens = [normalize_compact(token) for token in include_tokens]
+    token_based_match = (
+        any(token in alias_keys for token in normalized_tokens)
+        and all(token in alias_keys or token in modifier_keys for token in normalized_tokens)
+    )
+    compact_without_modifiers = normalize_compact(keyword)
+    for modifier in sorted(modifier_keys, key=len, reverse=True):
+        compact_without_modifiers = compact_without_modifiers.replace(modifier, "")
+    return token_based_match or compact_without_modifiers in alias_keys
+
+
+def category_only_fallback_keyword(keyword):
+    """조건부 업종 검색이 비었을 때 사용할 대표 업종 검색어를 돌려준다."""
+    if not is_category_only_query(keyword):
+        return ""
+    categories = get_matching_categories(keyword)
+    if len(categories) != 1:
+        return ""
+    terms = KAKAO_CATEGORY_TERMS.get(categories[0], ())
+    return terms[0] if terms else ""
 
 
 def kakao_place_matches_categories(place, categories):

@@ -7742,6 +7742,74 @@ class RecommendationSearchTests(TestCase):
         self.assertEqual(data["results"][0]["result_source"], "kakao")
         mock_db_search.assert_not_called()
 
+    @patch("recommendations.views.search_places_by_keyword")
+    def test_separated_qualified_category_search_falls_back_to_nearby_category(
+        self,
+        mock_kakao,
+    ):
+        mock_kakao.side_effect = [
+            {"documents": []},
+            {"documents": [
+                {
+                    "id": "pharmacy-far",
+                    "place_name": "먼약국",
+                    "category_group_code": "PM9",
+                    "category_name": "의료,건강 > 약국",
+                    "address_name": "부산 강서구",
+                    "x": "128.8800",
+                    "y": "35.1100",
+                    "distance": "2400",
+                },
+                {
+                    "id": "pharmacy-near",
+                    "place_name": "가까운약국",
+                    "category_group_code": "PM9",
+                    "category_name": "의료,건강 > 약국",
+                    "address_name": "부산 강서구",
+                    "x": "128.8540",
+                    "y": "35.0970",
+                    "distance": "220",
+                },
+            ]},
+        ]
+
+        response = self.client.get(
+            "/api/recommendations/place-search/",
+            {
+                "q": "24시간 약국",
+                "source": "all",
+                "lat": 35.0964,
+                "lng": 128.8539,
+                "radius": 3000,
+            },
+            HTTP_HOST="localhost",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(
+            [item["name"] for item in data["results"]],
+            ["가까운약국", "먼약국"],
+        )
+        self.assertEqual(mock_kakao.call_count, 2)
+        self.assertEqual(mock_kakao.call_args_list[0].kwargs["keyword"], "24시간 약국")
+        self.assertEqual(mock_kakao.call_args_list[1].kwargs["keyword"], "약국")
+
+    @patch("recommendations.views.search_places_by_keyword", return_value={"documents": []})
+    def test_separated_named_category_search_does_not_use_category_fallback(
+        self,
+        mock_kakao,
+    ):
+        response = self.client.get(
+            "/api/recommendations/place-search/",
+            {"q": "서면 조용한 카페", "source": "all"},
+            HTTP_HOST="localhost",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(mock_kakao.call_count, 1)
+        self.assertEqual(mock_kakao.call_args.kwargs["keyword"], "서면 조용한 카페")
+
     @patch("recommendations.views._resolve_anchor_location")
     @patch("recommendations.views.search_places_by_keyword")
     def test_separated_place_search_filters_wrong_kakao_category(

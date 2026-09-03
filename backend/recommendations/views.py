@@ -31,6 +31,7 @@ from .serializers import (
 from .services.kakao_local import search_places_by_keyword
 from .services.map_search import (
     KAKAO_CATEGORY_GROUPS,
+    category_only_fallback_keyword,
     get_matching_categories,
     is_category_only_query,
     kakao_place_matches_categories,
@@ -1001,6 +1002,21 @@ def map_place_search(request):
                 size=min(limit, 15),
                 category_group_code=kakao_category_group or None,
             )
+            fallback_keyword = category_only_fallback_keyword(keyword)
+            if (
+                is_separated_place_search
+                and not kakao_data.get("documents")
+                and fallback_keyword
+                and fallback_keyword != keyword
+            ):
+                kakao_data = search_places_by_keyword(
+                    keyword=fallback_keyword,
+                    lat=search_lat,
+                    lng=search_lng,
+                    radius=radius or None,
+                    size=min(limit, 15),
+                    category_group_code=kakao_category_group or None,
+                )
             db_external_ids = {
                 str(place.get("external_id"))
                 for place in db_results
