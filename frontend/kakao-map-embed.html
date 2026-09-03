@@ -3,11 +3,8 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>장소 지도</title>
-    <link
-      rel="stylesheet"
-      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-    />
+    <title>카카오 장소 지도</title>
+    <!-- Vite가 카카오 JavaScript 키를 치환하는 독립 지도 페이지입니다. -->
     <style>
       html,
       body,
@@ -37,80 +34,65 @@
       #status.hidden {
         display: none;
       }
-      .place-marker {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        width: 34px;
-        height: 34px;
-        border: 2px solid #475569;
-        border-radius: 50% 50% 50% 0;
-        color: #1e293b;
-        background: #ffffff;
-        box-shadow: 0 2px 5px rgb(15 23 42 / 24%);
-        font: 800 12px/1 Arial, sans-serif;
-        transform: rotate(-45deg);
-      }
-      .place-marker span {
-        transform: rotate(45deg);
-      }
-      .place-marker.selected {
-        border-color: #0f766e;
-        color: #ffffff;
-        background: #0f766e;
-      }
     </style>
   </head>
   <body>
     <div id="map"></div>
     <div id="status">지도를 불러오는 중입니다.</div>
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=%VITE_KAKAO_JAVASCRIPT_KEY%&autoload=false"></script>
     <script>
       const statusElement = document.getElementById("status");
-      const state = { map: null, markerLayer: null, places: [], selectedId: null };
+      const state = { map: null, markers: [], places: [], selectedId: null };
 
       const postToHost = (message) => {
         window.parent.postMessage(message, "*");
         window.ReactNativeWebView?.postMessage(JSON.stringify(message));
       };
 
-      const markerIcon = (label, selected) =>
-        L.divIcon({
-          className: "",
-          html: `<div class="place-marker${selected ? " selected" : ""}"><span>${label}</span></div>`,
-          iconSize: [36, 42],
-          iconAnchor: [18, 38],
-        });
+      const markerImage = (label, selected) => {
+        const color = selected ? "#0F766E" : "#475569";
+        const fill = selected ? "#0F766E" : "#FFFFFF";
+        const text = selected ? "#FFFFFF" : "#1E293B";
+        const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="42" height="50" viewBox="0 0 42 50"><filter id="s" x="-30%" y="-20%" width="160%" height="170%"><feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#0F172A" flood-opacity="0.22"/></filter><path filter="url(#s)" d="M21 47C18 41 5 31 5 20A16 16 0 1 1 37 20C37 31 24 41 21 47Z" fill="${fill}" stroke="${color}" stroke-width="2.5"/><circle cx="21" cy="20" r="11" fill="${fill}"/><text x="21" y="20" text-anchor="middle" dominant-baseline="central" font-family="Arial,sans-serif" font-size="13" font-weight="800" fill="${text}">${label}</text></svg>`;
+        return new kakao.maps.MarkerImage(
+          `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`,
+          new kakao.maps.Size(42, 50),
+          { offset: new kakao.maps.Point(21, 47) },
+        );
+      };
 
       const renderPlaces = () => {
         if (!state.map) return;
-        state.markerLayer.clearLayers();
-        const bounds = [];
+        state.markers.forEach((marker) => marker.setMap(null));
+        state.markers = [];
+        const bounds = new kakao.maps.LatLngBounds();
 
         state.places.forEach((place) => {
+          const position = new kakao.maps.LatLng(place.lat, place.lng);
           const selected = String(place.id) === String(state.selectedId);
-          const position = [Number(place.lat), Number(place.lng)];
-          const marker = L.marker(position, {
-            icon: markerIcon(place.label, selected),
+          const marker = new kakao.maps.Marker({
+            map: state.map,
+            position,
+            image: markerImage(place.label, selected),
             title: place.name,
-            zIndexOffset: selected ? 1000 : 0,
-          }).addTo(state.markerLayer);
-          marker.on("click", () => {
+            zIndex: selected ? 10 : 1,
+          });
+          kakao.maps.event.addListener(marker, "click", () => {
             postToHost({
               type: "life-infra-map:select-place",
               id: place.id,
             });
           });
-          bounds.push(position);
+          state.markers.push(marker);
+          bounds.extend(position);
         });
 
-        if (state.places.length > 1)
-          state.map.fitBounds(bounds, { padding: [48, 48], maxZoom: 16 });
+        if (state.places.length > 1) state.map.setBounds(bounds, 48, 48, 48, 48);
         else if (state.places.length === 1) {
-          state.map.setView(
-            [Number(state.places[0].lat), Number(state.places[0].lng)],
-            15,
+          state.map.setCenter(
+            new kakao.maps.LatLng(state.places[0].lat, state.places[0].lng),
           );
+          state.map.setLevel(4);
         }
       };
 
@@ -121,25 +103,22 @@
         renderPlaces();
       });
 
-      if (!window.L?.map) {
-        statusElement.textContent = "지도를 불러오지 못했습니다.";
+      if (!window.kakao?.maps?.load) {
+        statusElement.textContent = "카카오 지도를 불러오지 못했습니다.";
       } else {
-        state.map = L.map("map", { zoomControl: true }).setView(
-          [37.5665, 126.978],
-          13,
-        );
-        state.markerLayer = L.layerGroup().addTo(state.map);
-        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-          maxZoom: 19,
-          attribution: "&copy; OpenStreetMap contributors",
-        })
-          .on("load", () => statusElement.classList.add("hidden"))
-          .on("tileerror", () => {
-            statusElement.textContent = "지도 배경을 불러오지 못했습니다.";
-          })
-          .addTo(state.map);
-        renderPlaces();
-        postToHost({ type: "life-infra-map:ready" });
+        kakao.maps.load(() => {
+          state.map = new kakao.maps.Map(document.getElementById("map"), {
+            center: new kakao.maps.LatLng(37.5665, 126.978),
+            level: 5,
+          });
+          state.map.addControl(
+            new kakao.maps.ZoomControl(),
+            kakao.maps.ControlPosition.RIGHT,
+          );
+          statusElement.classList.add("hidden");
+          renderPlaces();
+          postToHost({ type: "life-infra-map:ready" });
+        });
       }
     </script>
   </body>
