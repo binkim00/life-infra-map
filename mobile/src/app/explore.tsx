@@ -207,6 +207,7 @@ export default function ExploreScreen() {
         );
         setSelectedPlace(requested || data.results[0] || null);
         setStatus("success");
+        setMessage("");
         if (isLoggedIn)
           void recommendationApi.saveSearchLog({
             query: submittedQuery,
@@ -227,7 +228,7 @@ export default function ExploreScreen() {
           );
       })
       .catch((error) => {
-        if (error?.name === "AbortError") return;
+        if (controller.signal.aborted || error?.name === "AbortError") return;
         setPlaces([]);
         setSelectedPlace(null);
         setStatus("error");
