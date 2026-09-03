@@ -12864,7 +12864,7 @@ class SharedJWTAuthenticationTests(TestCase):
         )
         self.secret = "test-secret-key-at-least-32-bytes-long!!"
 
-    def _token(self, **overrides):
+    def _token(self, algorithm="HS256", **overrides):
         now = timezone.now()
         payload = {
             "sub": str(self.user.id),
@@ -12873,7 +12873,7 @@ class SharedJWTAuthenticationTests(TestCase):
             "exp": now + timedelta(hours=2),
         }
         payload.update(overrides)
-        return jwt.encode(payload, self.secret, algorithm="HS256")
+        return jwt.encode(payload, self.secret, algorithm=algorithm)
 
     def _get(self, token=None):
         headers = {"HTTP_AUTHORIZATION": f"Bearer {token}"} if token else {}
@@ -12882,6 +12882,11 @@ class SharedJWTAuthenticationTests(TestCase):
 
     def test_valid_token_authenticates(self):
         response = self._get(self._token())
+
+        self.assertEqual(response.status_code, 200)
+
+    def test_legacy_hs512_token_authenticates_during_transition(self):
+        response = self._get(self._token(algorithm="HS512"))
 
         self.assertEqual(response.status_code, 200)
 

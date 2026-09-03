@@ -41,7 +41,9 @@ public class JwtService {
                 .claim("username", username)
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(now.plus(accessTokenTtl)))
-                .signWith(key)
+                // 키 길이에 따라 알고리즘이 달라지면 Django 와 호환되지 않는다.
+                // 두 서비스의 공유 토큰 계약은 HS256 으로 고정한다.
+                .signWith(key, Jwts.SIG.HS256)
                 .compact();
     }
 

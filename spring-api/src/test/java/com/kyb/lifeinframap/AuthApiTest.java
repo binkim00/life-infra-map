@@ -9,6 +9,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.kyb.lifeinframap.account.domain.User;
 import com.kyb.lifeinframap.support.ApiTestBase;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -42,7 +44,7 @@ class AuthApiTest extends ApiTestBase {
         userRepository.save(user);
         profileRepository.save(new com.kyb.lifeinframap.account.domain.UserProfile(user, "로그인테스트"));
 
-        mockMvc.perform(post("/api/auth/login")
+        MvcResult result = mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"username":"%s","password":"testpass1234"}
@@ -50,7 +52,15 @@ class AuthApiTest extends ApiTestBase {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.access_token").exists())
                 .andExpect(jsonPath("$.token_type").value("Bearer"))
-                .andExpect(jsonPath("$.user.username").value(username));
+                .andExpect(jsonPath("$.user.username").value(username))
+                .andReturn();
+
+        String token = objectMapper.readTree(result.getResponse().getContentAsString())
+                .get("access_token").asText();
+        String header = new String(
+                Base64.getUrlDecoder().decode(token.substring(0, token.indexOf('.'))),
+                StandardCharsets.UTF_8);
+        assertThat(objectMapper.readTree(header).get("alg").asText()).isEqualTo("HS256");
     }
 
     @Test

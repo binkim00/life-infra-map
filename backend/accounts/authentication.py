@@ -44,11 +44,17 @@ class SharedJWTAuthentication(authentication.BaseAuthentication):
             logger.warning("JWT_SECRET 이 비어 있어 Bearer 토큰을 검증할 수 없습니다.")
             raise exceptions.AuthenticationFailed("토큰 검증 설정이 준비되지 않았습니다.")
 
+        # JJWT 0.12 는 알고리즘을 지정하지 않으면 키 길이에 따라 HS512 를
+        # 선택합니다. Spring 이 HS256 을 명시하기 전 발급된 토큰도 만료될
+        # 때까지 사용할 수 있도록 HS512 만 한시적으로 함께 허용합니다.
+        configured_algorithm = getattr(settings, "JWT_ALGORITHM", "HS256")
+        accepted_algorithms = list(dict.fromkeys((configured_algorithm, "HS512")))
+
         try:
             payload = jwt.decode(
                 header[1].decode("utf-8", "ignore"),
                 secret,
-                algorithms=[getattr(settings, "JWT_ALGORITHM", "HS256")],
+                algorithms=accepted_algorithms,
             )
         except jwt.ExpiredSignatureError:
             raise exceptions.AuthenticationFailed("토큰이 만료되었습니다.")
