@@ -7711,6 +7711,37 @@ class RecommendationSearchTests(TestCase):
         mock_kakao.assert_not_called()
         mock_db_search.assert_not_called()
 
+    @patch("recommendations.views.search_saved_map_places")
+    @patch("recommendations.views.search_places_by_keyword")
+    def test_separated_named_landmark_search_prioritizes_kakao_place(
+        self,
+        mock_kakao,
+        mock_db_search,
+    ):
+        mock_kakao.return_value = {"documents": [{
+            "id": "gwangalli-beach",
+            "place_name": "광안리해수욕장",
+            "category_name": "여행 > 관광,명소 > 해수욕장",
+            "address_name": "부산 수영구 광안동",
+            "road_address_name": "부산 수영구 광안해변로 219",
+            "x": "129.1186",
+            "y": "35.1532",
+            "place_url": "https://place.map.kakao.com/gwangalli-beach",
+        }]}
+
+        response = self.client.get(
+            "/api/recommendations/place-search/",
+            {"q": "광안리해수욕장", "source": "all", "limit": 10},
+            HTTP_HOST="localhost",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data["db_search_skipped"])
+        self.assertEqual(data["results"][0]["name"], "광안리해수욕장")
+        self.assertEqual(data["results"][0]["result_source"], "kakao")
+        mock_db_search.assert_not_called()
+
     @patch("recommendations.views._resolve_anchor_location")
     @patch("recommendations.views.search_places_by_keyword")
     def test_separated_place_search_filters_wrong_kakao_category(

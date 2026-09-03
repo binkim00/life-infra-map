@@ -41,6 +41,37 @@ const RADIUS_OPTIONS = [
   { label: "10km", value: 10000 },
 ] as const;
 
+const NEARBY_CATEGORY_QUERIES = new Set([
+  "주차장",
+  "공영주차장",
+  "화장실",
+  "공중화장실",
+  "개방화장실",
+  "공원",
+  "쉼터",
+  "무더위쉼터",
+  "카페",
+  "커피",
+  "식당",
+  "음식점",
+  "맛집",
+  "약국",
+  "병원",
+  "편의점",
+  "마트",
+  "주유소",
+  "지하철역",
+  "기차역",
+]);
+
+const isNearbyCategoryQuery = (value: string) => {
+  const normalized = value
+    .trim()
+    .replace(/^(내\s*주변|주변|근처|가까운)\s*/, "")
+    .replace(/\s+/g, "");
+  return NEARBY_CATEGORY_QUERIES.has(normalized);
+};
+
 const formatDistance = (distance?: number) =>
   distance === undefined
     ? "거리 정보 없음"
@@ -154,13 +185,14 @@ export default function ExploreScreen() {
 
   useEffect(() => {
     if (!submittedQuery || !searchRequestId) return;
-    if (locationStatus === "requesting") return;
+    const nearbyCategorySearch = isNearbyCategoryQuery(submittedQuery);
+    if (nearbyCategorySearch && locationStatus === "requesting") return;
     const controller = new AbortController();
     searchMapPlaces({
       query: submittedQuery,
-      lat: center.lat,
-      lng: center.lng,
-      radius,
+      lat: nearbyCategorySearch ? center.lat : null,
+      lng: nearbyCategorySearch ? center.lng : null,
+      radius: nearbyCategorySearch ? radius : undefined,
       signal: controller.signal,
     })
       .then((data) => {
@@ -262,6 +294,8 @@ export default function ExploreScreen() {
       "전체",
     [submittedQuery],
   );
+  const usesNearbyRadius =
+    !submittedQuery || isNearbyCategoryQuery(submittedQuery);
 
   return (
     <View style={styles.screen}>
@@ -331,18 +365,24 @@ export default function ExploreScreen() {
           </ScrollView>
 
           <View style={styles.scopeRow}>
-            <Text style={styles.scopeLabel}>검색 범위</Text>
-            <View style={styles.radiusOptions}>
-              {RADIUS_OPTIONS.map((option) => (
-                <Pressable
-                  key={option.value}
-                  onPress={() => setRadius(option.value)}
-                  style={[styles.radiusOption, radius === option.value && styles.radiusOptionActive]}
-                >
-                  <Text style={[styles.radiusText, radius === option.value && styles.radiusTextActive]}>{option.label}</Text>
-                </Pressable>
-              ))}
-            </View>
+            <Text style={styles.scopeLabel}>
+              {usesNearbyRadius ? "주변 검색 범위" : "장소명·지역 전체 검색"}
+            </Text>
+            {usesNearbyRadius ? (
+              <View style={styles.radiusOptions}>
+                {RADIUS_OPTIONS.map((option) => (
+                  <Pressable
+                    key={option.value}
+                    onPress={() => setRadius(option.value)}
+                    style={[styles.radiusOption, radius === option.value && styles.radiusOptionActive]}
+                  >
+                    <Text style={[styles.radiusText, radius === option.value && styles.radiusTextActive]}>{option.label}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            ) : (
+              <Text style={styles.globalScopeText}>현재 위치 반경 제한 없음</Text>
+            )}
           </View>
 
           <View style={styles.mapSection}>
@@ -555,6 +595,7 @@ const styles = StyleSheet.create({
   filterLabelActive: { color: Palette.surface },
   scopeRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 },
   scopeLabel: { color: Palette.muted, fontSize: 11, fontWeight: "800" },
+  globalScopeText: { color: Palette.accent, fontSize: 11, fontWeight: "800" },
   radiusOptions: { flexDirection: "row", gap: 6 },
   radiusOption: { paddingHorizontal: 10, paddingVertical: 7, borderRadius: Radius.pill, backgroundColor: "#E9EFEC" },
   radiusOptionActive: { backgroundColor: Palette.accent },

@@ -957,13 +957,18 @@ def map_place_search(request):
         ]
 
         # 일반 상호명·업종 검색은 최신성과 속도가 중요한 카카오 결과를 우선합니다.
-        # 공공 생활시설은 DB가 더 풍부하므로, 위치 표현이 따로 섞이지 않은 경우만
-        # 카테고리+공간 인덱스로 좁혀 함께 조회합니다.
+        # 공공 DB는 `공원`, `화장실`처럼 업종만 찾을 때만 합칩니다.
+        # `광안리해수욕장` 같은 고유 장소명에 포함된 카테고리 단어로 전국의
+        # 해변/공원 데이터가 앞을 차지하면 지도앱식 장소명 검색이 깨집니다.
         has_location_anchor = any(
             token.endswith(("역", "동", "구", "시", "군", "읍", "면", "리"))
             for token in include_tokens
         )
-        if usable_db_categories and not has_location_anchor:
+        if (
+            usable_db_categories
+            and is_category_only_query(keyword)
+            and not has_location_anchor
+        ):
             db_queryset = Place.objects.filter(category__in=usable_db_categories)
         else:
             basic_db_skipped = True
