@@ -902,7 +902,11 @@ def map_place_search(request):
     search_lng = lng
     matched_basic_categories = get_matching_categories(keyword)
 
-    if is_separated_place_search and keyword:
+    if (
+        is_separated_place_search
+        and keyword
+        and not is_category_only_query(keyword)
+    ):
         anchor_location = _local_rule_anchor_location(keyword)
         if anchor_location:
             resolved_anchor = _resolve_anchor_location(anchor_location, lat=lat, lng=lng)

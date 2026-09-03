@@ -7742,10 +7742,12 @@ class RecommendationSearchTests(TestCase):
         self.assertEqual(data["results"][0]["result_source"], "kakao")
         mock_db_search.assert_not_called()
 
+    @patch("recommendations.views._resolve_anchor_location")
     @patch("recommendations.views.search_places_by_keyword")
     def test_separated_qualified_category_search_falls_back_to_nearby_category(
         self,
         mock_kakao,
+        mock_resolve_anchor,
     ):
         mock_kakao.side_effect = [
             {"documents": []},
@@ -7794,6 +7796,10 @@ class RecommendationSearchTests(TestCase):
         self.assertEqual(mock_kakao.call_count, 2)
         self.assertEqual(mock_kakao.call_args_list[0].kwargs["keyword"], "24시간 약국")
         self.assertEqual(mock_kakao.call_args_list[1].kwargs["keyword"], "약국")
+        self.assertEqual(data["location_context"]["center_source"], "map_center")
+        self.assertEqual(data["location_context"]["lat"], 35.0964)
+        self.assertEqual(data["location_context"]["lng"], 128.8539)
+        mock_resolve_anchor.assert_not_called()
 
     @patch("recommendations.views.search_places_by_keyword", return_value={"documents": []})
     def test_separated_named_category_search_does_not_use_category_fallback(
