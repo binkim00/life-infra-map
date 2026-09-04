@@ -8,6 +8,7 @@ import requests
 from recommendations.services.map_search import get_matching_categories
 from recommendations.services.canonical_tag_policy import CANONICAL_TAG_ALIASES, TAG_FACETS
 from recommendations.services.semantic_intent_profile import build_semantic_intent_profile
+from recommendations.services.area_gazetteer import resolve_area_coordinates_by_token
 
 from recommendations.services.ai_situation_parser import _call_ai_chat_json as _shared_call_ai_chat_json
 from recommendations.services.ai_json_client import get_ai_json_unavailable_reason
@@ -580,6 +581,11 @@ def _local_rule_anchor_location(raw_query):
         "주변",
         "인근",
     }
+    # AI가 `명지 분위기 좋은 카페`처럼 지명과 업종 사이의 수식어 때문에
+    # 위치를 빠뜨려도, DB 근거로 등록된 통칭 지명은 원문에서 복구한다.
+    known_area = resolve_area_coordinates_by_token(text)
+    if known_area:
+        return known_area[2]
     administrative_aliases = (
         "서울특별시", "부산광역시", "대구광역시", "인천광역시",
         "광주광역시", "대전광역시", "울산광역시", "세종특별자치시",
@@ -648,7 +654,14 @@ def _local_rule_anchor_location(raw_query):
             "대",
         )
         suffix_pattern = "|".join(re.escape(suffix) for suffix in suffixes)
-        match = re.match(rf"^(.{{1,40}}?(?:{suffix_pattern}))\s+", text)
+        # 먼저 한 낱말로 끝나는 명확한 지명을 찾는다. 그렇지 않으면
+        # `아이랑 망원동` 전체가 하나의 위치로 잡힐 수 있다.
+        match = re.search(
+            rf"(?:^|\s)([가-힣A-Za-z0-9·.-]{{2,24}}(?:{suffix_pattern}))(?=\s|$)",
+            text,
+        )
+        if not match:
+            match = re.match(rf"^(.{{1,40}}?(?:{suffix_pattern}))\s+", text)
     if not match:
         intent_followers = (
             "밥",
