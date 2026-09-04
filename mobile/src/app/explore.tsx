@@ -408,7 +408,9 @@ export default function ExploreScreen() {
                   <Pressable
                     key={filter.label}
                     onPress={() =>
-                      filter.query ? runSearch(filter.query) : resetSearch()
+                      filter.query
+                        ? runSearch(filter.query, mapCenter)
+                        : resetSearch()
                     }
                     style={[styles.filter, active && styles.filterActive]}
                   >
