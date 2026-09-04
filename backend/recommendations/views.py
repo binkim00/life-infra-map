@@ -885,6 +885,7 @@ def serialize_kakao_map_place(place, *, lat=None, lng=None):
 def map_place_search(request):
     keyword = request.GET.get("q", "").strip()
     source = request.GET.get("source", "all").strip() or "all"
+    center_mode = request.GET.get("center_mode", "").strip().lower()
     lat = parse_optional_float(request.GET.get("lat"))
     lng = parse_optional_float(request.GET.get("lng"))
     radius = parse_limited_int(request.GET.get("radius"), default=0, minimum=0, maximum=20000)
@@ -904,19 +905,27 @@ def map_place_search(request):
     search_lng = lng
     matched_basic_categories = get_matching_categories(keyword)
 
-    if (
-        is_separated_place_search
-        and keyword
-        and not is_category_only_query(keyword)
-    ):
+    if is_separated_place_search and keyword and not is_category_only_query(keyword):
         split_query = split_location_category_query(keyword)
         anchor_location = split_query["anchor_location"]
         category_query = split_query["category_query"]
-        if anchor_location:
+        if anchor_location and center_mode != "map":
             resolved_anchor = _resolve_anchor_location(anchor_location, lat=lat, lng=lng)
             if resolved_anchor.get("status") == "resolved":
                 search_lat = parse_optional_float(resolved_anchor.get("lat"))
                 search_lng = parse_optional_float(resolved_anchor.get("lng"))
+
+    # `지역 + 업종` 검색은 해당 지역 생활권 안에서 보여줘야 한다. 반경 없이
+    # 전국 결과까지 채우면 지도 bounds가 과도하게 넓어져 지역 지도가 작아진다.
+    # 사용자가 직접 지도를 이동해 재검색한 경우에는 앱이 전달한 반경을 그대로 쓴다.
+    search_radius = radius
+    if (
+        not search_radius
+        and center_mode != "map"
+        and category_query
+        and resolved_anchor.get("status") == "resolved"
+    ):
+        search_radius = 5000
 
     if (
         is_separated_place_search
@@ -995,7 +1004,7 @@ def map_place_search(request):
             keyword=category_query or keyword,
             lat=search_lat,
             lng=search_lng,
-            radius=radius,
+            radius=search_radius,
             limit=limit,
             queryset=db_queryset,
         )
@@ -1014,7 +1023,7 @@ def map_place_search(request):
                 keyword=keyword,
                 lat=search_lat,
                 lng=search_lng,
-                radius=radius or None,
+                radius=search_radius or None,
                 size=min(limit, 15),
                 category_group_code=kakao_category_group or None,
             )
@@ -1033,7 +1042,7 @@ def map_place_search(request):
                     keyword=category_query or fallback_keyword,
                     lat=search_lat,
                     lng=search_lng,
-                    radius=radius or None,
+                    radius=search_radius or None,
                     size=min(limit, 15),
                     category_group_code=kakao_category_group or None,
                 )
@@ -1103,6 +1112,8 @@ def map_place_search(request):
             "lat": lat,
             "lng": lng,
             "radius": radius,
+            "effective_radius": search_radius,
+            "center_mode": center_mode or "auto",
             "limit": limit,
         },
         "query_info": query_info,

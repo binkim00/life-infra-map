@@ -224,6 +224,7 @@ export default function ExploreScreen() {
       lng:
         searchCenterOverride?.lng ?? (nearbyCategorySearch ? center.lng : null),
       radius: searchAroundCenter ? radius : undefined,
+      centerMode: searchCenterOverride ? "map" : "auto",
       signal: controller.signal,
     })
       .then((data) => {

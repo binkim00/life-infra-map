@@ -103,6 +103,7 @@ export async function searchMapPlaces({
   lat,
   lng,
   radius,
+  centerMode,
   limit = 30,
   signal,
 }: {
@@ -110,10 +111,19 @@ export async function searchMapPlaces({
   lat?: number | null;
   lng?: number | null;
   radius?: number;
+  centerMode?: "auto" | "map";
   limit?: number;
   signal?: AbortSignal;
 }) {
-  const params = { q: query.trim(), source: "all", lat, lng, radius, limit };
+  const params = {
+    q: query.trim(),
+    source: "all",
+    lat,
+    lng,
+    radius,
+    center_mode: centerMode,
+    limit,
+  };
   try {
     return await recommendationApi.mapSearch(params, signal);
   } catch (error) {

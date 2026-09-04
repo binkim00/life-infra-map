@@ -92,6 +92,73 @@ class SmokingMapApiTests(TestCase):
         self.assertEqual(response.data["location_context"]["center_source"], "map_center")
         self.assertEqual([row["id"] for row in response.data["results"]], [place.id])
 
+    @patch("recommendations.views.search_places_by_keyword", return_value={"documents": []})
+    @patch("recommendations.views._resolve_anchor_location")
+    def test_general_location_category_search_stays_within_default_area_radius(
+        self,
+        mock_resolve_anchor,
+        _mock_kakao,
+    ):
+        nearby = self.make_place(
+            "사상역 인근 흡연구역",
+            35.1622,
+            128.9846,
+            external_id="nearby-smoking-area",
+        )
+        self.make_place(
+            "전국의 먼 흡연구역",
+            37.5665,
+            126.9780,
+            external_id="far-smoking-area",
+        )
+        mock_resolve_anchor.return_value = {
+            "status": "resolved",
+            "source": "area_gazetteer",
+            "label": "사상",
+            "lat": 35.1622,
+            "lng": 128.9846,
+        }
+
+        response = self.client.get(
+            "/api/recommendations/place-search/",
+            {"q": "사상역 흡연구역", "source": "all", "limit": 30},
+        )
+
+        self.assertEqual(response.data["filters"]["effective_radius"], 5000)
+        self.assertEqual([row["id"] for row in response.data["results"]], [nearby.id])
+
+    @patch("recommendations.views.search_places_by_keyword", return_value={"documents": []})
+    @patch("recommendations.views._resolve_anchor_location")
+    def test_map_center_research_overrides_location_word_in_query(
+        self,
+        mock_resolve_anchor,
+        _mock_kakao,
+    ):
+        map_center_place = self.make_place(
+            "해운대 지도 중심 흡연구역",
+            35.1631,
+            129.1635,
+            external_id="map-center-smoking-area",
+        )
+
+        response = self.client.get(
+            "/api/recommendations/place-search/",
+            {
+                "q": "사상역 흡연구역",
+                "source": "all",
+                "lat": 35.1631,
+                "lng": 129.1635,
+                "radius": 3000,
+                "center_mode": "map",
+                "limit": 10,
+            },
+        )
+
+        mock_resolve_anchor.assert_not_called()
+        self.assertEqual(response.data["location_context"]["center_source"], "map_center")
+        self.assertEqual(response.data["filters"]["center_mode"], "map")
+        self.assertEqual([row["id"] for row in response.data["results"]], [map_center_place.id])
+
     def test_radius_and_read_time_dedup(self):
         self.make_place("같은 흡연실", 35.18, 129.08, external_id="one", raw={"흡연실여부": "Y"})
         self.make_place("같은 흡연실", 35.18001, 129.08001, external_id="two", raw={"흡연실여부": "Y"}, source="test2")
