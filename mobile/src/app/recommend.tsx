@@ -38,6 +38,19 @@ type AiResponse = {
   search_plan?: Record<string, unknown>;
 };
 
+const resolvedLocationLabel = (searchPlan?: Record<string, unknown>) => {
+  const rawFrame = searchPlan?.place_intent_frame ?? searchPlan?.placeIntentFrame;
+  if (!rawFrame || typeof rawFrame !== "object") return null;
+  const frame = rawFrame as Record<string, unknown>;
+  const locationMode = String(
+    frame.location_mode ?? frame.locationMode ?? "",
+  );
+  const anchor = String(
+    frame.anchor_location ?? frame.anchorLocation ?? "",
+  ).trim();
+  return locationMode === "explicit" && anchor ? `${anchor} 기준` : null;
+};
+
 const formatDistance = (place: AiPlace) => {
   const distance = place.distance_m ?? place.distance;
   if (distance === undefined || distance === null) return "거리 정보 없음";
@@ -73,6 +86,9 @@ export default function RecommendScreen() {
   const [searchPlan, setSearchPlan] = useState<Record<string, unknown> | null>(
     null,
   );
+  const [locationBasisLabel, setLocationBasisLabel] = useState<string | null>(
+    null,
+  );
   const [webResults, setWebResults] = useState<AiPlace[]>([]);
   const needsWebFallback =
     results.length < 5 ||
@@ -83,6 +99,7 @@ export default function RecommendScreen() {
     if (!next.trim()) return;
     setMessage("");
     setLoading(true);
+    setLocationBasisLabel(null);
     setSubmitted(next.trim());
     setSearchRequestId((value) => value + 1);
   };
@@ -102,6 +119,7 @@ export default function RecommendScreen() {
         setResults(places);
         setSelected(places[0] || null);
         setSearchPlan(data.search_plan || null);
+        setLocationBasisLabel(resolvedLocationLabel(data.search_plan));
         setWebResults([]);
         if (isLoggedIn)
           void recommendationApi.saveSearchLog({
@@ -147,6 +165,7 @@ export default function RecommendScreen() {
       lng: position.coords.longitude,
       label: "현재 위치 기준",
     });
+    setLocationBasisLabel(null);
     if (submitted) setSearchRequestId((value) => value + 1);
   };
   const searchWeb = async () => {
@@ -242,7 +261,9 @@ export default function RecommendScreen() {
           </Text>
         </Pressable>
         <Pressable onPress={useCurrentLocation} style={styles.locationButton}>
-          <Text style={styles.locationButtonText}>{center.label}</Text>
+          <Text style={styles.locationButtonText}>
+            {locationBasisLabel || center.label}
+          </Text>
         </Pressable>
         <View style={ui.row}>
           <TextInput
