@@ -971,7 +971,8 @@ def map_place_search(request):
         # `광안리해수욕장` 같은 고유 장소명에 포함된 카테고리 단어로 전국의
         # 해변/공원 데이터가 앞을 차지하면 지도앱식 장소명 검색이 깨집니다.
         has_location_anchor = any(
-            token.endswith(("역", "동", "구", "시", "군", "읍", "면", "리"))
+            not is_category_only_query(token)
+            and token.endswith(("역", "동", "구", "시", "군", "읍", "면", "리"))
             for token in include_tokens
         )
         has_explicit_category_token = any(

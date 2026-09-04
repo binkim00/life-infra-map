@@ -66,6 +66,32 @@ class SmokingMapApiTests(TestCase):
         self.assertEqual(result["result_source"], "db")
         self.assertEqual(result["smoking"]["location_description"], "사상역 4번 출구 밖")
 
+    @patch("recommendations.views.search_places_by_keyword", return_value={"documents": []})
+    def test_general_category_only_smoking_search_uses_map_center_db_results(self, _mock_kakao):
+        place = self.make_place(
+            "사상역 5번 출구 흡연구역",
+            35.1622,
+            128.9846,
+            external_id="sasang-map-center-smoking-area",
+        )
+
+        response = self.client.get(
+            "/api/recommendations/place-search/",
+            {
+                "q": "흡연구역",
+                "source": "all",
+                "lat": 35.1622,
+                "lng": 128.9846,
+                "radius": 3000,
+                "limit": 10,
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.data["db_search_skipped"])
+        self.assertEqual(response.data["location_context"]["center_source"], "map_center")
+        self.assertEqual([row["id"] for row in response.data["results"]], [place.id])
+
     def test_radius_and_read_time_dedup(self):
         self.make_place("같은 흡연실", 35.18, 129.08, external_id="one", raw={"흡연실여부": "Y"})
         self.make_place("같은 흡연실", 35.18001, 129.08001, external_id="two", raw={"흡연실여부": "Y"}, source="test2")

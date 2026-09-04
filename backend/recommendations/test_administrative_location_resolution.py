@@ -30,11 +30,15 @@ class AdministrativeLocationResolutionTests(SimpleTestCase):
                     self.assertAlmostEqual(result["lng"], coordinates[1], places=6)
 
     def test_station_and_neighborhood_anchors_keep_their_specific_centers(self):
-        for label in ("서면", "부산역", "하단역"):
+        for label in ("서면", "부산역", "하단역", "센텀시티역"):
             with self.subTest(label=label):
                 result = _resolve_anchor_location(label, lat=37.5, lng=127.0)
                 self.assertEqual(result["status"], "resolved")
                 self.assertEqual(result["source"], "area_gazetteer")
+
+        centum = _resolve_anchor_location("센텀시티역", lat=37.5, lng=127.0)
+        self.assertAlmostEqual(centum["lat"], 35.169000, places=6)
+        self.assertAlmostEqual(centum["lng"], 129.130200, places=6)
 
 
 class DisabledRerankerTests(SimpleTestCase):
