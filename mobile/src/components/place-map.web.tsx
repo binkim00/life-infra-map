@@ -16,12 +16,13 @@ type PlaceMapProps = {
   displayMode?: "overview" | "selected";
   expanded?: boolean;
   currentLocation?: { lat: number; lng: number } | null;
+  fitBoundsKey?: string | number;
 };
 
 const embedUrl =
   process.env.EXPO_PUBLIC_KAKAO_MAP_EMBED_URL ||
   "http://localhost:5173/kakao-map-embed.html";
-const versionedEmbedUrl = `${embedUrl}${embedUrl.includes("?") ? "&" : "?"}v=compact-map-2`;
+const versionedEmbedUrl = `${embedUrl}${embedUrl.includes("?") ? "&" : "?"}v=compact-map-3`;
 
 const MAX_VISIBLE_MARKERS = 20;
 
@@ -33,6 +34,7 @@ export function PlaceMap({
   displayMode = "overview",
   expanded = false,
   currentLocation = null,
+  fitBoundsKey,
 }: PlaceMapProps) {
   const frameRef = useRef<HTMLIFrameElement>(null);
   const validPlaces = useMemo(() => {
@@ -51,6 +53,9 @@ export function PlaceMap({
   }, [displayMode, place, validPlaces]);
 
   const sendState = useCallback(() => {
+    const placesSignature = mapPlaces
+      .map((item) => `${item.id}:${item.lat}:${item.lng}`)
+      .join("|");
     frameRef.current?.contentWindow?.postMessage(
       {
         type: "life-infra-map:set-places",
@@ -68,6 +73,10 @@ export function PlaceMap({
         })),
         selectedId: place ? String(place.id) : null,
         viewportMode: displayMode,
+        viewportKey: String(
+          fitBoundsKey ??
+            `${displayMode}:${placesSignature}:${currentLocation?.lat ?? ""}:${currentLocation?.lng ?? ""}`,
+        ),
         currentLocation:
           currentLocation &&
           Number.isFinite(currentLocation.lat) &&
@@ -77,7 +86,7 @@ export function PlaceMap({
       },
       new URL(embedUrl).origin,
     );
-  }, [currentLocation, displayMode, mapPlaces, place, validPlaces]);
+  }, [currentLocation, displayMode, fitBoundsKey, mapPlaces, place, validPlaces]);
 
   useEffect(() => {
     const receive = (event: MessageEvent) => {

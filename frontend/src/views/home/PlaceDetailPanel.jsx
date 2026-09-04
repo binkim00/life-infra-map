@@ -223,6 +223,34 @@ const PlaceDetailPanel = ({
             <div className="info-row"><span>상세위치</span><p>{place.detailLocation}</p></div>
           ) : null}
 
+          {place.smoking?.facility_type ? (
+            <div className="info-row">
+              <span>시설 유형</span>
+              <p>{place.smoking.facility_type_label || place.smoking.facility_type}</p>
+            </div>
+          ) : null}
+
+          {place.smoking?.verification_level ? (
+            <div className="info-row">
+              <span>확인 수준</span>
+              <p>{place.smoking.verification_level_label || place.smoking.verification_level}</p>
+            </div>
+          ) : null}
+
+          {place.smoking?.location_description ? (
+            <div className="info-row">
+              <span>시설 위치</span>
+              <p>{place.smoking.location_description}</p>
+            </div>
+          ) : null}
+
+          {place.smoking?.location_directions ? (
+            <div className="info-row">
+              <span>찾아가는 법</span>
+              <p>{place.smoking.location_directions}</p>
+            </div>
+          ) : null}
+
           {place.distance ? (
             <div className="info-row">
               <span>거리</span>

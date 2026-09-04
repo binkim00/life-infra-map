@@ -52,6 +52,7 @@ export function PlaceDetailSheet({
 
   const detailUrl = kakaoDetailUrl(place);
   const tags = place.tags?.slice(0, 8) || [];
+  const smoking = place.smoking;
 
   return (
     <Modal
@@ -101,6 +102,42 @@ export function PlaceDetailSheet({
                 <Text style={styles.infoLabel}>정보 출처</Text>
                 <Text style={styles.infoValue}>{place.source_label || place.source_name || "LifeMap 장소 데이터"}</Text>
               </View>
+              {smoking?.facility_type ? (
+                <>
+                  <View style={styles.divider} />
+                  <View style={styles.infoRow}>
+                    <Text style={styles.infoLabel}>시설 유형</Text>
+                    <Text style={styles.infoValue}>{smoking.facility_type_label || smoking.facility_type}</Text>
+                  </View>
+                </>
+              ) : null}
+              {smoking?.verification_level ? (
+                <>
+                  <View style={styles.divider} />
+                  <View style={styles.infoRow}>
+                    <Text style={styles.infoLabel}>확인 수준</Text>
+                    <Text style={styles.infoValue}>{smoking.verification_level_label || smoking.verification_level}</Text>
+                  </View>
+                </>
+              ) : null}
+              {smoking?.location_description ? (
+                <>
+                  <View style={styles.divider} />
+                  <View style={styles.infoRow}>
+                    <Text style={styles.infoLabel}>시설 위치</Text>
+                    <Text style={styles.infoValue}>{smoking.location_description}</Text>
+                  </View>
+                </>
+              ) : null}
+              {smoking?.location_directions ? (
+                <>
+                  <View style={styles.divider} />
+                  <View style={styles.infoRow}>
+                    <Text style={styles.infoLabel}>찾아가는 법</Text>
+                    <Text style={styles.infoValue}>{smoking.location_directions}</Text>
+                  </View>
+                </>
+              ) : null}
             </View>
 
             {tags.length ? (

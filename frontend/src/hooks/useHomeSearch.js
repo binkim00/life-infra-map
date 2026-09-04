@@ -3669,6 +3669,9 @@ export const useHomeSearch = ({ initialTab = 'search' } = {}) => {
           center,
           baseLabel: '현재 지도 화면 기준',
           parsedIntent: parsedKeyword,
+          extraAiPayload: {
+            search_location_mode: 'map_center',
+          },
         })
 
         if (pendingClarificationForFollowUp) {

@@ -29,6 +29,7 @@ from recommendations.services.area_gazetteer import (
 from recommendations.services.kakao_local import search_places_by_keyword
 from recommendations.services.map_search import get_matching_categories, supports_postgis
 from recommendations.services.place_urls import get_kakao_place_url
+from recommendations.services.smoking_metadata import derive_smoking_metadata
 from recommendations.services.smoking_area_data import calculate_distance_m
 from recommendations.services.tag_utils import get_category_display_name
 from recommendations.services.semantic_retrieval import attach_semantic_scores, retrieve_semantic_places
@@ -2730,15 +2731,23 @@ def collect_db_candidates(
             # entire nearest window before other buildings are hydrated.
             candidate_limit = max(limit * 4, 180)
 
+    is_smoking_search = "smoking_area" in direct_category_codes
+
     def detail_queryset(queryset):
-        return queryset.annotate(
+        detailed = queryset.annotate(
             collect_business_type=KeyTextTransform("business_type", "raw"),
             collect_source_dataset=KeyTextTransform("dataset", "raw"),
             collect_kakao_place_url=KeyTextTransform("kakao_place_url", "raw"),
             collect_kakao_url=KeyTextTransform("kakao_url", "raw"),
             collect_place_url=KeyTextTransform("place_url", "raw"),
             collect_detail_url=KeyTextTransform("detail_url", "raw"),
-        ).defer("raw")
+        )
+        if not is_smoking_search:
+            detailed = detailed.defer("raw")
+        relations = ["place_tags__tag"]
+        if is_smoking_search:
+            relations.append("tag_evidence")
+        return detailed.prefetch_related(*relations)
 
     if direct_category_codes and bounds and lat is not None and lng is not None:
         if supports_postgis():
@@ -2762,7 +2771,7 @@ def collect_db_candidates(
                 place.id: place
                 for place in detail_queryset(
                     Place.objects.filter(id__in=ordered_ids)
-                ).prefetch_related("place_tags__tag")
+                )
             }
             candidate_places = [
                 places_by_id[place_id]
@@ -2829,13 +2838,13 @@ def collect_db_candidates(
                 place.id: place
                 for place in detail_queryset(
                     Place.objects.filter(id__in=ordered_ids)
-                ).prefetch_related("place_tags__tag")
+                )
             }
             candidate_places = [places_by_id[place_id] for place_id in ordered_ids if place_id in places_by_id]
     else:
         queryset = _order_by_distance(
             detail_queryset(queryset), lat, lng
-        ).prefetch_related("place_tags__tag")
+        )
         candidate_places = queryset[:candidate_limit]
 
     from recommendations.services.place_evidence_completeness import quality_profiles_for_places
@@ -2900,6 +2909,7 @@ def collect_db_candidates(
             "evidence_gaps": evidence_quality["missing_dimension_labels"],
             "kakao_place_url": get_kakao_place_url(place),
             "place_url": get_kakao_place_url(place),
+            "smoking": derive_smoking_metadata(place),
             "verified_tags": tag_lists["verified"],
             "verified_tag_labels": tag_lists["verified"],
             "suggested_tags": tag_lists["suggested"],
@@ -5181,6 +5191,7 @@ def run_ai_search(request_data, *, user=None):
     radius = request_data.get("radius")
     limit = _limit(request_data.get("limit"), default=15)
     map_center = request_data.get("map_center") or request_data.get("mapCenter")
+    force_map_center = request_data.get("search_location_mode") == "map_center"
     previous_context = _previous_context_from_request(request_data)
 
     previous_result_action = resolve_previous_result_action(query, previous_context)
@@ -5209,6 +5220,15 @@ def run_ai_search(request_data, *, user=None):
     frame = _normalize_current_context_anchor_frame(
         intent_plan.get("frame") if isinstance(intent_plan.get("frame"), dict) else {}
     )
+    if force_map_center:
+        frame = {
+            **frame,
+            "location_mode": "current_context",
+            "locationMode": "current_context",
+            "anchor_location": "",
+            "anchorLocation": "",
+        }
+        intent_plan = {**intent_plan, "frame": frame}
     if frame is not intent_plan.get("frame"):
         intent_plan = {**intent_plan, "frame": frame}
     search_plan = to_search_plan(intent_plan, raw_query=original_query or query)

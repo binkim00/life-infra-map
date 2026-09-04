@@ -4,6 +4,19 @@ export type PlaceTag = {
   is_verified?: boolean;
 };
 
+export type SmokingMetadata = {
+  facility_type?: string;
+  facility_type_label?: string;
+  smoking_permission?: string;
+  verification_level?: string;
+  verification_level_label?: string;
+  last_verified_at?: string | null;
+  evidence_confidence?: number | null;
+  source_summary?: string;
+  location_description?: string;
+  location_directions?: string;
+};
+
 export type Place = {
   id: number | string;
   name: string;
@@ -22,6 +35,7 @@ export type Place = {
   phone?: string;
   source_name?: string;
   tags?: PlaceTag[];
+  smoking?: SmokingMetadata | null;
 };
 
 export type MapSearchResponse = {
@@ -38,4 +52,12 @@ export type MapSearchResponse = {
     db_total?: number;
   };
   kakao_error?: string;
+  location_context?: {
+    anchor_location?: string;
+    anchor_resolved?: boolean;
+    center_source?: string;
+    center_label?: string;
+    lat?: number | null;
+    lng?: number | null;
+  };
 };

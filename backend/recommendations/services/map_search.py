@@ -320,6 +320,41 @@ def category_only_fallback_keyword(keyword):
     return terms[0] if terms else ""
 
 
+def split_location_category_query(keyword):
+    """일반 지도 검색의 ``지역 + 업종`` 입력을 위치와 업종으로 나눈다.
+
+    자연어 의도 추론은 하지 않는다. 사용자가 공백으로 구분해 직접 입력한
+    카테고리 별칭만 업종으로 인정하고, 나머지 토큰을 카카오에서 좌표를 찾을
+    위치 문자열로 사용한다.
+    """
+    include_tokens, _ = tokenize_query(keyword)
+    if not include_tokens:
+        return {"anchor_location": "", "category_query": ""}
+
+    category_tokens = [
+        token for token in include_tokens
+        if is_category_only_query(token)
+    ]
+    if not category_tokens:
+        return {"anchor_location": "", "category_query": ""}
+
+    ignored_tokens = CATEGORY_QUERY_MODIFIER_TOKENS | STOPWORD_TOKENS
+    anchor_tokens = [
+        token for token in include_tokens
+        if token not in category_tokens and token not in ignored_tokens
+    ]
+    anchor_location = " ".join(anchor_tokens).strip()
+    if not anchor_location:
+        return {"anchor_location": "", "category_query": ""}
+
+    return {
+        "anchor_location": anchor_location,
+        "category_query": " ".join(
+            token for token in include_tokens if token not in anchor_tokens
+        ).strip(),
+    }
+
+
 def kakao_place_matches_categories(place, categories):
     """카카오 후보가 사용자가 요청한 업종 중 하나와 실제로 맞는지 확인한다."""
     requested = [category for category in categories if category]

@@ -7,7 +7,7 @@ import type { Place } from "@/types/place";
 const embedUrl =
   process.env.EXPO_PUBLIC_KAKAO_MAP_EMBED_URL ||
   "https://life-infra-map-db.taile29cc8.ts.net/kakao-map-embed.html";
-const versionedEmbedUrl = `${embedUrl}${embedUrl.includes("?") ? "&" : "?"}v=compact-map-2`;
+const versionedEmbedUrl = `${embedUrl}${embedUrl.includes("?") ? "&" : "?"}v=compact-map-3`;
 
 const MAX_VISIBLE_MARKERS = 20;
 
@@ -19,6 +19,7 @@ export function PlaceMap({
   displayMode = "overview",
   expanded = false,
   currentLocation = null,
+  fitBoundsKey,
 }: {
   place?: Place | null;
   places?: Place[];
@@ -27,6 +28,7 @@ export function PlaceMap({
   displayMode?: "overview" | "selected";
   expanded?: boolean;
   currentLocation?: { lat: number; lng: number } | null;
+  fitBoundsKey?: string | number;
 }) {
   const webViewRef = useRef<WebView>(null);
   const lastPlacesSignatureRef = useRef("");
@@ -56,6 +58,10 @@ export function PlaceMap({
       .map((item) => `${item.id}:${item.lat}:${item.lng}`)
       .join("|");
     const selectedId = place ? String(place.id) : null;
+    const viewportKey = String(
+      fitBoundsKey ??
+        `${displayMode}:${placesSignature}:${currentLocation?.lat ?? ""}:${currentLocation?.lng ?? ""}`,
+    );
     const shouldFocusSelected = Boolean(
       selectedId &&
       lastPlacesSignatureRef.current === placesSignature &&
@@ -79,6 +85,7 @@ export function PlaceMap({
       })),
       selectedId,
       viewportMode: displayMode,
+      viewportKey,
       currentLocation:
         currentLocation &&
         Number.isFinite(currentLocation.lat) &&
@@ -124,7 +131,7 @@ export function PlaceMap({
       })();
       true;
     `);
-  }, [currentLocation, displayMode, expanded, mapPlaces, place, validPlaces]);
+  }, [currentLocation, displayMode, expanded, fitBoundsKey, mapPlaces, place, validPlaces]);
 
   const receiveMessage = useCallback(
     (event: WebViewMessageEvent) => {

@@ -38,6 +38,7 @@ from .services.map_search import (
     kakao_place_matches_keyword,
     load_places_by_ids,
     search_saved_places,
+    split_location_category_query,
     tokenize_query,
 )
 from .services.operations_dashboard import build_operations_dashboard
@@ -48,7 +49,6 @@ from .services.place_mapper import (
 from .services.tag_enrichment_queue import enqueue_tag_enrichment
 from .services.search_coverage_demand import safe_record_search_coverage_demand
 from .services.ai_situation_parser import parse_situation
-from .services.ai_intent_planner import _local_rule_anchor_location
 from .services.ai_web_search_provider import (
     get_ai_web_search_result,
 )
@@ -898,6 +898,7 @@ def map_place_search(request):
     is_separated_place_search = request.path.rstrip("/").endswith("place-search")
     basic_db_skipped = False
     anchor_location = ""
+    category_query = ""
     resolved_anchor = {}
     search_lat = lat
     search_lng = lng
@@ -908,7 +909,9 @@ def map_place_search(request):
         and keyword
         and not is_category_only_query(keyword)
     ):
-        anchor_location = _local_rule_anchor_location(keyword)
+        split_query = split_location_category_query(keyword)
+        anchor_location = split_query["anchor_location"]
+        category_query = split_query["category_query"]
         if anchor_location:
             resolved_anchor = _resolve_anchor_location(anchor_location, lat=lat, lng=lng)
             if resolved_anchor.get("status") == "resolved":
@@ -963,17 +966,24 @@ def map_place_search(request):
         ]
 
         # 일반 상호명·업종 검색은 최신성과 속도가 중요한 카카오 결과를 우선합니다.
-        # 공공 DB는 `공원`, `화장실`처럼 업종만 찾을 때만 합칩니다.
+        # 공공 DB는 `공원`, `화장실`처럼 업종만 찾거나 사용자가
+        # `사상역 흡연구역`처럼 지역과 공공 업종을 직접 함께 적었을 때 합칩니다.
         # `광안리해수욕장` 같은 고유 장소명에 포함된 카테고리 단어로 전국의
         # 해변/공원 데이터가 앞을 차지하면 지도앱식 장소명 검색이 깨집니다.
         has_location_anchor = any(
             token.endswith(("역", "동", "구", "시", "군", "읍", "면", "리"))
             for token in include_tokens
         )
+        has_explicit_category_token = any(
+            is_category_only_query(token)
+            for token in include_tokens
+        )
         if (
             usable_db_categories
-            and is_category_only_query(keyword)
-            and not has_location_anchor
+            and (
+                (is_category_only_query(keyword) and not has_location_anchor)
+                or (anchor_location and has_explicit_category_token)
+            )
         ):
             db_queryset = Place.objects.filter(category__in=usable_db_categories)
         else:
@@ -981,7 +991,7 @@ def map_place_search(request):
 
     if source in {"all", "db"} and not basic_db_skipped:
         db_results, db_total_count, query_info = search_saved_map_places(
-            keyword=keyword,
+            keyword=category_query or keyword,
             lat=search_lat,
             lng=search_lng,
             radius=radius,
@@ -1008,14 +1018,18 @@ def map_place_search(request):
                 category_group_code=kakao_category_group or None,
             )
             fallback_keyword = category_only_fallback_keyword(keyword)
+            has_matching_kakao_document = any(
+                kakao_place_matches_categories(place, matched_basic_categories)
+                for place in kakao_data.get("documents", [])
+            )
             if (
                 is_separated_place_search
-                and not kakao_data.get("documents")
-                and fallback_keyword
-                and fallback_keyword != keyword
+                and not has_matching_kakao_document
+                and (category_query or fallback_keyword)
+                and (category_query or fallback_keyword) != keyword
             ):
                 kakao_data = search_places_by_keyword(
-                    keyword=fallback_keyword,
+                    keyword=category_query or fallback_keyword,
                     lat=search_lat,
                     lng=search_lng,
                     radius=radius or None,

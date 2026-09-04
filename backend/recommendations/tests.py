@@ -3846,12 +3846,15 @@ class RecommendationSearchTests(TestCase):
 
         self.assertIn("실외/외부 이용", outdoor_candidate["policy_matched_constraints"])
         self.assertEqual(outdoor_candidate["pre_ai_unmet_constraints"], [])
+        self.assertEqual(outdoor_candidate["smoking"]["facility_type"], "designated_smoking_area")
+        self.assertEqual(outdoor_candidate["smoking"]["facility_type_label"], "지정 흡연구역")
         self.assertTrue(any(
             item["type"] == "policy_constraint"
             for item in outdoor_candidate["matched_evidence"]
         ))
         self.assertIn("실외/외부 이용 요청", indoor_candidate["pre_ai_unmet_constraints"][0])
         self.assertEqual(indoor_candidate["confidence"], "low")
+        self.assertEqual(indoor_candidate["smoking"]["facility_type"], "smoking_room")
         self.assertLess(indoor_candidate["score"], outdoor_candidate["score"])
 
     def test_top_up_ranked_candidates_skips_smoking_policy_conflict(self):
@@ -4408,6 +4411,59 @@ class RecommendationSearchTests(TestCase):
         mock_db_search.assert_not_called()
         mock_kakao_search.assert_not_called()
         mock_rerank.assert_not_called()
+
+    @patch("recommendations.services.ai_search_orchestrator.collect_web_candidates", return_value=([], {}))
+    @patch("recommendations.services.ai_search_orchestrator.collect_kakao_candidates", return_value=([], {}))
+    @patch("recommendations.services.ai_search_orchestrator.collect_db_candidates", return_value=[])
+    @patch("recommendations.services.ai_search_orchestrator._resolve_anchor_location", side_effect=AssertionError("explicit anchor must not be resolved"))
+    @patch("recommendations.services.ai_search_orchestrator.build_ai_intent_plan")
+    def test_ai_search_map_center_override_ignores_original_explicit_location(
+        self,
+        mock_intent,
+        _mock_resolve_anchor,
+        mock_db_candidates,
+        _mock_kakao_candidates,
+        _mock_web_candidates,
+    ):
+        mock_intent.return_value = {
+            "action": "search",
+            "decision_action": "search",
+            "normalized_query": "사상역 흡연구역",
+            "frame": {
+                "location_mode": "explicit",
+                "anchor_location": "사상역",
+                "target_objects": ["흡연구역"],
+                "candidate_category_codes": ["smoking_area"],
+                "candidate_place_types": ["흡연구역"],
+                "result_match_terms": ["흡연구역"],
+                "constraints": [],
+                "exclusions": [],
+                "ranking_policy": "evidence_first",
+                "primary_search_queries": ["흡연구역"],
+            },
+            "clarification": {},
+            "confidence": 0.9,
+            "ai_retry_count": 0,
+        }
+
+        response = self.client.post(
+            "/api/recommendations/ai-search/",
+            data=json.dumps({
+                "query": "사상역 흡연구역",
+                "lat": 35.2001,
+                "lng": 129.1001,
+                "search_location_mode": "map_center",
+            }, ensure_ascii=False),
+            content_type="application/json",
+            **self._auth_headers(),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        search_frame = response.json()["search_plan"]["place_intent_frame"]
+        self.assertEqual(search_frame["location_mode"], "current_context")
+        self.assertEqual(search_frame["anchor_location"], "")
+        self.assertEqual(mock_db_candidates.call_args.kwargs["lat"], 35.2001)
+        self.assertEqual(mock_db_candidates.call_args.kwargs["lng"], 129.1001)
 
     def test_query_generation_blocks_fallback_sources_and_raw_query_repeat(self):
         from recommendations.views import _query_generation_from_frame
@@ -7840,11 +7896,20 @@ class RecommendationSearchTests(TestCase):
         self.assertEqual(data["location_context"]["lng"], 128.8539)
         mock_resolve_anchor.assert_not_called()
 
+    @patch("recommendations.views._resolve_anchor_location")
     @patch("recommendations.views.search_places_by_keyword", return_value={"documents": []})
-    def test_separated_named_category_search_does_not_use_category_fallback(
+    def test_separated_named_category_search_retries_target_near_resolved_anchor(
         self,
         mock_kakao,
+        mock_resolve_anchor,
     ):
+        mock_resolve_anchor.return_value = {
+            "status": "resolved",
+            "source": "kakao_keyword",
+            "label": "서면",
+            "lat": 35.1577,
+            "lng": 129.0590,
+        }
         response = self.client.get(
             "/api/recommendations/place-search/",
             {"q": "서면 조용한 카페", "source": "all"},
@@ -7852,8 +7917,9 @@ class RecommendationSearchTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(mock_kakao.call_count, 1)
-        self.assertEqual(mock_kakao.call_args.kwargs["keyword"], "서면 조용한 카페")
+        self.assertEqual(mock_kakao.call_count, 2)
+        self.assertEqual(mock_kakao.call_args_list[0].kwargs["keyword"], "서면 조용한 카페")
+        self.assertEqual(mock_kakao.call_args_list[1].kwargs["keyword"], "조용한 카페")
 
     @patch("recommendations.views._resolve_anchor_location")
     @patch("recommendations.views.search_places_by_keyword")

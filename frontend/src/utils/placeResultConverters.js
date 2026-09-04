@@ -306,6 +306,7 @@ export const convertRecommendationPlaces = (
       category: getDbCategoryText(place.category),
       address: place.address,
       detailLocation: place.detail_location || place.road_address,
+      smoking: place.smoking || null,
       lat: normalizedLat,
       lng: normalizedLng,
       distance: place.distance ?? place.distance_m ?? null,

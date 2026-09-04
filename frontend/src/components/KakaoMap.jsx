@@ -907,7 +907,7 @@ const KakaoMap = ({
     }
 
     engineRef.current?.syncPlaces()
-  }, [placesSignature])
+  }, [placesSignature, fitBoundsKey])
 
   const isFirstCenterSync = useRef(true)
   useEffect(() => {

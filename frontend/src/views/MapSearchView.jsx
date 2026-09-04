@@ -105,6 +105,7 @@ const normalizePlace = (place, index) => {
     categoryLabel: place.category_label || '',
     address: place.address || '',
     detailLocation: place.detail_location || '',
+    smoking: place.smoking || null,
     phone: place.phone || '',
     lat,
     lng,
@@ -379,6 +380,7 @@ const MapSearchView = () => {
             selectedPlaceId={selectedPlace?.id || null}
             selectedPlace={selectedPlace}
             fitBoundsKey={fitBoundsKey}
+            layoutKey={selectedPlace ? 'detail-open' : 'detail-closed'}
             onSelectPlace={setSelectedPlace}
             onCenterChange={handleCenterChange}
           />
@@ -433,6 +435,18 @@ const MapSearchView = () => {
               ) : null}
               {selectedPlace.dataQualityStatus ? (
                 <div><dt>상태</dt><dd>{selectedPlace.dataQualityStatus}</dd></div>
+              ) : null}
+              {selectedPlace.smoking?.facility_type ? (
+                <div><dt>시설 유형</dt><dd>{selectedPlace.smoking.facility_type_label || selectedPlace.smoking.facility_type}</dd></div>
+              ) : null}
+              {selectedPlace.smoking?.verification_level ? (
+                <div><dt>확인 수준</dt><dd>{selectedPlace.smoking.verification_level_label || selectedPlace.smoking.verification_level}</dd></div>
+              ) : null}
+              {selectedPlace.smoking?.location_description ? (
+                <div><dt>상세 위치</dt><dd>{selectedPlace.smoking.location_description}</dd></div>
+              ) : null}
+              {selectedPlace.smoking?.location_directions ? (
+                <div><dt>찾아가는 법</dt><dd>{selectedPlace.smoking.location_directions}</dd></div>
               ) : null}
             </dl>
 

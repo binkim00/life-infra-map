@@ -75,6 +75,7 @@
         places: [],
         selectedId: null,
         viewportMode: "overview",
+        lastViewportKey: null,
         currentLocation: null,
         currentMarker: null,
       };
@@ -109,7 +110,7 @@
         );
       };
 
-      const renderPlaces = () => {
+      const renderPlaces = ({ fitViewport = true } = {}) => {
         if (!state.map) return;
         state.markers.forEach((marker) => marker.setMap(null));
         state.markers = [];
@@ -157,6 +158,7 @@
           boundsCount += 1;
         });
 
+        if (!fitViewport) return;
         if (state.viewportMode === "selected" && state.places.length) {
           const selected = state.places.find(
             (place) => String(place.id) === String(state.selectedId),
@@ -182,6 +184,8 @@
 
       window.addEventListener("message", (event) => {
         if (event.data?.type !== "life-infra-map:set-places") return;
+        const nextViewportKey = String(event.data.viewportKey ?? "");
+        const shouldFitViewport = state.lastViewportKey !== nextViewportKey;
         state.places = Array.isArray(event.data.places) ? event.data.places : [];
         state.selectedId = event.data.selectedId;
         state.viewportMode = event.data.viewportMode === "selected" ? "selected" : "overview";
@@ -193,7 +197,8 @@
                 lng: Number(event.data.currentLocation.lng),
               }
             : null;
-        renderPlaces();
+        state.lastViewportKey = nextViewportKey;
+        renderPlaces({ fitViewport: shouldFitViewport });
       });
 
       document.getElementById("zoom-in").addEventListener("click", () => {

@@ -13,6 +13,26 @@ FACILITY_TAGS = {
 
 HIDDEN_BY_DEFAULT = {"STALE", "POSSIBLY_REMOVED"}
 
+FACILITY_TYPE_LABELS = {
+    "designated_smoking_area": "지정 흡연구역",
+    "smoking_booth": "흡연부스",
+    "smoking_room": "흡연실",
+    "ashtray_only": "재떨이 위치 (흡연 허용 미확인)",
+    "smoking_area_candidate": "흡연구역 후보",
+}
+
+VERIFICATION_LEVEL_LABELS = {
+    "VERIFIED": "검증 완료",
+    "VERIFIED_OFFICIAL": "공식 출처 확인",
+    "VERIFIED_FACILITY": "시설 정보 확인",
+    "PUBLIC_DATA": "공공데이터 확인",
+    "WEB_VERIFIED": "웹 근거 확인",
+    "UNVERIFIED": "추가 확인 필요",
+    "ASHTRAY_ONLY": "재떨이만 확인",
+    "STALE": "정보 갱신 필요",
+    "POSSIBLY_REMOVED": "운영 여부 확인 필요",
+}
+
 
 def _tag_names(place):
     return {item.tag.name for item in place.place_tags.all() if item.status != "rejected"}
@@ -71,8 +91,10 @@ def derive_smoking_metadata(place):
     }
     return {
         "facility_type": facility_type,
+        "facility_type_label": FACILITY_TYPE_LABELS.get(facility_type, facility_type),
         "smoking_permission": permission,
         "verification_level": verification_level,
+        "verification_level_label": VERIFICATION_LEVEL_LABELS.get(verification_level, verification_level),
         "last_verified_at": last_verified,
         "evidence_confidence": confidence,
         "source_summary": source_summary,

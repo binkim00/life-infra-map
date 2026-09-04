@@ -100,6 +100,7 @@ export default function ExploreScreen() {
   const [query, setQuery] = useState(initialQuery);
   const [submittedQuery, setSubmittedQuery] = useState(initialQuery);
   const [searchRequestId, setSearchRequestId] = useState(initialQuery ? 1 : 0);
+  const [mapFitBoundsKey, setMapFitBoundsKey] = useState(0);
   const [places, setPlaces] = useState<Place[]>([]);
   const [selectedPlace, setSelectedPlace] = useState<Place | null>(null);
   const [detailPlace, setDetailPlace] = useState<Place | null>(null);
@@ -227,6 +228,7 @@ export default function ExploreScreen() {
     })
       .then((data) => {
         setPlaces(data.results);
+        setMapFitBoundsKey((value) => value + 1);
         const requested = data.results.find(
           (place) => String(place.id) === params.placeId,
         );
@@ -330,10 +332,13 @@ export default function ExploreScreen() {
     !submittedQuery || isNearbyCategoryQuery(submittedQuery);
   const currentMapLocation = useMemo(
     () =>
-      usesNearbyRadius && center.lat !== null && center.lng !== null
+      usesNearbyRadius &&
+      !searchCenterOverride &&
+      center.lat !== null &&
+      center.lng !== null
         ? { lat: center.lat, lng: center.lng }
         : null,
-    [center.lat, center.lng, usesNearbyRadius],
+    [center.lat, center.lng, searchCenterOverride, usesNearbyRadius],
   );
 
   return (
@@ -347,6 +352,7 @@ export default function ExploreScreen() {
           onSelectPlace={setSelectedPlace}
           onCenterChange={setMapCenter}
           currentLocation={currentMapLocation}
+          fitBoundsKey={mapFitBoundsKey || undefined}
         />
         {!selectedPlace && !currentMapLocation ? (
           <View pointerEvents="none" style={styles.fullMapPlaceholder}>

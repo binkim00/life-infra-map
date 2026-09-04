@@ -1,6 +1,7 @@
 import json
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 from django.core.management import call_command
 from django.test import TestCase, override_settings
@@ -27,7 +28,43 @@ class SmokingMapApiTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual([row["id"] for row in response.data["results"]], [inside.id])
         self.assertEqual(response.data["results"][0]["smoking"]["facility_type"], "smoking_room")
+        self.assertEqual(response.data["results"][0]["smoking"]["facility_type_label"], "흡연실")
         self.assertEqual(response.data["results"][0]["smoking"]["verification_level"], "PUBLIC_DATA")
+        self.assertEqual(response.data["results"][0]["smoking"]["verification_level_label"], "공공데이터 확인")
+
+    @patch("recommendations.views.search_places_by_keyword", return_value={"documents": []})
+    @patch("recommendations.views._resolve_anchor_location")
+    def test_general_place_search_combines_location_with_smoking_db_category(
+        self,
+        mock_resolve_anchor,
+        _mock_kakao,
+    ):
+        place = self.make_place(
+            "괘법동 지정 흡연구역",
+            35.1622,
+            128.9846,
+            external_id="sasang-smoking-area",
+            raw={"location_description": "사상역 4번 출구 밖"},
+        )
+        mock_resolve_anchor.return_value = {
+            "status": "resolved",
+            "source": "kakao_keyword",
+            "label": "사상역",
+            "lat": 35.1622,
+            "lng": 128.9846,
+        }
+
+        response = self.client.get(
+            "/api/recommendations/place-search/",
+            {"q": "사상역 흡연구역", "source": "all", "limit": 10},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.data["db_search_skipped"])
+        self.assertEqual(response.data["query_info"]["include_tokens"], ["흡연구역"])
+        result = next(row for row in response.data["results"] if row["id"] == place.id)
+        self.assertEqual(result["result_source"], "db")
+        self.assertEqual(result["smoking"]["location_description"], "사상역 4번 출구 밖")
 
     def test_radius_and_read_time_dedup(self):
         self.make_place("같은 흡연실", 35.18, 129.08, external_id="one", raw={"흡연실여부": "Y"})

@@ -13,6 +13,7 @@ import {
 import { recommendationApi } from "@/api/recommendations";
 import { useAuth } from "@/auth/auth-context";
 import { BottomNav } from "@/components/bottom-nav";
+import { PlaceDetailSheet } from "@/components/place-detail-sheet";
 import { PlaceMap } from "@/components/place-map";
 import { Screen, ui } from "@/components/screen";
 import type { Place } from "@/types/place";
@@ -66,6 +67,7 @@ export default function RecommendScreen() {
   });
   const [results, setResults] = useState<AiPlace[]>([]);
   const [selected, setSelected] = useState<AiPlace | null>(null);
+  const [detailVisible, setDetailVisible] = useState(false);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(Boolean(params.q));
   const [searchPlan, setSearchPlan] = useState<Record<string, unknown> | null>(
@@ -210,6 +212,20 @@ export default function RecommendScreen() {
         `https://map.kakao.com/link/map/${encodeURIComponent(selected.name)},${selected.lat},${selected.lng}`,
     );
   };
+  const report = () => {
+    if (!selected || !requireLogin()) return;
+    setDetailVisible(false);
+    router.push({
+      pathname: "/place-report",
+      params: {
+        placeId: String(selected.place_id || selected.id),
+        name: selected.name,
+        address: selected.address || "",
+        lat: String(selected.lat),
+        lng: String(selected.lng),
+      },
+    });
+  };
   return (
     <View style={styles.root}>
       <Screen
@@ -264,9 +280,17 @@ export default function RecommendScreen() {
                     <Text style={styles.selectedName}>{selected.name}</Text>
                     <Text style={ui.muted}>{selected.address}</Text>
                   </View>
-                  <Pressable onPress={openMap} style={ui.buttonSecondary}>
-                    <Text style={ui.buttonSecondaryText}>지도</Text>
-                  </Pressable>
+                  <View style={styles.mapActions}>
+                    <Pressable
+                      onPress={() => setDetailVisible(true)}
+                      style={ui.buttonSecondary}
+                    >
+                      <Text style={ui.buttonSecondaryText}>상세정보</Text>
+                    </Pressable>
+                    <Pressable onPress={openMap} style={ui.buttonSecondary}>
+                      <Text style={ui.buttonSecondaryText}>지도</Text>
+                    </Pressable>
+                  </View>
                 </View>
               </View>
             ) : null}
@@ -275,22 +299,7 @@ export default function RecommendScreen() {
                 <Pressable onPress={save} style={[ui.buttonSecondary, ui.grow]}>
                   <Text style={ui.buttonSecondaryText}>저장</Text>
                 </Pressable>
-                <Pressable
-                  onPress={() =>
-                    requireLogin() &&
-                    router.push({
-                      pathname: "/place-report",
-                      params: {
-                        placeId: String(selected.place_id || selected.id),
-                        name: selected.name,
-                        address: selected.address || "",
-                        lat: String(selected.lat),
-                        lng: String(selected.lng),
-                      },
-                    })
-                  }
-                  style={[ui.buttonSecondary, ui.grow]}
-                >
+                <Pressable onPress={report} style={[ui.buttonSecondary, ui.grow]}>
                   <Text style={ui.buttonSecondaryText}>정보 제보</Text>
                 </Pressable>
               </View>
@@ -367,6 +376,13 @@ export default function RecommendScreen() {
           </>
         )}
       </Screen>
+      <PlaceDetailSheet
+        place={selected}
+        visible={detailVisible}
+        onClose={() => setDetailVisible(false)}
+        onSave={save}
+        onReport={report}
+      />
       <BottomNav />
     </View>
   );
@@ -402,6 +418,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 10,
   },
+  mapActions: { flexDirection: "row", gap: 6 },
   selectedName: {
     marginBottom: 5,
     color: "#222222",
