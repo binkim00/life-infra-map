@@ -118,6 +118,46 @@ class ResultQualityFallbackTests(SimpleTestCase):
         self.assertEqual([row["id"] for row in results], ["db:1"])
         self.assertIn("실내 체험 근거 확인 필요", results[0]["missing_conditions"])
 
+    def test_equivalent_spacing_does_not_duplicate_missing_condition(self):
+        candidate = self._candidate(1)
+        candidate["hard_gate_requirements"] = {
+            "features": [{"code": "parking", "label": "주차가능"}],
+        }
+        candidate["hard_gate_violations"] = [{
+            "type": "feature",
+            "required": "parking",
+            "label": "주차가능",
+            "evidence_status": "unknown",
+        }]
+        frame = {
+            "candidate_category_codes": ["cafe"],
+            "constraints": ["주차 가능"],
+        }
+
+        results, _ = _complete_and_order_results(
+            [], [candidate], [], [], frame, limit=5,
+        )
+
+        self.assertEqual(results[0]["missing_conditions"], ["주차 가능"])
+
+    def test_fallback_diversity_can_use_candidates_beyond_requested_window(self):
+        dense = []
+        for index in range(10):
+            candidate = self._candidate(index + 1)
+            candidate["address"] = f"부산 중앙대로 672 {index + 1}층"
+            dense.append(candidate)
+        alternatives = []
+        for index in range(3):
+            candidate = self._candidate(index + 20)
+            candidate["address"] = f"부산 중앙대로 {680 + index * 10}"
+            alternatives.append(candidate)
+
+        results, _ = _complete_and_order_results(
+            [], [*dense, *alternatives], [], [], self._frame(), limit=5,
+        )
+
+        self.assertGreaterEqual(len({row["address"].split()[2] for row in results}), 3)
+
 
 class DerivedShoppingCandidateTests(TestCase):
     def test_groups_tenant_rows_into_their_parent_shopping_venue(self):

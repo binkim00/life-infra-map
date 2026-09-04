@@ -4107,12 +4107,19 @@ def _can_use_as_best_available(candidate, frame):
 
 def _requested_result_conditions(frame):
     conditions = []
+    seen_keys = set()
     for value in _frame_terms(frame, "constraints"):
         value = _clean_text(value, 80)
-        if not value or _compact(value) in NON_DISCRIMINATING_CONSTRAINTS:
+        value_key = _compact(value)
+        if (
+            not value
+            or value_key in NON_DISCRIMINATING_CONSTRAINTS
+            or value_key in seen_keys
+        ):
             continue
         conditions.append(value)
-    return list(dict.fromkeys(conditions))[:12]
+        seen_keys.add(value_key)
+    return conditions[:12]
 
 
 def _condition_supported(condition, values):
@@ -4136,10 +4143,15 @@ def _candidate_result_quality(candidate, frame, *, best_available=False):
         for requirement in hard_gate_requirements.get("features") or []
         if isinstance(requirement, dict) and _clean_text(requirement.get("label"), 80)
     ]
-    requested = list(dict.fromkeys([
-        *requested,
-        *(_clean_text(requirement.get("label"), 80) for requirement in feature_requirements),
-    ]))[:12]
+    requested_keys = {_compact(value) for value in requested}
+    for requirement in feature_requirements:
+        label = _clean_text(requirement.get("label"), 80)
+        label_key = _compact(label)
+        if not label or label_key in requested_keys:
+            continue
+        requested.append(label)
+        requested_keys.add(label_key)
+    requested = requested[:12]
     raw_category = _clean_text(candidate.get("category"))
     matching_category_codes = get_matching_categories(raw_category)
     implicit_category_capabilities = set()
@@ -4210,7 +4222,15 @@ def _candidate_result_quality(candidate, frame, *, best_available=False):
     )
     if candidate.get("expanded_search"):
         missing.append("가까운 범위 내 후보")
-    missing = list(dict.fromkeys(missing))
+    deduped_missing = []
+    seen_missing_keys = set()
+    for item in missing:
+        item_key = _compact(item)
+        if not item_key or item_key in seen_missing_keys:
+            continue
+        deduped_missing.append(item)
+        seen_missing_keys.add(item_key)
+    missing = deduped_missing
     if best_available and not missing:
         missing = ["세부 적합성 근거"]
 
@@ -4560,6 +4580,10 @@ def _complete_and_order_results(
         if _clean_text(candidate.get("id"))
     }
     additions = []
+    # Collect a wider fallback pool before the final diversity pass. Cutting at
+    # `limit` here lets a dense department-store tenant block monopolize the
+    # entire result window even when distinct nearby buildings exist later.
+    fallback_pool_limit = max(limit * 3, 20)
     seen_ids = set(strict_ids)
     pools = [
         list(candidate_pool or []),
@@ -4584,9 +4608,9 @@ def _complete_and_order_results(
                 "best_available_fallback": True,
             })
             seen_ids.add(candidate_id)
-            if len(strict) + len(additions) >= limit:
+            if len(strict) + len(additions) >= fallback_pool_limit:
                 break
-        if len(strict) + len(additions) >= limit:
+        if len(strict) + len(additions) >= fallback_pool_limit:
             break
 
     decorated = [

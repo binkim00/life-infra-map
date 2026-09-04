@@ -13,6 +13,34 @@ export const recommendationApi = {
       method: "POST",
       body,
     }),
+  createConversationSession: () =>
+    apiRequest<Record<string, unknown>>(
+      "/recommendations/conversation-sessions/",
+      { method: "POST", body: {} },
+    ),
+  sendConversationTurn: (
+    sessionId: string,
+    conversationToken: string,
+    body: unknown,
+  ) =>
+    apiRequest<Record<string, unknown>>(
+      `/recommendations/conversation-sessions/${sessionId}/turns/`,
+      {
+        method: "POST",
+        body,
+        headers: conversationToken
+          ? { "X-Conversation-Token": conversationToken }
+          : undefined,
+        timeoutMs: 45_000,
+      },
+    ),
+  closeConversationSession: (sessionId: string, conversationToken: string) =>
+    apiRequest(`/recommendations/conversation-sessions/${sessionId}/`, {
+      method: "DELETE",
+      headers: conversationToken
+        ? { "X-Conversation-Token": conversationToken }
+        : undefined,
+    }),
   aiWebSearch: (body: unknown) =>
     apiRequest<Record<string, unknown>>("/recommendations/ai-web-search/", {
       method: "POST",

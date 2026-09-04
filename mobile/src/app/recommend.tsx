@@ -1,6 +1,6 @@
 import { router, useLocalSearchParams } from "expo-router";
 import * as Location from "expo-location";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Linking,
@@ -11,6 +11,7 @@ import {
   View,
 } from "react-native";
 import { recommendationApi } from "@/api/recommendations";
+import { ApiError } from "@/api/client";
 import { useAuth } from "@/auth/auth-context";
 import { BottomNav } from "@/components/bottom-nav";
 import { PlaceDetailSheet } from "@/components/place-detail-sheet";
@@ -23,6 +24,7 @@ type AiPlace = Place & {
   external_id?: string;
   place_id?: number;
   recommendation_reason?: string;
+  result_tier?: "all_conditions_met" | "partial_match" | "best_available";
   result_tier_label?: string;
   matched_conditions?: string[];
   missing_conditions?: string[];
@@ -35,7 +37,52 @@ type AiResponse = {
   results?: AiPlace[];
   message?: string;
   clarification_question?: string;
+  clarification_options?: (string | { label?: string; value?: string })[];
+  decision_action?: string;
   search_plan?: Record<string, unknown>;
+  result_quality?: {
+    returned_count?: number;
+    all_conditions_met?: number;
+    partial_match?: number;
+    best_available?: number;
+  };
+};
+
+type ChatMessage = {
+  id: string;
+  role: "user" | "assistant";
+  text: string;
+};
+
+type ConversationSession = {
+  id: string;
+  token: string;
+};
+
+const GREETING =
+  "어떤 상황에서 갈 장소를 찾고 있나요? 지역, 동행, 목적이나 꼭 필요한 조건을 편하게 말해 주세요.";
+
+const optionValue = (option: NonNullable<AiResponse["clarification_options"]>[number]) =>
+  typeof option === "string" ? option : option.value || option.label || "";
+
+const optionLabel = (option: NonNullable<AiResponse["clarification_options"]>[number]) =>
+  typeof option === "string" ? option : option.label || option.value || "";
+
+const assistantText = (data: AiResponse, count: number) => {
+  if (data.clarification_question) return data.clarification_question;
+  if (data.message) return data.message;
+  if (data.decision_action === "search") {
+    if (!count)
+      return "말씀한 조건을 모두 확인했지만, 지금 보여드릴 만한 장소를 찾지 못했어요. 지역을 넓히거나 꼭 필요한 조건 하나를 덜어볼까요?";
+    const exact = data.result_quality?.all_conditions_met || 0;
+    const fallback = data.result_quality?.best_available || 0;
+    if (!exact && fallback === data.result_quality?.returned_count)
+      return `요청한 조건을 직접 확인할 수 있는 장소는 아직 없어요. 대신 지역과 장소 종류가 맞는 가까운 후보 ${count}곳만 보여드릴게요. 카드의 ‘확인 필요’ 조건을 꼭 봐 주세요.`;
+    return exact
+      ? `조건을 잘 충족하는 장소 ${exact}곳을 포함해 ${count}곳을 찾았어요.`
+      : `${count}곳을 찾았어요. 확인 가능한 근거와 거리를 기준으로 가까운 후보부터 보여드릴게요.`;
+  }
+  return "말씀하신 내용을 반영했어요.";
 };
 
 const resolvedLocationLabel = (searchPlan?: Record<string, unknown>) => {
@@ -67,8 +114,6 @@ export default function RecommendScreen() {
   const hasInitialCenter =
     Number.isFinite(initialLat) && Number.isFinite(initialLng);
   const [query, setQuery] = useState(params.q || "");
-  const [submitted, setSubmitted] = useState(params.q || "");
-  const [searchRequestId, setSearchRequestId] = useState(params.q ? 1 : 0);
   const [center, setCenter] = useState<{
     lat: number | null;
     lng: number | null;
@@ -82,7 +127,7 @@ export default function RecommendScreen() {
   const [selected, setSelected] = useState<AiPlace | null>(null);
   const [detailVisible, setDetailVisible] = useState(false);
   const [message, setMessage] = useState("");
-  const [loading, setLoading] = useState(Boolean(params.q));
+  const [loading, setLoading] = useState(false);
   const [searchPlan, setSearchPlan] = useState<Record<string, unknown> | null>(
     null,
   );
@@ -90,66 +135,163 @@ export default function RecommendScreen() {
     null,
   );
   const [webResults, setWebResults] = useState<AiPlace[]>([]);
+  const [canSearchWeb, setCanSearchWeb] = useState(false);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
+    { id: "greeting", role: "assistant", text: GREETING },
+  ]);
+  const [clarificationOptions, setClarificationOptions] = useState<
+    NonNullable<AiResponse["clarification_options"]>
+  >([]);
+  const sessionRef = useRef<ConversationSession | null>(null);
+  const initialQuerySentRef = useRef(false);
   const needsWebFallback =
     results.length < 5 ||
     results.slice(0, 5).every((place) =>
       ["empty", "thin"].includes(place.evidence_quality_level || "empty"),
     );
-  const search = (next = query) => {
-    if (!next.trim()) return;
+  const createSession = async () => {
+    const raw = await recommendationApi.createConversationSession();
+    const session = {
+      id: String(raw.id || ""),
+      token: String(raw.conversation_token || ""),
+    };
+    if (!session.id) throw new Error("conversation_session_missing");
+    sessionRef.current = session;
+    return session;
+  };
+
+  const submitTurn = async (next: string) => {
+    const text = next.trim();
+    if (!text || loading) return;
+    setQuery("");
     setMessage("");
     setLoading(true);
-    setLocationBasisLabel(null);
-    setSubmitted(next.trim());
-    setSearchRequestId((value) => value + 1);
-  };
-  useEffect(() => {
-    if (!submitted || !searchRequestId) return;
-    recommendationApi
-      .aiSearch({
-        query: submitted,
-        lat: center.lat,
-        lng: center.lng,
-        limit: 30,
-        previous_search_context: searchPlan,
-      })
-      .then((raw) => {
-        const data = raw as AiResponse;
-        const places = data.results || [];
+    setClarificationOptions([]);
+    setChatMessages((current) => [
+      ...current,
+      { id: `user-${Date.now()}`, role: "user", text },
+    ]);
+    try {
+      const session = sessionRef.current || (await createSession());
+      let raw: Record<string, unknown>;
+      try {
+        raw = await recommendationApi.sendConversationTurn(
+          session.id,
+          session.token,
+          { query: text, lat: center.lat, lng: center.lng, limit: 10 },
+        );
+      } catch (error) {
+        if (!(error instanceof ApiError) || ![404, 409].includes(error.status))
+          throw error;
+        const replacement = await createSession();
+        raw = await recommendationApi.sendConversationTurn(
+          replacement.id,
+          replacement.token,
+          { query: text, lat: center.lat, lng: center.lng, limit: 10 },
+        );
+      }
+      const data = raw as AiResponse;
+      const receivedPlaces = data.results || [];
+      const supportedPlaces = receivedPlaces.filter(
+        (place) => place.result_tier !== "best_available",
+      );
+      const fallbackPlaces = receivedPlaces.filter(
+        (place) => place.result_tier === "best_available",
+      );
+      const allFallback =
+        receivedPlaces.length > 0 &&
+        data.result_quality?.best_available === receivedPlaces.length;
+      const places = allFallback
+        ? receivedPlaces.slice(0, 5)
+        : supportedPlaces.length >= 3
+          ? supportedPlaces.slice(0, 10)
+          : [
+              ...supportedPlaces,
+              ...fallbackPlaces.slice(0, Math.max(0, 3 - supportedPlaces.length)),
+            ];
+      const action = data.decision_action || "";
+      if (action !== "ask_clarification") {
         setResults(places);
         setSelected(places[0] || null);
-        setSearchPlan(data.search_plan || null);
-        setLocationBasisLabel(resolvedLocationLabel(data.search_plan));
         setWebResults([]);
-        if (isLoggedIn)
-          void recommendationApi.saveSearchLog({
-            query: submitted,
-            search_mode: "recommendation_query",
-            scenario: data.clarification_question
-              ? "ask_clarification"
-              : "ai_place_search",
-            lat: center.lat,
-            lng: center.lng,
-            target_query: submitted,
-            result_count: places.length,
-            db_result_count: places.filter((place) => place.source === "db")
-              .length,
-            kakao_result_count: places.filter((place) => place.source !== "db")
-              .length,
-            ai_web_result_count: 0,
-            search_plan_snapshot: data.search_plan || {},
-          });
-        setMessage(
-          data.clarification_question ||
-            data.message ||
-            (!places.length ? "조건에 맞는 추천 결과가 없습니다." : ""),
-        );
+      }
+      setCanSearchWeb(action === "search");
+      setSearchPlan(data.search_plan || null);
+      setLocationBasisLabel(resolvedLocationLabel(data.search_plan));
+      setClarificationOptions(data.clarification_options || []);
+      setChatMessages((current) => [
+        ...current,
+        {
+          id: `assistant-${Date.now()}`,
+          role: "assistant",
+          text: assistantText(data, places.length),
+        },
+      ]);
+      if (isLoggedIn)
+        void recommendationApi.saveSearchLog({
+          query: text,
+          search_mode: "recommendation_query",
+          scenario: action || "ai_place_search",
+          lat: center.lat,
+          lng: center.lng,
+          target_query: text,
+          result_count: places.length,
+          db_result_count: places.filter((place) => place.source === "db").length,
+          kakao_result_count: places.filter((place) => place.source !== "db").length,
+          ai_web_result_count: 0,
+          search_plan_snapshot: data.search_plan || {},
+        });
+    } catch {
+      setChatMessages((current) => [
+        ...current,
+        {
+          id: `assistant-error-${Date.now()}`,
+          role: "assistant",
+          text: "대화를 이어가지 못했어요. 잠시 후 같은 내용을 다시 보내 주세요.",
+        },
+      ]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const search = (next = query) => void submitTurn(next);
+
+  useEffect(() => {
+    void createSession()
+      .then(() => {
+        if (params.q && !initialQuerySentRef.current) {
+          initialQuerySentRef.current = true;
+          void submitTurn(params.q);
+        }
       })
-      .catch(() => setMessage("AI 추천 검색에 실패했습니다."))
-      .finally(() => setLoading(false));
-    // submitted query controls requests; searchPlan is the previous conversational context.
+      .catch(() => setMessage("대화 준비에 실패했습니다. 검색을 누르면 다시 연결합니다."));
+    // 새 화면마다 독립된 대화를 시작합니다.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [submitted, searchRequestId, center.lat, center.lng]);
+  }, []);
+
+  const resetConversation = async () => {
+    const previous = sessionRef.current;
+    sessionRef.current = null;
+    setResults([]);
+    setSelected(null);
+    setSearchPlan(null);
+    setWebResults([]);
+    setCanSearchWeb(false);
+    setClarificationOptions([]);
+    setLocationBasisLabel(null);
+    setChatMessages([
+      { id: `greeting-${Date.now()}`, role: "assistant", text: GREETING },
+    ]);
+    setMessage("");
+    if (previous)
+      void recommendationApi.closeConversationSession(previous.id, previous.token).catch(() => undefined);
+    try {
+      await createSession();
+    } catch {
+      setMessage("새 대화를 준비하지 못했습니다. 첫 메시지를 보내면 다시 시도합니다.");
+    }
+  };
 
   const useCurrentLocation = async () => {
     const permission = await Location.requestForegroundPermissionsAsync();
@@ -166,24 +308,30 @@ export default function RecommendScreen() {
       label: "현재 위치 기준",
     });
     setLocationBasisLabel(null);
-    if (submitted) setSearchRequestId((value) => value + 1);
+    setMessage("현재 위치를 기준으로 설정했습니다. 원하는 장소나 조건을 말해 주세요.");
   };
   const searchWeb = async () => {
     try {
       setLoading(true);
       const raw = await recommendationApi.aiWebSearch({
-        query: submitted,
+        query: chatMessages.filter((item) => item.role === "user").at(-1)?.text || "",
         lat: center.lat,
         lng: center.lng,
         search_plan: searchPlan || {},
         condition: {},
         existing_results_summary: { count: results.length },
       });
-      const data = raw as {
+      const envelope = raw as {
+        ai_web_search?: {
+          candidates?: AiPlace[];
+          results?: AiPlace[];
+          error?: string;
+        };
         candidates?: AiPlace[];
         results?: AiPlace[];
         error?: string;
       };
+      const data = envelope.ai_web_search || envelope;
       const next = data.candidates || data.results || [];
       setWebResults(next);
       setMessage(
@@ -265,16 +413,70 @@ export default function RecommendScreen() {
             {locationBasisLabel || center.label}
           </Text>
         </Pressable>
+        <View style={styles.chatHeader}>
+          <Text style={styles.chatTitle}>대화</Text>
+          <Pressable onPress={resetConversation} disabled={loading}>
+            <Text style={styles.resetText}>새 대화</Text>
+          </Pressable>
+        </View>
+        <View style={styles.chat}>
+          {chatMessages.map((item) => (
+            <View
+              key={item.id}
+              style={[
+                styles.bubble,
+                item.role === "user" ? styles.userBubble : styles.assistantBubble,
+              ]}
+            >
+              <Text
+                style={item.role === "user" ? styles.userText : styles.assistantText}
+              >
+                {item.text}
+              </Text>
+            </View>
+          ))}
+          {loading ? (
+            <View style={[styles.bubble, styles.assistantBubble, styles.typingBubble]}>
+              <ActivityIndicator size="small" color="#0F766E" />
+              <Text style={styles.assistantText}>조건을 이해하고 있어요…</Text>
+            </View>
+          ) : null}
+        </View>
+        {clarificationOptions.length ? (
+          <View style={styles.optionRow}>
+            {clarificationOptions.map((option, index) => {
+              const value = optionValue(option);
+              return value ? (
+                <Pressable
+                  key={`${value}-${index}`}
+                  onPress={() => submitTurn(value)}
+                  style={styles.optionButton}
+                >
+                  <Text style={styles.optionText}>{optionLabel(option)}</Text>
+                </Pressable>
+              ) : null;
+            })}
+          </View>
+        ) : null}
         <View style={ui.row}>
           <TextInput
             value={query}
             onChangeText={setQuery}
             onSubmitEditing={() => search()}
-            placeholder="예: 조용히 쉴 수 있는 가까운 공원"
+            placeholder={
+              clarificationOptions.length
+                ? "답변을 입력하거나 위 항목을 선택하세요"
+                : "예: 명지에서 아이와 갈 조용한 카페"
+            }
+            editable={!loading}
             style={[ui.input, ui.grow]}
           />
-          <Pressable onPress={() => search()} style={ui.button}>
-            <Text style={ui.buttonText}>검색</Text>
+          <Pressable
+            onPress={() => search()}
+            disabled={loading || !query.trim()}
+            style={[ui.button, (loading || !query.trim()) && styles.disabledButton]}
+          >
+            <Text style={ui.buttonText}>보내기</Text>
           </Pressable>
         </View>
         {message ? (
@@ -282,12 +484,7 @@ export default function RecommendScreen() {
             {message}
           </Text>
         ) : null}
-        {loading ? (
-          <View style={styles.loading}>
-            <ActivityIndicator color="#0F766E" />
-            <Text style={ui.muted}>조건을 분석하고 있습니다.</Text>
-          </View>
-        ) : (
+        {!loading ? (
           <>
             {selected ? (
               <View style={styles.map}>
@@ -325,7 +522,7 @@ export default function RecommendScreen() {
                 </Pressable>
               </View>
             ) : null}
-            {submitted && needsWebFallback ? (
+            {canSearchWeb && needsWebFallback ? (
               <Pressable onPress={searchWeb} style={ui.buttonSecondary}>
                 <Text style={ui.buttonSecondaryText}>부족한 결과 보강하기</Text>
               </Pressable>
@@ -395,7 +592,7 @@ export default function RecommendScreen() {
               </>
             ) : null}
           </>
-        )}
+        ) : null}
       </Screen>
       <PlaceDetailSheet
         place={selected}
@@ -410,12 +607,31 @@ export default function RecommendScreen() {
 }
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  loading: {
-    minHeight: 180,
+  chatHeader: {
+    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    gap: 12,
+    justifyContent: "space-between",
   },
+  chatTitle: { color: "#222222", fontSize: 16, fontWeight: "900" },
+  resetText: { color: "#0F766E", fontSize: 12, fontWeight: "800" },
+  chat: { gap: 8 },
+  bubble: { maxWidth: "86%", paddingHorizontal: 14, paddingVertical: 11, borderRadius: 16 },
+  userBubble: { alignSelf: "flex-end", backgroundColor: "#0F766E", borderBottomRightRadius: 4 },
+  assistantBubble: { alignSelf: "flex-start", backgroundColor: "#FFFFFF", borderBottomLeftRadius: 4 },
+  userText: { color: "#FFFFFF", fontSize: 13, lineHeight: 19 },
+  assistantText: { color: "#303633", fontSize: 13, lineHeight: 19 },
+  typingBubble: { flexDirection: "row", alignItems: "center", gap: 8 },
+  optionRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  optionButton: {
+    paddingHorizontal: 13,
+    paddingVertical: 9,
+    borderWidth: 1,
+    borderColor: "#8CBEB1",
+    borderRadius: 999,
+    backgroundColor: "#F3FAF8",
+  },
+  optionText: { color: "#0F766E", fontSize: 12, fontWeight: "800" },
+  disabledButton: { opacity: 0.45 },
   modeLink: {
     padding: 12,
     borderWidth: 1,
