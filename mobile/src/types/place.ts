@@ -49,6 +49,7 @@ export type MapSearchResponse = {
   candidate_counts?: {
     db?: number;
     kakao?: number;
+    web?: number;
     db_total?: number;
   };
   kakao_error?: string;

@@ -1,13 +1,15 @@
 """General map search contracts: no query-specific production exceptions."""
 from unittest.mock import patch
 
-from django.test import TestCase
+from django.core.cache import cache
+from django.test import TestCase, override_settings
 
 from recommendations.services.area_gazetteer import resolve_area_coordinates
 from recommendations.services.area_gazetteer import resolve_area_coordinates_by_token
 from recommendations.services.map_search import (
     build_kakao_keyword_variants,
     kakao_place_matches_keyword,
+    split_branch_qualified_query,
     split_location_category_query,
 )
 from recommendations.services.conversation_sessions import result_references
@@ -17,6 +19,9 @@ from recommendations.services.ai_search_orchestrator import collect_kakao_candid
 
 class GeneralSearchContractTests(TestCase):
     url = "/api/recommendations/place-search/"
+
+    def setUp(self):
+        cache.clear()
 
     @patch("recommendations.services.ai_search_orchestrator.search_places_by_keyword")
     @patch("recommendations.services.ai_search_orchestrator.search_address")
@@ -66,6 +71,10 @@ class GeneralSearchContractTests(TestCase):
             ["테스트브랜드 경성대"],
         )
         self.assertTrue(kakao_place_matches_keyword(place, "테스트브랜드 경성대점"))
+        self.assertEqual(
+            split_branch_qualified_query("테스트브랜드 경성대점"),
+            {"name_query": "테스트브랜드", "branch_location": "경성대"},
+        )
 
     @patch("recommendations.views.search_places_by_keyword")
     def test_empty_exact_branch_query_retries_a_limited_suffix_variant(self, search):
@@ -90,6 +99,77 @@ class GeneralSearchContractTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["results"][0]["name"], "테스트브랜드 경성대부경대점")
         self.assertEqual(search.call_args_list[-1].kwargs["keyword"], "테스트브랜드 경성대")
+
+    @patch("recommendations.views._resolve_anchor_location")
+    @patch("recommendations.views.search_places_by_keyword")
+    def test_branch_query_searches_the_brand_around_the_branch_location(self, search, resolve):
+        resolve.return_value = {"status": "resolved", "lat": 35.14, "lng": 129.10}
+        search.side_effect = [
+            {"documents": []},
+            {"documents": []},
+            {"documents": []},
+            {"documents": [{
+                "id": "branch-nearby",
+                "place_name": "테스트브랜드 경성대부경대점",
+                "category_name": "음식점 > 카페",
+                "category_group_code": "CE7",
+                "address_name": "부산 남구 대연동",
+                "x": "129.10",
+                "y": "35.14",
+            }]},
+        ]
+        response = self.client.get(self.url, {
+            "q": "테스트브랜드 경성대점",
+            "lat": 35.09,
+            "lng": 128.85,
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["results"][0]["name"], "테스트브랜드 경성대부경대점")
+        resolve.assert_called_with("경성대", lat=35.09, lng=128.85, address_first=True)
+        self.assertEqual(search.call_args_list[-1].kwargs["keyword"], "테스트브랜드")
+        self.assertEqual(search.call_args_list[-1].kwargs["lat"], 35.14)
+
+    @override_settings(
+        NAVER_SEARCH_CLIENT_ID="fake-id",
+        NAVER_SEARCH_CLIENT_SECRET="fake-secret",
+    )
+    @patch("recommendations.views.get_naver_search_result")
+    @patch("recommendations.views._resolve_anchor_location")
+    @patch("recommendations.views.search_places_by_keyword")
+    def test_zero_db_and_kakao_results_return_a_labeled_naver_candidate(
+        self, search, resolve, naver,
+    ):
+        search.return_value = {"documents": []}
+        resolve.return_value = {"status": "unresolved"}
+        naver.return_value = {
+            "candidates": [{
+                "name": "테스트브랜드 경성대점",
+                "source_url": "https://example.com/place",
+                "evidence_summary": "부산 남구의 카페 검색 결과",
+                "address_hint": "부산 남구 테스트로 1",
+                "category_hint": "카페",
+            }],
+        }
+        response = self.client.get(self.url, {
+            "q": "테스트브랜드 경성대점",
+            "lat": 35.09,
+            "lng": 128.85,
+        })
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["candidate_counts"]["web"], 1)
+        self.assertEqual(data["results"][0]["name"], "테스트브랜드 경성대점")
+        self.assertEqual(data["results"][0]["source_label"], "네이버 검색 후보")
+        self.assertFalse(data["results"][0]["can_show_on_map"])
+
+        repeated = self.client.get(self.url, {
+            "q": "테스트브랜드 경성대점",
+            "lat": 35.09,
+            "lng": 128.85,
+        })
+        self.assertEqual(repeated.status_code, 200)
+        self.assertEqual(repeated.json()["candidate_counts"]["web"], 1)
+        naver.assert_called_once()
 
     @patch("recommendations.services.ai_search_orchestrator.search_places_by_keyword")
     def test_situation_search_retries_the_same_branch_suffix_variant(self, search):

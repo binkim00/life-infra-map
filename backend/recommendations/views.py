@@ -1,3 +1,4 @@
+import hashlib
 import logging
 import math
 from django.conf import settings
@@ -30,6 +31,7 @@ from .serializers import (
     UserSearchLogSerializer,
 )
 from .services.kakao_local import search_places_by_keyword
+from .services.naver_search_provider import get_naver_search_result
 from .services.map_search import (
     KAKAO_CATEGORY_GROUPS,
     build_kakao_keyword_variants,
@@ -41,6 +43,7 @@ from .services.map_search import (
     load_places_by_ids,
     normalize_compact,
     search_saved_places,
+    split_branch_qualified_query,
     split_location_category_query,
     tokenize_query,
 )
@@ -985,6 +988,8 @@ def map_place_search(request):
     query_info = {}
     kakao_results = []
     kakao_error = ""
+    web_results = []
+    web_error = ""
     is_separated_place_search = request.path.rstrip("/").endswith("place-search")
     basic_db_skipped = False
     anchor_location = ""
@@ -1173,6 +1178,28 @@ def map_place_search(request):
                         category_group_code=kakao_category_group or None,
                     )
                     kakao_data = merge_kakao_search_documents(kakao_data, variant_data)
+            # 지점 위치가 포함된 상호는 사용자의 현재 좌표가 멀어도 해당 지점
+            # 주변에서 다시 찾아야 합니다. `브랜드 경성대점`을 `경성대` 중심의
+            # `브랜드` 검색으로 한 번만 재구성합니다.
+            if name_query and not kakao_data.get("documents"):
+                branch_query = split_branch_qualified_query(keyword)
+                if branch_query["name_query"]:
+                    branch_anchor = _resolve_anchor_location(
+                        branch_query["branch_location"],
+                        lat=search_lat,
+                        lng=search_lng,
+                        address_first=True,
+                    )
+                    if branch_anchor.get("status") == "resolved":
+                        branch_data = search_places_by_keyword(
+                            keyword=branch_query["name_query"],
+                            lat=parse_optional_float(branch_anchor.get("lat")),
+                            lng=parse_optional_float(branch_anchor.get("lng")),
+                            radius=5000,
+                            size=min(limit, 15),
+                            category_group_code=kakao_category_group or None,
+                        )
+                        kakao_data = merge_kakao_search_documents(kakao_data, branch_data)
             fallback_keyword = category_only_fallback_keyword(keyword)
             has_matching_kakao_document = any(
                 kakao_place_matches_categories(place, matched_basic_categories)
@@ -1215,6 +1242,47 @@ def map_place_search(request):
             logger.info("Kakao map search failed.", exc_info=True)
             kakao_error = str(exc)
 
+    # Kakao와 저장 DB가 모두 0건인 고유 장소명은 Naver 로컬/웹 검색을
+    # 최후 후보로 사용합니다. 좌표가 검증되지 않은 후보는 지도에 찍지 않고
+    # 출처 링크와 주소만 보여 주며, 저장 DB의 확인된 장소처럼 표현하지 않습니다.
+    if (
+        is_separated_place_search
+        and source == "all"
+        and keyword
+        and not db_results
+        and not kakao_results
+        and not is_category_only_query(keyword)
+    ):
+        try:
+            branch_query = split_branch_qualified_query(keyword)
+            location_hint = branch_query["branch_location"] or anchor_location
+            cache_digest = hashlib.sha256(
+                f"{keyword}|{location_hint}".encode("utf-8")
+            ).hexdigest()[:24]
+            cache_key = f"map-place-search:naver:{cache_digest}"
+            web_data = cache.get(cache_key)
+            if web_data is None:
+                web_data = get_naver_search_result(
+                    query=keyword,
+                    location_hint=location_hint,
+                    search_plan={"targetQuery": keyword},
+                    manual=True,
+                )
+                cache.set(cache_key, web_data, timeout=300)
+            web_frame = {
+                "target_objects": [keyword],
+                "result_match_terms": [keyword],
+                "candidate_place_types": matched_basic_categories,
+            }
+            web_results = [
+                _normalize_web_external_candidate(candidate, web_frame)
+                for candidate in web_data.get("candidates", [])
+                if isinstance(candidate, dict)
+            ][:limit]
+        except Exception as exc:
+            logger.info("Naver fallback map search failed.", exc_info=True)
+            web_error = exc.__class__.__name__
+
     # 저장 장소는 관련도 순서를 그대로 유지하고, 카카오 장소만 거리순으로 정렬해 뒤에 붙입니다.
     # 여기서 전체를 거리순으로 다시 정렬하면 검색어와 정확히 맞는 장소가 밀려납니다.
     if search_lat is not None and search_lng is not None:
@@ -1244,6 +1312,14 @@ def map_place_search(request):
             }
             for place in kakao_results
         ],
+        *[
+            {
+                **place,
+                "result_source": "web",
+                "source_label": "네이버 검색 후보",
+            }
+            for place in web_results
+        ],
     ]
     combined_results = combined_results[:limit]
     if request.GET.get("detail_level") == "summary":
@@ -1267,6 +1343,7 @@ def map_place_search(request):
         "candidate_counts": {
             "db": len(db_results),
             "kakao": len(kakao_results),
+            "web": len(web_results),
             "db_total": db_total_count,
         },
         "filters": {
@@ -1289,6 +1366,7 @@ def map_place_search(request):
             "lng": search_lng,
         },
         "kakao_error": kakao_error,
+        "web_error": web_error,
         "results": combined_results,
     })
 
@@ -2603,7 +2681,11 @@ def _merge_and_sort_recommendation_results(db_results, external_candidates, rank
 def _normalize_web_external_candidate(candidate, frame):
     name = _clean_external_text(candidate.get("name") or candidate.get("title"))
     source_url = _clean_external_text(candidate.get("source_url"))
-    summary = _clean_external_text(candidate.get("summary") or candidate.get("evidence_text"))
+    summary = _clean_external_text(
+        candidate.get("summary")
+        or candidate.get("evidence_text")
+        or candidate.get("evidence_summary")
+    )
     text = " ".join([name, summary, _clean_external_text(candidate.get("address_hint"))])
     strength, matched_evidence = _evaluate_external_candidate_evidence(text, frame)
     frame_evidence_tier = _candidate_evidence_tier({"matched_evidence": matched_evidence})
@@ -2614,7 +2696,7 @@ def _normalize_web_external_candidate(candidate, frame):
         "source_type": "web_evidence_candidate",
         "source_label": "웹 근거 후보",
         "name": name,
-        "category": _clean_external_text(candidate.get("category")),
+        "category": _clean_external_text(candidate.get("category") or candidate.get("category_hint")),
         "address": _clean_external_text(candidate.get("address_hint")),
         "lat": None,
         "lng": None,

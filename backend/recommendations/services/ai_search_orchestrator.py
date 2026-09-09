@@ -30,6 +30,7 @@ from recommendations.services.kakao_local import search_address, search_places_b
 from recommendations.services.map_search import (
     build_kakao_keyword_variants,
     get_matching_categories,
+    split_branch_qualified_query,
     supports_postgis,
 )
 from recommendations.services.place_urls import get_kakao_place_url
@@ -3339,6 +3340,30 @@ def collect_kakao_candidates(frame, queries, *, lat=None, lng=None, radius=None)
                     )
                     if isinstance(relaxed_documents, list):
                         documents = relaxed_documents
+            if not documents:
+                branch_query = split_branch_qualified_query(query)
+                if branch_query["name_query"]:
+                    branch_anchor = _resolve_anchor_location(
+                        branch_query["branch_location"],
+                        lat=lat,
+                        lng=lng,
+                        address_first=True,
+                    )
+                    if branch_anchor.get("status") == "resolved":
+                        branch_response = search_places_by_keyword(
+                            keyword=branch_query["name_query"],
+                            lat=branch_anchor.get("lat"),
+                            lng=branch_anchor.get("lng"),
+                            radius=5000,
+                            size=size,
+                        )
+                        branch_documents = (
+                            branch_response.get("documents")
+                            if isinstance(branch_response, dict)
+                            else []
+                        )
+                        if isinstance(branch_documents, list):
+                            documents = branch_documents
         except Exception as exc:
             logger.info("Kakao candidate collection failed. query=%s", query, exc_info=True)
             return query, [], {"query": query, "count": 0, "error": exc.__class__.__name__}

@@ -456,6 +456,29 @@ def build_kakao_keyword_variants(keyword):
     return variants[:2]
 
 
+def split_branch_qualified_query(keyword):
+    """`브랜드 지역점` 입력을 브랜드명과 지점 위치 힌트로 제한적으로 나눈다."""
+    include_tokens, _ = tokenize_query(keyword)
+    if len(include_tokens) < 2:
+        return {"name_query": "", "branch_location": ""}
+    for index in range(len(include_tokens) - 1, -1, -1):
+        token = include_tokens[index]
+        normalized = normalize_compact(token)
+        if not normalized.endswith("점") or len(normalized[:-1]) < 2:
+            continue
+        name_tokens = [
+            value for token_index, value in enumerate(include_tokens)
+            if token_index != index
+        ]
+        name_query = " ".join(name_tokens).strip()
+        if name_query:
+            return {
+                "name_query": name_query,
+                "branch_location": token[:-1],
+            }
+    return {"name_query": "", "branch_location": ""}
+
+
 def build_token_filter(token):
     """
     토큰 하나가 장소의 어느 필드에든 맞으면 통과하는 조건을 만든다.
