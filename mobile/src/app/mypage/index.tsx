@@ -242,9 +242,9 @@ export default function MypageScreen() {
                   <View key={place.id} style={ui.card}>
                     <View style={ui.row}>
                       <View style={ui.grow}>
-                        <Text style={styles.placeName}>
-                          {place.place_name || place.name}
-                        </Text>
+                        <Pressable accessibilityRole="button" onPress={() => router.push(`/mypage/saved-places?savedId=${place.id}` as never)}>
+                          <Text style={styles.placeName}>{place.place_name || place.name} · 상세보기</Text>
+                        </Pressable>
                         <Text style={ui.muted}>{place.address}</Text>
                       </View>
                       <Pressable onPress={() => deletePlace(place.id)}>

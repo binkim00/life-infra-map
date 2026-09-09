@@ -127,6 +127,7 @@ export default function RecommendScreen() {
   const hasInitialCenter =
     Number.isFinite(initialLat) && Number.isFinite(initialLng);
   const [query, setQuery] = useState(params.q || "");
+  const [deviceLocation, setDeviceLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [center, setCenter] = useState<{
     lat: number | null;
     lng: number | null;
@@ -320,6 +321,7 @@ export default function RecommendScreen() {
         setMessage("현재 위치를 사용하려면 위치 권한이 필요합니다.");
         return;
       }
+      setDeviceLocation({ lat: coordinates.latitude, lng: coordinates.longitude });
       setCenter({
         lat: coordinates.latitude,
         lng: coordinates.longitude,
@@ -341,6 +343,7 @@ export default function RecommendScreen() {
     void searchLocation()
       .then((coordinates) => {
         if (!active || !coordinates) return;
+        setDeviceLocation({ lat: coordinates.latitude, lng: coordinates.longitude });
         setCenter({
           lat: coordinates.latitude,
           lng: coordinates.longitude,
@@ -556,6 +559,8 @@ export default function RecommendScreen() {
                 <PlaceMap
                   place={selected}
                   places={results}
+                  currentLocation={deviceLocation}
+                  onRequestCurrentLocation={() => void applyCurrentLocation()}
                   onSelectPlace={setSelected}
                 />
                 <View style={styles.mapFooter}>

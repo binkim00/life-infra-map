@@ -288,7 +288,7 @@ def _get_sort_for_channel(channel):
 def _request_channel(channel, search_query):
     params = {
         "query": search_query,
-        "display": _get_display_count(),
+        "display": min(5, _get_display_count()) if channel == "local" else _get_display_count(),
     }
     sort = _get_sort_for_channel(channel)
     if sort:
@@ -301,7 +301,7 @@ def _request_channel(channel, search_query):
             "X-Naver-Client-Secret": getattr(settings, "NAVER_SEARCH_CLIENT_SECRET", ""),
         },
         params=params,
-        timeout=getattr(settings, "AI_REQUEST_TIMEOUT", 20),
+        timeout=min(5, getattr(settings, "AI_REQUEST_TIMEOUT", 20)) if channel == "local" else getattr(settings, "AI_REQUEST_TIMEOUT", 20),
     )
     response.raise_for_status()
     return response.json()
@@ -376,6 +376,9 @@ def _candidate_from_item(item, channel, search_query, requested_conditions):
 
     title = _clean_html(item.get("title"), 140)
     source_url = _safe_text(item.get("link"), 600)
+    if channel == "local" and title and not _is_http_url(source_url):
+        from urllib.parse import quote
+        source_url = "https://map.naver.com/p/search/" + quote(title)
     if not title or not _is_http_url(source_url):
         return None
 
@@ -411,6 +414,14 @@ def _candidate_from_item(item, channel, search_query, requested_conditions):
         "is_verified": False,
     }
 
+    if channel == "local":
+        # Naver Local WGS84 정수 좌표만 허용한다. 예전 TM 좌표는 추정하지 않는다.
+        try:
+            lng, lat = float(item.get("mapx", "")) / 10_000_000, float(item.get("mapy", "")) / 10_000_000
+            if 124 <= lng <= 132 and 33 <= lat <= 39:
+                candidate.update(lat=lat, lng=lng, coordinate_source="naver_local_wgs84")
+        except (TypeError, ValueError):
+            pass
     if requested_conditions:
         candidate["requested_conditions"] = requested_conditions
         candidate["condition_notice"] = (
@@ -708,6 +719,7 @@ def get_naver_search_result(
     location_hint="",
     search_plan=None,
     manual=False,
+    local_only=False,
 ):
     if not manual:
         return _base_response(
@@ -771,7 +783,7 @@ def get_naver_search_result(
     location_filtered_debug_summary = None
 
     try:
-        for channel in NAVER_SEARCH_CHANNEL_ORDER:
+        for channel in (("local",) if local_only else NAVER_SEARCH_CHANNEL_ORDER):
             if channel in {"blog", "webkr"} and not location_terms:
                 result = _base_response(
                     executed=True,
@@ -817,7 +829,7 @@ def get_naver_search_result(
                 location_filtered_debug_summary = debug_summary
 
             if candidates:
-                summary = build_ai_web_search_summary(query, location_hint, candidates)
+                summary = {} if local_only else build_ai_web_search_summary(query, location_hint, candidates)
                 result = _base_response(
                     executed=True,
                     candidates=candidates,

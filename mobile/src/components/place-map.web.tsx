@@ -16,6 +16,7 @@ type PlaceMapProps = {
   onMapPress?: (coordinate: { lat: number; lng: number }) => void;
   onRequestCurrentLocation?: () => void;
   displayMode?: "overview" | "selected";
+  focusSelected?: boolean;
   expanded?: boolean;
   currentLocation?: { lat: number; lng: number } | null;
   fitBoundsKey?: string | number;
@@ -24,7 +25,7 @@ type PlaceMapProps = {
 const embedUrl =
   process.env.EXPO_PUBLIC_KAKAO_MAP_EMBED_URL ||
   "http://localhost:5173/kakao-map-embed.html";
-const versionedEmbedUrl = `${embedUrl}${embedUrl.includes("?") ? "&" : "?"}v=compact-map-5`;
+const versionedEmbedUrl = `${embedUrl}${embedUrl.includes("?") ? "&" : "?"}v=compact-map-6`;
 
 const MAX_VISIBLE_MARKERS = 20;
 
@@ -36,6 +37,7 @@ export function PlaceMap({
   onMapPress,
   onRequestCurrentLocation,
   displayMode = "overview",
+  focusSelected = false,
   expanded = false,
   currentLocation = null,
   fitBoundsKey,
@@ -80,7 +82,7 @@ export function PlaceMap({
           ),
         })),
         selectedId: place ? String(place.id) : null,
-        viewportMode: displayMode,
+        viewportMode: focusSelected ? "selected" : displayMode,
         viewportKey: String(
           fitBoundsKey ??
             `${displayMode}:${placesSignature}:${currentLocation?.lat ?? ""}:${currentLocation?.lng ?? ""}`,
@@ -96,7 +98,7 @@ export function PlaceMap({
       },
       new URL(embedUrl).origin,
     );
-  }, [currentLocation, displayMode, fitBoundsKey, mapPlaces, onMapPress, onRequestCurrentLocation, place, validPlaces]);
+  }, [currentLocation, displayMode, focusSelected, fitBoundsKey, mapPlaces, onMapPress, onRequestCurrentLocation, place, validPlaces]);
 
   useEffect(() => {
     const receive = (event: MessageEvent) => {

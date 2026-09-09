@@ -1,10 +1,13 @@
 import { recommendationApi } from "@/api/recommendations";
+import { router, useLocalSearchParams } from "expo-router";
+import { PlaceDetailSheet } from "@/components/place-detail-sheet";
+import type { Place } from "@/types/place";
 import { useAuth } from "@/auth/auth-context";
 import { BottomNav } from "@/components/bottom-nav";
 import { LoadState } from "@/components/load-state";
 import { INPUT_PLACEHOLDER_COLOR, Screen, ui } from "@/components/screen";
 import { useResource } from "@/hooks/use-resource";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Alert, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 
 type SavedPlaceGroup = {
@@ -15,6 +18,13 @@ type SavedPlaceGroup = {
 
 type SavedPlace = {
   id: number;
+  place?: number | null;
+  category?: string;
+  lat?: number | null;
+  lng?: number | null;
+  detail_url?: string;
+  kakao_place_url?: string;
+  source?: string;
   name?: string;
   place_name?: string;
   address?: string;
@@ -24,6 +34,8 @@ type SavedPlace = {
 };
 
 export default function SavedPlacesScreen() {
+  const { savedId } = useLocalSearchParams<{ savedId?: string }>();
+  const openedId = useRef<string | undefined>(undefined);
   const { ready, isLoggedIn } = useAuth();
   const [groups, setGroups] = useState<SavedPlaceGroup[]>([]);
   const [places, setPlaces] = useState<SavedPlace[]>([]);
@@ -33,6 +45,14 @@ export default function SavedPlacesScreen() {
   const [placeMemoDrafts, setPlaceMemoDrafts] = useState<Record<number, string>>({});
   const [busyKey, setBusyKey] = useState("");
   const [message, setMessage] = useState("");
+  const [selected, setSelected] = useState<Place | null>(null);
+  const openPlace = (place: SavedPlace) => setSelected({
+    id: place.place ?? `saved:${place.id}`, name: place.place_name || place.name || "저장 장소",
+    category: place.category || "", address: place.address,
+    lat: place.lat == null ? NaN : Number(place.lat), lng: place.lng == null ? NaN : Number(place.lng),
+    place_url: place.detail_url, kakao_place_url: place.kakao_place_url,
+    result_source: place.place ? "db" : place.source || "external",
+  });
 
   const load = async () => {
     const [groupResponse, placeResponse] = await Promise.all([
@@ -41,8 +61,13 @@ export default function SavedPlacesScreen() {
     ]);
     setGroups((groupResponse as { results?: SavedPlaceGroup[] }).results || []);
     setPlaces((placeResponse as { results?: SavedPlace[] }).results || []);
+    const requested = (placeResponse as { results?: SavedPlace[] }).results?.find(p => String(p.id) === savedId);
+    if (requested && openedId.current !== savedId) {
+      openedId.current = savedId;
+      openPlace(requested);
+    }
   };
-  const { loading, error, reload } = useResource(load, undefined, ready && isLoggedIn);
+  const { loading, error, reload } = useResource(load, undefined, ready && isLoggedIn, savedId);
 
   const placesByGroup = useMemo(() => {
     const grouped = new Map<number | null, SavedPlace[]>();
@@ -146,7 +171,9 @@ export default function SavedPlacesScreen() {
   const renderPlace = (place: SavedPlace) => (
     <View key={place.id} style={ui.card}>
       <View style={styles.actions}>
-        <Text style={styles.placeName}>{place.place_name || place.name || "이름 없는 장소"}</Text>
+        <Pressable accessibilityRole="button" onPress={() => openPlace(place)}>
+          <Text style={styles.placeName}>{place.place_name || place.name || "이름 없는 장소"} · 상세보기</Text>
+        </Pressable>
         <Pressable onPress={() => deletePlace(place)}>
           <Text style={styles.delete}>장소 삭제</Text>
         </Pressable>
@@ -257,6 +284,14 @@ export default function SavedPlacesScreen() {
           </>
         ) : null}
       </Screen>
+      <PlaceDetailSheet place={selected} visible={Boolean(selected)} onClose={() => setSelected(null)}
+        onSave={() => setMessage("이미 보관함에 저장된 장소입니다.")}
+        onReport={() => { if (!selected) return; setSelected(null); router.push({ pathname: "/place-report", params: {
+          placeId: selected.result_source === "db" ? String(selected.id) : undefined,
+          name: selected.name, address: selected.address,
+          lat: Number.isFinite(selected.lat) ? String(selected.lat) : undefined,
+          lng: Number.isFinite(selected.lng) ? String(selected.lng) : undefined,
+        } }); }} />
       <BottomNav />
     </View>
   );

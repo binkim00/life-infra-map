@@ -82,6 +82,10 @@ public class NotificationController {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("id", notification.getId());
         body.put("notification_type", notification.getNotificationType());
+        body.put("target_route", "inquiry_answered".equals(notification.getNotificationType())
+                ? "/inquiries/my"
+                : notification.getTargetPost() == null ? null
+                : "/boards/" + notification.getTargetPost().getBoardType() + "/" + notification.getTargetPost().getId());
         body.put("title", notification.getTitle());
         body.put("message", notification.getMessage());
         body.put("is_read", notification.isRead());

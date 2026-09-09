@@ -896,9 +896,9 @@ def build_radius_attempts(*, lat, lng, radius, has_keyword):
 
 
 def run_search_pass(*, source_queryset, include_tokens, exclude_tokens, matched_categories,
-                    lat, lng, radius, limit):
+                    lat, lng, radius, limit, prefiltered=False):
     """주어진 토큰 조합으로 한 번 검색하고 정렬/중복 제거까지 마친 결과를 돌려준다."""
-    base_queryset = apply_keyword_filter(source_queryset, include_tokens, exclude_tokens)
+    base_queryset = source_queryset if prefiltered else apply_keyword_filter(source_queryset, include_tokens, exclude_tokens)
 
     # 이름 관련도는 업종을 가리키는 토큰을 뺀 나머지로만 판단합니다.
     scoring_tokens = split_discriminating_tokens(include_tokens)
@@ -948,7 +948,7 @@ def run_search_pass(*, source_queryset, include_tokens, exclude_tokens, matched_
     return deduped
 
 
-def search_saved_places(*, keyword="", lat=None, lng=None, radius=0, limit=30, queryset=None):
+def search_saved_places(*, keyword="", lat=None, lng=None, radius=0, limit=30, queryset=None, prefiltered=False):
     """
     DB에 저장된 장소를 검색해 (후보 목록, 전체 건수, 검색 메타) 를 돌려준다.
 
@@ -975,12 +975,13 @@ def search_saved_places(*, keyword="", lat=None, lng=None, radius=0, limit=30, q
         lng=lng,
         radius=radius,
         limit=limit,
+        prefiltered=prefiltered,
     )
 
     dropped_tokens = []
 
     # 결과가 없고 토큰이 여러 개면, 데이터에 없는 표현만 빼고 한 번 더 시도합니다.
-    if not deduped and len(include_tokens) > 1:
+    if not prefiltered and not deduped and len(include_tokens) > 1:
         relaxation_queryset = source_queryset
         if lat is not None and lng is not None and radius:
             relaxation_queryset, _ = apply_radius_filter(

@@ -93,7 +93,7 @@ export default function EvidenceQueueScreen() {
           </Text>
           <Text style={ui.muted}>{item.address}</Text>
           <Text style={ui.muted}>
-            {item.source} · {item.polarity} · 수집 점수 {item.confidence}
+            {({ web_search: "웹 조사", naver_blog_search: "네이버 블로그", user_report: "사용자 제보" } as Record<string, string>)[item.source] || "외부 수집"} · {({ positive: "조건 뒷받침", negative: "조건 불일치", neutral: "중립" } as Record<string, string>)[item.polarity] || "판정 확인 필요"} · 수집 점수 {item.confidence}
           </Text>
           <Text>{item.quote || "인용문 없음"}</Text>
           {/^https?:\/\//.test(item.source_url) ? (

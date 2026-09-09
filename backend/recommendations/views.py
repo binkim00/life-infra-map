@@ -5,7 +5,8 @@ from django.conf import settings
 from django.core.cache import cache
 from django.db import IntegrityError, transaction
 from django.shortcuts import get_object_or_404
-from django.db.models import Q
+from django.db.models import Q, Value
+from django.db.models.functions import Replace
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.decorators import api_view, parser_classes, permission_classes, throttle_classes
@@ -883,7 +884,7 @@ def parse_limited_int(value, *, default=30, minimum=1, maximum=100):
     return min(max(parsed, minimum), maximum)
 
 
-def search_saved_map_places(*, keyword="", lat=None, lng=None, radius=0, limit=30, queryset=None):
+def search_saved_map_places(*, keyword="", lat=None, lng=None, radius=0, limit=30, queryset=None, prefiltered=False):
     candidates, total_count, query_info = search_saved_places(
         keyword=keyword,
         lat=lat,
@@ -891,6 +892,7 @@ def search_saved_map_places(*, keyword="", lat=None, lng=None, radius=0, limit=3
         radius=radius,
         limit=limit,
         queryset=queryset,
+        prefiltered=prefiltered,
     )
 
     places = load_places_by_ids([candidate["id"] for candidate in candidates])
@@ -1028,6 +1030,9 @@ def map_place_search(request):
 
     if keyword and not is_category_only_query(keyword) and not category_query:
         name_query = name_query or keyword
+    if name_query and not any(is_category_only_query(token) for token in tokenize_query(keyword)[0]):
+        # '공원상회', '약국떡집'처럼 상호에 포함된 문자열은 업종 제약이 아니다.
+        matched_basic_categories = []
 
     # `지역 + 업종` 검색은 해당 지역 생활권 안에서 보여줘야 한다. 반경 없이
     # 전국 결과까지 채우면 지도 bounds가 과도하게 넓어져 지역 지도가 작아진다.
@@ -1110,8 +1115,19 @@ def map_place_search(request):
             )
         ):
             db_queryset = Place.objects.filter(category__in=usable_db_categories)
-        else:
-            basic_db_skipped = True
+    # 업종 substring으로 고유명사를 완화하지 않고 저장 DB도 항상 병합한다.
+    if is_separated_place_search and name_query:
+        db_queryset = Place.objects.annotate(
+            search_name=Replace("name", Value(" "), Value("")),
+            search_address=Replace("address", Value(" "), Value("")),
+        )
+        for token in tokenize_query(name_query)[0]:
+            compact_token = normalize_compact(token)
+            db_queryset = db_queryset.filter(
+                Q(search_name__icontains=compact_token) | Q(search_address__icontains=compact_token)
+            )
+        from .services.map_search import apply_keyword_filter
+        db_queryset = apply_keyword_filter(db_queryset, [], tokenize_query(keyword)[1])
 
     if source in {"all", "db"} and not basic_db_skipped:
         db_results, db_total_count, query_info = search_saved_map_places(
@@ -1121,6 +1137,7 @@ def map_place_search(request):
             radius=search_radius,
             limit=limit,
             queryset=db_queryset,
+            prefiltered=bool(is_separated_place_search and name_query),
         )
 
     complete_db_category = (
@@ -1249,17 +1266,22 @@ def map_place_search(request):
         is_separated_place_search
         and source == "all"
         and keyword
-        and not db_results
-        and not kakao_results
+        and not any(
+            place.get("distance") is not None and place["distance"] <= (search_radius or 5000)
+            for place in [*db_results, *kakao_results]
+        )
         and not is_category_only_query(keyword)
     ):
         try:
             branch_query = split_branch_qualified_query(keyword)
             location_hint = branch_query["branch_location"] or anchor_location
+            if not location_hint or center_mode == "map":
+                from .services.kakao_local import region_at_coordinates
+                location_hint = region_at_coordinates(search_lat, search_lng) or location_hint
             cache_digest = hashlib.sha256(
                 f"{keyword}|{location_hint}".encode("utf-8")
             ).hexdigest()[:24]
-            cache_key = f"map-place-search:naver:{cache_digest}"
+            cache_key = f"map-place-search:naver:v3:{cache_digest}"
             web_data = cache.get(cache_key)
             if web_data is None:
                 web_data = get_naver_search_result(
@@ -1267,6 +1289,7 @@ def map_place_search(request):
                     location_hint=location_hint,
                     search_plan={"targetQuery": keyword},
                     manual=True,
+                    local_only=True,
                 )
                 cache.set(cache_key, web_data, timeout=300)
             web_frame = {
@@ -1321,6 +1344,19 @@ def map_place_search(request):
             for place in web_results
         ],
     ]
+    # 전국 관련도 페이지도 공급자 거리값 대신 같은 최종 반경으로 검사한다.
+    for place in combined_results:
+        plat, plng = parse_optional_float(place.get("lat")), parse_optional_float(place.get("lng"))
+        if search_lat is not None and search_lng is not None and plat is not None and plng is not None:
+            place["distance"] = calculate_distance_m(search_lat, search_lng, plat, plng)
+    if search_radius and search_lat is not None and search_lng is not None:
+        combined_results = [p for p in combined_results if p.get("distance") is not None and p["distance"] <= search_radius]
+    if name_query:
+        combined_results.sort(key=lambda p: (
+            kakao_place_name_match_rank(p, name_query),
+            p.get("distance") is None,
+            p.get("distance") if p.get("distance") is not None else float("inf"),
+        ))
     combined_results = combined_results[:limit]
     if request.GET.get("detail_level") == "summary":
         combined_results = [
@@ -2690,6 +2726,14 @@ def _normalize_web_external_candidate(candidate, frame):
     strength, matched_evidence = _evaluate_external_candidate_evidence(text, frame)
     frame_evidence_tier = _candidate_evidence_tier({"matched_evidence": matched_evidence})
     confidence = {"strong": "medium", "medium": "medium", "weak": "low"}.get(strength, "low")
+    coordinate_lat = parse_optional_float(candidate.get("lat"))
+    coordinate_lng = parse_optional_float(candidate.get("lng"))
+    has_coordinates = (
+        candidate.get("coordinate_source") == "naver_local_wgs84"
+        and coordinate_lat is not None and coordinate_lng is not None
+        and 33 <= coordinate_lat <= 39 and 124 <= coordinate_lng <= 132
+    )
+    coordinate_notice = "외부 검색 후보입니다. 세부 조건은 방문 전 확인해 주세요." if has_coordinates else "웹 검색 근거 후보입니다. 지도 표시는 실제 좌표 확인 전까지 제한됩니다."
     return {
         "id": f"external:web:{source_url or name}",
         "source": "web_evidence_candidate",
@@ -2698,8 +2742,8 @@ def _normalize_web_external_candidate(candidate, frame):
         "name": name,
         "category": _clean_external_text(candidate.get("category") or candidate.get("category_hint")),
         "address": _clean_external_text(candidate.get("address_hint")),
-        "lat": None,
-        "lng": None,
+        "lat": coordinate_lat if has_coordinates else None,
+        "lng": coordinate_lng if has_coordinates else None,
         "external_url": source_url,
         "place_url": source_url,
         "evidence_text": summary,
@@ -2712,14 +2756,14 @@ def _normalize_web_external_candidate(candidate, frame):
         "confidence_label": "확인 필요",
         "fallback_level": 5,
         "fallback_label": "카카오/웹 검색 근거 후보, 세부 정보 확인 필요",
-        "fallback_description": "웹 검색 결과 기반 후보이며 지도 표시는 좌표 확보 전까지 제한됩니다.",
+        "fallback_description": "외부 검색 후보입니다. 장소 좌표와 별개로 방문 조건은 확인이 필요합니다.",
         "score": _external_score(strength),
         "recommendation_reason": "웹 검색 결과의 장소명과 요약 문구를 기준으로 추천한 후보입니다. 방문 전 위치와 세부 정보를 확인해 주세요.",
         "recommend_reason": "웹 검색 결과의 장소명과 요약 문구를 기준으로 추천한 후보입니다. 방문 전 위치와 세부 정보를 확인해 주세요.",
-        "caution_message": "웹 검색 근거 후보입니다. 지도 표시는 실제 좌표 확인 전까지 제한됩니다.",
-        "caution": "웹 검색 근거 후보입니다. 지도 표시는 실제 좌표 확인 전까지 제한됩니다.",
+        "caution_message": coordinate_notice,
+        "caution": coordinate_notice,
         "is_external": True,
-        "can_show_on_map": False,
+        "can_show_on_map": has_coordinates,
     }
 
 

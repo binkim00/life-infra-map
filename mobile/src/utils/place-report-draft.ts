@@ -28,8 +28,8 @@ export type PlaceReportDraft = {
 const DRAFT_PREFIX = "place-report-draft:v2";
 const DRAFT_IMAGE_DIRECTORY = "place-report-drafts";
 
-export const reportDraftKey = (placeId?: string) =>
-  `${DRAFT_PREFIX}:${placeId || "new-place"}`;
+export const reportDraftKey = (placeId?: string, externalIdentity?: string) =>
+  `${DRAFT_PREFIX}:${placeId || (externalIdentity ? `external:${encodeURIComponent(externalIdentity)}` : "new-place")}`;
 
 export const createReportRequestId = () =>
   "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (character) => {

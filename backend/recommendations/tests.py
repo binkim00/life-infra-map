@@ -7703,12 +7703,13 @@ class RecommendationSearchTests(TestCase):
     @patch("recommendations.views.search_saved_map_places")
     @patch("recommendations.views.search_places_by_keyword")
     @patch("recommendations.views._resolve_anchor_location")
-    def test_separated_place_search_uses_fast_kakao_path_for_basic_business_search(
+    def test_separated_place_search_merges_db_for_basic_business_search(
         self,
         mock_resolve_anchor,
         mock_kakao,
         mock_db_search,
     ):
+        mock_db_search.return_value = ([], 0, {})
         mock_resolve_anchor.return_value = {
             "status": "resolved",
             "source": "kakao_keyword",
@@ -7740,7 +7741,7 @@ class RecommendationSearchTests(TestCase):
         data = response.json()
         self.assertEqual(data["search_mode"], "place_search")
         self.assertFalse(data["recommendation_applied"])
-        self.assertTrue(data["db_search_skipped"])
+        self.assertFalse(data["db_search_skipped"])
         self.assertEqual(data["results"][0]["name"], "서면 빠른약국")
         self.assertEqual(data["location_context"]["anchor_location"], "서면역")
         self.assertTrue(data["location_context"]["anchor_resolved"])
@@ -7748,7 +7749,7 @@ class RecommendationSearchTests(TestCase):
         mock_resolve_anchor.assert_called_once_with("서면역", lat=35.1577, lng=129.0590, address_first=True)
         self.assertEqual(mock_kakao.call_args.kwargs["lat"], 35.1577)
         self.assertEqual(mock_kakao.call_args.kwargs["lng"], 129.0590)
-        mock_db_search.assert_not_called()
+        mock_db_search.assert_called_once()
 
     @patch("recommendations.views.search_saved_map_places")
     @patch("recommendations.views.search_places_by_keyword")
@@ -7778,6 +7779,7 @@ class RecommendationSearchTests(TestCase):
         mock_kakao,
         mock_db_search,
     ):
+        mock_db_search.return_value = ([], 0, {})
         mock_kakao.return_value = {"documents": [{
             "id": "gwangalli-beach",
             "place_name": "광안리해수욕장",
@@ -7797,10 +7799,10 @@ class RecommendationSearchTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         data = response.json()
-        self.assertTrue(data["db_search_skipped"])
+        self.assertFalse(data["db_search_skipped"])
         self.assertEqual(data["results"][0]["name"], "광안리해수욕장")
         self.assertEqual(data["results"][0]["result_source"], "kakao")
-        mock_db_search.assert_not_called()
+        mock_db_search.assert_called_once()
 
     @patch("recommendations.views.search_saved_map_places")
     @patch("recommendations.views.search_places_by_keyword")
@@ -7809,6 +7811,7 @@ class RecommendationSearchTests(TestCase):
         mock_kakao,
         mock_db_search,
     ):
+        mock_db_search.return_value = ([], 0, {})
         mock_kakao.return_value = {"documents": [
             {
                 "id": "station-1",
@@ -7839,7 +7842,7 @@ class RecommendationSearchTests(TestCase):
             [place["name"] for place in response.json()["results"]],
             ["사상역 부산2호선"],
         )
-        mock_db_search.assert_not_called()
+        mock_db_search.assert_called_once()
 
     @patch("recommendations.views._resolve_anchor_location")
     @patch("recommendations.views.search_places_by_keyword")

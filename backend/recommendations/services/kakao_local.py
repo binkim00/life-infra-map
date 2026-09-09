@@ -5,6 +5,30 @@ from django.conf import settings
 KAKAO_KEYWORD_SEARCH_URL = "https://dapi.kakao.com/v2/local/search/keyword.json"
 
 
+def region_at_coordinates(lat, lng):
+    """좌표의 시/도 힌트. 조회 실패 시 지역을 추정하지 않는다."""
+    from django.core.cache import cache
+    if lat is None or lng is None or not settings.KAKAO_REST_API_KEY:
+        return ""
+    key = f"map-region:{lat:.4f}:{lng:.4f}"
+    cached = cache.get(key)
+    if cached is not None:
+        return cached
+    try:
+        response = requests.get(
+            "https://dapi.kakao.com/v2/local/geo/coord2regioncode.json",
+            headers={"Authorization": f"KakaoAK {settings.KAKAO_REST_API_KEY}"},
+            params={"x": lng, "y": lat, "input_coord": "WGS84"}, timeout=3,
+        )
+        response.raise_for_status()
+        documents = response.json().get("documents", [])
+        region = str(documents[0].get("region_1depth_name", "")) if documents else ""
+    except (requests.RequestException, ValueError, TypeError):
+        region = ""
+    cache.set(key, region, timeout=3600 if region else 30)
+    return region
+
+
 def search_address(query):
     """Resolve administrative/address text, never a similarly named business."""
     if not settings.KAKAO_REST_API_KEY:

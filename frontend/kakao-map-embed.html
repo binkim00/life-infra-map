@@ -201,8 +201,13 @@
                 lng: Number(event.data.currentLocation.lng),
               }
             : null;
+        const centerOnDevice = state.awaitingLocation && state.currentLocation && state.map;
         state.lastViewportKey = nextViewportKey;
-        renderPlaces({ fitViewport: shouldFitViewport });
+        renderPlaces({ fitViewport: shouldFitViewport && !centerOnDevice });
+        if (centerOnDevice) {
+          state.awaitingLocation = false;
+          state.map.panTo(new kakao.maps.LatLng(state.currentLocation.lat, state.currentLocation.lng));
+        }
       });
 
       document.getElementById("zoom-in").addEventListener("click", () => {
@@ -213,6 +218,11 @@
       });
       document.getElementById("recenter").addEventListener("click", () => {
         if (!state.map) return;
+        if (state.requestCurrentLocation) {
+          state.awaitingLocation = true;
+          postToHost({ type: "life-infra-map:request-current-location" });
+          return;
+        }
         if (state.currentLocation) {
           state.map.panTo(new kakao.maps.LatLng(
             state.currentLocation.lat,

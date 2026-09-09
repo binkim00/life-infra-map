@@ -101,6 +101,7 @@ export default function ExploreScreen() {
   const [submittedQuery, setSubmittedQuery] = useState(initialQuery);
   const [searchRequestId, setSearchRequestId] = useState(initialQuery ? 1 : 0);
   const [mapFitBoundsKey, setMapFitBoundsKey] = useState(0);
+  const [deviceLocation, setDeviceLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [places, setPlaces] = useState<Place[]>([]);
   const [selectedPlace, setSelectedPlace] = useState<Place | null>(null);
   const [detailPlace, setDetailPlace] = useState<Place | null>(null);
@@ -143,6 +144,7 @@ export default function ExploreScreen() {
         }
         return false;
       }
+      setDeviceLocation({ lat: coordinates.latitude, lng: coordinates.longitude });
       setCenter({
         lat: coordinates.latitude,
         lng: coordinates.longitude,
@@ -205,7 +207,7 @@ export default function ExploreScreen() {
   useEffect(() => {
     if (!submittedQuery || !searchRequestId) return;
     const nearbyCategorySearch = isNearbyCategoryQuery(submittedQuery);
-    if (!searchCenterOverride && locationStatus === "requesting") return;
+    if (nearbyCategorySearch && !searchCenterOverride && locationStatus === "requesting") return;
     const searchAroundCenter = Boolean(
       searchCenterOverride || nearbyCategorySearch,
     );
@@ -219,6 +221,7 @@ export default function ExploreScreen() {
       signal: controller.signal,
     })
       .then((data) => {
+        if (controller.signal.aborted) return;
         setPlaces(data.results);
         // 지도에서 다시 찾을 때는 사용자가 선택한 영역을 그대로 유지한다.
         if (!searchCenterOverride) setMapFitBoundsKey((value) => value + 1);
@@ -326,16 +329,6 @@ export default function ExploreScreen() {
   );
   const usesNearbyRadius =
     !submittedQuery || isNearbyCategoryQuery(submittedQuery);
-  const currentMapLocation = useMemo(
-    () =>
-      usesNearbyRadius &&
-      !searchCenterOverride &&
-      center.lat !== null &&
-      center.lng !== null
-        ? { lat: center.lat, lng: center.lng }
-        : null,
-    [center.lat, center.lng, searchCenterOverride, usesNearbyRadius],
-  );
 
   return (
     <View style={styles.screen}>
@@ -345,9 +338,11 @@ export default function ExploreScreen() {
           place={selectedPlace}
           places={places}
           displayMode="overview"
+          focusSelected={!usesNearbyRadius && !searchCenterOverride}
           onSelectPlace={setSelectedPlace}
           onCenterChange={setMapCenter}
-          currentLocation={currentMapLocation}
+          currentLocation={deviceLocation}
+          onRequestCurrentLocation={() => void requestCurrentLocation()}
           fitBoundsKey={mapFitBoundsKey || undefined}
         />
       </View>

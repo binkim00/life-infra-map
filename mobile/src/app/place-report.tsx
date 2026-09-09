@@ -46,15 +46,22 @@ const TAGS = [
   "주차 가능",
 ];
 
-export default function PlaceReportScreen() {
-  const { ready, isLoggedIn, requireLogin, user } = useAuth();
-  const params = useLocalSearchParams<{
+type ReportParams = {
     placeId?: string;
     name?: string;
     address?: string;
     lat?: string;
     lng?: string;
-  }>();
+};
+
+export default function PlaceReportScreen() {
+  const params = useLocalSearchParams<ReportParams>();
+  const { user } = useAuth();
+  return <PlaceReportForm key={`${user?.id || "anonymous"}:${JSON.stringify(params)}`} params={params} />;
+}
+
+function PlaceReportForm({ params }: { params: ReportParams }) {
+  const { ready, isLoggedIn, requireLogin, user } = useAuth();
   const [type, setType] = useState(
     params.placeId ? "tag_suggestion" : "new_place",
   );
@@ -70,7 +77,9 @@ export default function PlaceReportScreen() {
   const [draftReady, setDraftReady] = useState(false);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
-  const draftKey = useMemo(() => reportDraftKey(params.placeId), [params.placeId]);
+  const draftKey = useMemo(() => reportDraftKey(params.placeId,
+    params.name ? JSON.stringify([params.name, params.address || "", params.lat || "", params.lng || ""]) : undefined),
+    [params.placeId, params.name, params.address, params.lat, params.lng]);
   const ownerKey = user?.id ? `user:${user.id}` : user?.username ? `username:${user.username}` : "anonymous";
   const pickedPlace = useMemo<Place | null>(() => {
     if (!lat.trim() || !lng.trim()) return null;
@@ -113,7 +122,7 @@ export default function PlaceReportScreen() {
       if (active) setDraftReady(true);
     });
     return () => { active = false; };
-  }, [draftKey, ownerKey, params.placeId, ready]);
+  }, [draftKey, ownerKey, params.placeId, params.name, params.address, params.lat, params.lng, ready]);
 
   useEffect(() => {
     if (!draftReady) return;

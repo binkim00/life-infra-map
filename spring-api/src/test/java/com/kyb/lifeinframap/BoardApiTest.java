@@ -28,6 +28,21 @@ class BoardApiTest extends ApiTestBase {
     @Autowired
     private PostRepository postRepository;
 
+    @Test
+    @DisplayName("좋아요와 댓글이 연결된 글도 삭제하고 알림 참조는 해제한다")
+    void deletesPostWithLikesAndComments() throws Exception {
+        User author = createUser();
+        long postId = createPost(author);
+        long commentId = createComment(author, postId);
+        mockMvc.perform(post("/api/boards/posts/{id}/like", postId).header("Authorization", bearer(author)))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/boards/comments/{id}/like", commentId).header("Authorization", bearer(author)))
+                .andExpect(status().isOk());
+        mockMvc.perform(delete("/api/boards/posts/{id}", postId).header("Authorization", bearer(author)))
+                .andExpect(status().isNoContent());
+        mockMvc.perform(get("/api/boards/posts/{id}", postId)).andExpect(status().isNotFound());
+    }
+
     private long createPost(User author) throws Exception {
         MvcResult result = mockMvc.perform(post("/api/boards/posts")
                         .header("Authorization", bearer(author))

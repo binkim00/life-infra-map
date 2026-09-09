@@ -38,6 +38,7 @@ public class PostController {
     private final PenaltyService penaltyService;
     private final com.kyb.lifeinframap.storage.service.StorageService storageService;
     private final Validator validator;
+    private final org.springframework.jdbc.core.JdbcTemplate jdbc;
 
     public PostController(
             PostRepository postRepository,
@@ -46,7 +47,8 @@ public class PostController {
             BoardResponseAssembler assembler,
             PenaltyService penaltyService,
             com.kyb.lifeinframap.storage.service.StorageService storageService,
-            Validator validator) {
+            Validator validator,
+            org.springframework.jdbc.core.JdbcTemplate jdbc) {
         this.postRepository = postRepository;
         this.commentRepository = commentRepository;
         this.userRepository = userRepository;
@@ -54,6 +56,7 @@ public class PostController {
         this.penaltyService = penaltyService;
         this.storageService = storageService;
         this.validator = validator;
+        this.jdbc = jdbc;
     }
 
 
@@ -267,6 +270,20 @@ public class PostController {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(Map.of("detail", "본인이 작성한 글만 삭제할 수 있습니다."));
         }
+        // 신고 기록은 삭제하지 않는다. 대상 없이 유지할 수 없는 상태는 명확히 안내한다.
+        Integer reports = jdbc.queryForObject("SELECT COUNT(*) FROM boards_report WHERE status <> 'penalized' AND (post_id = ? OR comment_id IN (SELECT id FROM boards_comment WHERE post_id = ?))", Integer.class, postId, postId);
+        if (reports != null && reports > 0) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("detail", "신고 기록이 연결된 게시글입니다. 관리자에게 삭제 검토를 요청해 주세요."));
+        }
+        jdbc.update("UPDATE boards_notification SET target_post_id = NULL WHERE target_post_id = ?", postId);
+        jdbc.update("UPDATE boards_notification SET target_comment_id = NULL WHERE target_comment_id IN (SELECT id FROM boards_comment WHERE post_id = ?)", postId);
+        jdbc.update("UPDATE boards_report SET post_id = NULL WHERE post_id = ?", postId);
+        jdbc.update("UPDATE boards_report SET comment_id = NULL WHERE comment_id IN (SELECT id FROM boards_comment WHERE post_id = ?)", postId);
+        jdbc.update("DELETE FROM boards_commentlike WHERE comment_id IN (SELECT id FROM boards_comment WHERE post_id = ?)", postId);
+        jdbc.update("DELETE FROM boards_commentdislike WHERE comment_id IN (SELECT id FROM boards_comment WHERE post_id = ?)", postId);
+        jdbc.update("UPDATE boards_comment SET parent_id = NULL WHERE post_id = ?", postId);
+        jdbc.update("DELETE FROM boards_comment WHERE post_id = ?", postId);
+        jdbc.update("DELETE FROM boards_postlike WHERE post_id = ?", postId);
         postRepository.delete(post);
         return ResponseEntity.noContent().build();
     }

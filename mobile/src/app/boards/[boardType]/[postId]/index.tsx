@@ -1,4 +1,5 @@
 import { useResource } from "@/hooks/use-resource";
+import { useAction } from "@/hooks/use-action";
 import { LoadState } from "@/components/load-state";
 import { router, useLocalSearchParams } from "expo-router";
 import { useState } from "react";
@@ -51,6 +52,7 @@ export default function BoardDetailScreen() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editingText, setEditingText] = useState("");
   const [error, setError] = useState("");
+  const deleteAction = useAction();
   const { data: post, loading, error: loadError, reload: load } = useResource<Post | null>(
     () => boardsApi.post(postId).then(data => data as unknown as Post), null, true, postId,
   );
@@ -64,10 +66,10 @@ export default function BoardDetailScreen() {
       setError("댓글을 등록하지 못했습니다.");
     }
   };
-  const remove = async () => {
+  const remove = () => deleteAction.run(async () => {
     await boardsApi.deletePost(postId);
     router.replace(`/boards/${boardType}` as never);
-  };
+  });
   if (!post)
     return (
       <Screen title="게시글" back>
@@ -80,6 +82,7 @@ export default function BoardDetailScreen() {
       subtitle={`${post.author_nickname || post.author_username} · 조회 ${post.view_count || 0}`}
       back
     >
+      {deleteAction.error ? <Text style={ui.error}>{deleteAction.error}</Text> : null}
       <View style={ui.card}>
         <Text style={styles.content}>{post.content}</Text>
         {post.image_url ? (

@@ -23,6 +23,44 @@ class GeneralSearchContractTests(TestCase):
     def setUp(self):
         cache.clear()
 
+    @patch("recommendations.views.get_naver_search_result", return_value={"candidates": []})
+    @patch("recommendations.views.search_places_by_keyword", return_value={"documents": []})
+    def test_named_db_place_is_merged_without_category_broadening(self, kakao, naver):
+        from recommendations.models import Place
+        Place.objects.create(name="희망공원", external_id="qa1", category="city_park", address="부산", lat=35.1, lng=129.1)
+        Place.objects.create(name="다른공원", external_id="qa2", category="city_park", address="부산", lat=35.1, lng=129.1)
+        data = self.client.get(self.url, {"q": "희망공원", "source": "all", "lat": 35.1, "lng": 129.1}).json()
+        self.assertEqual([p["name"] for p in data["results"]], ["희망공원"])
+        self.assertFalse(data["db_search_skipped"])
+
+    @patch("recommendations.views.get_naver_search_result")
+    @patch("recommendations.views.search_places_by_keyword")
+    def test_map_filters_far_kakao_but_keeps_local_naver_coordinates(self, kakao, naver):
+        kakao.return_value = {"documents": [{"id": "far", "place_name": "테스트커피", "category_name": "카페", "x": "127.1", "y": "37.5"}]}
+        naver.return_value = {"candidates": [{"name": "테스트커피 부산점", "source_url": "https://example.com/place", "lat": 35.1, "lng": 129.1, "coordinate_source": "naver_local_wgs84"}]}
+        data = self.client.get(self.url, {"q": "테스트커피", "source": "all", "lat": 35.1, "lng": 129.1, "radius": 3000, "center_mode": "map"}).json()
+        self.assertEqual([p["name"] for p in data["results"]], ["테스트커피 부산점"])
+        self.assertEqual(data["results"][0]["distance"], 0)
+        self.assertTrue(data["results"][0]["can_show_on_map"])
+        naver.assert_called_once()
+
+    def test_naver_coordinates_do_not_verify_conditions(self):
+        from recommendations.services.naver_search_provider import _candidate_from_item
+        candidate = _candidate_from_item({"title": "테스트커피", "mapx": "1291000000", "mapy": "351000000"}, "local", "테스트커피", [])
+        self.assertEqual((candidate["lat"], candidate["lng"]), (35.1, 129.1))
+        self.assertFalse(candidate["is_verified"])
+        old = _candidate_from_item({"title": "테스트커피", "mapx": "311277", "mapy": "552097"}, "local", "테스트커피", [])
+        self.assertNotIn("lat", old)
+
+    @patch("recommendations.views.get_naver_search_result", return_value={"candidates": []})
+    @patch("recommendations.views.search_places_by_keyword", return_value={"documents": []})
+    def test_compact_named_db_search_can_find_a_distant_place(self, kakao, naver):
+        from recommendations.models import Place
+        Place.objects.create(name="테스트 커피랩", external_id="qa-remote", category="cafe", address="서울", lat=37.5, lng=127.1)
+        data = self.client.get(self.url, {"q": "테스트커피랩", "source": "all", "lat": 35.1, "lng": 129.1}).json()
+        self.assertEqual([p["name"] for p in data["results"]], ["테스트 커피랩"])
+        self.assertGreater(data["results"][0]["distance"], 100000)
+
     @patch("recommendations.services.ai_search_orchestrator.search_places_by_keyword")
     @patch("recommendations.services.ai_search_orchestrator.search_address")
     def test_address_coordinates_precede_similarly_named_poi(self, address, keyword):

@@ -36,7 +36,7 @@ export default function AdminInquiriesScreen() {
           <View key={item.id} style={ui.card}>
             <View style={ui.row}>
               <Text style={styles.title}>{item.title}</Text>
-              <Text style={styles.status}>{item.status}</Text>
+                <Text style={styles.status}>{({ pending: "접수", answered: "답변 완료", closed: "종료" } as Record<string, string>)[item.status || ""] || "확인 필요"}</Text>
             </View>
             <Text style={styles.content}>{item.content}</Text>
             <TextInput
