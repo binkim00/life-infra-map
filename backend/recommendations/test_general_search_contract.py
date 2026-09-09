@@ -12,6 +12,7 @@ from recommendations.services.map_search import (
 )
 from recommendations.services.conversation_sessions import result_references
 from recommendations.services.ai_search_orchestrator import _resolve_anchor_location
+from recommendations.services.ai_search_orchestrator import collect_kakao_candidates
 
 
 class GeneralSearchContractTests(TestCase):
@@ -88,6 +89,37 @@ class GeneralSearchContractTests(TestCase):
         })
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["results"][0]["name"], "테스트브랜드 경성대부경대점")
+        self.assertEqual(search.call_args_list[-1].kwargs["keyword"], "테스트브랜드 경성대")
+
+    @patch("recommendations.services.ai_search_orchestrator.search_places_by_keyword")
+    def test_situation_search_retries_the_same_branch_suffix_variant(self, search):
+        search.side_effect = [
+            {"documents": []},
+            {"documents": [{
+                "id": "situation-branch",
+                "place_name": "테스트브랜드 경성대부경대점",
+                "category_name": "음식점 > 카페",
+                "category_group_code": "CE7",
+                "address_name": "부산 남구 대연동",
+                "x": "129.10",
+                "y": "35.14",
+            }]},
+        ]
+        candidates, counts = collect_kakao_candidates(
+            {
+                "target_objects": ["카페"],
+                "candidate_place_types": ["카페"],
+                "result_match_terms": ["테스트브랜드"],
+                "constraints": [],
+                "structured_conditions": [],
+            },
+            ["테스트브랜드 경성대점"],
+            lat=35.09,
+            lng=128.85,
+            radius=5000,
+        )
+        self.assertEqual([candidate["name"] for candidate in candidates], ["테스트브랜드 경성대부경대점"])
+        self.assertEqual(counts[0]["count"], 1)
         self.assertEqual(search.call_args_list[-1].kwargs["keyword"], "테스트브랜드 경성대")
 
     @patch("recommendations.views.search_places_by_keyword", return_value={"documents": []})
