@@ -20,6 +20,7 @@ const SPRING_PREFIXES = [
   "/admin/",
   "/tiers",
   "/recommendations/saved-places",
+  "/recommendations/saved-place-groups",
 ];
 const AUTH_TOKEN_KEY = "authToken";
 const AUTH_USER_KEY = "authUser";

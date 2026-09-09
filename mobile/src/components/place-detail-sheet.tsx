@@ -37,16 +37,37 @@ const CATEGORY_LABELS: Record<string, string> = {
 };
 
 const categoryLabel = (place: Place) =>
-  place.category_label || CATEGORY_LABELS[place.category] || place.category || "장소";
+  place.category_label ||
+  CATEGORY_LABELS[place.category] ||
+  place.category ||
+  "장소";
 
 const kakaoMapUrl = (place: Place) =>
   place.kakao_place_url ||
   `https://map.kakao.com/link/map/${encodeURIComponent(place.name)},${place.lat},${place.lng}`;
 
+const hasMapCoordinates = (place: Place) =>
+  place.lat !== null &&
+  place.lat !== undefined &&
+  place.lng !== null &&
+  place.lng !== undefined &&
+  Number.isFinite(Number(place.lat)) &&
+  Number.isFinite(Number(place.lng));
+
 const kakaoDetailUrl = (place: Place) => {
   const url = place.place_url || place.kakao_place_url || "";
   if (!url) return "";
   return url.replace(/^http:\/\//i, "https://");
+};
+
+const isKakaoPlace = (place: Place) => {
+  const source =
+    `${place.result_source || ""} ${place.source_label || ""} ${place.source_name || ""}`.toLowerCase();
+  return (
+    Boolean(place.kakao_place_url) ||
+    source.includes("kakao") ||
+    source.includes("카카오")
+  );
 };
 
 export function PlaceDetailSheet(
@@ -75,6 +96,8 @@ function PlaceDetailContent({
   if (!place) return null;
 
   const detailUrl = kakaoDetailUrl(place);
+  const kakaoSource = isKakaoPlace(place);
+  const detailSourceName = kakaoSource ? "카카오 장소 정보" : "원문 상세정보";
   const tags = place.tags?.slice(0, 8) || [];
   const smoking = place.smoking;
 
@@ -99,9 +122,7 @@ function PlaceDetailContent({
           >
             <View style={styles.headingRow}>
               <View style={styles.headingCopy}>
-                <Text style={styles.eyebrow}>
-                  {categoryLabel(place)}
-                </Text>
+                <Text style={styles.eyebrow}>{categoryLabel(place)}</Text>
                 <Text style={styles.name}>{place.name}</Text>
               </View>
               <Pressable
@@ -216,7 +237,7 @@ function PlaceDetailContent({
             ) : (
               <Text style={styles.notice}>
                 {detailUrl
-                  ? "아직 등록된 상세 특징이 적습니다. 카카오 장소 정보에서 영업시간과 최신 정보를 확인해 주세요."
+                  ? `아직 등록된 상세 특징이 적습니다. ${detailSourceName}에서 영업시간과 최신 정보를 확인해 주세요.`
                   : "사진·영업시간을 확인할 외부 장소 링크가 없습니다. 확인되지 않은 정보는 표시하지 않습니다."}
               </Text>
             )}
@@ -234,18 +255,20 @@ function PlaceDetailContent({
                     사진 · 리뷰 · 상세정보 보기
                   </Text>
                   <Text style={styles.primaryButtonCaption}>
-                    카카오 장소 정보가 앱 안에서 열립니다
+                    {detailSourceName}가 앱 안에서 열립니다
                   </Text>
                 </Pressable>
               ) : null}
-              <Pressable
-                onPress={() => Linking.openURL(kakaoMapUrl(place))}
-                style={styles.secondaryButton}
-              >
-                <Text style={styles.secondaryButtonText}>
-                  카카오맵에서 위치 · 길찾기
-                </Text>
-              </Pressable>
+              {place.kakao_place_url || hasMapCoordinates(place) ? (
+                <Pressable
+                  onPress={() => Linking.openURL(kakaoMapUrl(place))}
+                  style={styles.secondaryButton}
+                >
+                  <Text style={styles.secondaryButtonText}>
+                    카카오맵에서 위치 · 길찾기
+                  </Text>
+                </Pressable>
+              ) : null}
             </View>
 
             <View style={styles.utilityActions}>
@@ -274,7 +297,9 @@ function PlaceDetailContent({
                 {place.name}
               </Text>
               <Text style={styles.webDetailCaption}>
-                카카오 제공 사진 · 리뷰 · 영업정보
+                {kakaoSource
+                  ? "카카오 제공 사진 · 리뷰 · 영업정보"
+                  : "외부 원문에서 제공하는 장소 정보"}
               </Text>
             </View>
             <Pressable onPress={onClose} style={styles.closeButton}>
@@ -310,13 +335,17 @@ function PlaceDetailContent({
                 상세정보를 앱 안에서 열지 못했습니다.
               </Text>
               <Text style={styles.webDetailFallbackText}>
-                카카오맵에서 사진과 최신 정보를 확인해 주세요.
+                {kakaoSource
+                  ? "카카오맵에서 사진과 최신 정보를 확인해 주세요."
+                  : "외부 원문에서 최신 정보를 확인해 주세요."}
               </Text>
               <Pressable
                 onPress={() => Linking.openURL(detailUrl)}
                 style={styles.primaryButton}
               >
-                <Text style={styles.primaryButtonText}>카카오맵에서 열기</Text>
+                <Text style={styles.primaryButtonText}>
+                  {kakaoSource ? "카카오맵에서 열기" : "원문에서 열기"}
+                </Text>
               </Pressable>
             </View>
           ) : detailUrl ? (

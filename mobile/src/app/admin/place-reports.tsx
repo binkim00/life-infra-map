@@ -6,6 +6,10 @@ import { LoadState } from "@/components/load-state";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { recommendationApi } from "@/api/recommendations";
 import { Screen, ui } from "@/components/screen";
+import {
+  placeReportStatusLabel,
+  placeReportTypeLabel,
+} from "@/utils/place-report-labels";
 type Report = {
   id: number;
   place_name?: string;
@@ -18,8 +22,19 @@ type Report = {
 };
 export default function AdminPlaceReportsScreen() {
   const [page, setPage] = useState(1);
-  const { data: items, loading, error, reload: load } = useResource<Report[]>(
-    () => recommendationApi.adminPlaceReports({ page, page_size: 50 }).then((data) => (data.results || []) as Report[]), [], true, String(page),
+  const {
+    data: items,
+    loading,
+    error,
+    reload: load,
+  } = useResource<Report[]>(
+    () =>
+      recommendationApi
+        .adminPlaceReports({ page, page_size: 50 })
+        .then((data) => (data.results || []) as Report[]),
+    [],
+    true,
+    String(page),
   );
   return (
     <Screen
@@ -27,7 +42,12 @@ export default function AdminPlaceReportsScreen() {
       subtitle="승인 시 검색 데이터와 기여도에 반영됩니다."
       back
     >
-      <LoadState loading={loading} error={error} empty={!items.length} retry={load} />
+      <LoadState
+        loading={loading}
+        error={error}
+        empty={!items.length}
+        retry={load}
+      />
       <View style={styles.list}>
         {items.map((item) => (
           <View key={item.id} style={ui.card}>
@@ -35,22 +55,47 @@ export default function AdminPlaceReportsScreen() {
               <Text style={styles.title}>
                 {item.suggested_name || item.place_name || `제보 #${item.id}`}
               </Text>
-              <Text style={styles.status}>{item.status_label || item.status}</Text>
+              <Text style={styles.status}>
+                {placeReportStatusLabel(item.status, item.status_label)}
+              </Text>
             </View>
-            <Text style={ui.muted}>{item.report_type}</Text>
+            <Text style={ui.muted}>
+              {placeReportTypeLabel(item.report_type)}
+            </Text>
             <Text style={styles.description}>{item.description}</Text>
             {item.suggested_tags?.length ? (
               <Text style={ui.muted}>{item.suggested_tags.join(" · ")}</Text>
             ) : null}
-            <Pressable onPress={() => router.push({ pathname: "/admin/place-report-detail" as never, params: { id: String(item.id) } })} style={item.status === "pending" ? ui.button : ui.buttonSecondary}>
-              <Text style={item.status === "pending" ? ui.buttonText : ui.buttonSecondaryText}>
-                {item.status === "pending" ? "상세 확인 후 승인·반려" : "검토 결과 보기"}
+            <Pressable
+              onPress={() =>
+                router.push({
+                  pathname: "/admin/place-report-detail" as never,
+                  params: { id: String(item.id) },
+                })
+              }
+              style={item.status === "pending" ? ui.button : ui.buttonSecondary}
+            >
+              <Text
+                style={
+                  item.status === "pending"
+                    ? ui.buttonText
+                    : ui.buttonSecondaryText
+                }
+              >
+                {item.status === "pending"
+                  ? "상세 확인 후 승인·반려"
+                  : "검토 결과 보기"}
               </Text>
             </Pressable>
           </View>
         ))}
       </View>
-      <Pagination page={page} setPage={setPage} hasNext={items.length === 50} loading={loading} />
+      <Pagination
+        page={page}
+        setPage={setPage}
+        hasNext={items.length === 50}
+        loading={loading}
+      />
     </Screen>
   );
 }

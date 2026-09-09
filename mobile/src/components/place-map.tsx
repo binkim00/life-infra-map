@@ -17,6 +17,14 @@ const versionedEmbedUrl = `${embedUrl}${embedUrl.includes("?") ? "&" : "?"}v=com
 
 const MAX_VISIBLE_MARKERS = 20;
 
+const hasMapCoordinates = (place?: Place | null): place is Place =>
+  place?.lat !== null &&
+  place?.lat !== undefined &&
+  place?.lng !== null &&
+  place?.lng !== undefined &&
+  Number.isFinite(Number(place.lat)) &&
+  Number.isFinite(Number(place.lng));
+
 export function PlaceMap({
   place,
   places = [],
@@ -54,20 +62,16 @@ export function PlaceMap({
   const lastSelectedIdRef = useRef<string | null>(null);
   const validPlaces = useMemo(() => {
     const candidates = places.length ? places : place ? [place] : [];
-    return candidates.filter(
-      (item) =>
-        item.lat !== null &&
-        item.lat !== undefined &&
-        item.lng !== null &&
-        item.lng !== undefined &&
-        Number.isFinite(Number(item.lat)) &&
-        Number.isFinite(Number(item.lng)),
-    );
+    return candidates.filter(hasMapCoordinates);
   }, [place, places]);
   const mapPlaces = useMemo(() => {
-    if (displayMode === "selected") return place ? [place] : [];
+    if (displayMode === "selected")
+      return hasMapCoordinates(place) ? [place] : [];
     const visible = validPlaces.slice(0, MAX_VISIBLE_MARKERS);
-    if (!place || visible.some((item) => String(item.id) === String(place.id)))
+    if (
+      !hasMapCoordinates(place) ||
+      visible.some((item) => String(item.id) === String(place.id))
+    )
       return visible;
     return [...visible.slice(0, MAX_VISIBLE_MARKERS - 1), place];
   }, [displayMode, place, validPlaces]);
@@ -90,18 +94,19 @@ export function PlaceMap({
     lastSelectedIdRef.current = selectedId;
     const payload = {
       type: "life-infra-map:set-places",
-      places: mapPlaces.map((item) => ({
-        id: String(item.id),
-        name: item.name,
-        category: item.category_label || item.category || "",
-        lat: Number(item.lat),
-        lng: Number(item.lng),
-        label: String(
-          validPlaces.findIndex(
-            (candidate) => String(candidate.id) === String(item.id),
-          ) + 1,
-        ),
-      })),
+      places: mapPlaces.map((item, mapIndex) => {
+        const resultIndex = validPlaces.findIndex(
+          (candidate) => String(candidate.id) === String(item.id),
+        );
+        return {
+          id: String(item.id),
+          name: item.name,
+          category: item.category_label || item.category || "",
+          lat: Number(item.lat),
+          lng: Number(item.lng),
+          label: String(resultIndex >= 0 ? resultIndex + 1 : mapIndex + 1),
+        };
+      }),
       selectedId,
       viewportMode: displayMode,
       viewportKey,
@@ -184,7 +189,8 @@ export function PlaceMap({
         if (data?.type === "life-infra-map:map-pressed") {
           const lat = Number(data.lat);
           const lng = Number(data.lng);
-          if (Number.isFinite(lat) && Number.isFinite(lng)) onMapPress?.({ lat, lng });
+          if (Number.isFinite(lat) && Number.isFinite(lng))
+            onMapPress?.({ lat, lng });
           return;
         }
         if (data?.type === "life-infra-map:request-current-location") {
@@ -200,7 +206,14 @@ export function PlaceMap({
         // 지도 페이지가 보내지 않은 메시지는 무시합니다.
       }
     },
-    [onCenterChange, onMapPress, onRequestCurrentLocation, onSelectPlace, sendState, validPlaces],
+    [
+      onCenterChange,
+      onMapPress,
+      onRequestCurrentLocation,
+      onSelectPlace,
+      sendState,
+      validPlaces,
+    ],
   );
 
   // WebView가 이미 열린 뒤 검색 결과나 선택 장소가 바뀌는 경우에도
