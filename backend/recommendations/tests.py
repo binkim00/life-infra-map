@@ -1036,9 +1036,13 @@ class RecommendationSearchTests(TestCase):
         resolved = _resolve_anchor_location("부산 연산동", lat=35.1, lng=129.1)
 
         self.assertEqual(resolved["status"], "resolved")
-        self.assertEqual(resolved["external_id"], "yeonsan-admin-area")
-        self.assertEqual(resolved["lat"], 35.1844)
-        self.assertEqual(resolved["lng"], 129.0831)
+        from recommendations.services.area_gazetteer import resolve_area_coordinates
+        expected_lat, expected_lng, _ = resolve_area_coordinates("연산동")
+        self.assertEqual(resolved["source"], "area_gazetteer_compound")
+        self.assertEqual(resolved["external_id"], "")
+        self.assertEqual(resolved["lat"], expected_lat)
+        self.assertEqual(resolved["lng"], expected_lng)
+        mock_kakao.assert_not_called()
 
     @patch("recommendations.services.ai_search_orchestrator.search_places_by_keyword")
     def test_ai_search_anchor_resolution_prefers_international_airport_over_gas_station(self, mock_kakao):
@@ -7741,7 +7745,7 @@ class RecommendationSearchTests(TestCase):
         self.assertEqual(data["location_context"]["anchor_location"], "서면역")
         self.assertTrue(data["location_context"]["anchor_resolved"])
         self.assertEqual(data["location_context"]["center_source"], "kakao_keyword")
-        mock_resolve_anchor.assert_called_once_with("서면역", lat=35.1577, lng=129.0590)
+        mock_resolve_anchor.assert_called_once_with("서면역", lat=35.1577, lng=129.0590, address_first=True)
         self.assertEqual(mock_kakao.call_args.kwargs["lat"], 35.1577)
         self.assertEqual(mock_kakao.call_args.kwargs["lng"], 129.0590)
         mock_db_search.assert_not_called()
@@ -7917,9 +7921,10 @@ class RecommendationSearchTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(mock_kakao.call_count, 2)
-        self.assertEqual(mock_kakao.call_args_list[0].kwargs["keyword"], "서면 조용한 카페")
-        self.assertEqual(mock_kakao.call_args_list[1].kwargs["keyword"], "조용한 카페")
+        self.assertEqual(mock_kakao.call_count, 1)
+        self.assertEqual(mock_kakao.call_args.kwargs["keyword"], "조용한 카페")
+        self.assertEqual(mock_kakao.call_args.kwargs["lat"], 35.1577)
+        self.assertEqual(mock_kakao.call_args.kwargs["lng"], 129.0590)
 
     @patch("recommendations.views._resolve_anchor_location")
     @patch("recommendations.views.search_places_by_keyword")

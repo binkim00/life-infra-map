@@ -1,5 +1,7 @@
+import { useResource } from "@/hooks/use-resource";
+import { LoadState } from "@/components/load-state";
 import { router } from "expo-router";
-import { useEffect, useState } from "react";
+
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { boardsApi } from "@/api/boards";
 import { Screen, ui } from "@/components/screen";
@@ -15,17 +17,12 @@ type User = {
   is_active?: boolean;
 };
 export default function AdminUsersScreen() {
-  const [users, setUsers] = useState<User[]>([]);
-  const [error, setError] = useState("");
-  useEffect(() => {
-    boardsApi
-      .adminUsers()
-      .then((data) => setUsers(data as User[]))
-      .catch(() => setError("회원 목록을 불러오지 못했습니다."));
-  }, []);
+  const { data: users, loading, error, reload: load } = useResource<User[]>(
+    () => boardsApi.adminUsers().then((data) => data as User[]), [],
+  );
   return (
     <Screen title="회원 관리" subtitle={`${users.length}명`} back>
-      {error ? <Text style={ui.error}>{error}</Text> : null}
+      <LoadState loading={loading} error={error} empty={!users.length} retry={load} />
       <View style={styles.list}>
         {users.map((user) => (
           <Pressable

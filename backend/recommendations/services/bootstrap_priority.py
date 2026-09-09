@@ -1,7 +1,7 @@
 from collections import defaultdict
 import math
 
-from django.db.models import Count, Max, Q, Sum
+from django.db.models import Count, Max, Q
 from django.utils import timezone
 
 from recommendations.models import PlaceTag, PlaceTagCollectionJob, PlaceTagEvidence, TagEnrichmentRequest
@@ -125,11 +125,25 @@ def priority_context(places, *, category_priorities=None, now=None):
         expires_at__lte=now,
     ).values_list("place_id", "tag__name").distinct():
         stale_web_tag_names[place_id].add(tag_name)
-    demands = dict(
-        TagEnrichmentRequest.objects.filter(place_id__in=place_ids).values_list("place_id").annotate(
-            n=Sum("demand_count")
+    demand_rows = list(
+        TagEnrichmentRequest.objects.filter(
+            place_id__in=place_ids,
+            status="queued",
+        ).order_by("-priority", "created_at").values(
+            "place_id", "tag_name", "priority", "demand_count",
         )
     )
+    demands = defaultdict(int)
+    demand_priorities = defaultdict(int)
+    demand_tags = defaultdict(list)
+    for row in demand_rows:
+        place_id = row["place_id"]
+        demands[place_id] += int(row["demand_count"] or 0)
+        demand_priorities[place_id] = max(
+            demand_priorities[place_id], int(row["priority"] or 0),
+        )
+        if row["tag_name"] not in demand_tags[place_id]:
+            demand_tags[place_id].append(row["tag_name"])
     job_quality = {
         row["place_id"]: row
         for row in PlaceTagCollectionJob.objects.filter(place_id__in=place_ids).values("place_id").annotate(
@@ -188,6 +202,10 @@ def priority_context(places, *, category_priorities=None, now=None):
         }
         stale_hints = stale_web_tag_names[place.id]
         no_tag_count = int(job_stats.get("no_tag_expression") or 0)
+        queued_demand_tags = [
+            tag for tag in demand_tags[place.id]
+            if tag in relevant_tags
+        ]
         requested_demand_tags = set(coverage_demand.get("targeted_tags") or ())
         gap_targets = target_tags_for_gaps(
             place.category,
@@ -198,6 +216,7 @@ def priority_context(places, *, category_priorities=None, now=None):
         if no_tag_count:
             target_pool |= set(relevant_tags) - active_names
         targeted_tags = list(dict.fromkeys([
+            *queued_demand_tags,
             *(tag for tag in gap_targets if tag in target_pool and tag in relevant_tags),
             *(tag for tag in TARGET_TAG_ORDER if tag in target_pool and tag in relevant_tags),
             *(tag for tag in relevant_tags if tag in target_pool),
@@ -231,6 +250,7 @@ def priority_context(places, *, category_priorities=None, now=None):
             "freshness_gap": freshness_gap,
             "conflict": conflict_priority,
             "search_demand": search_demand,
+            "enrichment_request_priority": min(100, demand_priorities[place.id]),
             "search_coverage_demand": int(coverage_demand.get("score") or 0),
             "data_quality_need": data_quality_need,
             "restaurant_collection_quality": restaurant_quality["score"],
@@ -254,6 +274,7 @@ def priority_context(places, *, category_priorities=None, now=None):
             "stale_refresh_tags": [tag for tag in TARGET_TAG_ORDER if tag in stale_hints],
             "targeted_tags": targeted_tags,
             "adaptive_reason": (
+                "launch_evidence_demand" if queued_demand_tags else
                 "search_coverage_demand" if coverage_demand.get("score") else
                 "no_tag_expression" if no_tag_count else
                 "candidate_hint" if candidate_hints else

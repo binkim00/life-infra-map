@@ -1,5 +1,5 @@
 import { router, useLocalSearchParams } from "expo-router";
-import * as Location from "expo-location";
+import { searchLocation } from "@/utils/location";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -78,7 +78,7 @@ const isNearbyCategoryQuery = (value: string) => {
 };
 
 const formatDistance = (distance?: number) =>
-  distance === undefined
+  distance === undefined || distance === null || distance <= 0
     ? "거리 정보 없음"
     : distance < 1000
       ? `${Math.round(distance)}m`
@@ -131,10 +131,10 @@ export default function ExploreScreen() {
     label: hasInitialCenter ? "현재 위치" : "위치 확인 중",
   });
 
-  const requestCurrentLocation = useCallback(async (showError = true) => {
+  const requestCurrentLocation = useCallback(async (showError = true, cachedOnly = false) => {
     try {
-      const permission = await Location.requestForegroundPermissionsAsync();
-      if (!permission.granted) {
+      const coordinates = await searchLocation({ cachedOnly });
+      if (!coordinates) {
         setLocationStatus("unavailable");
         setCenter({ lat: null, lng: null, label: "위치 권한 필요" });
         if (showError) {
@@ -143,12 +143,9 @@ export default function ExploreScreen() {
         }
         return false;
       }
-      const position = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
-      });
       setCenter({
-        lat: position.coords.latitude,
-        lng: position.coords.longitude,
+        lat: coordinates.latitude,
+        lng: coordinates.longitude,
         label: "현재 위치",
       });
       setLocationStatus("ready");
@@ -169,9 +166,10 @@ export default function ExploreScreen() {
 
   useEffect(() => {
     if (hasInitialCenter) return;
-    const timer = setTimeout(() => void requestCurrentLocation(true), 0);
+    const namedSearch = Boolean(initialQuery && !isNearbyCategoryQuery(initialQuery));
+    const timer = setTimeout(() => void requestCurrentLocation(!namedSearch, namedSearch), 0);
     return () => clearTimeout(timer);
-  }, [hasInitialCenter, requestCurrentLocation]);
+  }, [hasInitialCenter, initialQuery, requestCurrentLocation]);
 
   const runSearch = useCallback(
     (
@@ -207,29 +205,23 @@ export default function ExploreScreen() {
   useEffect(() => {
     if (!submittedQuery || !searchRequestId) return;
     const nearbyCategorySearch = isNearbyCategoryQuery(submittedQuery);
-    if (
-      nearbyCategorySearch &&
-      !searchCenterOverride &&
-      locationStatus === "requesting"
-    )
-      return;
+    if (!searchCenterOverride && locationStatus === "requesting") return;
     const searchAroundCenter = Boolean(
       searchCenterOverride || nearbyCategorySearch,
     );
     const controller = new AbortController();
     searchMapPlaces({
       query: submittedQuery,
-      lat:
-        searchCenterOverride?.lat ?? (nearbyCategorySearch ? center.lat : null),
-      lng:
-        searchCenterOverride?.lng ?? (nearbyCategorySearch ? center.lng : null),
+      lat: searchCenterOverride?.lat ?? center.lat,
+      lng: searchCenterOverride?.lng ?? center.lng,
       radius: searchAroundCenter ? radius : undefined,
       centerMode: searchCenterOverride ? "map" : "auto",
       signal: controller.signal,
     })
       .then((data) => {
         setPlaces(data.results);
-        setMapFitBoundsKey((value) => value + 1);
+        // 지도에서 다시 찾을 때는 사용자가 선택한 영역을 그대로 유지한다.
+        if (!searchCenterOverride) setMapFitBoundsKey((value) => value + 1);
         const requested = data.results.find(
           (place) => String(place.id) === params.placeId,
         );
@@ -284,12 +276,15 @@ export default function ExploreScreen() {
   };
 
   const reportSelectedPlace = () => {
-    if (!detailPlace || !requireLogin()) return;
+    if (!detailPlace) return;
     setDetailVisible(false);
     router.push({
       pathname: "/place-report",
       params: {
-        placeId: String(detailPlace.id),
+        placeId:
+          detailPlace.result_source === "db"
+            ? String(detailPlace.id)
+            : undefined,
         name: detailPlace.name,
         address: detailPlace.address || "",
         lat: String(detailPlace.lat),
@@ -355,18 +350,6 @@ export default function ExploreScreen() {
           currentLocation={currentMapLocation}
           fitBoundsKey={mapFitBoundsKey || undefined}
         />
-        {!selectedPlace && !currentMapLocation ? (
-          <View pointerEvents="none" style={styles.fullMapPlaceholder}>
-            <Text style={styles.mapPlaceholderTitle}>
-              {locationStatus === "requesting"
-                ? "현재 위치를 확인하고 있습니다."
-                : "지도를 표시할 위치가 필요합니다."}
-            </Text>
-            <Text style={styles.mapPlaceholderText}>
-              위치 권한을 허용하거나 지역과 시설을 검색해 주세요.
-            </Text>
-          </View>
-        ) : null}
       </View>
 
       <SafeAreaView
@@ -381,7 +364,7 @@ export default function ExploreScreen() {
               onChangeText={setQuery}
               onSubmitEditing={() => runSearch()}
               placeholder="예: 종로 무료 주차장"
-              placeholderTextColor="#8A918E"
+              placeholderTextColor="#5F6863"
               returnKeyType="search"
               style={styles.searchInput}
             />
@@ -398,6 +381,7 @@ export default function ExploreScreen() {
 
           <View style={styles.filterRow}>
             <ScrollView
+              style={styles.filterScroller}
               horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.filters}
@@ -490,14 +474,19 @@ export default function ExploreScreen() {
                 ) + 1}
               </Text>
             </View>
-            <View style={styles.selectedCopy}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`${selectedPlace.name} 상세정보`}
+              onPress={() => openPlaceDetails(selectedPlace)}
+              style={styles.selectedCopy}
+            >
               <Text numberOfLines={1} style={styles.selectedName}>
                 {selectedPlace.name}
               </Text>
               <Text numberOfLines={1} style={styles.selectedAddress}>
                 {selectedPlace.address || selectedPlace.category_label}
               </Text>
-            </View>
+            </Pressable>
             <Pressable
               onPress={() => openPlaceDetails(selectedPlace)}
               style={styles.routeButton}
@@ -543,7 +532,9 @@ export default function ExploreScreen() {
               return (
                 <Pressable
                   key={`${place.result_source}-${place.id}`}
-                  onPress={() => setSelectedPlace(place)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${place.name} 상세정보`}
+                  onPress={() => openPlaceDetails(place)}
                   style={[
                     styles.resultCard,
                     selected && styles.resultCardSelected,
@@ -608,6 +599,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   filterRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  filterScroller: { minWidth: 0, flex: 1 },
   radiusBar: {
     alignSelf: "flex-start",
     flexDirection: "row",
@@ -744,9 +736,9 @@ const styles = StyleSheet.create({
     backgroundColor: Palette.accent,
   },
   searchButtonLabel: { color: "#FFFFFF", fontSize: 13, fontWeight: "800" },
-  filters: { gap: 8, paddingVertical: 2, paddingRight: 4 },
+  filters: { gap: 6, paddingVertical: 2, paddingRight: 4 },
   filter: {
-    paddingHorizontal: 15,
+    paddingHorizontal: 10,
     paddingVertical: 9,
     borderWidth: 1,
     borderColor: "#DFE5E2",

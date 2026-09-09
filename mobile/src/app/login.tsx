@@ -20,13 +20,14 @@ export default function LoginScreen() {
       setLoading(true);
       setError("");
       await login(username, password);
-      router.replace("/");
+      if (router.canGoBack()) router.back();
+      else router.replace("/");
     } catch (caught) {
       const data =
         caught instanceof ApiError
           ? (caught.data as { detail?: string })
           : null;
-      setError(data?.detail || "아이디 또는 비밀번호가 올바르지 않습니다.");
+      setError(data?.detail || (caught instanceof Error ? caught.message : "로그인하지 못했습니다."));
     } finally {
       setLoading(false);
     }
@@ -62,7 +63,7 @@ export default function LoginScreen() {
               value={username}
               onChangeText={setUsername}
               placeholder="아이디를 입력하세요"
-              placeholderTextColor="#8A918E"
+              placeholderTextColor="#5F6863"
               returnKeyType="next"
               style={ui.input}
             />
@@ -74,7 +75,7 @@ export default function LoginScreen() {
               onChangeText={setPassword}
               onSubmitEditing={submit}
               placeholder="비밀번호를 입력하세요"
-              placeholderTextColor="#8A918E"
+              placeholderTextColor="#5F6863"
               autoComplete="current-password"
               returnKeyType="done"
               secureTextEntry

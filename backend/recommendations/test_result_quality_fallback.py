@@ -4,6 +4,7 @@ from recommendations.models import Place
 from recommendations.services.ai_search_orchestrator import (
     _collect_derived_shopping_candidates,
     _complete_and_order_results,
+    _enforce_required_result_policy,
 )
 
 
@@ -157,6 +158,25 @@ class ResultQualityFallbackTests(SimpleTestCase):
         )
 
         self.assertGreaterEqual(len({row["address"].split()[2] for row in results}), 3)
+
+    def test_required_unknown_conditions_need_relaxation_instead_of_silent_fill(self):
+        frame = {
+            "candidate_category_codes": ["cafe"],
+            "required_features": ["주차가능"],
+            "structured_conditions": [{"label": "주차가능", "type": "feature", "required": True}],
+        }
+        unknown = [{"id": "db:1", "name": "후보", "missing_conditions": ["주차가능"]}]
+
+        results, required, needs_question = _enforce_required_result_policy(unknown, frame, "주차 가능한 곳만")
+        self.assertEqual(results, [])
+        self.assertEqual(required, ["주차가능"])
+        self.assertTrue(needs_question)
+
+        relaxed, _, needs_question = _enforce_required_result_policy(
+            unknown, frame, "확인되지 않아도 대안도 보여줘",
+        )
+        self.assertEqual(relaxed, unknown)
+        self.assertFalse(needs_question)
 
 
 class DerivedShoppingCandidateTests(TestCase):

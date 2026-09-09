@@ -1,8 +1,9 @@
+import { useResource } from "@/hooks/use-resource";
+import { LoadState } from "@/components/load-state";
 import * as ImagePicker from "expo-image-picker";
 import { router } from "expo-router";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
-  ActivityIndicator,
   Image,
   Pressable,
   StyleSheet,
@@ -14,7 +15,7 @@ import { boardsApi } from "@/api/boards";
 import { recommendationApi } from "@/api/recommendations";
 import { useAuth, type AuthUser } from "@/auth/auth-context";
 import { BottomNav } from "@/components/bottom-nav";
-import { Screen, ui } from "@/components/screen";
+import { INPUT_PLACEHOLDER_COLOR, Screen, ui } from "@/components/screen";
 
 type SavedPlace = {
   id: number;
@@ -30,6 +31,7 @@ type MypageData = {
   liked_posts?: unknown[];
 };
 const LINKS = [
+  ["장소 보관함", "/mypage/saved-places"],
   ["선호 태그", "/mypage/preferences"],
   ["검색 기록", "/mypage/search-history"],
   ["장소 제보 내역", "/mypage/reports"],
@@ -46,7 +48,6 @@ export default function MypageScreen() {
   const [places, setPlaces] = useState<SavedPlace[]>([]);
   const [profile, setProfile] = useState<MypageData>({});
   const [memoDrafts, setMemoDrafts] = useState<Record<number, string>>({});
-  const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const load = async () => {
     const [mypage, saved] = await Promise.all([
@@ -61,19 +62,7 @@ export default function MypageScreen() {
     }
     setPlaces((saved as { results?: SavedPlace[] }).results || []);
   };
-  useEffect(() => {
-    if (!ready) return;
-    if (!isLoggedIn) {
-      router.replace("/login");
-      return;
-    }
-    void Promise.resolve()
-      .then(load)
-      .catch(() => setMessage("마이페이지 정보를 불러오지 못했습니다."))
-      .finally(() =>
-        setLoading(false),
-      ); /* eslint-disable-next-line react-hooks/exhaustive-deps */
-  }, [isLoggedIn, ready]);
+  const { loading, error: loadError, reload } = useResource(load, undefined, ready && isLoggedIn);
   const saveNickname = async () => {
     try {
       const data = (await boardsApi.updateNickname(nickname)) as {
@@ -138,10 +127,10 @@ export default function MypageScreen() {
           </Pressable>
         }
       >
-        {loading ? (
-          <ActivityIndicator color="#0F766E" />
-        ) : (
+        {loading ? <LoadState loading={true} retry={reload} /> : null}
+        {(
           <>
+            <LoadState loading={false} error={loadError} retry={reload} />
             <View style={ui.card}>
               <View style={styles.profileRow}>
                 {user?.profile_image_url || user?.profile_image ? (
@@ -160,6 +149,8 @@ export default function MypageScreen() {
                     <TextInput
                       value={nickname}
                       onChangeText={setNickname}
+                      placeholder="닉네임"
+                      placeholderTextColor={INPUT_PLACEHOLDER_COLOR}
                       style={[ui.input, ui.grow]}
                     />
                     <Pressable onPress={saveNickname} style={ui.button}>
@@ -177,7 +168,7 @@ export default function MypageScreen() {
               {LINKS.map(([label, path]) => (
                 <Pressable
                   key={path}
-                  onPress={() => router.push(path)}
+                  onPress={() => router.push(path as never)}
                   style={styles.link}
                 >
                   <Text style={styles.linkText}>{label}</Text>
@@ -238,6 +229,7 @@ export default function MypageScreen() {
                           }))
                         }
                         placeholder="장소 메모"
+                        placeholderTextColor={INPUT_PLACEHOLDER_COLOR}
                         style={[ui.input, ui.grow]}
                       />
                       <Pressable

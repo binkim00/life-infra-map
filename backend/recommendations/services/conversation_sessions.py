@@ -6,6 +6,7 @@ import secrets
 from django.db import transaction
 
 from recommendations.models import ConversationSession, ConversationTurn
+from recommendations.services.area_gazetteer import resolve_area_coordinates_by_token
 
 
 TOKEN_HEADER = "HTTP_X_CONVERSATION_TOKEN"
@@ -23,6 +24,12 @@ RESULT_REF_FIELDS = (
     "source",
     "verified_tags",
     "matched_tags",
+    "place_url",
+    "kakao_place_url",
+    "phone",
+    "result_tier",
+    "matched_conditions",
+    "missing_conditions",
 )
 
 
@@ -97,11 +104,30 @@ def resolve_previous_result_action(query, previous_context):
     ]
     if "비교" in compact and len(indexes) >= 2:
         names = [str(item.get("name") or "후보") for item in selected[:2]]
-        message = (
-            f"{names[0]}와 {names[1]}를 조건별로 비교할게요."
-            if len(names) >= 2
-            else "이전 결과에 비교할 후보가 충분하지 않아요. 먼저 장소를 다시 검색해 주세요."
-        )
+        if len(names) >= 2:
+            rows = []
+            for position, item in enumerate(selected[:2], start=1):
+                facts = []
+                if item.get("category"):
+                    facts.append(str(item["category"]))
+                if item.get("distance") is not None:
+                    facts.append(f"약 {int(round(float(item['distance'])))}m")
+                if item.get("address"):
+                    facts.append(str(item["address"]))
+                matched = item.get("matched_conditions") or []
+                missing = item.get("missing_conditions") or []
+                if matched:
+                    facts.append(f"확인된 조건: {', '.join(map(str, matched))}")
+                if missing:
+                    facts.append(f"확인 필요: {', '.join(map(str, missing))}")
+                rows.append(f"{position}. {names[position - 1]} — " + (" · ".join(facts) or "비교할 상세 정보가 부족해요"))
+            message = "\n".join([
+                f"{names[0]}와 {names[1]}의 확인 가능한 정보를 비교했어요.",
+                *rows,
+                "표시되지 않은 조건은 확인된 사실이 없어 단정하지 않았어요.",
+            ])
+        else:
+            message = "이전 결과에 비교할 후보가 충분하지 않아요. 먼저 장소를 다시 검색해 주세요."
         return {
             "action": "compare_previous_results",
             "results": selected,
@@ -139,27 +165,68 @@ def build_previous_context(state):
     }
 
 
-def state_from_search_response(query, response):
+def _nonempty_overlay(base, update):
+    merged = dict(base or {})
+    for key, value in (update or {}).items():
+        if value not in (None, "", [], {}):
+            merged[key] = value
+    return merged
+
+
+def state_from_search_response(query, response, previous_state=None):
     debug = response.get("debug_pipeline") if isinstance(response.get("debug_pipeline"), dict) else {}
+    previous_state = previous_state if isinstance(previous_state, dict) else {}
+    action = response.get("decision_action") or response.get("decisionAction") or ""
+    response_plan = response.get("search_plan") or {}
+    response_frame = response.get("place_intent_frame") or {}
+    previous_plan = previous_state.get("search_plan") or {}
+    previous_frame = previous_state.get("place_intent_frame") or {}
+    previous_results = previous_state.get("previous_results") or []
+    previous_location = previous_state.get("last_resolved_location_context") or {}
+
+    # A provider outage must not erase the last usable conversation frame. If
+    # the failed turn itself is a known locality answer, retain that deterministic
+    # location patch as well so the following turn can continue from it.
+    if action == "ai_unavailable":
+        response_frame = _nonempty_overlay(previous_frame, response_frame)
+        response_plan = _nonempty_overlay(previous_plan, response_plan)
+        resolved_area = resolve_area_coordinates_by_token(query)
+        if resolved_area:
+            area_lat, area_lng, area_label = resolved_area
+            response_frame.update({
+                "location_mode": "explicit",
+                "locationMode": "explicit",
+                "anchor_location": str(query or "").strip(),
+                "anchorLocation": str(query or "").strip(),
+            })
+            previous_location = {
+                "status": "resolved",
+                "source": "area_gazetteer_token",
+                "label": area_label,
+                "lat": area_lat,
+                "lng": area_lng,
+            }
+        response_plan["place_intent_frame"] = response_frame
+
     return {
         "previous_user_query": str(query or "")[:500],
-        "decision_action": response.get("decision_action") or response.get("decisionAction") or "",
+        "decision_action": action,
         "clarification_question": response.get("clarification_question") or "",
-        "search_plan": response.get("search_plan") or {},
-        "place_intent_frame": response.get("place_intent_frame") or {},
-        "previous_results": result_references(response.get("results") or []),
-        "last_resolved_location_context": debug.get("location_resolution") or {},
+        "search_plan": response_plan,
+        "place_intent_frame": response_frame,
+        "previous_results": result_references(response.get("results") or []) or (previous_results if action == "ai_unavailable" else []),
+        "last_resolved_location_context": debug.get("location_resolution") or previous_location,
     }
 
 
 def persist_conversation_turn(session_id, *, query, response, expected_version):
-    next_state = state_from_search_response(query, response)
     with transaction.atomic():
         session = ConversationSession.objects.select_for_update().get(pk=session_id)
         if session.status != "active":
             raise ValueError("conversation_closed")
         if session.version != expected_version:
             raise ValueError("conversation_version_conflict")
+        next_state = state_from_search_response(query, response, session.state)
         sequence = session.turn_count + 1
         ConversationTurn.objects.create(
             session=session,

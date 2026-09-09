@@ -1,7 +1,8 @@
+import { useResource } from "@/hooks/use-resource";
+import { LoadState } from "@/components/load-state";
 import { router, useLocalSearchParams } from "expo-router";
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import {
-  ActivityIndicator,
   Image,
   Pressable,
   StyleSheet,
@@ -12,7 +13,7 @@ import {
 
 import { boardsApi } from "@/api/boards";
 import { useAuth } from "@/auth/auth-context";
-import { Screen, ui } from "@/components/screen";
+import { INPUT_PLACEHOLDER_COLOR, Screen, ui } from "@/components/screen";
 
 type Comment = {
   id: number;
@@ -44,24 +45,15 @@ export default function BoardDetailScreen() {
     postId: string;
   }>();
   const { user, requireLogin } = useAuth();
-  const [post, setPost] = useState<Post | null>(null);
   const [comment, setComment] = useState("");
   const [reportReason, setReportReason] = useState("");
   const [replyDrafts, setReplyDrafts] = useState<Record<number, string>>({});
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editingText, setEditingText] = useState("");
   const [error, setError] = useState("");
-  const load = useCallback(
-    () =>
-      boardsApi
-        .post(postId)
-        .then((data) => setPost(data as unknown as Post))
-        .catch(() => setError("게시글을 불러오지 못했습니다.")),
-    [postId],
+  const { data: post, loading, error: loadError, reload: load } = useResource<Post | null>(
+    () => boardsApi.post(postId).then(data => data as unknown as Post), null, true, postId,
   );
-  useEffect(() => {
-    void load();
-  }, [load]);
   const addComment = async () => {
     if (!requireLogin() || !comment.trim()) return;
     try {
@@ -79,11 +71,7 @@ export default function BoardDetailScreen() {
   if (!post)
     return (
       <Screen title="게시글" back>
-        {error ? (
-          <Text style={ui.error}>{error}</Text>
-        ) : (
-          <ActivityIndicator color="#0F766E" />
-        )}
+        <LoadState loading={loading} error={loadError} empty={!post} retry={load} />
       </Screen>
     );
   return (
@@ -137,6 +125,7 @@ export default function BoardDetailScreen() {
           value={reportReason}
           onChangeText={setReportReason}
           placeholder="신고 사유"
+          placeholderTextColor={INPUT_PLACEHOLDER_COLOR}
           style={[ui.input, ui.grow]}
         />
         <Pressable
@@ -166,6 +155,7 @@ export default function BoardDetailScreen() {
           value={comment}
           onChangeText={setComment}
           placeholder="댓글을 입력하세요"
+          placeholderTextColor={INPUT_PLACEHOLDER_COLOR}
           style={[ui.input, ui.grow]}
         />
         <Pressable onPress={addComment} style={ui.button}>
@@ -183,6 +173,8 @@ export default function BoardDetailScreen() {
                 <TextInput
                   value={editingText}
                   onChangeText={setEditingText}
+                  placeholder="댓글 수정 내용"
+                  placeholderTextColor={INPUT_PLACEHOLDER_COLOR}
                   style={[ui.input, ui.grow]}
                 />
                 <Pressable
@@ -274,6 +266,7 @@ export default function BoardDetailScreen() {
                   }))
                 }
                 placeholder="답글"
+                placeholderTextColor={INPUT_PLACEHOLDER_COLOR}
                 style={[ui.input, ui.grow]}
               />
               <Pressable

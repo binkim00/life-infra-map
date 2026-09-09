@@ -7,7 +7,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from recommendations.management.commands.process_tag_enrichment_queue import save_place_candidate_evidence
-from recommendations.models import Place, TagEnrichmentRequest
+from recommendations.models import Place, TagEnrichmentRequest, ResearchAudit
 from recommendations.services.codex_web_evidence_validator import validate_candidate
 from recommendations.services.naver_tag_evidence_provider import polarity_assessment
 from recommendations.services.place_tag_collection import requested_tags_for_category
@@ -43,6 +43,7 @@ class Command(BaseCommand):
         candidates_preserved = 0
         candidate_pages = []
         live_page_cache = {}
+        judgments = []
         for row in rows:
             result = validate_candidate(
                 row,
@@ -50,6 +51,14 @@ class Command(BaseCommand):
                 live_page_cache=live_page_cache,
             )
             counts[result["status"]] += 1
+            judgments.append({
+                "place_id": row.get("place_id"),
+                "place_name": str(row.get("place_name") or "")[:200],
+                "tag": str(row.get("target_tag") or "")[:100],
+                "status": result["status"], "reason": result["reason"],
+                "source_url": str(row.get("source_url") or "")[:2000],
+                "quote": str(row.get("evidence_span") or "")[:4000],
+            })
             if result["reason"]:
                 reasons[result["reason"]] += 1
             if result["status"] == "candidate_pending":
@@ -105,7 +114,7 @@ class Command(BaseCommand):
                             status="completed", next_attempt_at=None, error_message="",
                         )
         saved = primary_saved + related_saved
-        self.stdout.write(json.dumps({
+        report = {
             "dry_run": not options["apply"],
             "live_verify": options["live_verify"],
             "rows": len(rows),
@@ -123,7 +132,13 @@ class Command(BaseCommand):
             "candidates_preserved": candidates_preserved,
             "candidate_pages": candidate_pages[:20],
             "reasons": dict(reasons),
-        }, ensure_ascii=False, indent=2))
+            "judgments": judgments,
+        }
+        if options["apply"]:
+            ResearchAudit.objects.update_or_create(
+                run_key=path.name, defaults={"payload": report},
+            )
+        self.stdout.write(json.dumps(report, ensure_ascii=False, indent=2))
 
 
 def related_rule_evidences(normalized, evidence):

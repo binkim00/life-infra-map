@@ -5,6 +5,20 @@ from django.conf import settings
 KAKAO_KEYWORD_SEARCH_URL = "https://dapi.kakao.com/v2/local/search/keyword.json"
 
 
+def search_address(query):
+    """Resolve administrative/address text, never a similarly named business."""
+    if not settings.KAKAO_REST_API_KEY:
+        raise ValueError("KAKAO_REST_API_KEY is not configured")
+    response = requests.get(
+        "https://dapi.kakao.com/v2/local/search/address.json",
+        headers={"Authorization": f"KakaoAK {settings.KAKAO_REST_API_KEY}"},
+        params={"query": query, "analyze_type": "exact", "size": 10},
+        timeout=5,
+    )
+    response.raise_for_status()
+    return response.json()
+
+
 def search_places_by_keyword(
     keyword,
     lat=None,

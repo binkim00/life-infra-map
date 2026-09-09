@@ -1,6 +1,8 @@
 import * as ImagePicker from "expo-image-picker";
 import { router } from "expo-router";
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useResource } from "@/hooks/use-resource";
+import { LoadState } from "./load-state";
 import {
   Image,
   Pressable,
@@ -11,7 +13,7 @@ import {
 } from "react-native";
 
 import { boardsApi } from "@/api/boards";
-import { Screen, ui } from "@/components/screen";
+import { INPUT_PLACEHOLDER_COLOR, Screen, ui } from "@/components/screen";
 
 export function PostEditor({
   boardType,
@@ -25,13 +27,13 @@ export function PostEditor({
   const [image, setImage] = useState<ImagePicker.ImagePickerAsset | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  useEffect(() => {
-    if (postId)
-      boardsApi.post(postId).then((post) => {
+  const { loading: fetching, error: loadError, reload } = useResource(async () => {
+    if (postId) {
+      const post = await boardsApi.post(postId);
         setTitle(String(post.title || ""));
         setContent(String(post.content || ""));
-      });
-  }, [postId]);
+    }
+  }, undefined, Boolean(postId), postId || "new");
   const pick = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ["images"],
@@ -69,17 +71,20 @@ export function PostEditor({
   };
   return (
     <Screen title={postId ? "게시글 수정" : "새 게시글"} back>
+      {postId ? <LoadState loading={fetching} error={loadError} retry={reload} /> : null}
       <View style={styles.form}>
         <TextInput
           value={title}
           onChangeText={setTitle}
           placeholder="제목"
+          placeholderTextColor={INPUT_PLACEHOLDER_COLOR}
           style={ui.input}
         />
         <TextInput
           value={content}
           onChangeText={setContent}
           placeholder="내용"
+          placeholderTextColor={INPUT_PLACEHOLDER_COLOR}
           multiline
           style={ui.textarea}
         />
@@ -90,7 +95,7 @@ export function PostEditor({
           <Image source={{ uri: image.uri }} style={styles.image} />
         ) : null}
         {error ? <Text style={ui.error}>{error}</Text> : null}
-        <Pressable disabled={loading} onPress={submit} style={ui.button}>
+        <Pressable disabled={loading || Boolean(postId && (fetching || loadError))} onPress={submit} style={ui.button}>
           <Text style={ui.buttonText}>{loading ? "저장 중..." : "저장"}</Text>
         </Pressable>
       </View>

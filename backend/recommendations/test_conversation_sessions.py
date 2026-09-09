@@ -6,6 +6,7 @@ from rest_framework.test import APIClient
 from recommendations.models import ConversationSession, ConversationTurn
 from recommendations.services.ai_search_orchestrator import run_ai_search
 from recommendations.services.conversation_sessions import resolve_previous_result_action
+from recommendations.services.ai_intent_planner import build_ai_intent_plan
 
 
 class ConversationSessionApiTests(TestCase):
@@ -16,6 +17,27 @@ class ConversationSessionApiTests(TestCase):
         response = self.client.post("/api/recommendations/conversation-sessions/", {}, format="json")
         self.assertEqual(response.status_code, 201)
         return response.json()
+
+    @override_settings(AI_PROVIDER="rule")
+    def test_unverified_option_preserves_previous_location_frame(self):
+        frame = {
+            "target_objects": ["카페"],
+            "candidate_place_types": ["카페"],
+            "primary_search_queries": ["분위기 좋은 카페"],
+            "constraints": ["분위기좋음"],
+            "location_mode": "explicit",
+            "anchor_location": "부산 서면",
+        }
+        plan = build_ai_intent_plan(
+            "확인되지 않아도 대안도 보여줘",
+            previous_context={
+                "is_clarification_followup": True,
+                "pending_clarification_frame": frame,
+            },
+        )
+        self.assertEqual(plan["decision_action"], "search")
+        self.assertEqual(plan["frame"]["anchor_location"], "부산 서면")
+        self.assertNotEqual(plan["frame"]["anchor_location"], "확인되지 않아도 대안도 보여줘")
 
     def test_previous_result_compare_select_and_reset_are_deterministic(self):
         context = {
@@ -34,6 +56,9 @@ class ConversationSessionApiTests(TestCase):
 
         self.assertEqual(compare["action"], "compare_previous_results")
         self.assertEqual([item["id"] for item in compare["results"]], ["db:1", "db:3"])
+        self.assertIn("1. 첫 식당", compare["message"])
+        self.assertIn("2. 셋째 식당", compare["message"])
+        self.assertNotIn("비교할게요", compare["message"])
         self.assertEqual(select["action"], "select_previous_result")
         self.assertEqual(select["results"][0]["id"], "db:2")
         self.assertEqual(reset["action"], "reset_conversation")
@@ -135,6 +160,42 @@ class ConversationSessionApiTests(TestCase):
         self.assertEqual(session.turn_count, 2)
         self.assertEqual(session.version, 2)
         self.assertEqual(ConversationTurn.objects.filter(session=session).count(), 2)
+
+    @patch("recommendations.views.run_ai_search")
+    def test_ai_unavailable_turn_preserves_frame_and_applies_known_location_answer(self, mock_search):
+        mock_search.side_effect = [
+            {
+                "decision_action": "search",
+                "search_plan": {"scenario": "ai_place_search"},
+                "place_intent_frame": {
+                    "location_mode": "current_context",
+                    "target_objects": ["쉴 곳"],
+                    "constraints": ["실내"],
+                },
+                "results": [{"id": "db:1", "name": "이전 후보"}],
+            },
+            {
+                "decision_action": "ai_unavailable",
+                "search_plan": {},
+                "place_intent_frame": {},
+                "results": [],
+            },
+            {"decision_action": "search", "search_plan": {}, "place_intent_frame": {}, "results": []},
+        ]
+        created = self._create_anonymous_session()
+        headers = {"HTTP_X_CONVERSATION_TOKEN": created["conversation_token"]}
+        url = f"/api/recommendations/conversation-sessions/{created['id']}/turns/"
+
+        self.client.post(url, {"query": "잠깐 쉴 곳 찾아줘"}, format="json", **headers)
+        failed = self.client.post(url, {"query": "부산 서면"}, format="json", **headers)
+        self.assertEqual(failed.status_code, 200)
+        self.client.post(url, {"query": "카페로 찾아줘"}, format="json", **headers)
+
+        previous = mock_search.call_args_list[2].args[0]["previous_context"]
+        self.assertEqual(previous["place_intent_frame"]["anchor_location"], "부산 서면")
+        self.assertEqual(previous["place_intent_frame"]["target_objects"], ["쉴 곳"])
+        self.assertEqual(previous["place_intent_frame"]["constraints"], ["실내"])
+        self.assertEqual(previous["previous_results"][0]["name"], "이전 후보")
 
     def test_closed_session_rejects_new_turns(self):
         created = self._create_anonymous_session()

@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useResource } from "@/hooks/use-resource";
+import { LoadState } from "@/components/load-state";
+import { useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { recommendationApi } from "@/api/recommendations";
@@ -20,30 +22,20 @@ type Preference = {
 };
 
 export default function PreferencesScreen() {
-  const [tags, setTags] = useState<Tag[]>([]);
-  const [preferences, setPreferences] = useState<Preference[]>([]);
   const [message, setMessage] = useState("");
-  const load = useCallback(
-    () =>
-      Promise.all([
+  const { data, loading, error, reload: load } = useResource(
+    async () => {
+      const [tagData, prefData] = await Promise.all([
         recommendationApi.preferenceTags(),
-        recommendationApi.preferences({ page: 1, page_size: 100 }),
-      ])
-        .then(([tagData, prefData]) => {
-          const tagResults = Array.isArray(tagData)
-            ? tagData
-            : (tagData as { results?: Tag[] }).results;
-          setTags(Array.isArray(tagResults) ? (tagResults as Tag[]) : []);
-          setPreferences(
-            (prefData as { results?: Preference[] }).results || [],
-          );
-        })
-        .catch(() => setMessage("선호 정보를 불러오지 못했습니다.")),
-    [],
+        recommendationApi.preferences({ page: 1, page_size: 50 }),
+      ]);
+      return {
+        tags: (Array.isArray(tagData) ? tagData : tagData.results || []) as Tag[],
+        preferences: (prefData.results || []) as Preference[],
+      };
+    }, { tags: [] as Tag[], preferences: [] as Preference[] },
   );
-  useEffect(() => {
-    load();
-  }, [load]);
+  const { tags, preferences } = data;
   const selected = useMemo(
     () =>
       new Map(
@@ -91,6 +83,7 @@ export default function PreferencesScreen() {
       subtitle="추천에 더 반영할 조건을 선택하세요."
       back
     >
+      <LoadState loading={loading} error={error} empty={!tags.length} retry={load} />
       {message ? <Text style={ui.success}>{message}</Text> : null}
       {groups.map(([group, groupTags]) => (
         <View key={group} style={ui.card}>

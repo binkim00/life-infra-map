@@ -390,6 +390,18 @@ class PlaceTagEvidence(models.Model):
         return f"{self.place} - {self.tag} ({self.polarity})"
 
 
+class EvidenceReview(models.Model):
+    evidence = models.OneToOneField(PlaceTagEvidence, on_delete=models.CASCADE, related_name="review")
+    status = models.CharField(max_length=24, default="pending", choices=[
+        ("pending", "확인 필요"), ("approved", "검토 승인"),
+        ("rejected", "반려"), ("research", "재조사 필요"),
+    ], db_index=True)
+    note = models.TextField(blank=True)
+    reviewer = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL)
+    history = models.JSONField(default=list)
+    updated_at = models.DateTimeField(auto_now=True)
+
+
 class PlaceCoverage(models.Model):
     """Materialized nationwide coverage metrics by administrative area and category."""
 
@@ -706,6 +718,35 @@ class UserPreference(models.Model):
         return f"{self.user} - {self.preference_type}:{self.label}"
 
 
+class UserSavedPlaceGroup(models.Model):
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="saved_place_groups",
+    )
+    name = models.CharField(max_length=100)
+    memo = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "name"],
+                name="unique_user_saved_place_group_name",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["user", "-updated_at"],
+                name="saved_group_user_updated_idx",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.user} - {self.name}"
+
+
 class UserSavedPlace(models.Model):
     SOURCE_CHOICES = [
         ("local_db", "저장 장소"),
@@ -717,6 +758,13 @@ class UserSavedPlace(models.Model):
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
+        related_name="saved_places",
+    )
+    group = models.ForeignKey(
+        UserSavedPlaceGroup,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
         related_name="saved_places",
     )
     place = models.ForeignKey(
@@ -781,6 +829,9 @@ class PlaceReport(models.Model):
         on_delete=models.CASCADE,
         related_name="place_reports",
     )
+    # A client-generated key lets a mobile retry resolve to the original
+    # receipt when the response was lost after the database commit.
+    client_request_id = models.UUIDField(null=True, blank=True, editable=False)
     place = models.ForeignKey(
         "Place",
         on_delete=models.SET_NULL,
@@ -814,6 +865,12 @@ class PlaceReport(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "client_request_id"],
+                name="unique_user_place_report_request",
+            ),
+        ]
         indexes = [
             models.Index(fields=["user", "-created_at"]),
             models.Index(fields=["status", "-created_at"]),
@@ -869,6 +926,13 @@ class ConversationSession(models.Model):
 
     def __str__(self):
         return f"conversation {self.id} ({self.status})"
+
+
+class ResearchAudit(models.Model):
+    """Collection judgments, not searchable evidence or human approval."""
+    run_key = models.CharField(max_length=240, unique=True)
+    payload = models.JSONField(default=dict)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
 
 
 class ConversationTurn(models.Model):

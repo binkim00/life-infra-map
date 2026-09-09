@@ -134,6 +134,10 @@ class SmokingMapApiTests(TestCase):
         mock_resolve_anchor,
         _mock_kakao,
     ):
+        mock_resolve_anchor.return_value = {
+            "status": "resolved", "source": "area_gazetteer", "label": "사상",
+            "lat": 35.1622, "lng": 128.9846,
+        }
         map_center_place = self.make_place(
             "해운대 지도 중심 흡연구역",
             35.1631,
@@ -154,7 +158,10 @@ class SmokingMapApiTests(TestCase):
             },
         )
 
-        mock_resolve_anchor.assert_not_called()
+        # Resolve only to distinguish an area from a brand; map coordinates win.
+        mock_resolve_anchor.assert_called_once_with(
+            "사상역", lat=35.1631, lng=129.1635, address_first=True,
+        )
         self.assertEqual(response.data["location_context"]["center_source"], "map_center")
         self.assertEqual(response.data["filters"]["center_mode"], "map")
         self.assertEqual([row["id"] for row in response.data["results"]], [map_center_place.id])

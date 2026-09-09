@@ -30,6 +30,10 @@ public class UserSavedPlace {
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "group_id")
+    private UserSavedPlaceGroup group;
+
     /** 검색은 Django 가 담당하므로 장소는 id 로만 참조합니다. */
     @Column(name = "place_id")
     private Long placeId;
@@ -104,6 +108,11 @@ public class UserSavedPlace {
         touch();
     }
 
+    public void changeGroup(UserSavedPlaceGroup group) {
+        this.group = group;
+        touch();
+    }
+
     public void refreshIdentity(String source, String name) {
         if (source != null) this.source = source;
         if (name != null) this.name = name;
@@ -129,6 +138,7 @@ public class UserSavedPlace {
 
     public Long getId() { return id; }
     public User getUser() { return user; }
+    public UserSavedPlaceGroup getGroup() { return group; }
     public Long getPlaceId() { return placeId; }
     public String getPlaceKey() { return placeKey; }
     public String getSource() { return source; }

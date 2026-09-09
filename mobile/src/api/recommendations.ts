@@ -2,6 +2,10 @@ import { ApiError, apiRequest } from "./client";
 import type { MapSearchResponse } from "@/types/place";
 
 export const recommendationApi = {
+  evidenceQueue: (params: Record<string, string | number>) =>
+    apiRequest<Record<string, unknown>>("/recommendations/admin/evidence/", { params }),
+  evidenceReview: (id: number, body: { status: string; note: string }) =>
+    apiRequest(`/recommendations/admin/evidence/${id}/`, { method: "POST", body }),
   mapSearch: (params: Record<string, unknown>, signal?: AbortSignal) =>
     apiRequest<MapSearchResponse>("/recommendations/place-search/", {
       params: params as Record<string, string | number>,
@@ -95,8 +99,26 @@ export const recommendationApi = {
     }),
   deleteSavedPlace: (id: number | string) =>
     apiRequest(`/recommendations/saved-places/${id}/`, { method: "DELETE" }),
+  savedPlaceGroups: () =>
+    apiRequest<Record<string, unknown>>("/recommendations/saved-place-groups/"),
+  createSavedPlaceGroup: (body: unknown) =>
+    apiRequest("/recommendations/saved-place-groups/", { method: "POST", body }),
+  updateSavedPlaceGroup: (id: number | string, body: unknown) =>
+    apiRequest(`/recommendations/saved-place-groups/${id}/`, {
+      method: "PATCH",
+      body,
+    }),
+  deleteSavedPlaceGroup: (id: number | string) =>
+    apiRequest(`/recommendations/saved-place-groups/${id}/`, { method: "DELETE" }),
+  moveSavedPlaceToGroup: (id: number | string, groupId: number | null) =>
+    apiRequest(`/recommendations/saved-places/${id}/group/`, {
+      method: "PATCH",
+      body: { group_id: groupId },
+    }),
   createPlaceReport: (body: FormData) =>
-    apiRequest("/recommendations/place-reports/", { method: "POST", body }),
+    apiRequest<{ report: { id: number; created_at: string }; idempotent_replay: boolean }>("/recommendations/place-reports/", { method: "POST", body }),
+  myPlaceReport: (id: string | number) =>
+    apiRequest<Record<string, unknown>>(`/recommendations/place-reports/${id}/`),
   myPlaceReports: (params: Record<string, unknown> = {}) =>
     apiRequest<Record<string, unknown>>("/recommendations/place-reports/", {
       params: params as Record<string, string | number>,
@@ -144,6 +166,7 @@ export async function searchMapPlaces({
   signal?: AbortSignal;
 }) {
   const params = {
+    detail_level: "summary",
     q: query.trim(),
     source: "all",
     lat,

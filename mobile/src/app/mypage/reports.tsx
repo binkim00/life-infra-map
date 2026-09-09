@@ -1,5 +1,10 @@
-import { useEffect, useState } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { useState } from "react";
+import { Pagination } from "@/components/pagination";
+import { router } from "expo-router";
+import { useResource } from "@/hooks/use-resource";
+import { LoadState } from "@/components/load-state";
+
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { recommendationApi } from "@/api/recommendations";
 import { Screen, ui } from "@/components/screen";
 type Report = {
@@ -7,22 +12,18 @@ type Report = {
   place_name?: string;
   report_type?: string;
   status?: string;
-  content?: string;
+  description?: string;
   created_at?: string;
   admin_note?: string;
 };
 export default function MyReportsScreen() {
-  const [reports, setReports] = useState<Report[]>([]);
-  const [error, setError] = useState("");
-  useEffect(() => {
-    recommendationApi
-      .myPlaceReports({ page: 1, page_size: 50 })
-      .then((data) => setReports((data.results || []) as Report[]))
-      .catch(() => setError("제보 내역을 불러오지 못했습니다."));
-  }, []);
+  const [page, setPage] = useState(1);
+  const { data: reports, loading, error, reload: load } = useResource<Report[]>(
+    () => recommendationApi.myPlaceReports({ page, page_size: 20 }).then((data) => (data.results || []) as Report[]), [], true, String(page),
+  );
   return (
     <Screen title="장소 제보 내역" subtitle="등록한 장소 정보 수정 요청" back>
-      {error ? <Text style={ui.error}>{error}</Text> : null}
+      <LoadState loading={loading} error={error} empty={!reports.length} retry={load} />
       <View style={styles.list}>
         {reports.map((report) => (
           <View key={report.id} style={ui.card}>
@@ -38,15 +39,17 @@ export default function MyReportsScreen() {
                 ? new Date(report.created_at).toLocaleDateString()
                 : ""}
             </Text>
-            {report.content ? (
-              <Text style={styles.content}>{report.content}</Text>
+            {report.description ? (
+              <Text style={styles.content}>{report.description}</Text>
             ) : null}
+            <Pressable onPress={() => router.push({ pathname: "/mypage/report-detail" as never, params: { id: String(report.id) } })} style={ui.buttonSecondary}><Text style={ui.buttonSecondaryText}>제보 상세 보기</Text></Pressable>
             {report.admin_note ? (
               <Text style={ui.success}>관리자 답변: {report.admin_note}</Text>
             ) : null}
           </View>
         ))}
       </View>
+      <Pagination page={page} setPage={setPage} hasNext={reports.length === 20} loading={loading} />
     </Screen>
   );
 }

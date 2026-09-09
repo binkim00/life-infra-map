@@ -310,4 +310,125 @@ class UserDataApiTest extends ApiTestBase {
                 .andExpect(jsonPath("$.results").isArray())
                 .andExpect(jsonPath("$.count").doesNotExist());
     }
+
+    private long createSavedPlaceGroup(User user, String name, String memo) throws Exception {
+        MvcResult result = mockMvc.perform(post("/api/recommendations/saved-place-groups")
+                        .header("Authorization", bearer(user))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(java.util.Map.of("name", name, "memo", memo))))
+                .andExpect(status().isCreated())
+                .andReturn();
+        return objectMapper.readTree(result.getResponse().getContentAsString()).get("id").asLong();
+    }
+
+    @Test
+    @DisplayName("원하는 이름과 메모로 저장 그룹을 만든다")
+    void createsNamedSavedPlaceGroupWithMemo() throws Exception {
+        User user = createUser();
+        createSavedPlaceGroup(user, "주말 데이트", "비 오는 날 후보부터 확인");
+
+        mockMvc.perform(get("/api/recommendations/saved-place-groups")
+                        .header("Authorization", bearer(user)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.results.length()").value(1))
+                .andExpect(jsonPath("$.results[0].name").value("주말 데이트"))
+                .andExpect(jsonPath("$.results[0].memo").value("비 오는 날 후보부터 확인"));
+    }
+
+    @Test
+    @DisplayName("저장 그룹 이름과 그룹 메모를 수정한다")
+    void updatesSavedPlaceGroupNameAndMemo() throws Exception {
+        User user = createUser();
+        long groupId = createSavedPlaceGroup(user, "처음 이름", "처음 메모");
+
+        mockMvc.perform(patch("/api/recommendations/saved-place-groups/{id}", groupId)
+                        .header("Authorization", bearer(user))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"name":"부산 산책","memo":"바다 근처부터 가기"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("부산 산책"))
+                .andExpect(jsonPath("$.memo").value("바다 근처부터 가기"));
+    }
+
+    @Test
+    @DisplayName("같은 사용자는 대소문자만 다른 중복 그룹명을 만들 수 없다")
+    void rejectsDuplicateSavedPlaceGroupName() throws Exception {
+        User user = createUser();
+        createSavedPlaceGroup(user, "Busan", "");
+
+        mockMvc.perform(post("/api/recommendations/saved-place-groups")
+                        .header("Authorization", bearer(user))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"name":"busan","memo":"중복"}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.name[0]").value("같은 이름의 저장 그룹이 이미 있습니다."));
+    }
+
+    @Test
+    @DisplayName("저장 장소를 내 그룹으로 옮기고 다시 미분류로 돌린다")
+    void assignsAndClearsSavedPlaceGroup() throws Exception {
+        User user = createUser();
+        long savedId = savePlace(user, "그룹 테스트 카페");
+        long groupId = createSavedPlaceGroup(user, "가고 싶은 곳", "");
+
+        mockMvc.perform(patch("/api/recommendations/saved-places/{id}/group", savedId)
+                        .header("Authorization", bearer(user))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"group_id\":" + groupId + "}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.group_id").value(groupId))
+                .andExpect(jsonPath("$.group_name").value("가고 싶은 곳"));
+
+        mockMvc.perform(patch("/api/recommendations/saved-places/{id}/group", savedId)
+                        .header("Authorization", bearer(user))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"group_id\":null}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.group_id").doesNotExist())
+                .andExpect(jsonPath("$.group_name").value(""));
+    }
+
+    @Test
+    @DisplayName("남의 저장 그룹에는 장소를 넣을 수 없다")
+    void cannotAssignSavedPlaceToOthersGroup() throws Exception {
+        User owner = createUser();
+        User other = createUser();
+        long savedId = savePlace(owner, "내 장소");
+        long othersGroupId = createSavedPlaceGroup(other, "남의 그룹", "");
+
+        mockMvc.perform(patch("/api/recommendations/saved-places/{id}/group", savedId)
+                        .header("Authorization", bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"group_id\":" + othersGroupId + "}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.group_id[0]").value("내 저장 그룹을 선택해 주세요."));
+    }
+
+    @Test
+    @DisplayName("그룹을 삭제해도 저장 장소는 미분류로 남는다")
+    void deletingGroupKeepsSavedPlaces() throws Exception {
+        User user = createUser();
+        long savedId = savePlace(user, "남겨 둘 카페");
+        long groupId = createSavedPlaceGroup(user, "임시 그룹", "삭제 예정");
+        mockMvc.perform(patch("/api/recommendations/saved-places/{id}/group", savedId)
+                        .header("Authorization", bearer(user))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"group_id\":" + groupId + "}"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(delete("/api/recommendations/saved-place-groups/{id}", groupId)
+                        .header("Authorization", bearer(user)))
+                .andExpect(status().isNoContent());
+
+        mockMvc.perform(get("/api/recommendations/saved-places")
+                        .header("Authorization", bearer(user)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.count").value(1))
+                .andExpect(jsonPath("$.results[0].id").value(savedId))
+                .andExpect(jsonPath("$.results[0].group_id").doesNotExist());
+    }
 }

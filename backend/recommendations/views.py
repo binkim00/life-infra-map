@@ -1,7 +1,8 @@
 import logging
 import math
 from django.conf import settings
-from django.db import transaction
+from django.core.cache import cache
+from django.db import IntegrityError, transaction
 from django.shortcuts import get_object_or_404
 from django.db.models import Q
 from django.utils import timezone
@@ -37,6 +38,7 @@ from .services.map_search import (
     kakao_place_matches_categories,
     kakao_place_matches_keyword,
     load_places_by_ids,
+    normalize_compact,
     search_saved_places,
     split_location_category_query,
     tokenize_query,
@@ -495,7 +497,37 @@ def place_reports(request):
     if not serializer.is_valid():
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    report = serializer.save()
+    client_request_id = serializer.validated_data.get("client_request_id")
+    if client_request_id:
+        existing = (
+            PlaceReport.objects
+            .filter(user=request.user, client_request_id=client_request_id)
+            .select_related("place", "user", "reviewed_by")
+            .prefetch_related("images")
+            .first()
+        )
+        if existing:
+            return _place_report_receipt(existing, request=request, replay=True)
+
+    try:
+        # The nested savepoint keeps a concurrent unique-key collision from
+        # breaking the outer transaction before we read the winning receipt.
+        with transaction.atomic():
+            report = serializer.save()
+    except IntegrityError:
+        if not client_request_id:
+            raise
+        report = get_object_or_404(
+            PlaceReport.objects.select_related("place", "user", "reviewed_by").prefetch_related("images"),
+            user=request.user,
+            client_request_id=client_request_id,
+        )
+        return _place_report_receipt(report, request=request, replay=True)
+
+    return _place_report_receipt(report, request=request, replay=False)
+
+
+def _place_report_receipt(report, *, request, replay):
     detail_serializer = PlaceReportDetailSerializer(
         report,
         context={"request": request},
@@ -504,8 +536,9 @@ def place_reports(request):
         {
             "message": "place report created",
             "report": detail_serializer.data,
+            "idempotent_replay": replay,
         },
-        status=status.HTTP_201_CREATED,
+        status=status.HTTP_200_OK if replay else status.HTTP_201_CREATED,
     )
 
 
@@ -537,15 +570,34 @@ def admin_place_reports(request):
 
 
 @api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def my_place_report_detail(request, report_id):
+    report = get_object_or_404(
+        PlaceReport.objects.select_related("place", "user", "reviewed_by").prefetch_related("images"),
+        pk=report_id, user=request.user,
+    )
+    return Response(PlaceReportDetailSerializer(report, context={"request": request}).data)
+
+
+@api_view(["GET"])
 @permission_classes([IsAdminUser])
 def admin_operations_dashboard(request):
     try:
         days = int(request.GET.get("days", 1))
-        payload = build_operations_dashboard(
-            days=days,
-            region=request.GET.get("region", "").strip(),
-            category=request.GET.get("category", "").strip(),
-        )
+        region = request.GET.get("region", "").strip()
+        category = request.GET.get("category", "").strip()
+        cache_key = f"mobile-operations-v1:{days}:{region}:{category}"
+        payload = cache.get(cache_key)
+        if payload is None:
+            if not region and not category and days in {1, 7, 30}:
+                from .models import OperationsDashboardSnapshot
+                snapshot = OperationsDashboardSnapshot.objects.order_by("-snapshot_date").first()
+                payload = (snapshot.payload.get("dashboards", {}).get(str(days)) if snapshot else None)
+                if payload is not None:
+                    payload = {**payload, "snapshot_backed": True}
+            if payload is None:
+                payload = build_operations_dashboard(days=days, region=region, category=category)
+            cache.set(cache_key, payload, 60)
     except (TypeError, ValueError) as exc:
         return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
     return Response(payload)
@@ -881,6 +933,42 @@ def serialize_kakao_map_place(place, *, lat=None, lng=None):
     }
 
 
+def merge_kakao_search_documents(*payloads):
+    """Merge provider result sets without letting one retrieval order erase another."""
+    merged = []
+    seen = set()
+    for payload in payloads:
+        documents = payload.get("documents", []) if isinstance(payload, dict) else []
+        for place in documents if isinstance(documents, list) else []:
+            if not isinstance(place, dict):
+                continue
+            identity = str(place.get("id") or "").strip() or (
+                normalize_compact(place.get("place_name", "")),
+                str(place.get("x") or ""),
+                str(place.get("y") or ""),
+            )
+            if identity in seen:
+                continue
+            seen.add(identity)
+            merged.append(place)
+    return {"documents": merged}
+
+
+def kakao_place_name_match_rank(place, name_query):
+    """Rank exact/prefix name intent ahead of incidental address/category matches."""
+    query_key = normalize_compact(name_query)
+    name_key = normalize_compact(place.get("name", ""))
+    if not query_key:
+        return 0
+    if name_key == query_key:
+        return 0
+    if name_key.startswith(query_key):
+        return 1
+    if query_key in name_key:
+        return 2
+    return 3
+
+
 @api_view(["GET"])
 def map_place_search(request):
     keyword = request.GET.get("q", "").strip()
@@ -901,6 +989,8 @@ def map_place_search(request):
     anchor_location = ""
     category_query = ""
     resolved_anchor = {}
+    name_query = ""
+    provider_keyword = keyword
     search_lat = lat
     search_lng = lng
     matched_basic_categories = get_matching_categories(keyword)
@@ -909,11 +999,29 @@ def map_place_search(request):
         split_query = split_location_category_query(keyword)
         anchor_location = split_query["anchor_location"]
         category_query = split_query["category_query"]
-        if anchor_location and center_mode != "map":
-            resolved_anchor = _resolve_anchor_location(anchor_location, lat=lat, lng=lng)
-            if resolved_anchor.get("status") == "resolved":
+        if anchor_location:
+            resolved_anchor = _resolve_anchor_location(anchor_location, lat=lat, lng=lng, address_first=True)
+            # Resolving a brand to one of its shops does not make that shop
+            # the user's requested region. Preserve keyword + device bias.
+            if resolved_anchor.get("category_group_code") in {"CE7", "FD6", "CS2", "MT1", "HP8", "PM9", "AD5"}:
+                resolved_anchor = {}
+                name_query = anchor_location
+                if center_mode != "map":
+                    anchor_location = ""
+                    category_query = ""
+            elif resolved_anchor.get("status") != "resolved":
+                # An unresolved non-category token is a name/brand constraint,
+                # not permission to replace the query with a generic category.
+                name_query = anchor_location
+            if resolved_anchor.get("status") == "resolved" and center_mode != "map":
                 search_lat = parse_optional_float(resolved_anchor.get("lat"))
                 search_lng = parse_optional_float(resolved_anchor.get("lng"))
+                provider_keyword = category_query or keyword
+            elif center_mode == "map":
+                provider_keyword = category_query if resolved_anchor.get("status") == "resolved" else keyword
+
+    if keyword and not is_category_only_query(keyword) and not category_query:
+        name_query = name_query or keyword
 
     # `지역 + 업종` 검색은 해당 지역 생활권 안에서 보여줘야 한다. 반경 없이
     # 전국 결과까지 채우면 지도 bounds가 과도하게 넓어져 지역 지도가 작아진다.
@@ -1009,7 +1117,15 @@ def map_place_search(request):
             queryset=db_queryset,
         )
 
-    if keyword and source in {"all", "kakao"}:
+    complete_db_category = (
+        is_separated_place_search
+        and source == "all"
+        and is_category_only_query(keyword)
+        and len(matched_basic_categories) == 1
+        and matched_basic_categories[0] in {"toilet", "freewifi", "smoking_area", "parking", "city_park"}
+        and len(db_results) >= limit
+    )
+    if keyword and source in {"all", "kakao"} and not complete_db_category:
         try:
             kakao_category_group = ""
             if len(matched_basic_categories) == 1:
@@ -1020,13 +1136,27 @@ def map_place_search(request):
                 if len(group_codes) == 1:
                     kakao_category_group = next(iter(group_codes))
             kakao_data = search_places_by_keyword(
-                keyword=keyword,
+                keyword=provider_keyword,
                 lat=search_lat,
                 lng=search_lng,
                 radius=search_radius or None,
                 size=min(limit, 15),
                 category_group_code=kakao_category_group or None,
             )
+            # Coordinates make Kakao return only its distance-sorted first page.
+            # Also collect a relevance-sorted page for name/brand intent, then
+            # merge and rank locally. This is what lets an exact named place be
+            # found even when it is not among the nearest 15 incidental matches.
+            if name_query and search_lat is not None and search_lng is not None:
+                relevance_data = search_places_by_keyword(
+                    keyword=keyword,
+                    lat=None,
+                    lng=None,
+                    radius=None,
+                    size=min(limit, 15),
+                    category_group_code=kakao_category_group or None,
+                )
+                kakao_data = merge_kakao_search_documents(kakao_data, relevance_data)
             fallback_keyword = category_only_fallback_keyword(keyword)
             has_matching_kakao_document = any(
                 kakao_place_matches_categories(place, matched_basic_categories)
@@ -1036,9 +1166,10 @@ def map_place_search(request):
                 is_separated_place_search
                 and not has_matching_kakao_document
                 and (category_query or fallback_keyword)
-                and (category_query or fallback_keyword) != keyword
+                and (category_query or fallback_keyword) != provider_keyword
+                and (not anchor_location or resolved_anchor.get("status") == "resolved" or center_mode == "map")
             ):
-                kakao_data = search_places_by_keyword(
+                fallback_data = search_places_by_keyword(
                     keyword=category_query or fallback_keyword,
                     lat=search_lat,
                     lng=search_lng,
@@ -1046,6 +1177,7 @@ def map_place_search(request):
                     size=min(limit, 15),
                     category_group_code=kakao_category_group or None,
                 )
+                kakao_data = merge_kakao_search_documents(kakao_data, fallback_data)
             db_external_ids = {
                 str(place.get("external_id"))
                 for place in db_results
@@ -1055,6 +1187,7 @@ def map_place_search(request):
                 serialize_kakao_map_place(place, lat=search_lat, lng=search_lng)
                 for place in kakao_data.get("documents", [])
                 if kakao_place_matches_categories(place, matched_basic_categories)
+                if not name_query or kakao_place_matches_keyword(place, name_query)
                 if (
                     not is_separated_place_search
                     or matched_basic_categories
@@ -1070,6 +1203,9 @@ def map_place_search(request):
     # 여기서 전체를 거리순으로 다시 정렬하면 검색어와 정확히 맞는 장소가 밀려납니다.
     if search_lat is not None and search_lng is not None:
         kakao_results = sorted(kakao_results, key=lambda place: (
+            # Name matches outrank incidental references (e.g. a parking lot
+            # mentioning the searched shop). Distance breaks ties, not intent.
+            kakao_place_name_match_rank(place, name_query),
             place.get("distance") is None,
             place.get("distance") if place.get("distance") is not None else 999999999,
             str(place.get("name", "")),
@@ -1094,6 +1230,17 @@ def map_place_search(request):
         ],
     ]
     combined_results = combined_results[:limit]
+    if request.GET.get("detail_level") == "summary":
+        combined_results = [
+            {
+                **{key: value for key, value in place.items() if key not in {"raw", "tags"}},
+                "tags": [
+                    {key: value for key, value in tag.items() if key != "evidence"}
+                    for tag in place.get("tags", [])
+                ],
+            }
+            for place in combined_results
+        ]
 
     return Response({
         "search_mode": "place_search",
@@ -1120,8 +1267,8 @@ def map_place_search(request):
         "location_context": {
             "anchor_location": anchor_location,
             "anchor_resolved": resolved_anchor.get("status") == "resolved",
-            "center_source": resolved_anchor.get("source") or "map_center",
-            "center_label": resolved_anchor.get("label") or "",
+            "center_source": "map_center" if center_mode == "map" else resolved_anchor.get("source") or "map_center",
+            "center_label": "" if center_mode == "map" else resolved_anchor.get("label") or "",
             "lat": search_lat,
             "lng": search_lng,
         },

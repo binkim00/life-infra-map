@@ -496,6 +496,15 @@ def refresh_operations_snapshot(*, now=None):
         snapshot_date=timezone.localdate(now),
         defaults={"payload": payload},
     )
+    # Persist complete unfiltered mobile views; API workers need no cold aggregation.
+    import json
+    from django.core.serializers.json import DjangoJSONEncoder
+    payload["dashboards"] = {
+        str(days): build_operations_dashboard(days=days, now=now)
+        for days in (1, 7, 30)
+    }
+    snapshot.payload = json.loads(json.dumps(payload, cls=DjangoJSONEncoder))
+    snapshot.save(update_fields=["payload"])
     return snapshot
 
 

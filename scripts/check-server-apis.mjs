@@ -49,12 +49,12 @@ const checks = [
   },
   {
     name: "일반 장소 검색",
-    url: `${publicBase}/django/api/recommendations/place-search/?q=${encodeURIComponent("부산역 약국")}&source=all&limit=5`,
+    url: `${publicBase}/django/api/recommendations/place-search/?q=${encodeURIComponent("부산역 약국")}&source=all&limit=5&detail_level=summary`,
     validate: (data) => Array.isArray(data?.results) && data.results.length > 0,
   },
   {
     name: "현재 위치 공원 검색",
-    url: `${publicBase}/django/api/recommendations/place-search/?q=${encodeURIComponent("공원")}&source=all&lat=35.1544&lng=129.0606&radius=3000&limit=30`,
+    url: `${publicBase}/django/api/recommendations/place-search/?q=${encodeURIComponent("공원")}&source=all&lat=35.1544&lng=129.0606&radius=3000&limit=30&detail_level=summary`,
     validate: (data) =>
       onlyCategory(data, "city_park", 3000, 5) &&
       data.results.every(
@@ -64,12 +64,12 @@ const checks = [
   },
   {
     name: "주변 카페 검색",
-    url: `${publicBase}/django/api/recommendations/place-search/?q=${encodeURIComponent("카페")}&source=all&lat=35.1544&lng=129.0606&radius=3000&limit=30`,
+    url: `${publicBase}/django/api/recommendations/place-search/?q=${encodeURIComponent("카페")}&source=all&lat=35.1544&lng=129.0606&radius=3000&limit=30&detail_level=summary`,
     validate: (data) => onlyCategory(data, "cafe", 3000, 5),
   },
   {
     name: "주변 식당 검색",
-    url: `${publicBase}/django/api/recommendations/place-search/?q=${encodeURIComponent("식당")}&source=all&lat=35.1544&lng=129.0606&radius=3000&limit=30`,
+    url: `${publicBase}/django/api/recommendations/place-search/?q=${encodeURIComponent("식당")}&source=all&lat=35.1544&lng=129.0606&radius=3000&limit=30&detail_level=summary`,
     validate: (data) => onlyCategory(data, "restaurant", 3000, 5),
   },
   {
@@ -103,7 +103,9 @@ for (const check of checks) {
     const data = await response.json().catch(() => null);
     const elapsedMs = Math.round(performance.now() - startedAt);
     const fastEnough = elapsedMs <= 3000;
-    const valid = response.ok && fastEnough && check.validate(data);
+    const lean = !check.url.includes("detail_level=summary") ||
+      (Array.isArray(data?.results) && data.results.every(row => !Object.hasOwn(row, "raw") && (row.tags || []).every(tag => !Object.hasOwn(tag, "evidence"))));
+    const valid = response.ok && fastEnough && lean && check.validate(data);
     const resultCount = Array.isArray(data?.results)
       ? `, 결과 ${data.results.length}건`
       : "";

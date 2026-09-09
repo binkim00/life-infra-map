@@ -60,20 +60,32 @@ export function AuthProvider({ children }: PropsWithChildren) {
         if (active) setReady(true);
         return;
       }
+      if (active) {
+        setToken(stored.token);
+        setUserState(stored.user);
+        setReady(true);
+      }
       try {
         const response = await apiRequest<AuthUser | { user?: AuthUser }>(
           "/accounts/me/",
         );
         const nextUser = unwrapUser(response);
+        if ((await authStorage.read()).token !== stored.token) return;
         if (nextUser) await authStorage.write(stored.token, nextUser);
         if (active) {
           setToken(stored.token);
           setUserState(nextUser || stored.user);
         }
       } catch (error) {
+        const current = await authStorage.read();
+        if (current.token && current.token !== stored.token) return;
         if (error instanceof ApiError && error.status === 401) {
-          await authStorage.clear();
-        } else if (active) {
+          // apiRequest already invalidated only the failing session.
+          if (active) {
+            setToken(null);
+            setUserState(null);
+          }
+        } else if (active && current.token === stored.token) {
           // 일시적인 네트워크 장애에서는 유효할 수 있는 세션을 지우지 않습니다.
           setToken(stored.token);
           setUserState(stored.user);
@@ -82,7 +94,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
         if (active) setReady(true);
       }
     };
-    void restore();
+    void restore().catch(() => { if (active) setReady(true); });
     return () => {
       active = false;
     };

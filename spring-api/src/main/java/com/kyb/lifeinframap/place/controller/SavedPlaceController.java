@@ -32,10 +32,14 @@ import org.springframework.web.bind.annotation.*;
 public class SavedPlaceController {
 
     private final UserSavedPlaceRepository savedPlaceRepository;
+    private final UserSavedPlaceGroupRepository savedPlaceGroupRepository;
     private final UserRepository userRepository;
 
-    public SavedPlaceController(UserSavedPlaceRepository savedPlaceRepository, UserRepository userRepository) {
+    public SavedPlaceController(UserSavedPlaceRepository savedPlaceRepository,
+                                UserSavedPlaceGroupRepository savedPlaceGroupRepository,
+                                UserRepository userRepository) {
         this.savedPlaceRepository = savedPlaceRepository;
+        this.savedPlaceGroupRepository = savedPlaceGroupRepository;
         this.userRepository = userRepository;
     }
 
@@ -96,6 +100,14 @@ public class SavedPlaceController {
         if (placeKey == null || placeKey.isBlank()) {
             return ResponseEntity.badRequest().body(Map.of("place_key", List.of("장소 식별자가 필요합니다.")));
         }
+        UserSavedPlaceGroup requestedGroup = null;
+        if (request.groupId() != null) {
+            requestedGroup = savedPlaceGroupRepository
+                    .findByIdAndUserId(request.groupId(), user.getId()).orElse(null);
+            if (requestedGroup == null) {
+                return ResponseEntity.badRequest().body(Map.of("group_id", List.of("내 저장 그룹을 선택해 주세요.")));
+            }
+        }
 
         // 같은 장소를 다시 저장하면 내용을 갱신합니다.
         String normalizedSource = normalizeSource(request.source());
@@ -108,6 +120,7 @@ public class SavedPlaceController {
         saved.fill(request.placeId(), request.externalId(), request.category(), request.address(),
                 request.lat(), request.lng(), request.detailUrl(), request.kakaoPlaceUrl(),
                 request.phone(), request.memo(), request.raw());
+        if (requestedGroup != null) saved.changeGroup(requestedGroup);
         savedPlaceRepository.save(saved);
 
         return ResponseEntity.status(HttpStatus.CREATED).body(serialize(saved));
@@ -126,6 +139,30 @@ public class SavedPlaceController {
             return notFound();
         }
         saved.changeMemo(request.memo());
+        return ResponseEntity.ok(serialize(saved));
+    }
+
+    @PatchMapping("/{savedPlaceId}/group")
+    @Transactional
+    public ResponseEntity<?> updateGroup(@PathVariable Long savedPlaceId,
+                                         @Valid @RequestBody GroupAssignmentRequest request,
+                                         Authentication authentication) {
+        User user = currentUser(authentication);
+        if (user == null) {
+            return unauthorized();
+        }
+        UserSavedPlace saved = savedPlaceRepository.findByIdAndUserId(savedPlaceId, user.getId()).orElse(null);
+        if (saved == null) {
+            return notFound();
+        }
+        UserSavedPlaceGroup group = null;
+        if (request.groupId() != null) {
+            group = savedPlaceGroupRepository.findByIdAndUserId(request.groupId(), user.getId()).orElse(null);
+            if (group == null) {
+                return ResponseEntity.badRequest().body(Map.of("group_id", List.of("내 저장 그룹을 선택해 주세요.")));
+            }
+        }
+        saved.changeGroup(group);
         return ResponseEntity.ok(serialize(saved));
     }
 
@@ -165,6 +202,8 @@ public class SavedPlaceController {
     private Map<String, Object> serialize(UserSavedPlace saved) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("id", saved.getId());
+        body.put("group_id", saved.getGroup() == null ? null : saved.getGroup().getId());
+        body.put("group_name", saved.getGroup() == null ? "" : saved.getGroup().getName());
         body.put("place", saved.getPlaceId());
         body.put("place_key", saved.getPlaceKey());
         body.put("source", saved.getSource());

@@ -13,8 +13,12 @@
 
 from django.urls import path
 from . import views
+from . import evidence_review_views
 
 urlpatterns = [
+    path("admin/research-audits/", evidence_review_views.research_audits),
+    path("admin/evidence/", evidence_review_views.evidence_queue),
+    path("admin/evidence/<int:evidence_id>/", evidence_review_views.evidence_review),
     path('interactions/', views.place_interactions),
     path("health/", views.health_check),
 
@@ -37,6 +41,7 @@ urlpatterns = [
 
     # 장소 제보 (승인이 Place/PlaceTag 를 만들므로 Django 소유)
     path("place-reports/", views.place_reports),
+    path("place-reports/<int:report_id>/", views.my_place_report_detail),
     path("admin/place-reports/", views.admin_place_reports),
     path("admin/operations/", views.admin_operations_dashboard),
     path("admin/place-reports/<int:report_id>/", views.admin_place_report_detail),

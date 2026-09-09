@@ -70,7 +70,7 @@ AREA_COORDINATES = {
 }
 
 # 사전에 적힌 이름 뒤에 흔히 붙는 표현입니다. `서면역`처럼 사전에 직접 넣은 별칭보다 뒤에 봅니다.
-TRAILING_SUFFIXES = ("역", "동", "일대", "쪽", "근처", "주변", "인근")
+TRAILING_SUFFIXES = ("동", "일대", "쪽", "근처", "주변", "인근")
 
 
 def _normalize(value):
@@ -113,8 +113,10 @@ def resolve_area_coordinates_by_token(anchor_location):
         return None
 
     tokens = [token for token in text.split() if token]
-    # 긴 낱말을 먼저 봐서 `해운대해수욕장`이 `해운대`보다 우선 매칭되게 한다.
-    for token in sorted(tokens, key=len, reverse=True):
+    # 복합 지명은 보통 큰 지역에서 작은 지역 순서로 적는다. 따라서 여러
+    # 토큰이 모두 알려진 지명이라면 마지막(더 구체적인) 지명을 우선한다.
+    # 각 토큰 내부의 정확/접미사 판정은 resolve_area_coordinates가 담당한다.
+    for token in reversed(tokens):
         found = resolve_area_coordinates(token)
         if found:
             return found

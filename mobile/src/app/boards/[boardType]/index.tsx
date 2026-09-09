@@ -1,7 +1,8 @@
+import { useResource } from "@/hooks/use-resource";
+import { LoadState } from "@/components/load-state";
 import { router, useLocalSearchParams } from "expo-router";
-import { useCallback, useEffect, useState } from "react";
+
 import {
-  ActivityIndicator,
   Pressable,
   StyleSheet,
   Text,
@@ -34,20 +35,9 @@ const LABELS: Record<string, string> = {
 export default function BoardListScreen() {
   const { boardType = "free" } = useLocalSearchParams<{ boardType: string }>();
   const { requireLogin } = useAuth();
-  const [posts, setPosts] = useState<Post[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const load = useCallback(() => {
-    boardsApi
-      .posts(boardType)
-      .then((data) => setPosts(data as Post[]))
-      .catch(() => setError("게시글을 불러오지 못했습니다."))
-      .finally(() => setLoading(false));
-  }, [boardType]);
-  useEffect(() => {
-    void load();
-  }, [load]);
-
+  const { data: posts, loading, error, reload: load } = useResource<Post[]>(
+    () => boardsApi.posts(boardType).then(data => data as Post[]), [], true, boardType,
+  );
   return (
     <View style={styles.root}>
       <Screen
@@ -84,11 +74,12 @@ export default function BoardListScreen() {
           ))}
         </View>
         {loading ? (
-          <ActivityIndicator color="#0F766E" />
+          <LoadState loading={loading} retry={load} />
         ) : error ? (
-          <Text style={ui.error}>{error}</Text>
+          <LoadState loading={false} error={error} retry={load} />
         ) : (
           <View style={styles.list}>
+            <LoadState loading={false} empty={!posts.length} retry={load} emptyText="아직 게시글이 없습니다." />
             {posts.map((post) => (
               <Pressable
                 key={post.id}

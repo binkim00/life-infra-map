@@ -616,6 +616,7 @@ class PlaceReportImageSerializer(serializers.ModelSerializer):
 
 
 class PlaceReportCreateSerializer(serializers.ModelSerializer):
+    client_request_id = serializers.UUIDField(required=False, allow_null=True)
     place = serializers.PrimaryKeyRelatedField(
         queryset=Place.objects.all(),
         required=False,
@@ -626,6 +627,7 @@ class PlaceReportCreateSerializer(serializers.ModelSerializer):
         model = PlaceReport
         fields = [
             "id",
+            "client_request_id",
             "place",
             "report_type",
             "suggested_name",
@@ -652,6 +654,14 @@ class PlaceReportCreateSerializer(serializers.ModelSerializer):
                     filtered_data[key] = parse_label_list(data.get(key))
             elif key in data:
                 value = data.get(key)
+                if key in {"suggested_lat", "suggested_lng"} and value not in (None, ""):
+                    try:
+                        value = Decimal(str(value).strip()).quantize(
+                            SAVED_PLACE_COORDINATE_QUANTIZER,
+                            rounding=ROUND_HALF_UP,
+                        )
+                    except (InvalidOperation, ValueError):
+                        pass
                 filtered_data[key] = None if value == "" and key in {"place", "suggested_lat", "suggested_lng"} else value
 
         return super().to_internal_value(filtered_data)
@@ -691,6 +701,7 @@ class PlaceReportListSerializer(serializers.ModelSerializer):
         model = PlaceReport
         fields = [
             "id",
+            "client_request_id",
             "report_type",
             "report_type_label",
             "status",
@@ -701,6 +712,8 @@ class PlaceReportListSerializer(serializers.ModelSerializer):
             "suggested_tags",
             "admin_note",
             "image_count",
+            "description",
+            "suggested_address",
             "created_at",
             "reviewed_at",
         ]
@@ -723,6 +736,7 @@ class PlaceReportDetailSerializer(serializers.ModelSerializer):
         model = PlaceReport
         fields = [
             "id",
+            "client_request_id",
             "user",
             "user_username",
             "place",

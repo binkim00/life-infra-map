@@ -1,5 +1,5 @@
 import { router, useLocalSearchParams } from "expo-router";
-import * as Location from "expo-location";
+import { searchLocation } from "@/utils/location";
 import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -13,10 +13,9 @@ import {
 import { recommendationApi } from "@/api/recommendations";
 import { ApiError } from "@/api/client";
 import { useAuth } from "@/auth/auth-context";
-import { BottomNav } from "@/components/bottom-nav";
 import { PlaceDetailSheet } from "@/components/place-detail-sheet";
 import { PlaceMap } from "@/components/place-map";
-import { Screen, ui } from "@/components/screen";
+import { INPUT_PLACEHOLDER_COLOR, Screen, ui } from "@/components/screen";
 import type { Place } from "@/types/place";
 
 type AiPlace = Place & {
@@ -62,11 +61,13 @@ type ConversationSession = {
 const GREETING =
   "어떤 상황에서 갈 장소를 찾고 있나요? 지역, 동행, 목적이나 꼭 필요한 조건을 편하게 말해 주세요.";
 
-const optionValue = (option: NonNullable<AiResponse["clarification_options"]>[number]) =>
-  typeof option === "string" ? option : option.value || option.label || "";
+const optionValue = (
+  option: NonNullable<AiResponse["clarification_options"]>[number],
+) => (typeof option === "string" ? option : option.value || option.label || "");
 
-const optionLabel = (option: NonNullable<AiResponse["clarification_options"]>[number]) =>
-  typeof option === "string" ? option : option.label || option.value || "";
+const optionLabel = (
+  option: NonNullable<AiResponse["clarification_options"]>[number],
+) => (typeof option === "string" ? option : option.label || option.value || "");
 
 const assistantText = (data: AiResponse, count: number) => {
   if (data.clarification_question) return data.clarification_question;
@@ -86,12 +87,11 @@ const assistantText = (data: AiResponse, count: number) => {
 };
 
 const resolvedLocationLabel = (searchPlan?: Record<string, unknown>) => {
-  const rawFrame = searchPlan?.place_intent_frame ?? searchPlan?.placeIntentFrame;
+  const rawFrame =
+    searchPlan?.place_intent_frame ?? searchPlan?.placeIntentFrame;
   if (!rawFrame || typeof rawFrame !== "object") return null;
   const frame = rawFrame as Record<string, unknown>;
-  const locationMode = String(
-    frame.location_mode ?? frame.locationMode ?? "",
-  );
+  const locationMode = String(frame.location_mode ?? frame.locationMode ?? "");
   const anchor = String(
     frame.anchor_location ?? frame.anchorLocation ?? "",
   ).trim();
@@ -100,14 +100,19 @@ const resolvedLocationLabel = (searchPlan?: Record<string, unknown>) => {
 
 const formatDistance = (place: AiPlace) => {
   const distance = place.distance_m ?? place.distance;
-  if (distance === undefined || distance === null) return "거리 정보 없음";
+  if (distance === undefined || distance === null || distance <= 0)
+    return "거리 정보 없음";
   return distance < 1000
     ? `${Math.round(distance)}m`
     : `${(distance / 1000).toFixed(1)}km`;
 };
 
 export default function RecommendScreen() {
-  const params = useLocalSearchParams<{ q?: string; lat?: string; lng?: string }>();
+  const params = useLocalSearchParams<{
+    q?: string;
+    lat?: string;
+    lng?: string;
+  }>();
   const { requireLogin, isLoggedIn } = useAuth();
   const initialLat = Number(params.lat);
   const initialLng = Number(params.lng);
@@ -146,9 +151,11 @@ export default function RecommendScreen() {
   const initialQuerySentRef = useRef(false);
   const needsWebFallback =
     results.length < 5 ||
-    results.slice(0, 5).every((place) =>
-      ["empty", "thin"].includes(place.evidence_quality_level || "empty"),
-    );
+    results
+      .slice(0, 5)
+      .every((place) =>
+        ["empty", "thin"].includes(place.evidence_quality_level || "empty"),
+      );
   const createSession = async () => {
     const raw = await recommendationApi.createConversationSession();
     const session = {
@@ -173,23 +180,13 @@ export default function RecommendScreen() {
     ]);
     try {
       const session = sessionRef.current || (await createSession());
-      let raw: Record<string, unknown>;
-      try {
-        raw = await recommendationApi.sendConversationTurn(
-          session.id,
-          session.token,
-          { query: text, lat: center.lat, lng: center.lng, limit: 10 },
-        );
-      } catch (error) {
-        if (!(error instanceof ApiError) || ![404, 409].includes(error.status))
-          throw error;
-        const replacement = await createSession();
-        raw = await recommendationApi.sendConversationTurn(
-          replacement.id,
-          replacement.token,
-          { query: text, lat: center.lat, lng: center.lng, limit: 10 },
-        );
-      }
+      // Keep the session even after conflicts; creating a replacement here
+      // would silently discard earlier constraints.
+      const raw = await recommendationApi.sendConversationTurn(
+        session.id,
+        session.token,
+        { query: text, lat: center.lat, lng: center.lng, limit: 10 },
+      );
       const data = raw as AiResponse;
       const receivedPlaces = data.results || [];
       const supportedPlaces = receivedPlaces.filter(
@@ -207,7 +204,10 @@ export default function RecommendScreen() {
           ? supportedPlaces.slice(0, 10)
           : [
               ...supportedPlaces,
-              ...fallbackPlaces.slice(0, Math.max(0, 3 - supportedPlaces.length)),
+              ...fallbackPlaces.slice(
+                0,
+                Math.max(0, 3 - supportedPlaces.length),
+              ),
             ];
       const action = data.decision_action || "";
       if (action !== "ask_clarification") {
@@ -236,18 +236,24 @@ export default function RecommendScreen() {
           lng: center.lng,
           target_query: text,
           result_count: places.length,
-          db_result_count: places.filter((place) => place.source === "db").length,
-          kakao_result_count: places.filter((place) => place.source !== "db").length,
+          db_result_count: places.filter((place) => place.source === "db")
+            .length,
+          kakao_result_count: places.filter((place) => place.source !== "db")
+            .length,
           ai_web_result_count: 0,
           search_plan_snapshot: data.search_plan || {},
         });
-    } catch {
+    } catch (error) {
+      setQuery(text);
       setChatMessages((current) => [
         ...current,
         {
           id: `assistant-error-${Date.now()}`,
           role: "assistant",
-          text: "대화를 이어가지 못했어요. 잠시 후 같은 내용을 다시 보내 주세요.",
+          text:
+            error instanceof ApiError && error.status === 404
+              ? "이전 대화를 찾을 수 없습니다. 새 대화를 시작한 뒤 지역과 원하는 조건을 다시 알려주세요."
+              : "대화를 이어가지 못했어요. 입력한 내용은 남겨두었습니다. 잠시 후 다시 보내 주세요.",
         },
       ]);
     } finally {
@@ -265,7 +271,9 @@ export default function RecommendScreen() {
           void submitTurn(params.q);
         }
       })
-      .catch(() => setMessage("대화 준비에 실패했습니다. 검색을 누르면 다시 연결합니다."));
+      .catch(() =>
+        setMessage("대화 준비에 실패했습니다. 검색을 누르면 다시 연결합니다."),
+      );
     // 새 화면마다 독립된 대화를 시작합니다.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -285,36 +293,64 @@ export default function RecommendScreen() {
     ]);
     setMessage("");
     if (previous)
-      void recommendationApi.closeConversationSession(previous.id, previous.token).catch(() => undefined);
+      void recommendationApi
+        .closeConversationSession(previous.id, previous.token)
+        .catch(() => undefined);
     try {
       await createSession();
     } catch {
-      setMessage("새 대화를 준비하지 못했습니다. 첫 메시지를 보내면 다시 시도합니다.");
+      setMessage(
+        "새 대화를 준비하지 못했습니다. 첫 메시지를 보내면 다시 시도합니다.",
+      );
     }
   };
 
-  const useCurrentLocation = async () => {
-    const permission = await Location.requestForegroundPermissionsAsync();
-    if (!permission.granted) {
-      setMessage("현재 위치를 사용하려면 위치 권한이 필요합니다.");
-      return;
+  const applyCurrentLocation = async () => {
+    try {
+      const coordinates = await searchLocation();
+      if (!coordinates) {
+        setMessage("현재 위치를 사용하려면 위치 권한이 필요합니다.");
+        return;
+      }
+      setCenter({
+        lat: coordinates.latitude,
+        lng: coordinates.longitude,
+        label: "현재 위치 기준",
+      });
+      setLocationBasisLabel(null);
+      setMessage(
+        "현재 위치를 기준으로 설정했습니다. 원하는 장소나 조건을 말해 주세요.",
+      );
+    } catch {
+      setMessage(
+        "현재 위치를 확인하지 못했습니다. 동네나 역 이름을 입력해 주세요.",
+      );
     }
-    const position = await Location.getCurrentPositionAsync({
-      accuracy: Location.Accuracy.Balanced,
-    });
-    setCenter({
-      lat: position.coords.latitude,
-      lng: position.coords.longitude,
-      label: "현재 위치 기준",
-    });
-    setLocationBasisLabel(null);
-    setMessage("현재 위치를 기준으로 설정했습니다. 원하는 장소나 조건을 말해 주세요.");
   };
+  useEffect(() => {
+    if (hasInitialCenter) return;
+    let active = true;
+    void searchLocation()
+      .then((coordinates) => {
+        if (!active || !coordinates) return;
+        setCenter({
+          lat: coordinates.latitude,
+          lng: coordinates.longitude,
+          label: "현재 위치 기준",
+        });
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [hasInitialCenter]);
   const searchWeb = async () => {
     try {
       setLoading(true);
       const raw = await recommendationApi.aiWebSearch({
-        query: chatMessages.filter((item) => item.role === "user").at(-1)?.text || "",
+        query:
+          chatMessages.filter((item) => item.role === "user").at(-1)?.text ||
+          "",
         lat: center.lat,
         lng: center.lng,
         search_plan: searchPlan || {},
@@ -380,12 +416,16 @@ export default function RecommendScreen() {
     );
   };
   const report = () => {
-    if (!selected || !requireLogin()) return;
+    if (!selected) return;
     setDetailVisible(false);
     router.push({
       pathname: "/place-report",
       params: {
-        placeId: String(selected.place_id || selected.id),
+        placeId: selected.place_id
+          ? String(selected.place_id)
+          : selected.source === "db"
+            ? String(selected.id).replace(/^db:/, "")
+            : undefined,
         name: selected.name,
         address: selected.address || "",
         lat: String(selected.lat),
@@ -399,6 +439,47 @@ export default function RecommendScreen() {
         title="상황 기반 장소 추천"
         subtitle="상황과 조건을 이해해 이유가 있는 결과를 정렬합니다."
         back
+        footer={
+          <>
+            {clarificationOptions.length ? (
+              <View style={styles.optionRow}>
+                {clarificationOptions.map((option, index) => (
+                  <Pressable
+                    key={`${optionValue(option)}-${index}`}
+                    disabled={loading}
+                    onPress={() => submitTurn(optionValue(option))}
+                    style={styles.optionButton}
+                  >
+                    <Text style={styles.optionText}>{optionLabel(option)}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            ) : null}
+            <View style={ui.row}>
+              <TextInput
+                accessibilityLabel="상황 검색 메시지"
+                value={query}
+                onChangeText={setQuery}
+                onSubmitEditing={() => search()}
+                placeholder="답변하거나 원하는 조건을 더 알려주세요"
+                placeholderTextColor={INPUT_PLACEHOLDER_COLOR}
+                editable={!loading}
+                style={[ui.input, ui.grow]}
+              />
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => search()}
+                disabled={loading || !query.trim()}
+                style={[
+                  ui.button,
+                  (loading || !query.trim()) && styles.disabledButton,
+                ]}
+              >
+                <Text style={ui.buttonText}>보내기</Text>
+              </Pressable>
+            </View>
+          </>
+        }
       >
         <Pressable
           onPress={() => router.push("/explore")}
@@ -408,7 +489,10 @@ export default function RecommendScreen() {
             장소명·업종만 찾는다면 일반 장소 검색으로 이동
           </Text>
         </Pressable>
-        <Pressable onPress={useCurrentLocation} style={styles.locationButton}>
+        <Pressable
+          onPress={() => void applyCurrentLocation()}
+          style={styles.locationButton}
+        >
           <Text style={styles.locationButtonText}>
             {locationBasisLabel || center.label}
           </Text>
@@ -425,66 +509,39 @@ export default function RecommendScreen() {
               key={item.id}
               style={[
                 styles.bubble,
-                item.role === "user" ? styles.userBubble : styles.assistantBubble,
+                item.role === "user"
+                  ? styles.userBubble
+                  : styles.assistantBubble,
               ]}
             >
               <Text
-                style={item.role === "user" ? styles.userText : styles.assistantText}
+                style={
+                  item.role === "user" ? styles.userText : styles.assistantText
+                }
               >
                 {item.text}
               </Text>
             </View>
           ))}
           {loading ? (
-            <View style={[styles.bubble, styles.assistantBubble, styles.typingBubble]}>
+            <View
+              style={[
+                styles.bubble,
+                styles.assistantBubble,
+                styles.typingBubble,
+              ]}
+            >
               <ActivityIndicator size="small" color="#0F766E" />
               <Text style={styles.assistantText}>조건을 이해하고 있어요…</Text>
             </View>
           ) : null}
-        </View>
-        {clarificationOptions.length ? (
-          <View style={styles.optionRow}>
-            {clarificationOptions.map((option, index) => {
-              const value = optionValue(option);
-              return value ? (
-                <Pressable
-                  key={`${value}-${index}`}
-                  onPress={() => submitTurn(value)}
-                  style={styles.optionButton}
-                >
-                  <Text style={styles.optionText}>{optionLabel(option)}</Text>
-                </Pressable>
-              ) : null;
-            })}
-          </View>
-        ) : null}
-        <View style={ui.row}>
-          <TextInput
-            value={query}
-            onChangeText={setQuery}
-            onSubmitEditing={() => search()}
-            placeholder={
-              clarificationOptions.length
-                ? "답변을 입력하거나 위 항목을 선택하세요"
-                : "예: 명지에서 아이와 갈 조용한 카페"
-            }
-            editable={!loading}
-            style={[ui.input, ui.grow]}
-          />
-          <Pressable
-            onPress={() => search()}
-            disabled={loading || !query.trim()}
-            style={[ui.button, (loading || !query.trim()) && styles.disabledButton]}
-          >
-            <Text style={ui.buttonText}>보내기</Text>
-          </Pressable>
         </View>
         {message ? (
           <Text style={message.includes("실패") ? ui.error : ui.success}>
             {message}
           </Text>
         ) : null}
-        {!loading ? (
+        {(
           <>
             {selected ? (
               <View style={styles.map}>
@@ -494,10 +551,15 @@ export default function RecommendScreen() {
                   onSelectPlace={setSelected}
                 />
                 <View style={styles.mapFooter}>
-                  <View style={ui.grow}>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`${selected.name} 상세정보`}
+                    onPress={() => setDetailVisible(true)}
+                    style={ui.grow}
+                  >
                     <Text style={styles.selectedName}>{selected.name}</Text>
                     <Text style={ui.muted}>{selected.address}</Text>
-                  </View>
+                  </Pressable>
                   <View style={styles.mapActions}>
                     <Pressable
                       onPress={() => setDetailVisible(true)}
@@ -517,7 +579,10 @@ export default function RecommendScreen() {
                 <Pressable onPress={save} style={[ui.buttonSecondary, ui.grow]}>
                   <Text style={ui.buttonSecondaryText}>저장</Text>
                 </Pressable>
-                <Pressable onPress={report} style={[ui.buttonSecondary, ui.grow]}>
+                <Pressable
+                  onPress={report}
+                  style={[ui.buttonSecondary, ui.grow]}
+                >
                   <Text style={ui.buttonSecondaryText}>정보 제보</Text>
                 </Pressable>
               </View>
@@ -531,7 +596,12 @@ export default function RecommendScreen() {
               {results.map((place, index) => (
                 <Pressable
                   key={String(place.id)}
-                  onPress={() => setSelected(place)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${place.name} 상세정보`}
+                  onPress={() => {
+                    setSelected(place);
+                    setDetailVisible(true);
+                  }}
                   style={[ui.card, selected?.id === place.id && styles.active]}
                 >
                   <View style={ui.row}>
@@ -553,19 +623,22 @@ export default function RecommendScreen() {
                       ) : null}
                       {place.matched_conditions?.length ? (
                         <Text style={styles.tags}>
-                          충족: {place.matched_conditions.slice(0, 3).join(" · ")}
+                          충족:{" "}
+                          {place.matched_conditions.slice(0, 3).join(" · ")}
                         </Text>
                       ) : null}
                       {place.missing_conditions?.length ? (
                         <Text style={styles.missing}>
-                          확인 필요: {place.missing_conditions.slice(0, 3).join(" · ")}
+                          확인 필요:{" "}
+                          {place.missing_conditions.slice(0, 3).join(" · ")}
                         </Text>
                       ) : null}
                       {(["empty", "thin"] as const).includes(
                         place.evidence_quality_level as "empty" | "thin",
                       ) && place.evidence_gaps?.length ? (
                         <Text style={styles.missing}>
-                          장소 정보 부족: {place.evidence_gaps.slice(0, 3).join(" · ")}
+                          장소 정보 부족:{" "}
+                          {place.evidence_gaps.slice(0, 3).join(" · ")}
                         </Text>
                       ) : null}
                       {place.suggested_tags?.length ? (
@@ -592,7 +665,7 @@ export default function RecommendScreen() {
               </>
             ) : null}
           </>
-        ) : null}
+        )}
       </Screen>
       <PlaceDetailSheet
         place={selected}
@@ -601,7 +674,6 @@ export default function RecommendScreen() {
         onSave={save}
         onReport={report}
       />
-      <BottomNav />
     </View>
   );
 }
@@ -615,9 +687,22 @@ const styles = StyleSheet.create({
   chatTitle: { color: "#222222", fontSize: 16, fontWeight: "900" },
   resetText: { color: "#0F766E", fontSize: 12, fontWeight: "800" },
   chat: { gap: 8 },
-  bubble: { maxWidth: "86%", paddingHorizontal: 14, paddingVertical: 11, borderRadius: 16 },
-  userBubble: { alignSelf: "flex-end", backgroundColor: "#0F766E", borderBottomRightRadius: 4 },
-  assistantBubble: { alignSelf: "flex-start", backgroundColor: "#FFFFFF", borderBottomLeftRadius: 4 },
+  bubble: {
+    maxWidth: "86%",
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    borderRadius: 16,
+  },
+  userBubble: {
+    alignSelf: "flex-end",
+    backgroundColor: "#0F766E",
+    borderBottomRightRadius: 4,
+  },
+  assistantBubble: {
+    alignSelf: "flex-start",
+    backgroundColor: "#FFFFFF",
+    borderBottomLeftRadius: 4,
+  },
   userText: { color: "#FFFFFF", fontSize: 13, lineHeight: 19 },
   assistantText: { color: "#303633", fontSize: 13, lineHeight: 19 },
   typingBubble: { flexDirection: "row", alignItems: "center", gap: 8 },

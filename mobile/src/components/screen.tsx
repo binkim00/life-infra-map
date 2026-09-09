@@ -1,9 +1,19 @@
 import { router } from "expo-router";
 import { PropsWithChildren, ReactNode } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import {
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { Palette, Radius, Spacing } from "@/constants/theme";
+
+export const INPUT_PLACEHOLDER_COLOR = "#5F6863";
 
 export function Screen({
   title,
@@ -11,14 +21,19 @@ export function Screen({
   children,
   back = false,
   action,
+  footer,
 }: PropsWithChildren<{
   title: string;
   subtitle?: string;
   back?: boolean;
   action?: ReactNode;
+  footer?: ReactNode;
 }>) {
   return (
-    <View style={styles.screen}>
+    <KeyboardAvoidingView
+      style={styles.screen}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+    >
       <SafeAreaView style={styles.safe} edges={["top", "left", "right"]}>
         <ScrollView
           contentContainerStyle={styles.content}
@@ -42,8 +57,13 @@ export function Screen({
           </View>
           {children}
         </ScrollView>
+        {footer ? (
+          <SafeAreaView edges={["bottom"]} style={styles.footer}>
+            {footer}
+          </SafeAreaView>
+        ) : null}
       </SafeAreaView>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -131,6 +151,13 @@ export const ui = StyleSheet.create({
 });
 
 const styles = StyleSheet.create({
+  footer: {
+    padding: 12,
+    gap: 8,
+    backgroundColor: "#F5F7F6",
+    borderTopWidth: 1,
+    borderColor: "#DCE3DF",
+  },
   screen: { flex: 1, backgroundColor: "#F5F7F6" },
   safe: { flex: 1 },
   content: {

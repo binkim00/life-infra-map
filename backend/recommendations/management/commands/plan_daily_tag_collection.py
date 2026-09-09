@@ -6,7 +6,7 @@ from django.core.management.base import BaseCommand
 from django.db.models import Count, Exists, OuterRef, Q, Sum
 from django.utils import timezone
 
-from recommendations.models import Place, PlaceTag, PlaceTagCollectionJob, ProviderQuotaUsage
+from recommendations.models import Place, PlaceTag, PlaceTagCollectionJob, ProviderQuotaUsage, TagEnrichmentRequest
 from recommendations.models import PlaceTagEvidence
 from recommendations.services.place_tag_collection import (
     COLLECTION_PROFILES,
@@ -241,7 +241,8 @@ def plan_bootstrap_jobs(
             location |= Q(address__startswith=alias)
             location |= Q(detail_location__startswith=alias)
         for category in categories:
-            base = Place.objects.filter(location, category=category).exclude(
+            eligible = Place.objects.filter(location, category=category)
+            base = eligible.exclude(
                 id__in=recent_place_ids
             )
             total_places = Place.objects.filter(location, category=category).count()
@@ -273,7 +274,21 @@ def plan_bootstrap_jobs(
             ).order_by("-confidence", "place_id").values_list("place_id", flat=True)[:per_stratum]
             candidate_rows = Place.objects.filter(id__in=candidate_place_ids)
             discovery_rows = base.order_by("id")[:per_stratum]
-            for place in list(candidate_rows) + list(discovery_rows):
+            # Launch-quality feedback is actionable work, not just a score.
+            # Let queued place/tag demand bypass the normal revisit window,
+            # while the per-day unique job and quota limits remain in force.
+            today_job_place_ids = PlaceTagCollectionJob.objects.filter(
+                cycle_date=cycle_date,
+                provider=provider,
+            ).values_list("place_id", flat=True)
+            demanded_place_ids = TagEnrichmentRequest.objects.filter(
+                place__in=eligible,
+                status="queued",
+            ).exclude(place_id__in=today_job_place_ids).order_by(
+                "-priority", "created_at"
+            ).values_list("place_id", flat=True)[:per_stratum]
+            demand_rows = Place.objects.filter(id__in=demanded_place_ids)
+            for place in list(demand_rows) + list(candidate_rows) + list(discovery_rows):
                 places_by_id[place.id] = place
                 region_by_place_id[place.id] = region_name
     places = list(places_by_id.values())

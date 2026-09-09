@@ -31,15 +31,37 @@ class AdministrativeLocationResolutionTests(SimpleTestCase):
                     self.assertAlmostEqual(result["lng"], coordinates[1], places=6)
 
     def test_station_and_neighborhood_anchors_keep_their_specific_centers(self):
-        for label in ("서면", "부산역", "하단역", "센텀시티역", "명지"):
+        for label in ("서면", "부산역", "명지"):
             with self.subTest(label=label):
                 result = _resolve_anchor_location(label, lat=37.5, lng=127.0)
                 self.assertEqual(result["status"], "resolved")
                 self.assertEqual(result["source"], "area_gazetteer")
 
-        centum = _resolve_anchor_location("센텀시티역", lat=37.5, lng=127.0)
-        self.assertAlmostEqual(centum["lat"], 35.169000, places=6)
-        self.assertAlmostEqual(centum["lng"], 129.130200, places=6)
+    @patch(
+        "recommendations.services.ai_search_orchestrator.search_places_by_keyword",
+        side_effect=AssertionError("known compound areas must not use a commercial POI"),
+    )
+    def test_compound_area_prefers_trailing_specific_locality(self, _search):
+        for query, expected in (("부산 전포", "전포"), ("서울 강남구", "강남구")):
+            with self.subTest(query=query):
+                result = _resolve_anchor_location(query, lat=35.1, lng=129.1)
+                self.assertEqual(result["status"], "resolved")
+                self.assertEqual(result["source"], "area_gazetteer_compound")
+                self.assertEqual(result["label"], expected)
+
+    @patch("recommendations.services.ai_search_orchestrator.search_places_by_keyword")
+    def test_station_uses_provider_coordinates_not_stripped_area_alias(self, search):
+        for label in ("하단역", "센텀시티역"):
+            with self.subTest(label=label):
+                search.return_value = {"documents": [{
+                    "id": "station-test", "place_name": label,
+                    "category_name": "교통,수송 > 지하철역", "x": "129.12", "y": "35.17",
+                }]}
+                result = _resolve_anchor_location(label, lat=37.5, lng=127.0)
+                self.assertEqual(result["status"], "resolved")
+                self.assertEqual(result["source"], "kakao_keyword")
+                self.assertAlmostEqual(result["lat"], 35.17)
+                self.assertAlmostEqual(result["lng"], 129.12)
 
     def test_explicit_area_survives_descriptive_words_between_area_and_category(self):
         self.assertEqual(_local_rule_anchor_location("명지 분위기 좋은 카페"), "명지")
@@ -75,6 +97,34 @@ class AdministrativeLocationResolutionTests(SimpleTestCase):
         self.assertEqual(errors, [])
         self.assertEqual(plan["frame"]["location_mode"], "explicit")
         self.assertEqual(plan["frame"]["anchor_location"], "명지")
+
+    def test_ai_broad_city_anchor_is_replaced_by_more_specific_local_area(self):
+        plan, errors = _canonicalize(
+            {
+                "action": "search",
+                "normalized_query": "카페",
+                "frame": {
+                    "location_mode": "explicit",
+                    "anchor_location": "부산",
+                    "target_objects": ["카페"],
+                    "candidate_place_types": ["카페"],
+                    "result_match_terms": ["카페"],
+                    "constraints": ["분위기 좋음"],
+                    "exclusions": [],
+                    "ranking_policy": "evidence_first",
+                    "primary_search_queries": ["카페"],
+                    "secondary_search_queries": [],
+                },
+                "clarification": {},
+                "confidence": 0.8,
+            },
+            raw_query="부산 서면 분위기 좋은 카페",
+            lat=35.15,
+            lng=129.05,
+        )
+
+        self.assertEqual(errors, [])
+        self.assertEqual(plan["frame"]["anchor_location"], "서면")
 
 
 class DisabledRerankerTests(SimpleTestCase):

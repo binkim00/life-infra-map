@@ -1,5 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useResource } from "@/hooks/use-resource";
+import { LoadState } from "@/components/load-state";
 import { StyleSheet, Switch, Text, View } from "react-native";
 import { Screen, ui } from "@/components/screen";
 const KEY = "lifeInfraSettings";
@@ -10,11 +12,10 @@ const DEFAULTS = {
 };
 export default function SettingsScreen() {
   const [settings, setSettings] = useState(DEFAULTS);
-  useEffect(() => {
-    AsyncStorage.getItem(KEY).then((raw) => {
+  const { loading, error, reload } = useResource(async () => {
+    const raw = await AsyncStorage.getItem(KEY);
       if (raw) setSettings({ ...DEFAULTS, ...JSON.parse(raw) });
-    });
-  }, []);
+  }, undefined);
   const toggle = (key: keyof typeof settings, value: boolean) => {
     const next = { ...settings, [key]: value };
     setSettings(next);
@@ -39,6 +40,7 @@ export default function SettingsScreen() {
   ];
   return (
     <Screen title="설정" subtitle="알림과 화면 표시 방식을 관리합니다." back>
+      <LoadState loading={loading} error={error} retry={reload} />
       <View style={styles.list}>
         {rows.map(([key, title, description]) => (
           <View key={key} style={[ui.card, styles.row]}>
@@ -47,6 +49,7 @@ export default function SettingsScreen() {
               <Text style={ui.muted}>{description}</Text>
             </View>
             <Switch
+              disabled={loading || Boolean(error)}
               value={settings[key]}
               onValueChange={(value) => toggle(key, value)}
               trackColor={{ true: "#0F766E" }}

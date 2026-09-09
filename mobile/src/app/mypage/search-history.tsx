@@ -1,5 +1,10 @@
+import { useState } from "react";
+import { Pagination } from "@/components/pagination";
+import { useResource } from "@/hooks/use-resource";
+import { useAction } from "@/hooks/use-action";
+import { LoadState } from "@/components/load-state";
 import { router } from "expo-router";
-import { useEffect, useState } from "react";
+
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { recommendationApi } from "@/api/recommendations";
 import { Screen, ui } from "@/components/screen";
@@ -10,23 +15,19 @@ type Log = {
   search_mode?: string;
 };
 export default function SearchHistoryScreen() {
-  const [logs, setLogs] = useState<Log[]>([]);
-  const [message, setMessage] = useState("");
-  const load = () =>
-    recommendationApi
-      .searchLogs({ page: 1, page_size: 50 })
-      .then((data) => setLogs((data.results || []) as Log[]))
-      .catch(() => setMessage("검색 기록을 불러오지 못했습니다."));
-  useEffect(() => {
-    void load();
-  }, []);
+  const [page, setPage] = useState(1);
+  const action = useAction();
+  const { data: logs, loading, error, reload: load } = useResource<Log[]>(
+    () => recommendationApi.searchLogs({ page, page_size: 20 }).then((data) => (data.results || []) as Log[]), [], true, String(page),
+  );
   return (
     <Screen
       title="검색 기록"
       subtitle="이전 검색을 다시 실행할 수 있습니다."
       back
     >
-      {message ? <Text style={ui.error}>{message}</Text> : null}
+      <LoadState loading={loading} error={error} empty={!logs.length} retry={load} />
+      {action.error ? <Text style={ui.error}>{action.error}</Text> : null}
       <View style={styles.list}>
         {logs.map((log) => (
           <View key={log.id} style={ui.card}>
@@ -35,7 +36,7 @@ export default function SearchHistoryScreen() {
                 style={ui.grow}
                 onPress={() =>
                   router.push({
-                    pathname: "/explore",
+                    pathname: log.search_mode === "recommendation_query" ? "/recommend" : "/explore",
                     params: { q: log.query },
                   })
                 }
@@ -48,10 +49,11 @@ export default function SearchHistoryScreen() {
                 </Text>
               </Pressable>
               <Pressable
-                onPress={async () => {
+                disabled={action.busy}
+                onPress={() => action.run(async () => {
                   await recommendationApi.deleteSearchLog(log.id);
                   load();
-                }}
+                })}
               >
                 <Text style={styles.delete}>삭제</Text>
               </Pressable>
@@ -59,6 +61,7 @@ export default function SearchHistoryScreen() {
           </View>
         ))}
       </View>
+      <Pagination page={page} setPage={setPage} hasNext={logs.length === 20} loading={loading} />
     </Screen>
   );
 }

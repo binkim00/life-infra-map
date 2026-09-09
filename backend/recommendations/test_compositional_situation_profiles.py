@@ -497,23 +497,14 @@ class CompositionalSearchResponseIntegrationTests(TestCase):
         self.assertEqual(data["decision_action"], "search")
         self.assertEqual(
             [row["id"] for row in data["results"]],
-            [f"db:{self.supported.id}", f"db:{self.unsupported.id}"],
-        )
-        self.assertLess(
-            data["results"][0]["result_quality_sort_key"],
-            data["results"][1]["result_quality_sort_key"],
+            [f"db:{self.supported.id}"],
         )
         self.assertTrue(
             any("조용" in condition for condition in data["results"][0]["matched_conditions"])
         )
-        fallback = data["results"][1]
-        self.assertEqual(fallback["result_tier"], "best_available")
-        self.assertTrue(
-            any("조용" in condition for condition in fallback["missing_conditions"])
-        )
-        self.assertTrue(
-            any(word in fallback["recommendation_reason"] for word in ("부족", "확인"))
-        )
+        # A mandatory quiet condition must not be padded with unverified places
+        # without the user's agreement to relax it.
+        self.assertNotIn(f"db:{self.unsupported.id}", [row["id"] for row in data["results"]])
         self.assertEqual(
             data["debug_pipeline"]["reranker"]["common_hard_gate"]["removed_by_type"],
             {"feature": 1},

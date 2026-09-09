@@ -11,7 +11,7 @@ import {
 } from "react-native";
 
 import { useAuth } from "@/auth/auth-context";
-import { Screen, ui } from "@/components/screen";
+import { INPUT_PLACEHOLDER_COLOR, Screen, ui } from "@/components/screen";
 
 export default function SignupScreen() {
   const { signup } = useAuth();
@@ -81,12 +81,14 @@ export default function SignupScreen() {
           value={form.username}
           onChangeText={(v) => field("username", v)}
           placeholder="아이디"
+          placeholderTextColor={INPUT_PLACEHOLDER_COLOR}
           style={ui.input}
         />
         <TextInput
           value={form.nickname}
           onChangeText={(v) => field("nickname", v)}
           placeholder="닉네임"
+          placeholderTextColor={INPUT_PLACEHOLDER_COLOR}
           style={ui.input}
         />
         <TextInput
@@ -95,12 +97,14 @@ export default function SignupScreen() {
           value={form.email}
           onChangeText={(v) => field("email", v)}
           placeholder="이메일 (선택)"
+          placeholderTextColor={INPUT_PLACEHOLDER_COLOR}
           style={ui.input}
         />
         <TextInput
           value={form.password}
           onChangeText={(v) => field("password", v)}
           placeholder="비밀번호"
+          placeholderTextColor={INPUT_PLACEHOLDER_COLOR}
           secureTextEntry
           style={ui.input}
         />
@@ -108,6 +112,7 @@ export default function SignupScreen() {
           value={form.passwordConfirm}
           onChangeText={(v) => field("passwordConfirm", v)}
           placeholder="비밀번호 확인"
+          placeholderTextColor={INPUT_PLACEHOLDER_COLOR}
           secureTextEntry
           style={ui.input}
         />

@@ -26,7 +26,7 @@ from recommendations.services.area_gazetteer import (
     resolve_area_coordinates,
     resolve_area_coordinates_by_token,
 )
-from recommendations.services.kakao_local import search_places_by_keyword
+from recommendations.services.kakao_local import search_address, search_places_by_keyword
 from recommendations.services.map_search import get_matching_categories, supports_postgis
 from recommendations.services.place_urls import get_kakao_place_url
 from recommendations.services.smoking_metadata import derive_smoking_metadata
@@ -468,7 +468,7 @@ def _anchor_location_aliases(anchor_location):
     return aliases
 
 
-def _resolve_anchor_location(anchor_location, *, lat=None, lng=None):
+def _resolve_anchor_location(anchor_location, *, lat=None, lng=None, address_first=False):
     anchor_location = _clean_text(anchor_location, 100)
     if not anchor_location:
         return {
@@ -478,6 +478,44 @@ def _resolve_anchor_location(anchor_location, *, lat=None, lng=None):
             "lng": None,
             "label": "",
         }
+
+    # `광역 지역 + 세부 지역`처럼 둘 이상의 토큰이 모두 지명 사전에
+    # 존재하면 주소 API의 복수 문서나 가까운 상업 POI보다 더 구체적인
+    # 뒤쪽 지역을 우선한다. 한 토큰만 지명인 `부산 임의상호`는 제외된다.
+    area_tokens = []
+    for token in [item for item in re.split(r"[\s,;/|]+", anchor_location) if item]:
+        token_area = resolve_area_coordinates(token)
+        if token_area:
+            area_tokens.append(token_area)
+    if len(area_tokens) >= 2:
+        area_lat, area_lng, area_label = area_tokens[-1]
+        return {
+            "status": "resolved",
+            "reason": "",
+            "lat": area_lat,
+            "lng": area_lng,
+            "label": area_label,
+            "source": "area_gazetteer_compound",
+            "external_id": "",
+            "address": "",
+        }
+
+    if address_first:
+        try:
+            addresses = search_address(anchor_location).get("documents", [])
+        except Exception:
+            addresses = []
+        if len(addresses) == 1:
+            address = addresses[0]
+            address_lat, address_lng = _as_float(address.get("y")), _as_float(address.get("x"))
+            if address_lat is not None and address_lng is not None:
+                return {
+                    "status": "resolved", "reason": "", "lat": address_lat,
+                    "lng": address_lng, "label": address.get("address_name", anchor_location),
+                    "source": "kakao_address", "external_id": "", "address": address.get("address_name", ""),
+                }
+        elif len(addresses) > 1:
+            return {"status": "unresolved", "reason": "ambiguous_address", "lat": None, "lng": None, "label": anchor_location}
 
     # `서면`, `광안리` 같은 통칭 지명은 카카오 검색으로 풀리지 않으므로 사전에서 먼저 해결한다.
     area = resolve_area_coordinates(anchor_location)
@@ -659,6 +697,8 @@ def _resolve_anchor_location(anchor_location, *, lat=None, lng=None):
                 "source": source,
                 "external_id": _clean_text(item.get("id")),
                 "address": address,
+                "category_name": category_name,
+                "category_group_code": item.get("category_group_code", ""),
             })
 
     if resolved_candidates:
@@ -4300,6 +4340,50 @@ def _candidate_result_quality(candidate, frame, *, best_available=False):
     }
 
 
+def _required_evidence_conditions(frame):
+    """Return user-mandated conditions that need affirmative place evidence."""
+    required = []
+    seen = set()
+    structured = frame.get("structured_conditions") or frame.get("structuredConditions") or []
+    for condition in structured if isinstance(structured, list) else []:
+        if not isinstance(condition, dict) or not condition.get("required"):
+            continue
+        if _clean_text(condition.get("type")) == "distance":
+            continue
+        label = _clean_text(condition.get("label") or condition.get("value"), 80)
+        key = _compact(label)
+        if label and key not in seen:
+            required.append(label)
+            seen.add(key)
+    for value in _frame_terms(frame, "required_features"):
+        label = _clean_text(value, 80)
+        key = _compact(label)
+        if label and key not in seen:
+            required.append(label)
+            seen.add(key)
+    return required[:8]
+
+
+def _allows_unverified_result_relaxation(query):
+    compact = _compact(query)
+    return any(term in compact for term in (
+        "확인안돼도", "확인되지않아도", "미확인이어도", "몰라도괜찮",
+        "조건완화", "조건상관없", "그냥보여줘", "대안도보여줘",
+    ))
+
+
+def _enforce_required_result_policy(results, frame, query):
+    """Never silently fill a mandatory-condition request with unknown candidates."""
+    results = list(results or [])
+    required = _required_evidence_conditions(frame)
+    if not required or _allows_unverified_result_relaxation(query):
+        return results, required, False
+    confirmed = [result for result in results if not (result.get("missing_conditions") or [])]
+    if confirmed:
+        return confirmed, required, False
+    return [], required, bool(results)
+
+
 RESULT_DIVERSITY_CATEGORY_CODES = frozenset({
     "cafe",
     "restaurant",
@@ -5905,6 +5989,48 @@ def run_ai_search(request_data, *, user=None):
         frame,
         limit=limit,
     )
+    ranked_candidates, required_conditions, needs_relaxation_question = _enforce_required_result_policy(
+        ranked_candidates,
+        frame,
+        original_query or query,
+    )
+    if needs_relaxation_question:
+        condition_text = ", ".join(required_conditions[:3])
+        question = (
+            f"요청한 지역에서 {condition_text} 조건이 확인된 후보를 찾지 못했어요. "
+            "확인되지 않은 후보도 볼까요, 아니면 조건을 바꿀까요?"
+        )
+        intent_plan = {
+            **intent_plan,
+            "action": "ask_clarification",
+            "decision_action": "ask_clarification",
+            "clarification": {
+                "question": question,
+                "options": [
+                    {"label": "미확인 후보도 보기", "value": "확인되지 않아도 대안도 보여줘"},
+                    {"label": "조건 바꾸기", "value": "조건을 바꿀게"},
+                ],
+                "missing_fields": ["verified_required_conditions"],
+                "expected_patch_fields": ["constraints"],
+            },
+        }
+        search_plan = to_search_plan(intent_plan, raw_query=original_query or query)
+        data = _empty_response(
+            "ask_clarification",
+            intent_plan=intent_plan,
+            search_plan=search_plan,
+            frame=frame,
+            message=question,
+            timings=finish_timings(),
+            ai_call_count=ai_call_count,
+        )
+        data["debug_pipeline"]["post_gate_reason"] = "required_conditions_unverified"
+        data["debug_pipeline"]["required_conditions"] = required_conditions
+        return data
+    best_available_candidates = [
+        candidate for candidate in best_available_candidates
+        if candidate in ranked_candidates
+    ]
     results = ranked_candidates[:limit]
     timings["ranking_latency_ms"] = round(
         max(0.0, (time.perf_counter() - ranking_started) * 1000 - (timings["reranker_latency_ms"] or 0)),

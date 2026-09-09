@@ -7,6 +7,7 @@ const ITEMS = [
   { label: "홈", path: "/" as const },
   { label: "일반검색", path: "/explore" as const },
   { label: "게시판", path: "/boards/free" as const },
+  { label: "장소 제보", path: "/place-report" as const },
   { label: "MY", path: "/mypage" as const },
 ];
 

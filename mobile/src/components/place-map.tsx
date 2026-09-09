@@ -1,5 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
-import { StyleSheet } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  ActivityIndicator,
+  Pressable,
+  Text,
+  View,
+  StyleSheet,
+} from "react-native";
 import { WebView, type WebViewMessageEvent } from "react-native-webview";
 
 import type { Place } from "@/types/place";
@@ -7,7 +13,7 @@ import type { Place } from "@/types/place";
 const embedUrl =
   process.env.EXPO_PUBLIC_KAKAO_MAP_EMBED_URL ||
   "https://life-infra-map-db.taile29cc8.ts.net/kakao-map-embed.html";
-const versionedEmbedUrl = `${embedUrl}${embedUrl.includes("?") ? "&" : "?"}v=compact-map-3`;
+const versionedEmbedUrl = `${embedUrl}${embedUrl.includes("?") ? "&" : "?"}v=compact-map-5`;
 
 const MAX_VISIBLE_MARKERS = 20;
 
@@ -16,6 +22,8 @@ export function PlaceMap({
   places = [],
   onSelectPlace,
   onCenterChange,
+  onMapPress,
+  onRequestCurrentLocation,
   displayMode = "overview",
   expanded = false,
   currentLocation = null,
@@ -25,12 +33,23 @@ export function PlaceMap({
   places?: Place[];
   onSelectPlace?: (place: Place) => void;
   onCenterChange?: (center: { lat: number; lng: number }) => void;
+  onMapPress?: (coordinate: { lat: number; lng: number }) => void;
+  onRequestCurrentLocation?: () => void;
   displayMode?: "overview" | "selected";
   expanded?: boolean;
   currentLocation?: { lat: number; lng: number } | null;
   fitBoundsKey?: string | number;
 }) {
   const webViewRef = useRef<WebView>(null);
+  const [loadState, setLoadState] = useState<"loading" | "ready" | "error">(
+    "loading",
+  );
+  const [reloadKey, setReloadKey] = useState(0);
+  useEffect(() => {
+    if (loadState !== "loading") return;
+    const timer = setTimeout(() => setLoadState("error"), 15000);
+    return () => clearTimeout(timer);
+  }, [loadState, reloadKey]);
   const lastPlacesSignatureRef = useRef("");
   const lastSelectedIdRef = useRef<string | null>(null);
   const validPlaces = useMemo(() => {
@@ -92,6 +111,8 @@ export function PlaceMap({
         Number.isFinite(currentLocation.lng)
           ? currentLocation
           : null,
+      pickerMode: Boolean(onMapPress),
+      requestCurrentLocation: Boolean(onRequestCurrentLocation),
     };
     const encodedPayload = encodeURIComponent(JSON.stringify(payload));
     webViewRef.current?.injectJavaScript(`
@@ -131,13 +152,24 @@ export function PlaceMap({
       })();
       true;
     `);
-  }, [currentLocation, displayMode, expanded, fitBoundsKey, mapPlaces, place, validPlaces]);
+  }, [
+    currentLocation,
+    displayMode,
+    expanded,
+    fitBoundsKey,
+    mapPlaces,
+    onMapPress,
+    onRequestCurrentLocation,
+    place,
+    validPlaces,
+  ]);
 
   const receiveMessage = useCallback(
     (event: WebViewMessageEvent) => {
       try {
         const data = JSON.parse(event.nativeEvent.data);
         if (data?.type === "life-infra-map:ready") {
+          setLoadState("ready");
           sendState();
           return;
         }
@@ -149,6 +181,16 @@ export function PlaceMap({
           }
           return;
         }
+        if (data?.type === "life-infra-map:map-pressed") {
+          const lat = Number(data.lat);
+          const lng = Number(data.lng);
+          if (Number.isFinite(lat) && Number.isFinite(lng)) onMapPress?.({ lat, lng });
+          return;
+        }
+        if (data?.type === "life-infra-map:request-current-location") {
+          onRequestCurrentLocation?.();
+          return;
+        }
         if (data?.type !== "life-infra-map:select-place") return;
         const selected = validPlaces.find(
           (item) => String(item.id) === String(data.id),
@@ -158,7 +200,7 @@ export function PlaceMap({
         // 지도 페이지가 보내지 않은 메시지는 무시합니다.
       }
     },
-    [onCenterChange, onSelectPlace, sendState, validPlaces],
+    [onCenterChange, onMapPress, onRequestCurrentLocation, onSelectPlace, sendState, validPlaces],
   );
 
   // WebView가 이미 열린 뒤 검색 결과나 선택 장소가 바뀌는 경우에도
@@ -168,23 +210,64 @@ export function PlaceMap({
   }, [sendState]);
 
   return (
-    <WebView
-      ref={webViewRef}
-      source={{ uri: versionedEmbedUrl }}
-      style={[styles.map, expanded && styles.expandedMap]}
-      javaScriptEnabled
-      domStorageEnabled
-      cacheEnabled={false}
-      nestedScrollEnabled
-      overScrollMode="never"
-      originWhitelist={["https://*"]}
-      onLoadEnd={sendState}
-      onMessage={receiveMessage}
-    />
+    <View style={[styles.map, expanded && styles.expandedMap]}>
+      <WebView
+        key={reloadKey}
+        ref={webViewRef}
+        source={{ uri: versionedEmbedUrl }}
+        style={{ flex: 1, backgroundColor: "transparent" }}
+        javaScriptEnabled
+        domStorageEnabled
+        cacheEnabled
+        nestedScrollEnabled
+        overScrollMode="never"
+        originWhitelist={["https://*"]}
+        onLoadEnd={sendState}
+        onMessage={receiveMessage}
+        onError={() => setLoadState("error")}
+        onHttpError={() => setLoadState("error")}
+      />
+      {loadState !== "ready" ? (
+        <View style={styles.loadOverlay}>
+          {loadState === "loading" ? (
+            <ActivityIndicator color="#0F766E" />
+          ) : null}
+          <Text>
+            {loadState === "loading"
+              ? "지도를 불러오는 중입니다"
+              : "지도를 불러오지 못했어요"}
+          </Text>
+          {loadState === "error" ? (
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => {
+                setLoadState("loading");
+                setReloadKey((key) => key + 1);
+              }}
+              style={styles.retry}
+            >
+              <Text style={{ color: "white" }}>지도 다시 불러오기</Text>
+            </Pressable>
+          ) : null}
+        </View>
+      ) : null}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  loadOverlay: {
+    position: "absolute",
+    top: 0,
+    bottom: 0,
+    left: 0,
+    right: 0,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 12,
+    backgroundColor: "#E9ECEA",
+  },
+  retry: { padding: 14, borderRadius: 12, backgroundColor: "#0F766E" },
   map: {
     width: "100%",
     height: 390,

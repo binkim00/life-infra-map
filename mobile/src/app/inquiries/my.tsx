@@ -1,5 +1,7 @@
+import { useResource } from "@/hooks/use-resource";
+import { LoadState } from "@/components/load-state";
 import { router } from "expo-router";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { boardsApi } from "@/api/boards";
 import { Screen, ui } from "@/components/screen";
@@ -12,15 +14,10 @@ type Inquiry = {
   created_at?: string;
 };
 export default function MyInquiriesScreen() {
-  const [items, setItems] = useState<Inquiry[]>([]);
   const [open, setOpen] = useState<number | null>(null);
-  const [error, setError] = useState("");
-  useEffect(() => {
-    boardsApi
-      .myInquiries()
-      .then((data) => setItems(data as Inquiry[]))
-      .catch(() => setError("문의 내역을 불러오지 못했습니다."));
-  }, []);
+  const { data: items, loading, error, reload: load } = useResource<Inquiry[]>(
+    () => boardsApi.myInquiries().then((data) => data as Inquiry[]), [],
+  );
   return (
     <Screen
       title="내 문의"
@@ -35,7 +32,7 @@ export default function MyInquiriesScreen() {
         </Pressable>
       }
     >
-      {error ? <Text style={ui.error}>{error}</Text> : null}
+      <LoadState loading={loading} error={error} empty={!items.length} retry={load} />
       <View style={styles.list}>
         {items.map((item) => (
           <Pressable

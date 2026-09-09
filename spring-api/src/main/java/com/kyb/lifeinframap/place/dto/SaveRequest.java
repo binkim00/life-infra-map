@@ -16,6 +16,7 @@ public record SaveRequest(
         @Size(max = 100) String category,
         @Size(max = 255) String address,
         @JsonAlias("place_id") Long placeId,
+        @JsonAlias("group_id") Long groupId,
         @JsonAlias("external_id") @Size(max = 100) String externalId,
         @DecimalMin("-90") @DecimalMax("90") BigDecimal lat,
         @DecimalMin("-180") @DecimalMax("180") BigDecimal lng,

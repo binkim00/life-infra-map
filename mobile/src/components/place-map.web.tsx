@@ -13,6 +13,8 @@ type PlaceMapProps = {
   places?: Place[];
   onSelectPlace?: (place: Place) => void;
   onCenterChange?: (center: { lat: number; lng: number }) => void;
+  onMapPress?: (coordinate: { lat: number; lng: number }) => void;
+  onRequestCurrentLocation?: () => void;
   displayMode?: "overview" | "selected";
   expanded?: boolean;
   currentLocation?: { lat: number; lng: number } | null;
@@ -22,7 +24,7 @@ type PlaceMapProps = {
 const embedUrl =
   process.env.EXPO_PUBLIC_KAKAO_MAP_EMBED_URL ||
   "http://localhost:5173/kakao-map-embed.html";
-const versionedEmbedUrl = `${embedUrl}${embedUrl.includes("?") ? "&" : "?"}v=compact-map-3`;
+const versionedEmbedUrl = `${embedUrl}${embedUrl.includes("?") ? "&" : "?"}v=compact-map-5`;
 
 const MAX_VISIBLE_MARKERS = 20;
 
@@ -31,6 +33,8 @@ export function PlaceMap({
   places = [],
   onSelectPlace,
   onCenterChange,
+  onMapPress,
+  onRequestCurrentLocation,
   displayMode = "overview",
   expanded = false,
   currentLocation = null,
@@ -83,10 +87,12 @@ export function PlaceMap({
           Number.isFinite(currentLocation.lng)
             ? currentLocation
             : null,
+        pickerMode: Boolean(onMapPress),
+        requestCurrentLocation: Boolean(onRequestCurrentLocation),
       },
       new URL(embedUrl).origin,
     );
-  }, [currentLocation, displayMode, fitBoundsKey, mapPlaces, place, validPlaces]);
+  }, [currentLocation, displayMode, fitBoundsKey, mapPlaces, onMapPress, onRequestCurrentLocation, place, validPlaces]);
 
   useEffect(() => {
     const receive = (event: MessageEvent) => {
@@ -100,6 +106,16 @@ export function PlaceMap({
         }
         return;
       }
+      if (event.data?.type === "life-infra-map:map-pressed") {
+        const lat = Number(event.data.lat);
+        const lng = Number(event.data.lng);
+        if (Number.isFinite(lat) && Number.isFinite(lng)) onMapPress?.({ lat, lng });
+        return;
+      }
+      if (event.data?.type === "life-infra-map:request-current-location") {
+        onRequestCurrentLocation?.();
+        return;
+      }
       if (event.data?.type !== "life-infra-map:select-place") return;
       const selected = validPlaces.find(
         (item) => String(item.id) === String(event.data.id),
@@ -109,7 +125,7 @@ export function PlaceMap({
     window.addEventListener("message", receive);
     sendState();
     return () => window.removeEventListener("message", receive);
-  }, [onCenterChange, onSelectPlace, sendState, validPlaces]);
+  }, [onCenterChange, onMapPress, onRequestCurrentLocation, onSelectPlace, sendState, validPlaces]);
 
   return (
     <iframe

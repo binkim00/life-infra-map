@@ -1,7 +1,10 @@
-import { useEffect, useState } from "react";
+import { useResource } from "@/hooks/use-resource";
+import { useAction } from "@/hooks/use-action";
+import { LoadState } from "@/components/load-state";
+import { useState } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { boardsApi } from "@/api/boards";
-import { Screen, ui } from "@/components/screen";
+import { INPUT_PLACEHOLDER_COLOR, Screen, ui } from "@/components/screen";
 type Inquiry = {
   id: number;
   title: string;
@@ -12,27 +15,22 @@ type Inquiry = {
   username?: string;
 };
 export default function AdminInquiriesScreen() {
-  const [items, setItems] = useState<Inquiry[]>([]);
+  const action = useAction();
   const [drafts, setDrafts] = useState<Record<number, string>>({});
-  const [error, setError] = useState("");
-  const load = () =>
-    boardsApi
-      .adminInquiries()
-      .then((data) => setItems(data as Inquiry[]))
-      .catch(() => setError("문의 목록을 불러오지 못했습니다."));
-  useEffect(() => {
-    void load();
-  }, []);
+  const { data: items, loading, error, reload: load } = useResource<Inquiry[]>(
+    () => boardsApi.adminInquiries().then((data) => data as Inquiry[]), [],
+  );
   const answer = async (item: Inquiry) => {
     await boardsApi.updateAdminInquiry(item.id, {
-      adminReply: drafts[item.id] || "",
+      adminReply: drafts[item.id] ?? item.admin_reply ?? "",
       status: "answered",
     });
     load();
   };
   return (
     <Screen title="문의 관리" subtitle="회원 문의 답변" back>
-      {error ? <Text style={ui.error}>{error}</Text> : null}
+      <LoadState loading={loading} error={error} empty={!items.length} retry={load} />
+      {action.error ? <Text style={ui.error}>{action.error}</Text> : null}
       <View style={styles.list}>
         {items.map((item) => (
           <View key={item.id} style={ui.card}>
@@ -47,10 +45,11 @@ export default function AdminInquiriesScreen() {
                 setDrafts((current) => ({ ...current, [item.id]: value }))
               }
               placeholder="답변 내용"
+              placeholderTextColor={INPUT_PLACEHOLDER_COLOR}
               multiline
               style={ui.textarea}
             />
-            <Pressable onPress={() => answer(item)} style={ui.button}>
+            <Pressable disabled={action.busy} onPress={() => action.run(() => answer(item))} style={ui.button}>
               <Text style={ui.buttonText}>답변 저장</Text>
             </Pressable>
           </View>

@@ -1,5 +1,8 @@
 import { router } from "expo-router";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
+import { useResource } from "@/hooks/use-resource";
+import { useAction } from "@/hooks/use-action";
+import { LoadState } from "@/components/load-state";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { boardsApi } from "@/api/boards";
 import { useAuth } from "@/auth/auth-context";
@@ -15,20 +18,16 @@ type Notification = {
 };
 export default function NotificationsScreen() {
   const { ready, isLoggedIn } = useAuth();
-  const [items, setItems] = useState<Notification[]>([]);
-  const [error, setError] = useState("");
-  const load = () =>
-    boardsApi
-      .notifications()
-      .then((data) => setItems(data as Notification[]))
-      .catch(() => setError("알림을 불러오지 못했습니다."));
+  const action = useAction();
+  const { data: items, loading, error, reload: load } = useResource<Notification[]>(
+    () => boardsApi.notifications().then(data => data as Notification[]), [], ready && isLoggedIn,
+  );
   useEffect(() => {
     if (!ready) return;
     if (!isLoggedIn) {
       router.replace("/login");
       return;
     }
-    void load();
   }, [isLoggedIn, ready]);
   const open = async (item: Notification) => {
     if (!item.is_read) await boardsApi.readNotification(item.id);
@@ -42,22 +41,25 @@ export default function NotificationsScreen() {
       back
       action={
         <Pressable
-          onPress={async () => {
+          disabled={action.busy || loading}
+          onPress={() => action.run(async () => {
             await boardsApi.readAllNotifications();
             load();
-          }}
+          })}
           style={ui.buttonSecondary}
         >
           <Text style={ui.buttonSecondaryText}>모두 읽음</Text>
         </Pressable>
       }
     >
-      {error ? <Text style={ui.error}>{error}</Text> : null}
+      <LoadState loading={loading} error={error} empty={!items.length} retry={load} />
+      {action.error ? <Text style={ui.error}>{action.error}</Text> : null}
       <View style={styles.list}>
         {items.map((item) => (
           <Pressable
             key={item.id}
-            onPress={() => open(item)}
+            disabled={action.busy}
+            onPress={() => action.run(() => open(item))}
             style={[ui.card, !item.is_read && styles.unread]}
           >
             <Text style={styles.title}>{item.title || "알림"}</Text>

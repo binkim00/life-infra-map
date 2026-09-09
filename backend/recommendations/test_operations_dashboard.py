@@ -106,6 +106,15 @@ class OperationsDashboardTests(TestCase):
         )
         self.assertEqual(response.status_code, 400)
 
+    def test_mobile_dashboard_uses_precomputed_snapshot(self):
+        from unittest.mock import patch
+        from django.core.cache import cache
+        cache.clear()
+        with patch("recommendations.views.build_operations_dashboard", side_effect=AssertionError("cold aggregation")):
+            response = self.client.get("/api/recommendations/admin/operations/?days=7", **self.headers(self.admin_token))
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["snapshot_backed"])
+
     def test_daily_growth_command_uses_shared_metrics(self):
         output = StringIO()
         call_command("report_daily_tag_growth", days=1, stdout=output)

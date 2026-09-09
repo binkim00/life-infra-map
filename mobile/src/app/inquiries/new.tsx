@@ -2,7 +2,7 @@ import { router } from "expo-router";
 import { useState } from "react";
 import { Pressable, Text, TextInput, View } from "react-native";
 import { boardsApi } from "@/api/boards";
-import { Screen, ui } from "@/components/screen";
+import { INPUT_PLACEHOLDER_COLOR, Screen, ui } from "@/components/screen";
 export default function InquiryCreateScreen() {
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
@@ -32,12 +32,14 @@ export default function InquiryCreateScreen() {
           value={title}
           onChangeText={setTitle}
           placeholder="문의 제목"
+          placeholderTextColor={INPUT_PLACEHOLDER_COLOR}
           style={ui.input}
         />
         <TextInput
           value={content}
           onChangeText={setContent}
           placeholder="문의 내용"
+          placeholderTextColor={INPUT_PLACEHOLDER_COLOR}
           multiline
           style={ui.textarea}
         />

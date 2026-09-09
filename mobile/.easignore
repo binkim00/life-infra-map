@@ -1,0 +1,23 @@
+# Dependencies and local Expo output
+node_modules/
+.expo/
+dist/
+web-build/
+
+# Generated native projects. EAS prebuilds these from the Expo config so the
+# checked-out local debug signing configuration must never enter a remote build.
+android/
+ios/
+.kotlin/
+
+# Local build caches and credentials
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.pem
+*.tsbuildinfo
+npm-debug.*
+yarn-debug.*
+yarn-error.*

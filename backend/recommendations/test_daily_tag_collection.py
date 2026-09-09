@@ -233,6 +233,59 @@ class DailyTagCollectionTests(TestCase):
         self.assertEqual(job.place_id, candidate.id)
         self.assertEqual(job.context["budget_bucket"], "candidate_hint")
 
+    @override_settings(
+        TAG_COLLECTION_DAILY_API_LIMIT=100,
+        TAG_COLLECTION_BOOTSTRAP_CATEGORY_MAX_SHARE=100,
+        TAG_COLLECTION_CATEGORY_PRIORITIES={"cafe": 20},
+    )
+    def test_queued_launch_demand_bypasses_revisit_window_and_targets_exact_tag(self):
+        demanded = self.make_place(510, category="cafe", region="부산광역시")
+        self.make_place(511, category="cafe", region="부산광역시")
+        PlaceTagCollectionJob.objects.create(
+            place=demanded,
+            provider="naver_search",
+            cycle_date=timezone.localdate() - timedelta(days=1),
+            status="completed",
+            requested_tags=["분위기좋음"],
+        )
+        TagEnrichmentRequest.objects.create(
+            place=demanded,
+            tag_name="조용함",
+            status="queued",
+            priority=90,
+            demand_count=8,
+        )
+
+        stats = plan_daily_jobs(
+            cycle_date=timezone.localdate(),
+            place_limit=1,
+            mode="bootstrap",
+            categories=("cafe",),
+            regions=("부산광역시",),
+        )
+
+        self.assertEqual(stats["places"], 1)
+        job = PlaceTagCollectionJob.objects.get(cycle_date=timezone.localdate())
+        self.assertEqual(job.place_id, demanded.id)
+        self.assertEqual(job.context["adaptive_reason"], "launch_evidence_demand")
+        self.assertEqual(job.context["targeted_tags"][0], "조용함")
+
+    def test_completed_enrichment_request_does_not_keep_priority_or_target(self):
+        place = self.make_place(512, category="cafe", region="부산광역시")
+        TagEnrichmentRequest.objects.create(
+            place=place,
+            tag_name="조용함",
+            status="completed",
+            priority=100,
+            demand_count=50,
+        )
+
+        context = priority_context([place])[place.id]
+
+        self.assertEqual(context["components"]["search_demand"], 0)
+        self.assertEqual(context["components"]["enrichment_request_priority"], 0)
+        self.assertNotEqual(context["adaptive_reason"], "launch_evidence_demand")
+
     def test_scheduler_refills_a_partial_daily_plan(self):
         places = [self.make_place(index) for index in range(1, 5)]
         PlaceTagCollectionJob.objects.create(

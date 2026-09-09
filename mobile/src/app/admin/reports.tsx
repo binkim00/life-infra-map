@@ -1,7 +1,10 @@
-import { useEffect, useState } from "react";
+import { useResource } from "@/hooks/use-resource";
+import { useAction } from "@/hooks/use-action";
+import { LoadState } from "@/components/load-state";
+import { useState } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { boardsApi } from "@/api/boards";
-import { Screen, ui } from "@/components/screen";
+import { INPUT_PLACEHOLDER_COLOR, Screen, ui } from "@/components/screen";
 type Report = {
   id: number;
   report_type?: string;
@@ -12,17 +15,11 @@ type Report = {
   created_at?: string;
 };
 export default function AdminReportsScreen() {
-  const [items, setItems] = useState<Report[]>([]);
+  const action = useAction();
   const [notes, setNotes] = useState<Record<number, string>>({});
-  const [error, setError] = useState("");
-  const load = () =>
-    boardsApi
-      .reports()
-      .then((data) => setItems(data as Report[]))
-      .catch(() => setError("신고 목록을 불러오지 못했습니다."));
-  useEffect(() => {
-    void load();
-  }, []);
+  const { data: items, loading, error, reload: load } = useResource<Report[]>(
+    () => boardsApi.reports().then((data) => data as Report[]), [],
+  );
   const process = async (item: Report, status: string) => {
     await boardsApi.processReport(item.id, {
       status,
@@ -32,7 +29,8 @@ export default function AdminReportsScreen() {
   };
   return (
     <Screen title="커뮤니티 신고" subtitle="게시글과 댓글 신고 처리" back>
-      {error ? <Text style={ui.error}>{error}</Text> : null}
+      <LoadState loading={loading} error={error} empty={!items.length} retry={load} />
+      {action.error ? <Text style={ui.error}>{action.error}</Text> : null}
       <View style={styles.list}>
         {items.map((item) => (
           <View key={item.id} style={ui.card}>
@@ -49,17 +47,20 @@ export default function AdminReportsScreen() {
                 setNotes((current) => ({ ...current, [item.id]: value }))
               }
               placeholder="처리 메모"
+              placeholderTextColor={INPUT_PLACEHOLDER_COLOR}
               style={ui.input}
             />
             <View style={ui.row}>
               <Pressable
-                onPress={() => process(item, "passed")}
+                disabled={action.busy}
+                onPress={() => action.run(() => process(item, "passed"))}
                 style={ui.buttonSecondary}
               >
                 <Text style={ui.buttonSecondaryText}>패스</Text>
               </Pressable>
               <Pressable
-                onPress={() => process(item, "penalized")}
+                disabled={action.busy}
+                onPress={() => action.run(() => process(item, "penalized"))}
                 style={ui.buttonSecondary}
               >
                 <Text style={ui.buttonSecondaryText}>조치 완료</Text>

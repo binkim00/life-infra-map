@@ -873,6 +873,10 @@ def _local_rule_followup_plan(raw_query, previous_context):
         or {}
     )
     frame = _normalize_frame(previous_frame)
+    allow_unverified = _has_any(text, [
+        "확인 안 돼도", "확인안돼도", "확인되지 않아도", "미확인이어도",
+        "그냥 보여줘", "대안도 보여줘",
+    ])
     if not frame.get("target_objects"):
         if previous_context.get("is_clarification_followup") and _has_any(
             text,
@@ -893,7 +897,11 @@ def _local_rule_followup_plan(raw_query, previous_context):
         return None
 
     location_patch = ""
-    if previous_context.get("is_clarification_followup") and len(text) <= 30:
+    if (
+        previous_context.get("is_clarification_followup")
+        and len(text) <= 30
+        and not allow_unverified
+    ):
         location_patch = _local_rule_anchor_location(text) or text
     quiet = _has_any(text, ["조용", "시끄럽지", "한적", "붐비지"])
     ambience = _has_any(text, ["분위기", "감성", "예쁜", "멋진"])
@@ -938,6 +946,7 @@ def _local_rule_followup_plan(raw_query, previous_context):
         bool(requested_constraints),
         bool(requested_exclusions),
         add_library,
+        allow_unverified,
         bool(location_patch),
     ])
     if not recognized:
@@ -2227,12 +2236,21 @@ def _canonicalize(raw_plan, raw_query="", lat=None, lng=None, map_center=None):
     ):
         frame['anchor_location'] = ''
         frame['location_mode'] = 'current_context'
-    # AI가 지명을 빠뜨리는 경우가 있어(`광안리 맛집` -> anchor 없음) 규칙으로 찾은 지명으로 채운다.
-    if not _clean_text(frame.get("anchor_location")):
-        local_anchor = _local_rule_anchor_location(raw_query)
-        if local_anchor:
-            frame["anchor_location"] = local_anchor
-            frame["location_mode"] = "explicit"
+    # AI가 지명을 빠뜨리거나 `부산 서면`을 `부산`으로 축약하는 경우,
+    # 원문에서 확인되는 더 뒤쪽(더 구체적인) 지명으로 보완한다.
+    local_anchor = _local_rule_anchor_location(raw_query)
+    current_anchor = _clean_text(frame.get("anchor_location"))
+    should_use_local_anchor = bool(local_anchor) and (
+        not current_anchor
+        or (
+            _compact(local_anchor) != _compact(current_anchor)
+            and _compact(raw_query).find(_compact(local_anchor))
+            > _compact(raw_query).find(_compact(current_anchor))
+        )
+    )
+    if should_use_local_anchor:
+        frame["anchor_location"] = local_anchor
+        frame["location_mode"] = "explicit"
     clarification = _normalize_clarification(raw_plan.get("clarification") or raw_plan)
     action = _clean_text(raw_plan.get("action") or raw_plan.get("decision_action"))
     plan = {

@@ -3,6 +3,8 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useAuth } from "@/auth/auth-context";
 import { Screen } from "@/components/screen";
 const LINKS = [
+  ["수집 근거 검토", "/admin/evidence"],
+  ["수집 판정 기록", "/admin/research-audits"],
   ["회원 관리", "/admin/users"],
   ["커뮤니티 신고", "/admin/reports"],
   ["장소 제보 검토", "/admin/place-reports"],

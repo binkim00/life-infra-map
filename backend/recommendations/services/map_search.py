@@ -347,6 +347,11 @@ def split_location_category_query(keyword):
     if not anchor_location:
         return {"anchor_location": "", "category_query": ""}
 
+    # A category before a name (e.g. `카페 <상호>`) is not a location
+    # instruction. Keep the complete keyword for the provider to match.
+    if include_tokens[0] in category_tokens:
+        return {"anchor_location": "", "category_query": ""}
+
     return {
         "anchor_location": anchor_location,
         "category_query": " ".join(
@@ -413,7 +418,8 @@ def kakao_place_matches_keyword(place, keyword):
         return True
 
     searchable_text = normalize_compact(
-        f"{place.get('place_name') or ''} {place.get('category_name') or ''}"
+        f"{place.get('place_name') or ''} {place.get('category_name') or ''} "
+        f"{place.get('road_address_name') or ''} {place.get('address_name') or ''}"
     )
     return all(
         normalize_compact(token) in searchable_text

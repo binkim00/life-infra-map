@@ -64,25 +64,48 @@ export class ApiError extends Error {
   }
 }
 
+type StoredAuth = { token: string | null; user: any };
+let authCache: StoredAuth | undefined;
+let authRead: Promise<StoredAuth> | undefined;
+let authRevision = 0;
+
 export const authStorage = {
   async read() {
-    const [token, rawUser] = await Promise.all([
-      readAuthToken(),
-      AsyncStorage.getItem(AUTH_USER_KEY),
-    ]);
-    try {
-      return { token, user: rawUser ? JSON.parse(rawUser) : null };
-    } catch {
-      return { token, user: null };
+    if (authCache) return authCache;
+    if (!authRead) {
+      const revision = authRevision;
+      authRead = Promise.all([
+        readAuthToken(),
+        AsyncStorage.getItem(AUTH_USER_KEY),
+      ])
+        .then(([token, rawUser]) => {
+          let user = null;
+          try {
+            user = rawUser ? JSON.parse(rawUser) : null;
+          } catch {
+            /* ignore invalid user cache */
+          }
+          const value = { token, user };
+          if (revision === authRevision) authCache = value;
+          return authCache || value;
+        })
+        .finally(() => {
+          authRead = undefined;
+        });
     }
+    return authRead;
   },
   async write(token: string, user: unknown) {
     await Promise.all([
       writeAuthToken(token),
       AsyncStorage.setItem(AUTH_USER_KEY, JSON.stringify(user)),
     ]);
+    authRevision += 1;
+    authCache = { token, user };
   },
   async clear() {
+    authRevision += 1;
+    authCache = { token: null, user: null };
     await Promise.all([
       clearAuthToken(),
       AsyncStorage.removeItem(AUTH_USER_KEY),
@@ -129,12 +152,13 @@ export async function apiRequest<T>(
   });
   const url = `${spring ? SPRING_API : DJANGO_API}${normalizedPath}${query.size ? `?${query}` : ""}`;
   const headers = new Headers(requestHeaders);
-  const formData =
-    typeof FormData !== "undefined" && body instanceof FormData;
+  let requestToken: string | null = null;
+  const formData = typeof FormData !== "undefined" && body instanceof FormData;
   if (body !== undefined && !formData)
     headers.set("Content-Type", "application/json");
   if (auth) {
     const { token } = await authStorage.read();
+    requestToken = token;
     if (token) headers.set("Authorization", `Bearer ${token}`);
   }
   const requestController = new AbortController();
@@ -164,7 +188,12 @@ export async function apiRequest<T>(
   } catch (error) {
     if (didTimeout)
       throw new ApiError(408, null, "서버 응답 시간이 초과되었습니다.");
-    throw error;
+    if (externalSignal?.aborted) throw error;
+    throw new ApiError(
+      0,
+      null,
+      "네트워크 연결을 확인한 뒤 다시 시도해 주세요.",
+    );
   } finally {
     clearTimeout(timeoutId);
     externalSignal?.removeEventListener("abort", abortFromExternalSignal);
@@ -177,7 +206,11 @@ export async function apiRequest<T>(
         ? await response.json()
         : await response.text();
   if (!response.ok) {
-    if (response.status === 401 && auth)
+    if (
+      response.status === 401 &&
+      auth &&
+      (await authStorage.read()).token === requestToken
+    )
       await authStorage.clear();
     const detail =
       data && typeof data === "object" && "detail" in data

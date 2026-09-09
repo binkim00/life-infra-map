@@ -1,5 +1,5 @@
 import { router } from "expo-router";
-import * as Location from "expo-location";
+import { searchLocation } from "@/utils/location";
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -78,18 +78,15 @@ export default function HomeScreen() {
     const controller = new AbortController();
     let active = true;
     const loadNearbyParks = async () => {
-      const permission = await Location.requestForegroundPermissionsAsync();
-      if (!permission.granted) {
+      const coordinates = await searchLocation();
+      if (!coordinates) {
         throw new Error(
           "주변 공원을 보려면 위치 권한이 필요합니다. 권한을 허용한 뒤 다시 시도해 주세요.",
         );
       }
-      const position = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
-      });
       const nextCenter = {
-        lat: position.coords.latitude,
-        lng: position.coords.longitude,
+        lat: coordinates.latitude,
+        lng: coordinates.longitude,
       };
       if (active) setNearbyCenter(nextCenter);
       return searchMapPlaces({
@@ -152,7 +149,7 @@ export default function HomeScreen() {
                 onChangeText={setQuery}
                 onSubmitEditing={() => openRecommendation()}
                 placeholder="예: 조용히 오래 작업할 수 있는 카페"
-                placeholderTextColor="#8A918E"
+                placeholderTextColor="#5F6863"
                 returnKeyType="search"
                 style={styles.searchInput}
               />
@@ -184,7 +181,7 @@ export default function HomeScreen() {
                 onChangeText={setPlaceQuery}
                 onSubmitEditing={() => openPlaceSearch()}
                 placeholder="예: 서면역 약국, 광안리 주차장"
-                placeholderTextColor="#8A918E"
+                placeholderTextColor="#5F6863"
                 returnKeyType="search"
                 style={styles.placeSearchInput}
               />

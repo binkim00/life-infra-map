@@ -18,7 +18,9 @@ AGGREGATION_SUMMARIES = (
 
 def active_evidence(place, tag, *, now=None):
     now = now or timezone.now()
-    return PlaceTagEvidence.objects.filter(place=place, tag=tag).filter(
+    return PlaceTagEvidence.objects.filter(place=place, tag=tag).exclude(
+        review__status__in=["rejected", "research"],
+    ).filter(
         Q(expires_at__isnull=True) | Q(expires_at__gt=now)
     )
 

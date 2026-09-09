@@ -1,5 +1,9 @@
-import { useEffect, useState } from "react";
-import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { useState } from "react";
+import { Pagination } from "@/components/pagination";
+import { router } from "expo-router";
+import { useResource } from "@/hooks/use-resource";
+import { LoadState } from "@/components/load-state";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { recommendationApi } from "@/api/recommendations";
 import { Screen, ui } from "@/components/screen";
 type Report = {
@@ -12,30 +16,17 @@ type Report = {
   suggested_tags?: string[];
 };
 export default function AdminPlaceReportsScreen() {
-  const [items, setItems] = useState<Report[]>([]);
-  const [notes, setNotes] = useState<Record<number, string>>({});
-  const [error, setError] = useState("");
-  const load = () =>
-    recommendationApi
-      .adminPlaceReports({ page: 1, page_size: 50 })
-      .then((data) => setItems((data.results || []) as Report[]))
-      .catch(() => setError("장소 제보 목록을 불러오지 못했습니다."));
-  useEffect(() => {
-    void load();
-  }, []);
-  const review = async (item: Report, approve: boolean) => {
-    const body = { admin_note: notes[item.id] || "" };
-    if (approve) await recommendationApi.approvePlaceReport(item.id, body);
-    else await recommendationApi.rejectPlaceReport(item.id, body);
-    load();
-  };
+  const [page, setPage] = useState(1);
+  const { data: items, loading, error, reload: load } = useResource<Report[]>(
+    () => recommendationApi.adminPlaceReports({ page, page_size: 50 }).then((data) => (data.results || []) as Report[]), [], true, String(page),
+  );
   return (
     <Screen
       title="장소 제보 검토"
       subtitle="승인 시 검색 데이터와 기여도에 반영됩니다."
       back
     >
-      {error ? <Text style={ui.error}>{error}</Text> : null}
+      <LoadState loading={loading} error={error} empty={!items.length} retry={load} />
       <View style={styles.list}>
         {items.map((item) => (
           <View key={item.id} style={ui.card}>
@@ -50,28 +41,13 @@ export default function AdminPlaceReportsScreen() {
             {item.suggested_tags?.length ? (
               <Text style={ui.muted}>{item.suggested_tags.join(" · ")}</Text>
             ) : null}
-            <TextInput
-              value={notes[item.id] || ""}
-              onChangeText={(value) =>
-                setNotes((current) => ({ ...current, [item.id]: value }))
-              }
-              placeholder="검토 메모"
-              style={ui.input}
-            />
-            <View style={ui.row}>
-              <Pressable onPress={() => review(item, true)} style={ui.button}>
-                <Text style={ui.buttonText}>승인</Text>
-              </Pressable>
-              <Pressable
-                onPress={() => review(item, false)}
-                style={ui.buttonSecondary}
-              >
-                <Text style={styles.reject}>반려</Text>
-              </Pressable>
-            </View>
+            <Pressable onPress={() => router.push({ pathname: "/admin/place-report-detail" as never, params: { id: String(item.id) } })} style={ui.buttonSecondary}>
+              <Text style={ui.buttonSecondaryText}>사진·본문 확인 및 검토</Text>
+            </Pressable>
           </View>
         ))}
       </View>
+      <Pagination page={page} setPage={setPage} hasNext={items.length === 50} loading={loading} />
     </Screen>
   );
 }
