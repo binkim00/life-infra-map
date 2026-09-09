@@ -32,6 +32,7 @@ from .serializers import (
 from .services.kakao_local import search_places_by_keyword
 from .services.map_search import (
     KAKAO_CATEGORY_GROUPS,
+    build_kakao_keyword_variants,
     category_only_fallback_keyword,
     get_matching_categories,
     is_category_only_query,
@@ -1157,6 +1158,21 @@ def map_place_search(request):
                     category_group_code=kakao_category_group or None,
                 )
                 kakao_data = merge_kakao_search_documents(kakao_data, relevance_data)
+            # 공급자에 지점명이 더 길게 등록된 경우(예: `OO 경성대점` 대
+            # `OO 경성대부경대점`) 완전 일치 질의가 0건이 될 수 있습니다.
+            # 이때만 `점` 접미사를 제한적으로 완화한 관련도 질의를 한 번 더 합니다.
+            if name_query and not kakao_data.get("documents"):
+                variants = build_kakao_keyword_variants(keyword)
+                if variants:
+                    variant_data = search_places_by_keyword(
+                        keyword=variants[0],
+                        lat=None,
+                        lng=None,
+                        radius=None,
+                        size=min(limit, 15),
+                        category_group_code=kakao_category_group or None,
+                    )
+                    kakao_data = merge_kakao_search_documents(kakao_data, variant_data)
             fallback_keyword = category_only_fallback_keyword(keyword)
             has_matching_kakao_document = any(
                 kakao_place_matches_categories(place, matched_basic_categories)

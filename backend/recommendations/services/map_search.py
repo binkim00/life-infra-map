@@ -421,10 +421,39 @@ def kakao_place_matches_keyword(place, keyword):
         f"{place.get('place_name') or ''} {place.get('category_name') or ''} "
         f"{place.get('road_address_name') or ''} {place.get('address_name') or ''}"
     )
-    return all(
-        normalize_compact(token) in searchable_text
-        for token in include_tokens
-    )
+    def token_matches(token):
+        normalized = normalize_compact(token)
+        if normalized in searchable_text:
+            return True
+        # 사용자가 `경성대점`처럼 지점명을 입력했지만 공급자에는
+        # `경성대부경대점`처럼 더 긴 지점명으로 등록된 경우를 허용합니다.
+        # `점`을 제외한 부분이 두 글자 이상일 때만 완화해 과도한 매칭을 막습니다.
+        return (
+            normalized.endswith("점")
+            and len(normalized[:-1]) >= 2
+            and normalized[:-1] in searchable_text
+        )
+
+    return all(token_matches(token) for token in include_tokens)
+
+
+def build_kakao_keyword_variants(keyword):
+    """공급자의 지점 표기 차이를 보완하는 제한된 검색어 변형을 만든다."""
+    include_tokens, _ = tokenize_query(keyword)
+    if len(include_tokens) < 2:
+        return []
+
+    variants = []
+    for index, token in enumerate(include_tokens):
+        normalized = normalize_compact(token)
+        if not normalized.endswith("점") or len(normalized[:-1]) < 2:
+            continue
+        relaxed = [*include_tokens]
+        relaxed[index] = token[:-1]
+        variant = " ".join(relaxed).strip()
+        if variant and normalize_compact(variant) != normalize_compact(keyword):
+            variants.append(variant)
+    return variants[:2]
 
 
 def build_token_filter(token):

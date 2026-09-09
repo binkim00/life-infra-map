@@ -6,6 +6,7 @@ from django.test import TestCase
 from recommendations.services.area_gazetteer import resolve_area_coordinates
 from recommendations.services.area_gazetteer import resolve_area_coordinates_by_token
 from recommendations.services.map_search import (
+    build_kakao_keyword_variants,
     kakao_place_matches_keyword,
     split_location_category_query,
 )
@@ -52,6 +53,42 @@ class GeneralSearchContractTests(TestCase):
                 place = {"place_name": "테스트브랜드 중앙점", "address_name": f"{region} 중앙동", "category_name": "카페"}
                 self.assertTrue(kakao_place_matches_keyword(place, f"{region} 테스트브랜드"))
                 self.assertFalse(kakao_place_matches_keyword(place, "없는상호"))
+
+    def test_branch_suffix_variant_accepts_longer_provider_branch_name(self):
+        place = {
+            "place_name": "테스트브랜드 경성대부경대점",
+            "address_name": "부산 남구 대연동",
+            "category_name": "카페",
+        }
+        self.assertEqual(
+            build_kakao_keyword_variants("테스트브랜드 경성대점"),
+            ["테스트브랜드 경성대"],
+        )
+        self.assertTrue(kakao_place_matches_keyword(place, "테스트브랜드 경성대점"))
+
+    @patch("recommendations.views.search_places_by_keyword")
+    def test_empty_exact_branch_query_retries_a_limited_suffix_variant(self, search):
+        search.side_effect = [
+            {"documents": []},
+            {"documents": []},
+            {"documents": [{
+                "id": "branch",
+                "place_name": "테스트브랜드 경성대부경대점",
+                "category_name": "음식점 > 카페",
+                "category_group_code": "CE7",
+                "address_name": "부산 남구 대연동",
+                "x": "129.10",
+                "y": "35.14",
+            }]},
+        ]
+        response = self.client.get(self.url, {
+            "q": "테스트브랜드 경성대점",
+            "lat": 35.09,
+            "lng": 128.85,
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["results"][0]["name"], "테스트브랜드 경성대부경대점")
+        self.assertEqual(search.call_args_list[-1].kwargs["keyword"], "테스트브랜드 경성대")
 
     @patch("recommendations.views.search_places_by_keyword", return_value={"documents": []})
     def test_named_search_forwards_device_location_without_changing_query(self, search):

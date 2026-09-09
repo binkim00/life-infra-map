@@ -61,6 +61,14 @@ type ConversationSession = {
 const GREETING =
   "어떤 상황에서 갈 장소를 찾고 있나요? 지역, 동행, 목적이나 꼭 필요한 조건을 편하게 말해 주세요.";
 
+const sourceLabel = (place: AiPlace) => {
+  if (place.source_label) return place.source_label;
+  const source = String(place.source_name || place.source || place.result_source || "");
+  if (source.includes("kakao")) return "카카오 장소";
+  if (source.includes("web")) return "웹 조사 후보";
+  return "LifeMap 저장 장소";
+};
+
 const optionValue = (
   option: NonNullable<AiResponse["clarification_options"]>[number],
 ) => (typeof option === "string" ? option : option.value || option.label || "");
@@ -613,6 +621,7 @@ export default function RecommendScreen() {
                       <Text style={ui.muted}>
                         {place.address} · {formatDistance(place)}
                       </Text>
+                      <Text style={ui.muted}>출처: {sourceLabel(place)}</Text>
                       {place.recommendation_reason ? (
                         <Text style={styles.reason}>
                           {place.recommendation_reason}

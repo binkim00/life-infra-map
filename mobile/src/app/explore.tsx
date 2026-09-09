@@ -565,7 +565,7 @@ export default function ExploreScreen() {
                       </Text>
                     </View>
                     <Text numberOfLines={1} style={styles.resultMeta}>
-                      {place.category_label || place.category}
+                      {place.category_label || place.category} · {place.source_label || (place.result_source === "kakao" ? "카카오 장소" : "LifeMap 저장 장소")}
                     </Text>
                   </View>
                 </Pressable>

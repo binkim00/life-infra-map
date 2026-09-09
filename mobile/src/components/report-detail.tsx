@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Image, Pressable, Text, TextInput, View } from "react-native";
+import { Image, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { recommendationApi } from "@/api/recommendations";
 import { useResource } from "@/hooks/use-resource";
 import { useAction } from "@/hooks/use-action";
@@ -84,19 +84,29 @@ export function ReportDetail({
             <Text>{data.description}</Text>
             <Text style={ui.muted}>{data.suggested_tags?.join(" · ")}</Text>
           </View>
-          {data.images?.map((image) => (
-            <Image
-              key={image.id}
-              source={{ uri: image.image_url }}
-              style={{ width: "100%", height: 240 }}
-              resizeMode="contain"
-            />
-          ))}
           {data.admin_note ? (
             <Text style={ui.success}>검토 메모: {data.admin_note}</Text>
           ) : null}
+          {data.images?.length ? (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              {data.images.map((image) => (
+                <Image
+                  key={image.id}
+                  source={{ uri: image.image_url }}
+                  style={{ width: 180, height: 140, marginRight: 8 }}
+                  resizeMode="cover"
+                />
+              ))}
+            </ScrollView>
+          ) : (
+            <Text style={ui.muted}>첨부 사진 없음</Text>
+          )}
           {admin && !["approved", "rejected"].includes(data.status || "") ? (
             <>
+              <Text style={ui.sectionTitle}>관리자 검토</Text>
+              <Text style={ui.muted}>
+                제보 내용과 사진을 확인한 뒤 승인하거나 반려해 주세요.
+              </Text>
               <TextInput
                 value={note}
                 onChangeText={setNote}

@@ -12,6 +12,7 @@ import {
   View,
 } from "react-native";
 import { boardsApi } from "@/api/boards";
+import { ApiError } from "@/api/client";
 import { recommendationApi } from "@/api/recommendations";
 import { useAuth, type AuthUser } from "@/auth/auth-context";
 import { BottomNav } from "@/components/bottom-nav";
@@ -49,6 +50,7 @@ export default function MypageScreen() {
   const [profile, setProfile] = useState<MypageData>({});
   const [memoDrafts, setMemoDrafts] = useState<Record<number, string>>({});
   const [message, setMessage] = useState("");
+  const [imageBusy, setImageBusy] = useState(false);
   const load = async () => {
     const [mypage, saved] = await Promise.all([
       boardsApi.mypage(),
@@ -75,26 +77,54 @@ export default function MypageScreen() {
     }
   };
   const updateImage = async () => {
+    if (imageBusy) return;
+    setImageBusy(true);
+    setMessage("");
     try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        setMessage("사진 접근 권한을 허용해야 프로필 사진을 바꿀 수 있습니다.");
+        return;
+      }
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ["images"],
         quality: 0.8,
       });
       if (result.canceled) return;
       const image = result.assets[0];
+      if (!image?.uri) throw new Error("선택한 사진을 읽지 못했습니다.");
+      const mimeType = image.mimeType || "image/jpeg";
+      const supported = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
+      if (!supported.has(mimeType.toLowerCase())) {
+        throw new Error("JPG, PNG, GIF, WebP 사진만 사용할 수 있습니다.");
+      }
+      const extension = mimeType.toLowerCase() === "image/jpeg"
+        ? "jpg"
+        : mimeType.split("/")[1];
+      const originalName = image.fileName || "profile";
+      const safeName = /\.(jpe?g|png|gif|webp)$/i.test(originalName)
+        ? originalName
+        : `${originalName}.${extension}`;
       const body = new FormData();
       body.append("profile_image", {
         uri: image.uri,
-        name: image.fileName || "profile.jpg",
-        type: image.mimeType || "image/jpeg",
+        name: safeName,
+        type: mimeType,
       } as unknown as Blob);
       const data = (await boardsApi.updateProfileImage(body)) as {
         user?: AuthUser;
       };
       if (data.user) await setUser(data.user);
       setMessage("프로필 사진을 수정했습니다.");
-    } catch {
-      setMessage("프로필 사진을 수정하지 못했습니다.");
+    } catch (cause) {
+      if (cause instanceof ApiError && cause.data && typeof cause.data === "object") {
+        const first = Object.values(cause.data as Record<string, unknown>)[0];
+        setMessage(Array.isArray(first) && first[0] ? String(first[0]) : cause.message);
+      } else {
+        setMessage(cause instanceof Error ? cause.message : "프로필 사진을 수정하지 못했습니다.");
+      }
+    } finally {
+      setImageBusy(false);
     }
   };
   const saveMemo = async (id: number) => {
@@ -159,8 +189,10 @@ export default function MypageScreen() {
                   </View>
                 </View>
               </View>
-              <Pressable onPress={updateImage} style={styles.imageButton}>
-                <Text style={styles.imageButtonText}>프로필 사진 변경</Text>
+              <Pressable disabled={imageBusy} onPress={updateImage} style={styles.imageButton}>
+                <Text style={styles.imageButtonText}>
+                  {imageBusy ? "사진 처리 중…" : "프로필 사진 변경"}
+                </Text>
               </Pressable>
               {message ? <Text style={styles.message}>{message}</Text> : null}
             </View>

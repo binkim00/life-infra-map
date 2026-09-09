@@ -27,7 +27,11 @@ from recommendations.services.area_gazetteer import (
     resolve_area_coordinates_by_token,
 )
 from recommendations.services.kakao_local import search_address, search_places_by_keyword
-from recommendations.services.map_search import get_matching_categories, supports_postgis
+from recommendations.services.map_search import (
+    build_kakao_keyword_variants,
+    get_matching_categories,
+    supports_postgis,
+)
 from recommendations.services.place_urls import get_kakao_place_url
 from recommendations.services.smoking_metadata import derive_smoking_metadata
 from recommendations.services.smoking_area_data import calculate_distance_m
@@ -3316,11 +3320,28 @@ def collect_kakao_candidates(frame, queries, *, lat=None, lng=None, radius=None)
                 radius=radius,
                 size=size,
             )
+            documents = response.get("documents") if isinstance(response, dict) else []
+            documents = documents if isinstance(documents, list) else []
+            if not documents and lat is not None and lng is not None:
+                variants = build_kakao_keyword_variants(query)
+                if variants:
+                    relaxed_response = search_places_by_keyword(
+                        keyword=variants[0],
+                        lat=None,
+                        lng=None,
+                        radius=None,
+                        size=size,
+                    )
+                    relaxed_documents = (
+                        relaxed_response.get("documents")
+                        if isinstance(relaxed_response, dict)
+                        else []
+                    )
+                    if isinstance(relaxed_documents, list):
+                        documents = relaxed_documents
         except Exception as exc:
             logger.info("Kakao candidate collection failed. query=%s", query, exc_info=True)
             return query, [], {"query": query, "count": 0, "error": exc.__class__.__name__}
-        documents = response.get("documents") if isinstance(response, dict) else []
-        documents = documents if isinstance(documents, list) else []
         return query, documents, {"query": query, "count": len(documents)}
 
     fetched = []
