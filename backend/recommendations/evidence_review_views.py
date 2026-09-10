@@ -28,6 +28,7 @@ def research_audits(request):
 
 def serialize(row):
     review = getattr(row, "review", None)
+    historical = bool(row.expires_at and row.expires_at <= timezone.now())
     return {
         "id": row.id, "place_id": row.place_id, "place_name": row.place.name,
         "address": row.place.address, "tag": row.tag.name, "source": row.source,
@@ -37,6 +38,9 @@ def serialize(row):
         "expires_at": row.expires_at, "status": review.status if review else "pending",
         "note": review.note if review else "", "history": review.history if review else [],
         "source_title": row.context.get("source_title", ""),
+        "freshness": "historical" if historical else "current",
+        "freshness_label": "과거 자료·현재 미확인" if historical else "유효기간 내 자료",
+        "content_approved": bool(review and review.status == "approved"),
     }
 
 
@@ -83,8 +87,6 @@ def evidence_review(request, evidence_id):
         return Response({"detail": "검토 결과와 근거 메모를 입력해 주세요."}, status=400)
     with transaction.atomic():
         row = get_object_or_404(PlaceTagEvidence.objects.select_for_update(), pk=evidence_id, source__in=WEB_EVIDENCE_SOURCES)
-        if decision == "approved" and row.expires_at and row.expires_at <= timezone.now():
-            return Response({"detail": "만료된 근거입니다. 재조사가 필요합니다."}, status=400)
         review, _ = EvidenceReview.objects.get_or_create(evidence=row)
         review.status, review.note, review.reviewer = decision, note[:4000], request.user
         review.history = [*review.history, {"status": decision, "note": note[:4000], "reviewer_id": request.user.id, "at": timezone.now().isoformat()}]
@@ -97,7 +99,7 @@ def evidence_review(request, evidence_id):
                 "place": row.place, "tag": row.tag, "source": ADMIN_EVIDENCE_SOURCE,
                 "source_reference": row.source_reference, "polarity": row.polarity,
                 "confidence": row.confidence, "evidence": note[:4000], "user": request.user,
-                "context": {"reviewed_evidence_id": row.id}, "observed_at": timezone.now(),
+                "context": {"reviewed_evidence_id": row.id, "content_approval": True}, "observed_at": row.observed_at,
                 "expires_at": row.expires_at,
             })
         else:

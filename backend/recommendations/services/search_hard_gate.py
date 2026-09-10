@@ -191,7 +191,7 @@ def _active_tags_by_polarity(candidates, now):
     rows = PlaceTagEvidence.objects.filter(
         place_id__in=place_ids,
         polarity__in=("positive", "negative"),
-    ).filter(Q(expires_at__isnull=True) | Q(expires_at__gt=now)).values_list(
+    ).exclude(review__status__in=["pending", "rejected", "research"]).filter(Q(expires_at__isnull=True) | Q(expires_at__gt=now)).values_list(
         "place_id", "tag__name", "polarity", "source", "source_reference", "context",
     )
     trusted = set()

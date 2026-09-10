@@ -18,6 +18,8 @@ type Evidence = {
   polarity: string;
   note: string;
   confidence: number;
+  freshness_label?: string;
+  content_approved?: boolean;
 };
 const STATUSES = [
   ["pending", "확인 필요"],
@@ -53,7 +55,7 @@ export default function EvidenceQueueScreen() {
   return (
     <Screen
       title="수집 근거 검토"
-      subtitle="원문과 장소·특징을 확인한 뒤 판정해 주세요. 수집 유효 판정과 관리자 승인은 다릅니다."
+      subtitle="승인은 내용 판정입니다. 오래된 자료도 승인할 수 있지만 현재 확인된 사실이나 필수 조건 충족으로 취급하지 않습니다."
       back
     >
       <View style={[ui.row, { flexWrap: "wrap" }]}>
@@ -96,6 +98,7 @@ export default function EvidenceQueueScreen() {
             {({ web_search: "웹 조사", naver_blog_search: "네이버 블로그", user_report: "사용자 제보" } as Record<string, string>)[item.source] || "외부 수집"} · {({ positive: "조건 뒷받침", negative: "조건 불일치", neutral: "중립" } as Record<string, string>)[item.polarity] || "판정 확인 필요"} · 수집 점수 {item.confidence}
           </Text>
           <Text>{item.quote || "인용문 없음"}</Text>
+          {item.freshness_label ? <Text style={ui.muted}>{item.freshness_label}{item.content_approved ? " · 내용 승인" : ""}</Text> : null}
           {/^https?:\/\//.test(item.source_url) ? (
             <Pressable
               onPress={() => action.run(() => Linking.openURL(item.source_url))}

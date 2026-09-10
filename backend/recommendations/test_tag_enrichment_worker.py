@@ -27,7 +27,7 @@ class TagEnrichmentWorkerTests(TestCase):
                 'polarity': 'positive',
                 'evidence_summary': '평일에는 조용하게 머물기 좋다고 소개한다.',
                 'source_url': 'https://example.com/place-review',
-                'source_title': '장소 소개',
+                'source_title': '서면 테스트 카페 소개',
             }
 
         stats = process_queue(limit=1, evidence_provider=provider)
@@ -48,7 +48,7 @@ class TagEnrichmentWorkerTests(TestCase):
             return {
                 'executed': True,
                 'polarity': 'negative',
-                'evidence_summary': '혼잡하고 음악 소리가 크다고 명시한다.',
+                'evidence_summary': '서면 테스트 카페는 시끄럽고 혼잡하다고 명시한다.',
                 'source_url': 'https://example.com/noisy',
             }
 
@@ -75,14 +75,14 @@ class TagEnrichmentWorkerTests(TestCase):
         evidences = [
             {
                 'polarity': 'positive',
-                'evidence_summary': '조용하다는 근거 {}'.format(index),
+                'evidence_summary': '서면 테스트 카페가 조용하다는 근거 {}'.format(index),
                 'source_url': 'https://example.com/positive-{}'.format(index),
             }
             for index in range(3)
         ]
         evidences.append({
             'polarity': 'negative',
-            'evidence_summary': '주말에는 시끄럽다는 근거',
+            'evidence_summary': '서면 테스트 카페는 주말에는 시끄럽다는 근거',
             'source_url': 'https://example.com/negative',
         })
 

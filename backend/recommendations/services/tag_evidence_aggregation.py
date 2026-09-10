@@ -1,5 +1,6 @@
 from django.db.models import Q
 from django.utils import timezone
+from recommendations.services.historical_evidence import HISTORICAL_PREFIX
 
 from recommendations.models import PlaceTag, PlaceTagEvidence
 from recommendations.services.tag_source_policy import (
@@ -19,7 +20,7 @@ AGGREGATION_SUMMARIES = (
 def active_evidence(place, tag, *, now=None):
     now = now or timezone.now()
     return PlaceTagEvidence.objects.filter(place=place, tag=tag).exclude(
-        review__status__in=["rejected", "research"],
+        review__status__in=["pending", "rejected", "research"],
     ).filter(
         Q(expires_at__isnull=True) | Q(expires_at__gt=now)
     )
@@ -233,6 +234,24 @@ def aggregate_confidence(status, positive_count, negative_count, quality):
 
 
 def materialize_web_aggregate(place, tag, web, result, *, now, decisive_negative=None):
+    # Historical approval never enters active evidence, verified counts, or
+    # current conflicts. Keep it only as explicitly labelled auxiliary data.
+    historical = None
+    if result["status"] == "none":
+        old = PlaceTagEvidence.objects.filter(
+            place=place, tag=tag, source__in=WEB_EVIDENCE_SOURCES,
+            review__status="approved", expires_at__lte=now,
+        )
+        if not old.filter(polarity="negative").exists():
+            historical = old.filter(polarity="positive").order_by("-observed_at", "-id").first()
+    if historical:
+        PlaceTag.objects.update_or_create(
+            place=place, tag=tag, source=WEB_AGGREGATE_SOURCE,
+            defaults={"status": "needs_verification", "confidence": 25,
+                      "evidence": HISTORICAL_PREFIX + historical.evidence,
+                      "is_verified": False, "verified_at": None},
+        )
+        return
     if result["status"] in {"candidate", "needs_verification", "rejected"} and (
         result["web_positive"] or result["web_negative"]
     ):

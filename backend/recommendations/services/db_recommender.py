@@ -1265,6 +1265,8 @@ def get_walk_healing_adjustment(place, tag_data):
 
 
 def get_place_tag_data(place):
+    from .historical_evidence import is_historical_tag
+    historical_tags = []
     suggested_tags = []
     verified_tags = []
     warning_tags = []
@@ -1275,6 +1277,9 @@ def get_place_tag_data(place):
 
     for place_tag in place.place_tags.all():
         tag = place_tag.tag
+        if is_historical_tag(place_tag):
+            historical_tags.append(tag.name)
+            continue
         detail = {
             "name": tag.name,
             "tag_type": tag.tag_type,
@@ -1300,6 +1305,7 @@ def get_place_tag_data(place):
         "tag_details": tag_details,
         "raw_scores": raw_scores,
         "saved_place": place,
+        "historical_tags": list(dict.fromkeys(historical_tags)),
     }
 
 
@@ -1915,6 +1921,8 @@ def serialize_recommendation(
         "fallback_label": labels["fallback_label"],
         "fallback_description": labels["fallback_description"],
         "suggested_tags": tag_data["suggested_tags"],
+        "historical_tags": tag_data.get("historical_tags", []),
+        "historical_evidence_label": "과거 자료·현재 미확인" if tag_data.get("historical_tags") else "",
         "verified_tags": tag_data["verified_tags"],
         "warning_tags": tag_data["warning_tags"],
         "suggested_tag_labels": get_tag_display_names(tag_data["suggested_tags"]),

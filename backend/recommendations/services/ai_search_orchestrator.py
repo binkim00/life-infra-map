@@ -2236,11 +2236,16 @@ def _tag_strength(place_tag):
 
 
 def _db_tag_lists(place):
+    from .historical_evidence import is_historical_tag
+    historical = []
     verified = []
     suggested = []
     candidate = []
     warnings = []
     for place_tag in getattr(place, "place_tags", []).all():
+        if is_historical_tag(place_tag):
+            historical.append(place_tag.tag.name)
+            continue
         tag_name = _clean_text(getattr(place_tag.tag, "name", ""))
         if not tag_name:
             continue
@@ -2260,6 +2265,7 @@ def _db_tag_lists(place):
         "suggested": list(dict.fromkeys(suggested)),
         "candidate": list(dict.fromkeys(candidate)),
         "warning": list(dict.fromkeys(warnings)),
+        "historical": list(dict.fromkeys(historical)),
     }
 
 
@@ -2958,6 +2964,8 @@ def collect_db_candidates(
             "verified_tags": tag_lists["verified"],
             "verified_tag_labels": tag_lists["verified"],
             "suggested_tags": tag_lists["suggested"],
+            "historical_tags": tag_lists.get("historical", []),
+            "historical_evidence_label": "과거 자료·현재 미확인" if tag_lists.get("historical") else "",
             "suggested_tag_labels": tag_lists["suggested"],
             "candidate_tags": tag_lists["candidate"],
             "candidate_tag_labels": tag_lists["candidate"],
@@ -3093,6 +3101,8 @@ def collect_semantic_candidates(
             "source_name": place.source_name, "kakao_place_url": get_kakao_place_url(place),
             "place_url": get_kakao_place_url(place), "verified_tags": tag_lists["verified"],
             "verified_tag_labels": tag_lists["verified"], "suggested_tags": tag_lists["suggested"],
+            "historical_tags": tag_lists.get("historical", []),
+            "historical_evidence_label": "과거 자료·현재 미확인" if tag_lists.get("historical") else "",
             "suggested_tag_labels": tag_lists["suggested"], "candidate_tags": tag_lists["candidate"],
             "candidate_tag_labels": tag_lists["candidate"], "warning_tags": tag_lists["warning"],
             "matched_evidence": matched, "matched_tags": actual_features,
@@ -3576,6 +3586,7 @@ def _merge_duplicate_candidate(primary, duplicate):
     list_fields = {
         'verified_tags', 'verified_tag_labels', 'suggested_tags',
         'suggested_tag_labels', 'candidate_tags', 'candidate_tag_labels',
+        'historical_tags', 'historical_evidence_label',
         'warning_tags', 'matched_tags', 'matched_tag_labels',
         'policy_matched_constraints', 'pre_ai_unmet_constraints',
         'policy_verification_needed',

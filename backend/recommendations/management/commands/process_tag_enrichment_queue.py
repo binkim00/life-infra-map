@@ -2,6 +2,7 @@ import hashlib
 from datetime import datetime, timedelta
 
 from django.core.management.base import BaseCommand
+from django.db import transaction
 from django.utils import timezone
 
 from recommendations.models import PlaceTag, PlaceTagEvidence, Tag, TagEnrichmentRequest
@@ -84,6 +85,7 @@ def save_candidate_evidence(request, result, *, observed_at):
     )
 
 
+@transaction.atomic
 def save_place_candidate_evidence(place, tag_name, result, *, observed_at):
     tag, _ = Tag.objects.get_or_create(
         name=tag_name,
@@ -127,6 +129,8 @@ def save_place_candidate_evidence(place, tag_name, result, *, observed_at):
             'expires_at': freshness_anchor + ttl if ttl else None,
         },
     )
+    from recommendations.services.automatic_content_review import auto_review_content
+    auto_review_content(evidence)
     refresh_candidate_aggregate(place, tag)
     return evidence, created
 

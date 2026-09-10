@@ -39,6 +39,32 @@ class TagEvidenceAggregationTests(TestCase):
         self.assertFalse(tag.is_verified)
         self.assertEqual(tag.confidence, 75)
 
+    def test_only_approved_history_is_auxiliary_and_current_negative_wins(self):
+        from recommendations.models import EvidenceReview
+        from recommendations.services.historical_evidence import HISTORICAL_PREFIX
+        old = self.add_evidence(source="web_search", reference="https://old/1", expires=False)
+        aggregate_tag_evidence(self.place, self.tag, now=self.now)
+        self.assertFalse(PlaceTag.objects.exists())
+        EvidenceReview.objects.create(evidence=old, status="approved")
+        result = aggregate_tag_evidence(self.place, self.tag, now=self.now)
+        self.assertEqual(result["admin_positive"], 0)
+        self.assertEqual(result["web_positive"], 0)
+        tag = PlaceTag.objects.get(source="web_evidence")
+        self.assertFalse(tag.is_verified)
+        self.assertTrue(tag.evidence.startswith(HISTORICAL_PREFIX))
+        self.add_evidence(source="external_api", reference="https://current/negative", polarity="negative")
+        aggregate_tag_evidence(self.place, self.tag, now=self.now)
+        self.assertFalse(PlaceTag.objects.filter(source="web_evidence").exists())
+        self.assertEqual(PlaceTag.objects.get(source="external_api").status, "rejected")
+
+    def test_conflicting_approved_history_does_not_imply_positive_condition(self):
+        from recommendations.models import EvidenceReview
+        for polarity in ("positive", "negative"):
+            row = self.add_evidence(source="web_search", reference=f"https://old/{polarity}", polarity=polarity, expires=False)
+            EvidenceReview.objects.create(evidence=row, status="approved")
+        aggregate_tag_evidence(self.place, self.tag, now=self.now)
+        self.assertFalse(PlaceTag.objects.exists())
+
     def test_three_web_sources_plus_explicit_user_confirmation_can_confirm(self):
         for index in range(3):
             self.add_evidence(source="ai_suggested", reference=f"https://blog/{index}")

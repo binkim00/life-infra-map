@@ -23,6 +23,8 @@ type AiPlace = Place & {
   external_id?: string;
   place_id?: number;
   recommendation_reason?: string;
+  historical_tags?: string[];
+  historical_evidence_label?: string;
   result_tier?: "all_conditions_met" | "partial_match" | "best_available";
   result_tier_label?: string;
   matched_conditions?: string[];
@@ -631,6 +633,9 @@ export default function RecommendScreen() {
                         <Text style={styles.reason}>
                           {place.recommendation_reason}
                         </Text>
+                      ) : null}
+                      {place.historical_tags?.length ? (
+                        <Text style={ui.muted}>과거 자료·현재 미확인: {place.historical_tags.join(", ")}. 필수 조건 충족을 뜻하지 않습니다.</Text>
                       ) : null}
                       {place.result_tier_label ? (
                         <Text style={ui.muted}>{place.result_tier_label}</Text>

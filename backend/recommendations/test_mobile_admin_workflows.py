@@ -53,12 +53,30 @@ class MobileAdminWorkflowTests(TestCase):
         self.assertFalse(active_evidence(self.place, self.tag).exists())
         self.assertEqual(len(EvidenceReview.objects.get(evidence=self.evidence).history), 2)
 
-    def test_expired_evidence_cannot_be_approved(self):
+    def test_expired_evidence_can_be_content_approved_not_current_verified(self):
         self.evidence.expires_at = timezone.now()-timedelta(days=1)
         self.evidence.save()
         self.client.force_authenticate(self.admin)
         response = self.client.post(f"/api/recommendations/admin/evidence/{self.evidence.id}/", {"status": "approved", "note": "검토"})
-        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(active_evidence(self.place, self.tag).exists())
+        from recommendations.services.db_recommender import get_place_tag_data
+        from recommendations.services.ai_search_orchestrator import _db_tag_lists
+        from recommendations.services.search_hard_gate import _active_tags_by_polarity
+        self.assertEqual(get_place_tag_data(self.place)["verified_tags"], [])
+        self.assertEqual(get_place_tag_data(self.place)["historical_tags"], [self.tag.name])
+        self.assertEqual(_db_tag_lists(self.place)["verified"], [])
+        self.assertEqual(_db_tag_lists(self.place)["historical"], [self.tag.name])
+        self.assertEqual(_active_tags_by_polarity([{"place_id": self.place.id}], timezone.now())["positive"], {})
+        detail = self.client.get(f"/api/recommendations/admin/evidence/{self.evidence.id}/").data
+        self.assertEqual(detail["freshness"], "historical")
+        self.assertTrue(detail["content_approved"])
+        original_expiry = self.evidence.expires_at
+        self.evidence.refresh_from_db()
+        self.assertEqual(self.evidence.expires_at, original_expiry)
+        # Revocation removes the auxiliary aggregate as well.
+        self.client.post(f"/api/recommendations/admin/evidence/{self.evidence.id}/", {"status": "rejected", "note": "오인용"})
+        self.assertEqual(get_place_tag_data(self.place)["historical_tags"], [])
 
     def test_report_detail_is_owner_only_and_includes_description(self):
         report = PlaceReport.objects.create(user=self.user, report_type="new_place", suggested_name="제보 장소", description="출입구 위치를 확인해 주세요.")
@@ -68,6 +86,36 @@ class MobileAdminWorkflowTests(TestCase):
         self.client.force_authenticate(self.user)
         self.assertEqual(self.client.get(url).data["description"], report.description)
         self.assertEqual(self.client.get("/api/recommendations/place-reports/").data["results"][0]["description"], report.description)
+
+    def test_historical_manifest_preview_simulation_apply_and_replay(self):
+        import hashlib
+        import json
+        from io import StringIO
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+        from django.core.management import call_command
+        self.evidence.expires_at = timezone.now() - timedelta(days=1)
+        self.evidence.save()
+        item = {"id": self.evidence.id, "place_id": self.place.id, "tag": self.tag.name,
+                "polarity": self.evidence.polarity, "observed_updated_at": str(self.evidence.updated_at),
+                "quote_hash": hashlib.sha256(self.evidence.evidence.encode()).hexdigest()}
+        with TemporaryDirectory() as folder:
+            manifest = Path(folder) / "plan.json"
+            backup = Path(folder) / "backup.json"
+            manifest.write_text(json.dumps({"run_key": "test", "accepted": [item]}), encoding="utf-8")
+            for mode in ({}, {"simulate": True}):
+                out = StringIO()
+                call_command("approve_historical_manifest", str(manifest), operator=self.admin.username, stdout=out, **mode)
+                self.assertEqual(json.loads(out.getvalue())["persisted_approved"], 0)
+                self.assertFalse(EvidenceReview.objects.exists())
+            out = StringIO()
+            call_command("approve_historical_manifest", str(manifest), operator=self.admin.username, apply=True, backup=str(backup), stdout=out)
+            self.assertEqual(json.loads(out.getvalue())["persisted_approved"], 1)
+            self.assertEqual(json.loads(backup.read_text(encoding="utf-8"))["entries"][0]["id"], self.evidence.id)
+            out = StringIO()
+            call_command("approve_historical_manifest", str(manifest), operator=self.admin.username, stdout=out)
+            self.assertEqual(json.loads(out.getvalue())["eligible"], 0)
+            self.assertEqual(len(EvidenceReview.objects.get(evidence=self.evidence).history), 1)
 
     def test_report_accepts_device_coordinates_with_more_than_six_decimals(self):
         self.client.force_authenticate(self.user)

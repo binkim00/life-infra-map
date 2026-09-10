@@ -85,6 +85,8 @@ class Command(BaseCommand):
             created_rows = list(PlaceTagEvidence.objects.filter(evidence_key__in=keys).select_related("place", "tag"))
             created = len(created_rows)
             for row in created_rows:
+                from recommendations.services.automatic_content_review import auto_review_content
+                auto_review_content(row)
                 aggregate_tag_evidence(row.place, row.tag)
 
         self.stdout.write(json.dumps({
