@@ -18,6 +18,10 @@ import { INPUT_PLACEHOLDER_COLOR, Screen, ui } from "@/components/screen";
 import { PlaceMap } from "@/components/place-map";
 import type { Place } from "@/types/place";
 import {
+  PLACE_CATEGORIES,
+  placeCategoryLabel,
+} from "@/constants/place-categories";
+import {
   clearPlaceReportDraft,
   createReportRequestId,
   loadPlaceReportDraft,
@@ -66,6 +70,7 @@ function PlaceReportForm({ params }: { params: ReportParams }) {
     params.placeId ? "tag_suggestion" : "new_place",
   );
   const [name, setName] = useState(params.name || "");
+  const [category, setCategory] = useState("");
   const [address, setAddress] = useState(params.address || "");
   const [lat, setLat] = useState(params.lat || "");
   const [lng, setLng] = useState(params.lng || "");
@@ -108,6 +113,7 @@ function PlaceReportForm({ params }: { params: ReportParams }) {
       if (draft && (draft.ownerKey === ownerKey || draft.ownerKey === "anonymous")) {
         setType(draft.type || (params.placeId ? "tag_suggestion" : "new_place"));
         setName(draft.name || "");
+        setCategory(draft.category || "");
         setAddress(draft.address || "");
         setLat(draft.lat || "");
         setLng(draft.lng || "");
@@ -133,6 +139,7 @@ function PlaceReportForm({ params }: { params: ReportParams }) {
       ownerKey,
       requestId,
       type,
+      category,
       name,
       address,
       lat,
@@ -146,7 +153,7 @@ function PlaceReportForm({ params }: { params: ReportParams }) {
       void savePlaceReportDraft(draftKey, draft);
     }, 300);
     return () => clearTimeout(timer);
-  }, [address, description, draftKey, draftReady, images, lat, lng, name, ownerKey, requestId, tags, type]);
+  }, [address, category, description, draftKey, draftReady, images, lat, lng, name, ownerKey, requestId, tags, type]);
   const locate = async () => {
     try {
       const coordinates = await searchLocation();
@@ -181,11 +188,14 @@ function PlaceReportForm({ params }: { params: ReportParams }) {
     if (!requireLogin()) return;
     if (!name.trim() || !lat || !lng || !description.trim())
       return setMessage("장소명, 위치, 제보 내용을 입력해주세요.");
+    if (type === "new_place" && !category)
+      return setMessage("새 장소의 카테고리를 선택해주세요.");
     const body = new FormData();
     body.append("client_request_id", requestId);
     body.append("report_type", type);
     if (params.placeId) body.append("place", params.placeId);
     body.append("suggested_name", name);
+    if (category) body.append("suggested_category", category);
     body.append("suggested_address", address);
     body.append("suggested_lat", lat);
     body.append("suggested_lng", lng);
@@ -257,6 +267,27 @@ function PlaceReportForm({ params }: { params: ReportParams }) {
         placeholderTextColor={INPUT_PLACEHOLDER_COLOR}
         style={ui.input}
       />
+      {type === "new_place" || type === "edit_place" ? (
+        <>
+          <Text style={ui.label}>
+            장소 카테고리{type === "new_place" ? " (필수)" : " (변경할 때만 선택)"}
+          </Text>
+          <View style={styles.tags}>
+            {PLACE_CATEGORIES.map((item) => (
+              <Pressable
+                key={item.value}
+                onPress={() => setCategory(item.value)}
+                accessibilityRole="radio"
+                accessibilityState={{ selected: category === item.value }}
+                style={[styles.tag, category === item.value && styles.tagActive]}
+              >
+                <Text style={styles.tagText}>{item.label}</Text>
+              </Pressable>
+            ))}
+          </View>
+          <Text style={ui.muted}>선택: {placeCategoryLabel(category)}</Text>
+        </>
+      ) : null}
       <TextInput
         value={address}
         onChangeText={setAddress}

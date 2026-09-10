@@ -47,7 +47,21 @@ CATEGORY_DISPLAY_NAMES = {
     "parking": "주차장",
     "shopping": "쇼핑",
     "pharmacy": "약국",
+    "hospital": "병원",
+    "library": "도서관",
+    "convenience_store": "편의점",
 }
+
+CATEGORY_INPUT_ALIASES = {
+    **{code: code for code in CATEGORY_DISPLAY_NAMES},
+    **{label: code for code, label in CATEGORY_DISPLAY_NAMES.items()},
+    "음식점": "restaurant",
+}
+
+
+def normalize_place_category(category):
+    value = str(category or "").strip()
+    return CATEGORY_INPUT_ALIASES.get(value, "")
 
 SOURCE_TYPE_LABELS = {
     "db_direct_evidence": "DB 직접 근거 기반",

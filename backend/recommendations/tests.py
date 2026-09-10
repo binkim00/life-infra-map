@@ -7623,6 +7623,51 @@ class RecommendationSearchTests(TestCase):
         report.refresh_from_db()
         self.assertEqual(report.status, "pending")
 
+    def test_admin_can_supply_missing_category_while_approving_new_place(self):
+        report = PlaceReport.objects.create(
+            user=self.user,
+            report_type="new_place",
+            suggested_name="카테고리 누락 제보",
+            suggested_lat=35.155800,
+            suggested_lng=129.064300,
+            description="관리자가 카테고리를 보완합니다.",
+        )
+
+        response = self.client.post(
+            f"/api/recommendations/admin/place-reports/{report.id}/approve/",
+            data=json.dumps({
+                "admin_note": "카페 확인",
+                "suggested_category": "cafe",
+            }, ensure_ascii=False),
+            content_type="application/json",
+            **self._staff_headers(),
+        )
+
+        self.assertEqual(response.status_code, 200, response.json())
+        report.refresh_from_db()
+        self.assertEqual(report.status, "approved")
+        self.assertEqual(report.suggested_category, "cafe")
+        self.assertEqual(report.place.category, "cafe")
+
+    def test_new_place_report_submission_normalizes_korean_category_label(self):
+        response = self.client.post(
+            "/api/recommendations/place-reports/",
+            data=json.dumps({
+                "report_type": "new_place",
+                "suggested_name": "한글 카테고리 제보",
+                "suggested_category": "카페",
+                "suggested_lat": 35.155800,
+                "suggested_lng": 129.064300,
+                "description": "표준 코드 변환 검사",
+            }, ensure_ascii=False),
+            content_type="application/json",
+            **self._auth_headers(),
+        )
+
+        self.assertEqual(response.status_code, 201, response.json())
+        report = PlaceReport.objects.get(id=response.json()["report"]["id"])
+        self.assertEqual(report.suggested_category, "cafe")
+
     @patch("recommendations.views.search_places_by_keyword", return_value={"documents": []})
     def test_new_place_report_approval_creates_searchable_place(self, mock_kakao):
         report = PlaceReport.objects.create(

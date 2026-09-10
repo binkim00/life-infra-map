@@ -15,6 +15,7 @@ export type PlaceReportDraft = {
   ownerKey: string;
   requestId: string;
   type: string;
+  category?: string;
   name: string;
   address: string;
   lat: string;

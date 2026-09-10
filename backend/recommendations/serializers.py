@@ -15,6 +15,7 @@ from .models import (
     UserSearchLog,
 )
 from .services.user_preferences import normalize_preference_label, unique_valid_labels
+from .services.tag_utils import normalize_place_category
 
 
 ALLOWED_REPORT_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
@@ -671,6 +672,13 @@ class PlaceReportCreateSerializer(serializers.ModelSerializer):
         files = request.FILES.getlist("images") if request else []
         validate_report_images(files)
         attrs["suggested_tags"] = unique_valid_labels(attrs.get("suggested_tags", []))
+        if attrs.get("suggested_category"):
+            category = normalize_place_category(attrs["suggested_category"])
+            if not category:
+                raise serializers.ValidationError({
+                    "suggested_category": "지원하는 장소 카테고리를 선택해주세요.",
+                })
+            attrs["suggested_category"] = category
         return attrs
 
     def create(self, validated_data):
@@ -769,3 +777,12 @@ class PlaceReportDetailSerializer(serializers.ModelSerializer):
 
 class PlaceReportAdminReviewSerializer(serializers.Serializer):
     admin_note = serializers.CharField(required=False, allow_blank=True, trim_whitespace=True)
+    suggested_category = serializers.CharField(required=False, allow_blank=True, max_length=50)
+
+    def validate_suggested_category(self, value):
+        if not value:
+            return ""
+        category = normalize_place_category(value)
+        if not category:
+            raise serializers.ValidationError("지원하는 장소 카테고리를 선택해주세요.")
+        return category

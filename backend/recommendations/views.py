@@ -82,7 +82,7 @@ from .services.smoking_area_data import (
     map_smoking_area_to_recommendation,
 )
 from .services.smoking_metadata import derive_smoking_metadata, matches_smoking_filters
-from .services.tag_utils import get_category_display_name
+from .services.tag_utils import get_category_display_name, normalize_place_category
 from .services.user_preferences import (
     USER_SELECTED_SOURCE,
     create_or_update_user_selected_preference,
@@ -776,6 +776,13 @@ def review_place_report(request, report_id, review_status):
         approval_result = {}
         previous_tier = get_current_user_tier(report.user)
         if review_status == "approved":
+            selected_category = serializer.validated_data.get("suggested_category")
+            if selected_category:
+                report.suggested_category = selected_category
+            elif report.suggested_category:
+                report.suggested_category = normalize_place_category(
+                    report.suggested_category,
+                )
             try:
                 approval_result = apply_place_report_approval(report)
             except ValueError as exc:
@@ -792,6 +799,7 @@ def review_place_report(request, report_id, review_status):
                 "reviewed_by",
                 "reviewed_at",
                 "place",
+                "suggested_category",
                 "updated_at",
             ],
         )
