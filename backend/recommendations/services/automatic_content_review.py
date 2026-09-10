@@ -9,7 +9,7 @@ from recommendations.models import EvidenceReview, PlaceTagEvidence
 from .naver_tag_evidence_provider import identity_assessment, polarity_assessment
 from .tag_source_policy import WEB_EVIDENCE_SOURCES
 
-POLICY_VERSION = "content-v1-20260910"
+POLICY_VERSION = "content-v2-20260910"
 
 
 def compact(value):
@@ -112,7 +112,13 @@ def auto_review_content(row, *, decision=None, reason=None, run_key="new_collect
             peers = PlaceTagEvidence.objects.filter(place_id=row.place_id, tag_id=row.tag_id, polarity=row.polarity, source__in=WEB_EVIDENCE_SOURCES, id__lt=row.id)
             if any(duplicate_key(peer) == duplicate_key(row) for peer in peers):
                 decision, reason = "duplicate", "duplicate_original_preserved"
-    status = {"approve": "approved", "hold": "pending", "duplicate": "rejected"}[decision]
+    status = {
+        "approve": "approved",
+        "limited": "approved_limited",
+        "hold": "pending",
+        "duplicate": "rejected",
+        "reject": "rejected",
+    }[decision]
     digest = hashlib.sha256(row.evidence.encode()).hexdigest()
     entry = {"mode": "automatic_content", "policy": POLICY_VERSION, "status": status, "reason": reason,
              "quote_hash": digest, "run_key": run_key, "at": timezone.now().isoformat()}

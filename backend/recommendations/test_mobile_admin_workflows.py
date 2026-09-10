@@ -53,6 +53,24 @@ class MobileAdminWorkflowTests(TestCase):
         self.assertFalse(active_evidence(self.place, self.tag).exists())
         self.assertEqual(len(EvidenceReview.objects.get(evidence=self.evidence).history), 2)
 
+    def test_limited_approval_is_listed_but_excluded_from_search(self):
+        self.client.force_authenticate(self.admin)
+        url = f"/api/recommendations/admin/evidence/{self.evidence.id}/"
+        response = self.client.post(
+            url,
+            {"status": "approved_limited", "note": "장소 연결은 불확실해 자료만 보존"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(active_evidence(self.place, self.tag).exists())
+        detail = self.client.get(url).data
+        self.assertEqual(detail["usage_scope"], "archive_only")
+        self.assertFalse(detail["search_eligible"])
+        queue = self.client.get(
+            "/api/recommendations/admin/evidence/",
+            {"status": "approved_limited"},
+        ).data
+        self.assertEqual(queue["count"], 1)
+
     def test_expired_evidence_can_be_content_approved_not_current_verified(self):
         self.evidence.expires_at = timezone.now()-timedelta(days=1)
         self.evidence.save()

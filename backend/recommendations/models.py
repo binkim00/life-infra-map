@@ -394,6 +394,7 @@ class EvidenceReview(models.Model):
     evidence = models.OneToOneField(PlaceTagEvidence, on_delete=models.CASCADE, related_name="review")
     status = models.CharField(max_length=24, default="pending", choices=[
         ("pending", "확인 필요"), ("approved", "검토 승인"),
+        ("approved_limited", "제한 승인"),
         ("rejected", "반려"), ("research", "재조사 필요"),
     ], db_index=True)
     note = models.TextField(blank=True)

@@ -34,7 +34,9 @@ RESTAURANT_TAGS = ("혼밥좋음", "분위기좋음", "데이트좋음", "대화
 
 
 def _active_filter(now):
-    return Q(expires_at__isnull=True) | Q(expires_at__gt=now)
+    current = Q(expires_at__isnull=True) | Q(expires_at__gt=now)
+    searchable = Q(review__isnull=True) | Q(review__status="approved")
+    return current & searchable
 
 
 def _region_filter(region, prefix=""):

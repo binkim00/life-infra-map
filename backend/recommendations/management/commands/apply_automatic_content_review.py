@@ -6,6 +6,7 @@ from pathlib import Path
 
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
+from django.db.models import Count
 from recommendations.models import EvidenceReview, PlaceTag, PlaceTagEvidence
 from recommendations.services import automatic_content_review as policy
 from recommendations.services.tag_evidence_aggregation import aggregate_tag_evidence
@@ -75,5 +76,13 @@ class Command(BaseCommand):
                     with (folder/'receipt.jsonl').open('a',encoding='utf-8') as handle:
                         for row in receipt[-len(items[index:index+200]):]:handle.write(json.dumps(row)+'\n')
                 self.stdout.write(json.dumps({'type':'progress','processed':min(index+200,len(items)),'counts':dict(counts)}))
-        approved=EvidenceReview.objects.filter(evidence_id__in=ids,status='approved').count()
-        self.stdout.write(json.dumps({'type':'complete','run_key':manifest['run_key'],'counts':dict(counts),'target_approved_readback':approved,'processed':len(items)}))
+        status_readback = dict(
+            EvidenceReview.objects.filter(evidence_id__in=ids)
+            .values_list("status")
+            .annotate(count=Count("id"))
+        )
+        self.stdout.write(json.dumps({
+            'type':'complete', 'run_key':manifest['run_key'], 'counts':dict(counts),
+            'target_approved_readback':status_readback.get('approved', 0),
+            'target_status_readback':status_readback, 'processed':len(items),
+        }))

@@ -41,6 +41,10 @@ def serialize(row):
         "freshness": "historical" if historical else "current",
         "freshness_label": "과거 자료·현재 미확인" if historical else "유효기간 내 자료",
         "content_approved": bool(review and review.status == "approved"),
+        "search_eligible": bool((review is None or review.status == "approved") and not historical),
+        "usage_scope": "search" if review and review.status == "approved" else (
+            "archive_only" if review and review.status == "approved_limited" else "none"
+        ),
     }
 
 
@@ -51,7 +55,7 @@ def evidence_queue(request):
     status = request.GET.get("status", "pending")
     if status == "pending":
         rows = rows.filter(Q(review__isnull=True) | Q(review__status="pending"))
-    elif status in {"approved", "rejected", "research"}:
+    elif status in {"approved", "approved_limited", "rejected", "research"}:
         rows = rows.filter(review__status=status)
     elif status != "all":
         return Response({"detail": "검토 상태를 확인해 주세요."}, status=400)
@@ -83,7 +87,7 @@ def evidence_review(request, evidence_id):
         return Response(serialize(get_object_or_404(PlaceTagEvidence.objects.select_related("place", "tag", "review"), pk=evidence_id, source__in=WEB_EVIDENCE_SOURCES)))
     decision = request.data.get("status")
     note = str(request.data.get("note") or "").strip()
-    if decision not in {"approved", "rejected", "research"} or not note:
+    if decision not in {"approved", "approved_limited", "rejected", "research"} or not note:
         return Response({"detail": "검토 결과와 근거 메모를 입력해 주세요."}, status=400)
     with transaction.atomic():
         row = get_object_or_404(PlaceTagEvidence.objects.select_for_update(), pk=evidence_id, source__in=WEB_EVIDENCE_SOURCES)

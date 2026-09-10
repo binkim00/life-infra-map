@@ -20,10 +20,13 @@ type Evidence = {
   confidence: number;
   freshness_label?: string;
   content_approved?: boolean;
+  search_eligible?: boolean;
+  usage_scope?: "search" | "archive_only" | "none";
 };
 const STATUSES = [
   ["pending", "확인 필요"],
   ["approved", "승인"],
+  ["approved_limited", "제한 승인"],
   ["research", "재조사"],
   ["rejected", "반려"],
   ["all", "전체"],
@@ -55,7 +58,7 @@ export default function EvidenceQueueScreen() {
   return (
     <Screen
       title="수집 근거 검토"
-      subtitle="승인은 내용 판정입니다. 오래된 자료도 승인할 수 있지만 현재 확인된 사실이나 필수 조건 충족으로 취급하지 않습니다."
+      subtitle="승인은 검색 근거로 사용하고, 제한 승인은 자료만 보존해 검색·필수 조건 판정에서는 제외합니다. 오래된 자료는 승인해도 현재 사실로 취급하지 않습니다."
       back
     >
       <View style={[ui.row, { flexWrap: "wrap" }]}>
@@ -98,7 +101,7 @@ export default function EvidenceQueueScreen() {
             {({ web_search: "웹 조사", naver_blog_search: "네이버 블로그", user_report: "사용자 제보" } as Record<string, string>)[item.source] || "외부 수집"} · {({ positive: "조건 뒷받침", negative: "조건 불일치", neutral: "중립" } as Record<string, string>)[item.polarity] || "판정 확인 필요"} · 수집 점수 {item.confidence}
           </Text>
           <Text>{item.quote || "인용문 없음"}</Text>
-          {item.freshness_label ? <Text style={ui.muted}>{item.freshness_label}{item.content_approved ? " · 내용 승인" : ""}</Text> : null}
+          {item.freshness_label ? <Text style={ui.muted}>{item.freshness_label}{item.search_eligible ? " · 검색 사용" : item.usage_scope === "archive_only" ? " · 자료만 보존" : ""}</Text> : null}
           {/^https?:\/\//.test(item.source_url) ? (
             <Pressable
               onPress={() => action.run(() => Linking.openURL(item.source_url))}
@@ -122,7 +125,7 @@ export default function EvidenceQueueScreen() {
           />
           <View style={ui.row}>
             {STATUSES.filter(([value]) =>
-              ["approved", "rejected", "research"].includes(value),
+              ["approved", "approved_limited", "rejected", "research"].includes(value),
             ).map(([value, label]) => (
               <Pressable
                 key={value}

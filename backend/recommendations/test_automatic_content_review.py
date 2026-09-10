@@ -50,6 +50,23 @@ class AutomaticContentReviewTests(TestCase):
         self.assertEqual(auto_review_content(other),"rejected")
         self.assertEqual(PlaceTagEvidence.objects.count(),2)
 
+    def test_limited_approval_is_preserved_but_never_searchable(self):
+        row = self.row()
+        self.assertEqual(
+            auto_review_content(
+                row,
+                decision="limited",
+                reason="place_identity_uncertain",
+                run_key="second-pass",
+            ),
+            "approved_limited",
+        )
+        self.assertFalse(active_evidence(self.place, self.tag).exists())
+        self.assertFalse(PlaceTagEvidence.objects.filter(source="admin_review").exists())
+        review = EvidenceReview.objects.get(evidence=row)
+        self.assertEqual(review.status, "approved_limited")
+        self.assertEqual(review.history[-1]["run_key"], "second-pass")
+
     def test_branch_address_mismatch_held(self):
         row=self.row("테스트커피 서면점에 콘센트가 있어요. 부산 중앙대로 999")
         self.assertEqual(assess_content(row)[0],"hold")
