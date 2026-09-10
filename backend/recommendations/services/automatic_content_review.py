@@ -9,7 +9,15 @@ from recommendations.models import EvidenceReview, PlaceTagEvidence
 from .naver_tag_evidence_provider import identity_assessment, polarity_assessment
 from .tag_source_policy import WEB_EVIDENCE_SOURCES
 
-POLICY_VERSION = "content-v2-20260910"
+POLICY_VERSION = "content-v3-20260910"
+
+BRANCH_SENSITIVE_BRANDS = (
+    "스타벅스", "투썸플레이스", "메가mgc커피", "메가커피", "컴포즈커피",
+    "이디야", "빽다방", "파스쿠찌", "할리스", "엔제리너스", "커피빈",
+    "카페베네", "더벤티", "매머드커피", "폴바셋", "탐앤탐스", "공차",
+    "블루샥", "롯데리아", "맥도날드", "버거킹", "맘스터치", "서브웨이",
+    "kfc", "설빙", "텐퍼센트", "채선당", "배스킨라빈스", "파리바게뜨",
+)
 
 
 def compact(value):
@@ -33,70 +41,106 @@ def duplicate_key(row):
     return (row.place_id, row.tag_id, row.polarity, reference, compact(row.evidence))
 
 
+def full_name_mentioned(row, text=None):
+    name = compact(row.place.name)
+    return len(name) >= 4 and name in compact(text if text is not None else row.evidence)
+
+
+def branch_sensitive_place(place):
+    raw = place.raw if isinstance(place.raw, dict) else {}
+    branch = next((raw.get(key) for key in (
+        "지점명", "branch_name", "brchNm", "branch",
+    ) if str(raw.get(key) or "").strip()), "")
+    name = compact(place.name)
+    return bool(branch) or any(compact(brand) in name for brand in BRANCH_SENSITIVE_BRANDS)
+
+
+def explicit_opposite_statement(row, text):
+    if row.polarity != "positive":
+        return False
+    body = compact(text)
+    tag = row.tag.name
+    if tag == "데이트좋음":
+        return bool(re.search(r"데이트.{0,12}(?:아님|아니|불가|어렵)", body))
+    if tag in ("작업하기좋음", "노트북작업"):
+        return bool(re.search(r"(?:노트북|태블릿|랩탑).{0,20}(?:사용하지말|금지|불가)", body))
+    if tag == "콘센트있음":
+        return bool(re.search(r"콘센트.{0,12}(?:없|불가|금지)", body))
+    if tag == "주차가능":
+        return bool(re.search(r"주차.{0,12}(?:불가|안됨|없)", body))
+    if tag in ("혼밥좋음", "혼자이용좋음"):
+        return bool(re.search(r"(?:혼밥|혼자이용).{0,12}(?:불가|금지|어렵)", body))
+    if tag == "조용함":
+        return bool(re.search(r"(?:조용하지않|조용.{0,4}아님|조용한편은아니)", body))
+    return False
+
+
+def multiple_place_context_decision(row):
+    name = compact(row.place.name)
+    quote = compact(row.evidence)
+    if len(name) < 4 or name not in quote:
+        return "hold"
+    start = 0
+    opposite_found = False
+    while True:
+        position = quote.find(name, start)
+        if position < 0:
+            return "reject" if opposite_found else "hold"
+        window = quote[max(0, position - 160):position + len(name) + 160]
+        assessed = polarity_assessment(
+            row.tag.name, window, category=row.place.category,
+        )["polarity"]
+        if assessed == row.polarity:
+            return "approve"
+        if assessed in ("positive", "negative"):
+            opposite_found = True
+        start = position + len(name)
+
+
 def assess_content(row):
     """No expiration, exact-title, or network-access requirement."""
     if row.source not in WEB_EVIDENCE_SOURCES:
         return "hold", "unsupported_source"
-    prose = (row.evidence or "").split("#", 1)[0]
+    prose = row.evidence or ""
     title = (row.context or {}).get("source_title", "")
     text = title + " " + prose
     name = compact(row.place.name)
     body = compact(prose)
     if len(body) < 8 or not row.source_reference.startswith(("https://", "http://")):
-        return "hold", "insufficient_content_or_source"
+        return "reject", "insufficient_content_or_source"
     address_roads, quote_roads = roads(row.place.address), roads(prose)
     same_road = bool(address_roads & quote_roads)
     if address_roads and quote_roads and not same_road:
         return "hold", "different_address_needs_branch_or_move_check"
     identity = identity_assessment(row.place, text, title=title)
     if identity.get("signals", {}).get("explicit_region_mismatch"):
-        return "hold", "region_mismatch"
+        return "reject", "region_mismatch"
     # A distinctive full name in the quote is sufficient even if omitted in
     # the title. For a branch-name omission require the exact road number.
     name_terms = [compact(x) for x in re.findall(r"[a-zA-Z0-9가-힣]+", row.place.name) if len(compact(x)) >= 2]
     name_matches = (len(name) >= 4 and name in compact(text)) or (same_road and any(x in compact(text) for x in name_terms))
     if not (name_matches or identity.get("matched")):
-        return "hold", "place_identity_uncertain"
-    if re.search(r"top\s*\d|best\s*\d|총정리|리스트|모음|\d+\s*곳", title, re.I) and not (same_road and len(quote_roads) == 1 and name in body):
-        return "hold", "multiple_place_scope"
-    if row.place.category in ("cafe", "restaurant") and re.search(r"호텔|모텔|펜션|리조트", row.place.name) and not re.search(r"카페|식당|레스토랑|라운지|뷔페", row.place.name):
-        return "hold", "lodging_not_dining_scope"
+        if branch_sensitive_place(row.place) and not full_name_mentioned(row, text):
+            return "hold", "place_identity_uncertain_for_branch"
+    if re.search(r"top\s*\d|best\s*\d|총정리|리스트|모음|\d+\s*곳", title, re.I):
+        multiple_decision = multiple_place_context_decision(row)
+        if multiple_decision != "approve":
+            return multiple_decision, "multiple_place_scope"
     # Explicit city conflict is not excused by a matching chain name.
     cities = "서울 부산 대구 인천 광주 대전 울산 세종 창원 양산 김해 진주 수원 성남 고양 용인 화성 전주 군산 익산 청주 천안 안산 제주 서귀포".split()
     expected = {x for x in cities if x in row.place.address}
     title_cities = {x for x in cities if re.search(r"(?:^|\s|[\[|(])" + x + r"(?:시|\s|맛집|카페|[|/\]])", title)}
     if expected and title_cities and not expected.intersection(title_cities):
-        return "hold", "title_city_mismatch"
+        return "reject", "title_city_mismatch"
     mentioned = {x for x in cities if re.search(r"(?:^|\s|[\[|(])" + x + r"(?:시|\s|맛집|카페|[|/\]])", text)}
     if expected and mentioned and not expected.intersection(mentioned):
-        return "hold", "city_mismatch"
+        return "reject", "city_mismatch"
     district_pattern = r"([가-힣0-9]{2,}(?:동|읍|면))(?=맛집|카페|\s|[)\],]|$)"
     expected_districts = set(re.findall(district_pattern, row.place.address))
     title_districts = set(re.findall(district_pattern, title))
-    if expected_districts and title_districts and not expected_districts.intersection(title_districts) and not same_road:
-        return "hold", "neighborhood_mismatch"
-    tag = row.tag.name
-    if tag in ("조용함", "소음큼"):
-        if not re.search(r"조용|한적|차분(?:한|하|해|히|함)|소음|시끄|시끌|북적|혼잡", prose):
-            return "hold", "ambience_is_not_noise_evidence"
-        if re.search(r"조용.{0,12}(?:해야|이용해야)|피해가안가게", body):
-            return "hold", "etiquette_not_observation"
-        if row.place.category not in ("library", "cafe", "restaurant") and re.search(r"도서관|개별룸", title):
-            return "hold", "subfacility_not_whole_place"
-    if tag == "관리잘됨" and re.search(r"불법투기|단속|상습지역", body):
-        return "hold", "enforcement_not_cleanliness"
-    if tag == "무료와이파이" and row.polarity == "positive" and not re.search(r"(?:무료|공공|free).{0,10}(?:와이파이|wi.?fi)|(?:와이파이|wi.?fi).{0,10}(?:무료|free)", prose, re.I):
-        return "hold", "wifi_available_does_not_prove_free"
-    if tag == "노트북작업" and not re.search(r"노트북|랩탑|laptop", prose, re.I):
-        return "hold", "study_does_not_prove_laptop"
-    if tag in ("시간제한있음", "장기체류좋음") and re.search(r"시간(?:이)?제한.{0,8}없", body) and (tag, row.polarity) in (("시간제한있음", "positive"), ("장기체류좋음", "negative")):
-        return "hold", "negation_misinterpretation"
-    if tag in ("혼밥좋음", "혼자이용좋음") and re.search(r"집에서.{0,10}혼밥|혼밥.{0,8}(?:불가|어렵|하고싶|하러갈)", body):
-        return "hold", "home_intent_or_negation"
-    assessment = polarity_assessment(tag, prose, category=row.place.category)
-    if assessment["polarity"] != row.polarity or row.polarity not in ("positive", "negative"):
-        return "hold", "tag_polarity_not_supported"
-    return "approve", "place_and_content_supported"
+    if explicit_opposite_statement(row, text):
+        return "reject", "explicit_opposite_statement"
+    return "approve", "relaxed_place_and_content_supported"
 
 
 @transaction.atomic

@@ -41,7 +41,7 @@ class AutomaticContentReviewTests(TestCase):
         auto_review_content(row)
         row.evidence="테스트커피 서면점에는 콘센트가 없어요."
         row.save()
-        self.assertEqual(auto_review_content(row),"pending")
+        self.assertEqual(auto_review_content(row),"rejected")
         self.assertFalse(active_evidence(self.place,self.tag).exists())
 
     def test_duplicate_is_excluded_without_deletion(self):
@@ -75,17 +75,40 @@ class AutomaticContentReviewTests(TestCase):
         row=self.row("테스트커피에는 콘센트가 있어요. 부산 부산진구 중앙대로 100")
         self.assertEqual(assess_content(row)[0],"approve")
 
-    def test_false_quiet_substring_and_hashtag_only_are_held(self):
+    def test_non_opposite_ambience_and_hashtag_evidence_are_approved(self):
         row=self.row("테스트커피 서면점은 포장마차 분위기가 있어요.")
         row.tag=Tag.objects.create(name="조용함")
-        self.assertEqual(assess_content(row)[0],"hold")
+        self.assertEqual(assess_content(row)[0],"approve")
         row.evidence="#테스트커피 서면점 #조용한 카페"
-        self.assertEqual(assess_content(row)[0],"hold")
+        self.assertEqual(assess_content(row)[0],"approve")
 
     def test_other_city_in_title_wins_over_food_style_in_body(self):
         row=self.row("테스트커피 서면점에서 부산 스타일 커피. 콘센트가 있어요.")
         row.context={"source_title":"양산 테스트커피 서면점 후기"}
-        self.assertEqual(assess_content(row)[0],"hold")
+        self.assertEqual(assess_content(row)[0],"reject")
+
+    def test_non_franchise_identity_omission_is_approved(self):
+        row = self.row("분위기가 좋고 콘센트도 충분했어요.")
+        row.context = {"source_title": "부산 개인 카페 후기"}
+        self.assertEqual(assess_content(row)[0], "approve")
+
+    def test_franchise_without_exact_branch_stays_held(self):
+        self.place.name = "스타벅스 서면점"
+        self.place.save()
+        row = self.row("스타벅스에는 콘센트가 있어서 편리했어요.")
+        self.assertEqual(assess_content(row)[0], "hold")
+
+    def test_multiple_place_article_uses_local_name_and_tag_context(self):
+        row = self.row(
+            "첫 장소는 시끄러웠어요. 테스트커피 서면점은 좌석마다 콘센트가 있어 편리했어요. 다음 장소는 넓어요."
+        )
+        row.context = {"source_title": "부산 카페 베스트 top 10"}
+        self.assertEqual(assess_content(row)[0], "approve")
+
+    def test_explicit_laptop_ban_is_rejected(self):
+        row = self.row("테스트커피 서면점은 노트북 사용이 금지입니다.")
+        row.tag = Tag.objects.create(name="노트북작업")
+        self.assertEqual(assess_content(row)[0], "reject")
 
     def test_backfill_snapshot_simulation_and_safe_replay(self):
         import hashlib,json
