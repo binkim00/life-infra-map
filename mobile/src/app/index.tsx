@@ -135,7 +135,7 @@ export default function HomeScreen() {
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.placesRow}>
               {nearbyPlaces.slice(0, 5).map((place, index) => (
                 <Pressable key={place.id} onPress={() => openNearby(place)} style={({ pressed }) => [styles.placeCard, pressed && styles.pressed]}>
-                  <PlacePhoto category={index % 2 ? "walk" : place.category || "park"} fallback={index} width={164} height={106} style={styles.placeVisual}>
+                  <PlacePhoto category={index % 2 ? "walk" : place.category || "park"} fallback={index} width={164} height={106} style={styles.placeVisual} externalUrl={place.kakao_place_url || place.place_url} source={`${place.result_source || ""} ${place.source_label || ""}`}>
                     <View style={styles.distanceBadge}><Text style={styles.distanceBadgeText}>⌖ {formatDistance(place.distance)}</Text></View>
                   </PlacePhoto>
                   <Text numberOfLines={1} style={styles.placeName}>{place.name}</Text>

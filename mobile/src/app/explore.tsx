@@ -16,6 +16,7 @@ import { recommendationApi, searchMapPlaces } from "@/api/recommendations";
 import { useAuth } from "@/auth/auth-context";
 import { BottomNav } from "@/components/bottom-nav";
 import { PlacePhoto } from "@/components/place-photo";
+import { AppIcon } from "@/components/app-icon";
 import { PlaceDetailSheet } from "@/components/place-detail-sheet";
 import { PlaceMap } from "@/components/place-map";
 import {
@@ -531,6 +532,13 @@ export default function ExploreScreen() {
           >
             {places.map((place, index) => {
               const selected = selectedPlace?.id === place.id;
+              const kakaoLinked = Boolean(
+                place.kakao_place_url ||
+                place.place_url?.includes("map.kakao.com") ||
+                place.result_source === "kakao" ||
+                place.source_label?.toLowerCase().includes("kakao") ||
+                place.source_label?.includes("카카오"),
+              );
               return (
                 <Pressable
                   key={`${place.result_source}-${place.id}`}
@@ -543,7 +551,14 @@ export default function ExploreScreen() {
                   ]}
                 >
                   <View style={styles.resultPhotoWrap}>
-                    <PlacePhoto category={place.category} fallback={index} width={70} height={70} style={styles.resultPhoto} />
+                    {kakaoLinked ? (
+                      <View style={styles.kakaoVisual}>
+                        <AppIcon ios="map.fill" android="map" size={25} color={Palette.accent} />
+                        <Text style={styles.kakaoVisualText}>KAKAO</Text>
+                      </View>
+                    ) : (
+                      <PlacePhoto category={place.category} fallback={index} width={70} height={70} style={styles.resultPhoto} />
+                    )}
                     <View style={[styles.resultNumber, selected && styles.resultNumberSelected]}>
                       <Text style={[styles.resultNumberText, selected && styles.resultNumberTextSelected]}>{index + 1}</Text>
                     </View>
@@ -889,6 +904,8 @@ const styles = StyleSheet.create({
   },
   resultPhotoWrap: { width: 70, height: 70, position: "relative" },
   resultPhoto: { borderRadius: 10 },
+  kakaoVisual: { width: 70, height: 70, alignItems: "center", justifyContent: "center", gap: 4, borderRadius: 10, backgroundColor: Palette.accentSoft },
+  kakaoVisualText: { color: Palette.accentDark, fontSize: 8, fontWeight: "900", letterSpacing: 0.8 },
   resultNumber: {
     width: 24,
     height: 24,

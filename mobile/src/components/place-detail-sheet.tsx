@@ -61,10 +61,13 @@ const kakaoDetailUrl = (place: Place) => {
 };
 
 const isKakaoPlace = (place: Place) => {
+  const detailUrl = `${place.place_url || ""} ${place.kakao_place_url || ""}`.toLowerCase();
   const source =
     `${place.result_source || ""} ${place.source_label || ""} ${place.source_name || ""}`.toLowerCase();
   return (
     Boolean(place.kakao_place_url) ||
+    detailUrl.includes("place.map.kakao.com") ||
+    detailUrl.includes("map.kakao.com") ||
     source.includes("kakao") ||
     source.includes("카카오")
   );
@@ -90,7 +93,7 @@ function PlaceDetailContent({
   onSave: () => void;
   onReport: () => void;
 }) {
-  const [showWebDetail, setShowWebDetail] = useState(false);
+  const [showWebDetail, setShowWebDetail] = useState(() => Boolean(place && kakaoDetailUrl(place) && isKakaoPlace(place)));
   const [webDetailError, setWebDetailError] = useState(false);
   const [externalError, setExternalError] = useState("");
 
@@ -297,7 +300,7 @@ function PlaceDetailContent({
       </View>
       <Modal
         animationType="slide"
-        onRequestClose={onClose}
+        onRequestClose={() => setShowWebDetail(false)}
         visible={visible && showWebDetail}
       >
         <SafeAreaView
@@ -311,12 +314,12 @@ function PlaceDetailContent({
               </Text>
               <Text style={styles.webDetailCaption}>
                 {kakaoSource
-                  ? "카카오 제공 사진 · 리뷰 · 영업정보"
+                  ? "앱 안에서 보는 카카오 장소 정보"
                   : "외부 원문에서 제공하는 장소 정보"}
               </Text>
             </View>
-            <Pressable onPress={onClose} style={styles.closeButton}>
-              <Text style={styles.closeText}>닫기</Text>
+            <Pressable onPress={() => setShowWebDetail(false)} style={styles.closeButton}>
+              <Text style={styles.closeText}>기본 정보</Text>
             </Pressable>
           </View>
           <View style={styles.utilityActions}>

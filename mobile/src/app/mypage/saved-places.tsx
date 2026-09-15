@@ -177,7 +177,7 @@ export default function SavedPlacesScreen() {
   const renderPlace = (place: SavedPlace) => (
     <View key={place.id} style={[ui.card, styles.placeCard]}>
       <Pressable accessibilityRole="button" onPress={() => openPlace(place)} style={styles.placeTop}>
-        <PlacePhoto category={place.category} fallback={place.id} width={82} height={82} style={styles.placePhoto} />
+        <PlacePhoto category={place.category} fallback={place.id} width={82} height={82} style={styles.placePhoto} externalUrl={place.kakao_place_url || place.detail_url} source={place.source} />
         <View style={styles.placeCopy}>
           <Text style={styles.placeName}>{place.place_name || place.name || "이름 없는 장소"}</Text>
           {place.address ? <Text numberOfLines={2} style={ui.muted}>{place.address}</Text> : <Text style={ui.muted}>주소 정보 없음</Text>}
