@@ -4429,11 +4429,11 @@ def _allows_unverified_result_relaxation(query):
     ))
 
 
-def _enforce_required_result_policy(results, frame, query):
+def _enforce_required_result_policy(results, frame, query, *, allow_unverified=False):
     """Never silently fill a mandatory-condition request with unknown candidates."""
     results = list(results or [])
     required = _required_evidence_conditions(frame)
-    if not required or _allows_unverified_result_relaxation(query):
+    if not required or allow_unverified or _allows_unverified_result_relaxation(query):
         return results, required, False
     confirmed = [result for result in results if not (result.get("missing_conditions") or [])]
     if confirmed:
@@ -5111,6 +5111,85 @@ def _previous_context_from_request(data):
     return previous_context
 
 
+def _structured_conversation_action_plan(request_data, previous_context, query):
+    """Apply UI actions to the saved frame without reparsing their labels as places."""
+    action = request_data.get("conversation_action") or request_data.get("conversationAction") or {}
+    if not isinstance(action, dict):
+        return None, ""
+    action_type = _clean_text(action.get("type"), 50).lower()
+    if action_type not in {"show_unverified", "relax_constraints"}:
+        return None, ""
+
+    previous_context = previous_context if isinstance(previous_context, dict) else {}
+    previous_plan = previous_context.get("search_plan") or {}
+    raw_frame = (
+        previous_context.get("pending_clarification_frame")
+        or previous_context.get("place_intent_frame")
+        or previous_plan.get("place_intent_frame")
+        or previous_plan.get("placeIntentFrame")
+        or {}
+    )
+    if not isinstance(raw_frame, dict) or not (
+        raw_frame.get("target_objects") or raw_frame.get("targetObjects")
+    ):
+        return None, ""
+
+    frame = dict(raw_frame)
+    if action_type == "relax_constraints":
+        raw_labels = action.get("condition_labels") or action.get("conditionLabels") or []
+        labels = [
+            _clean_text(value, 80)
+            for value in raw_labels
+            if _clean_text(value, 80)
+        ][:8]
+        label_keys = {_compact(value) for value in labels}
+        if not label_keys:
+            return None, ""
+        structured = []
+        for condition in frame.get("structured_conditions") or frame.get("structuredConditions") or []:
+            if not isinstance(condition, dict):
+                continue
+            item = dict(condition)
+            label = _clean_text(item.get("label") or item.get("value"), 80)
+            if _compact(label) in label_keys:
+                item["required"] = False
+                item["source"] = "user_relaxed_action"
+            structured.append(item)
+        frame["structured_conditions"] = structured
+        frame["structuredConditions"] = structured
+        required_features = [
+            value
+            for value in frame.get("required_features") or []
+            if _compact(value) not in label_keys
+        ]
+        frame["required_features"] = required_features
+        frame["preferred_features"] = list(dict.fromkeys([
+            *(frame.get("preferred_features") or []),
+            *labels,
+        ]))
+
+    intent_plan = {
+        "action": "search",
+        "decision_action": "search",
+        "can_search_now": True,
+        "normalized_query": _clean_text(previous_plan.get("normalized_query") or query, 500),
+        "frame": frame,
+        "clarification": {},
+        "confidence": 1.0,
+        "ai_retry_count": 0,
+        "ai_debug": {
+            "planner": {
+                "status": "structured_conversation_action",
+                "reason": action_type,
+                "retry_count": 0,
+                "call_count": 0,
+                "validation_errors": [],
+            },
+        },
+    }
+    return intent_plan, action_type
+
+
 def _candidate_preview_frame(request_data):
     """Build a retrieval frame from the client-side plan without calling an AI provider."""
     search_plan = request_data.get("search_plan") or request_data.get("searchPlan") or {}
@@ -5368,13 +5447,19 @@ def run_ai_search(request_data, *, user=None):
         )
 
     planner_started = time.perf_counter()
-    intent_plan = build_ai_intent_plan(
+    intent_plan, conversation_action_type = _structured_conversation_action_plan(
+        request_data,
+        previous_context,
         query,
-        lat=lat,
-        lng=lng,
-        map_center=map_center,
-        previous_context=previous_context,
     )
+    if intent_plan is None:
+        intent_plan = build_ai_intent_plan(
+            query,
+            lat=lat,
+            lng=lng,
+            map_center=map_center,
+            previous_context=previous_context,
+        )
     timings["planner_latency_ms"] = round((time.perf_counter() - planner_started) * 1000, 2)
     timings["intent_parsing_latency_ms"] = timings["planner_latency_ms"]
     ai_call_count += _as_int(
@@ -6050,6 +6135,7 @@ def run_ai_search(request_data, *, user=None):
         ranked_candidates,
         frame,
         original_query or query,
+        allow_unverified=conversation_action_type == "show_unverified",
     )
     if needs_relaxation_question:
         condition_text = ", ".join(required_conditions[:3])
@@ -6064,8 +6150,22 @@ def run_ai_search(request_data, *, user=None):
             "clarification": {
                 "question": question,
                 "options": [
-                    {"label": "미확인 후보도 보기", "value": "확인되지 않아도 대안도 보여줘"},
-                    {"label": "조건 바꾸기", "value": "조건을 바꿀게"},
+                    {
+                        "label": "미확인 후보도 보기",
+                        "value": "미확인 후보도 보기",
+                        "action": {"type": "show_unverified"},
+                    },
+                    *[
+                        {
+                            "label": f"{condition} 조건 빼기",
+                            "value": f"{condition} 조건 빼기",
+                            "action": {
+                                "type": "relax_constraints",
+                                "condition_labels": [condition],
+                            },
+                        }
+                        for condition in required_conditions[:3]
+                    ],
                 ],
                 "missing_fields": ["verified_required_conditions"],
                 "expected_patch_fields": ["constraints"],

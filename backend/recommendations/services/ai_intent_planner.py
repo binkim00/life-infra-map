@@ -362,7 +362,11 @@ def _derive_structured_conditions(raw_query, frame):
     if _has_any(text, ["혼자", "혼밥", "1인", "혼자서"]):
         add("혼자 이용", "party")
     if _has_any(text, ["단체", "회식", "모임", "여럿"]):
-        add("단체 이용", "party")
+        explicit_party_feature = _has_any(text, ["단체석", "단체 좌석", "단체 이용"])
+        explicit_requirement = _has_any(text, ["필수", "반드시", "꼭", "가능한 곳만", "있는 곳만"])
+        # 모임·회식·가족 식사는 장소를 고르는 선호 신호다. 사용자가
+        # 단체석/단체 이용을 명시적으로 요구한 경우에만 결과 차단 조건으로 쓴다.
+        add("단체 이용", "party", required=explicit_party_feature and explicit_requirement)
 
     for feature in frame.get('required_features') or []:
         add(feature, TAG_FACETS.get(feature, 'feature'), required=True)
@@ -897,8 +901,18 @@ def _local_rule_followup_plan(raw_query, previous_context):
         return None
 
     location_patch = ""
+    pending_question = _clean_text(
+        previous_context.get("pending_clarification_question")
+        or previous_context.get("clarification_question"),
+        300,
+    )
+    expects_location_answer = (
+        frame.get("location_mode") == "clarification_required"
+        or _has_any(pending_question, ["기준 위치", "어느 동네", "어느 지역", "어느 역", "건물 근처"])
+    )
     if (
         previous_context.get("is_clarification_followup")
+        and expects_location_answer
         and len(text) <= 30
         and not allow_unverified
     ):
@@ -2419,6 +2433,27 @@ def build_ai_intent_plan(query, *, lat=None, lng=None, map_center=None, previous
             "ai_debug": {"planner": {"status": "empty_query"}},
         }
 
+    # 지역과 업종이 모두 들어간 완전한 문장은 직전 질문의 짧은 답이 아니라
+    # 독립된 새 검색이다. 먼저 새 프레임을 만들면 이전 카테고리/조건이
+    # 새 요청을 덮어쓰는 대화 상태 오염을 막을 수 있다.
+    fresh_local_plan = _local_rule_plan_for_known_intent(raw_query) if previous_context else None
+    fresh_frame = fresh_local_plan.get("frame") if isinstance(fresh_local_plan, dict) else {}
+    explicit_place_type = _has_any(raw_query, [
+        "카페", "커피숍", "식당", "음식점", "맛집", "레스토랑",
+        "공원", "도서관", "약국", "병원", "화장실", "주차장", "쉼터",
+        "흡연구역", "해수욕장", "관광지", "쇼핑몰", "백화점", "노래방",
+    ])
+    if (
+        fresh_local_plan
+        and explicit_place_type
+        and fresh_frame.get("location_mode") == "explicit"
+        and fresh_frame.get("anchor_location")
+        and fresh_frame.get("candidate_category_codes")
+        and fresh_frame.get("target_objects")
+    ):
+        fresh_local_plan["ai_debug"]["planner"]["reason"] = "complete_new_search_resets_previous_frame"
+        return fresh_local_plan
+
     local_followup_plan = _local_rule_followup_plan(raw_query, previous_context)
     if local_followup_plan:
         return local_followup_plan
@@ -2452,7 +2487,7 @@ def build_ai_intent_plan(query, *, lat=None, lng=None, map_center=None, previous
             expected_patch_fields=["target_objects", "constraints"],
         )
 
-    local_plan = _local_rule_plan_for_known_intent(raw_query)
+    local_plan = fresh_local_plan or _local_rule_plan_for_known_intent(raw_query)
     if local_plan:
         return local_plan
 

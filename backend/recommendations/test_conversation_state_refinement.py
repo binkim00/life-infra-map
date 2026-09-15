@@ -1,6 +1,11 @@
 from django.test import SimpleTestCase, override_settings
 
 from recommendations.services.ai_intent_planner import build_ai_intent_plan, to_search_plan
+from recommendations.services.ai_search_orchestrator import (
+    _enforce_required_result_policy,
+    _required_evidence_conditions,
+    _structured_conversation_action_plan,
+)
 
 
 @override_settings(CONVERSATIONAL_SEARCH_AI_ENABLED=False)
@@ -68,6 +73,93 @@ class ConversationStateRefinementTests(SimpleTestCase):
         self.assertEqual(plan["action"], "search")
         self.assertEqual(plan["frame"]["candidate_category_codes"], ["restaurant"])
         self.assertIn("가족 식사", plan["frame"]["constraints"])
+
+    def test_family_gathering_is_a_preference_not_a_required_party_feature(self):
+        plan = build_ai_intent_plan("해운대역 근처 모임하기 좋은 식당")
+        party = next(
+            condition
+            for condition in plan["frame"]["structured_conditions"]
+            if condition["label"] == "단체 이용"
+        )
+
+        self.assertFalse(party["required"])
+        self.assertNotIn("단체 이용", _required_evidence_conditions(plan["frame"]))
+
+    def test_explicit_party_seating_requirement_remains_required(self):
+        plan = build_ai_intent_plan("해운대역 단체석 필수 식당")
+        party = next(
+            condition
+            for condition in plan["frame"]["structured_conditions"]
+            if condition["label"] == "단체 이용"
+        )
+
+        self.assertTrue(party["required"])
+        self.assertIn("단체 이용", _required_evidence_conditions(plan["frame"]))
+
+    def test_complete_new_search_resets_incompatible_clarification_frame(self):
+        context = self._context()
+        context["is_clarification_followup"] = True
+        context["pending_clarification_frame"] = context["search_plan"]["place_intent_frame"]
+
+        plan = build_ai_intent_plan("서면역 근처 조용한 카페", previous_context=context)
+
+        self.assertEqual(plan["frame"]["anchor_location"], "서면역")
+        self.assertEqual(plan["frame"]["candidate_category_codes"], ["cafe"])
+        self.assertEqual(plan["frame"]["target_objects"], ["카페"])
+        self.assertNotIn("부모님 동행", plan["frame"]["constraints"])
+        self.assertEqual(
+            plan["ai_debug"]["planner"]["reason"],
+            "complete_new_search_resets_previous_frame",
+        )
+
+    def test_structured_relax_action_changes_only_the_selected_condition(self):
+        frame = {
+            **self._context()["search_plan"]["place_intent_frame"],
+            "structured_conditions": [
+                {"label": "단체 이용", "type": "party", "required": True},
+                {"label": "주차 가능", "type": "facility", "required": True},
+            ],
+        }
+        plan, action_type = _structured_conversation_action_plan(
+            {
+                "conversation_action": {
+                    "type": "relax_constraints",
+                    "condition_labels": ["단체 이용"],
+                },
+            },
+            {"pending_clarification_frame": frame},
+            "단체 이용 조건 빼기",
+        )
+
+        self.assertEqual(action_type, "relax_constraints")
+        self.assertEqual(plan["frame"]["anchor_location"], "서면")
+        self.assertEqual(_required_evidence_conditions(plan["frame"]), ["주차 가능"])
+        self.assertIn("단체 이용", plan["frame"]["preferred_features"])
+
+    def test_structured_show_unverified_action_bypasses_only_the_evidence_gate(self):
+        frame = {
+            **self._context()["search_plan"]["place_intent_frame"],
+            "structured_conditions": [
+                {"label": "주차 가능", "type": "facility", "required": True},
+            ],
+        }
+        plan, action_type = _structured_conversation_action_plan(
+            {"conversation_action": {"type": "show_unverified"}},
+            {"pending_clarification_frame": frame},
+            "미확인 후보도 보기",
+        )
+        candidates = [{"id": "db:1", "missing_conditions": ["주차 가능"]}]
+
+        results, required, needs_question = _enforce_required_result_policy(
+            candidates,
+            plan["frame"],
+            "미확인 후보도 보기",
+            allow_unverified=action_type == "show_unverified",
+        )
+
+        self.assertEqual(results, candidates)
+        self.assertEqual(required, ["주차 가능"])
+        self.assertFalse(needs_question)
 
     def test_local_boundaries_do_not_depend_on_external_ai(self):
         finance = build_ai_intent_plan("비트코인 지금 사도 될까")

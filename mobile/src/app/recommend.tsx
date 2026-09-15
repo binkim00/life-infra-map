@@ -38,7 +38,17 @@ type AiResponse = {
   results?: AiPlace[];
   message?: string;
   clarification_question?: string;
-  clarification_options?: (string | { label?: string; value?: string })[];
+  clarification_options?: (
+    | string
+    | {
+        label?: string;
+        value?: string;
+        action?: {
+          type?: "show_unverified" | "relax_constraints";
+          condition_labels?: string[];
+        };
+      }
+  )[];
   decision_action?: string;
   search_plan?: Record<string, unknown>;
   result_quality?: {
@@ -78,6 +88,10 @@ const optionValue = (
 const optionLabel = (
   option: NonNullable<AiResponse["clarification_options"]>[number],
 ) => (typeof option === "string" ? option : option.label || option.value || "");
+
+const optionAction = (
+  option: NonNullable<AiResponse["clarification_options"]>[number],
+) => (typeof option === "string" ? undefined : option.action);
 
 const assistantText = (data: AiResponse, count: number) => {
   if (data.clarification_question) return data.clarification_question;
@@ -179,7 +193,13 @@ export default function RecommendScreen() {
     return session;
   };
 
-  const submitTurn = async (next: string) => {
+  const submitTurn = async (
+    next: string,
+    conversationAction?: {
+      type?: "show_unverified" | "relax_constraints";
+      condition_labels?: string[];
+    },
+  ) => {
     const text = next.trim();
     if (!text || loading) return;
     setQuery("");
@@ -197,7 +217,13 @@ export default function RecommendScreen() {
       const raw = await recommendationApi.sendConversationTurn(
         session.id,
         session.token,
-        { query: text, lat: center.lat, lng: center.lng, limit: 10 },
+        {
+          query: text,
+          lat: center.lat,
+          lng: center.lng,
+          limit: 10,
+          conversation_action: conversationAction,
+        },
       );
       const data = raw as AiResponse;
       const receivedPlaces = data.results || [];
@@ -475,7 +501,14 @@ export default function RecommendScreen() {
                   <Pressable
                     key={`${optionValue(option)}-${index}`}
                     disabled={loading}
-                    onPress={() => submitTurn(optionValue(option))}
+                    onPress={() =>
+                      submitTurn(
+                        optionAction(option)
+                          ? optionLabel(option)
+                          : optionValue(option),
+                        optionAction(option),
+                      )
+                    }
                     style={styles.optionButton}
                   >
                     <Text style={styles.optionText}>{optionLabel(option)}</Text>
