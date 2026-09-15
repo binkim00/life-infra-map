@@ -5134,7 +5134,32 @@ def _structured_conversation_action_plan(request_data, previous_context, query):
     ):
         return None, ""
 
+    # Conversation state stores user-visible list values with provenance, for
+    # example {"value": "식당", "source": "user"}.  Normal planner paths
+    # unwrap those values, but structured button actions bypass the planner.
+    # Normalize every sourced list here before the frame reaches hard gates.
     frame = dict(raw_frame)
+    list_aliases = {
+        "target_objects": ("target_objects", "targetObjects"),
+        "candidate_place_types": ("candidate_place_types", "candidatePlaceTypes"),
+        "result_match_terms": ("result_match_terms", "resultMatchTerms"),
+        "constraints": ("constraints",),
+        "exclusions": ("exclusions",),
+        "candidate_category_codes": ("candidate_category_codes", "candidateCategoryCodes"),
+        "primary_search_queries": (
+            "primary_search_queries",
+            "primarySearchQueries",
+            "search_queries",
+            "searchQueries",
+        ),
+        "secondary_search_queries": ("secondary_search_queries", "secondarySearchQueries"),
+        "required_features": ("required_features", "requiredFeatures"),
+        "preferred_features": ("preferred_features", "preferredFeatures"),
+    }
+    for normalized_name, aliases in list_aliases.items():
+        normalized_values = list(dict.fromkeys(_frame_terms(frame, *aliases)))
+        if normalized_values or any(alias in frame for alias in aliases):
+            frame[normalized_name] = normalized_values
     if action_type == "relax_constraints":
         raw_labels = action.get("condition_labels") or action.get("conditionLabels") or []
         labels = [
@@ -5159,12 +5184,12 @@ def _structured_conversation_action_plan(request_data, previous_context, query):
         frame["structuredConditions"] = structured
         required_features = [
             value
-            for value in frame.get("required_features") or []
+            for value in _as_list(frame.get("required_features"))
             if _compact(value) not in label_keys
         ]
         frame["required_features"] = required_features
         frame["preferred_features"] = list(dict.fromkeys([
-            *(frame.get("preferred_features") or []),
+            *_as_list(frame.get("preferred_features")),
             *labels,
         ]))
 

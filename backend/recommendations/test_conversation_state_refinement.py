@@ -1,6 +1,10 @@
 from django.test import SimpleTestCase, override_settings
 
-from recommendations.services.ai_intent_planner import build_ai_intent_plan, to_search_plan
+from recommendations.services.ai_intent_planner import (
+    build_ai_intent_plan,
+    frame_with_sources,
+    to_search_plan,
+)
 from recommendations.services.ai_search_orchestrator import (
     _enforce_required_result_policy,
     _required_evidence_conditions,
@@ -135,6 +139,61 @@ class ConversationStateRefinementTests(SimpleTestCase):
         self.assertEqual(plan["frame"]["anchor_location"], "서면")
         self.assertEqual(_required_evidence_conditions(plan["frame"]), ["주차 가능"])
         self.assertIn("단체 이용", plan["frame"]["preferred_features"])
+
+    def test_structured_relax_action_normalizes_saved_sourced_values(self):
+        frame = {
+            **self._context()["search_plan"]["place_intent_frame"],
+            "structured_conditions": [
+                {"label": "단체 이용", "type": "party", "required": True},
+            ],
+            "required_features": ["단체 이용"],
+        }
+        sourced_frame = frame_with_sources(frame)
+
+        plan, action_type = _structured_conversation_action_plan(
+            {
+                "conversation_action": {
+                    "type": "relax_constraints",
+                    "condition_labels": ["단체 이용"],
+                },
+            },
+            {"pending_clarification_frame": sourced_frame},
+            "단체 이용 조건 빼기",
+        )
+
+        self.assertEqual(action_type, "relax_constraints")
+        self.assertEqual(plan["frame"]["target_objects"], ["식당"])
+        self.assertEqual(plan["frame"]["primary_search_queries"], ["식당"])
+        self.assertTrue(all(
+            isinstance(value, str)
+            for field in (
+                "target_objects",
+                "candidate_place_types",
+                "result_match_terms",
+                "constraints",
+                "primary_search_queries",
+            )
+            for value in plan["frame"][field]
+        ))
+        self.assertNotIn("단체 이용", plan["frame"]["required_features"])
+        self.assertIn("단체 이용", plan["frame"]["preferred_features"])
+
+    def test_complete_new_search_resets_sourced_clarification_frame(self):
+        frame = self._context()["search_plan"]["place_intent_frame"]
+        sourced_frame = frame_with_sources(frame)
+        context = {
+            "search_plan": {"place_intent_frame": sourced_frame},
+            "place_intent_frame": sourced_frame,
+            "pending_clarification_frame": sourced_frame,
+            "is_clarification_followup": True,
+        }
+
+        plan = build_ai_intent_plan("서면역 근처 조용한 카페", previous_context=context)
+
+        self.assertEqual(plan["action"], "search")
+        self.assertEqual(plan["frame"]["anchor_location"], "서면역")
+        self.assertEqual(plan["frame"]["candidate_category_codes"], ["cafe"])
+        self.assertEqual(plan["frame"]["target_objects"], ["카페"])
 
     def test_structured_show_unverified_action_bypasses_only_the_evidence_gate(self):
         frame = {
