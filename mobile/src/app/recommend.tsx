@@ -531,7 +531,26 @@ export default function RecommendScreen() {
             <Text style={styles.resetText}>새 대화</Text>
           </Pressable>
         </View>
-        <View style={styles.chat}>
+        {chatMessages.length === 1 && !results.length && !loading ? (
+          <View style={styles.welcomeCard}>
+            <View style={styles.mascotWrap}>
+              <View style={styles.mascotBody}>
+                <View style={styles.mascotEyeLeft} /><View style={styles.mascotEyeRight} />
+                <View style={styles.mascotSmile} />
+              </View>
+              <View style={styles.mascotPin}><Text style={styles.mascotPinText}>●</Text></View>
+            </View>
+            <Text style={styles.welcomeTitle}>어떤 하루를 보내고 싶나요?</Text>
+            <Text style={styles.welcomeText}>{GREETING}</Text>
+            <View style={styles.quickPrompts}>
+              {["서면에서 조용한 카페", "주차 가능한 가족 식당", "잠깐 쉬기 좋은 곳"].map((prompt) => (
+                <Pressable key={prompt} onPress={() => void submitTurn(prompt)} style={styles.quickPrompt}>
+                  <Text style={styles.quickPromptText}>{prompt}</Text><Text style={styles.quickPromptArrow}>›</Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+        ) : <View style={styles.chat}>
           {chatMessages.map((item) => (
             <View
               key={item.id}
@@ -563,7 +582,7 @@ export default function RecommendScreen() {
               <Text style={styles.assistantText}>조건을 이해하고 있어요…</Text>
             </View>
           ) : null}
-        </View>
+        </View>}
         {message ? (
           <Text style={message.includes("실패") ? ui.error : ui.success}>
             {message}
@@ -721,6 +740,20 @@ const styles = StyleSheet.create({
   chatTitle: { color: "#222222", fontSize: 16, fontWeight: "900" },
   resetText: { color: "#0F766E", fontSize: 12, fontWeight: "800" },
   chat: { gap: 8 },
+  welcomeCard: { padding: 20, alignItems: "center", borderWidth: 1, borderColor: "#D9E8E3", borderRadius: 22, backgroundColor: "#F5FBF9" },
+  mascotWrap: { width: 94, height: 82, position: "relative", alignItems: "center", justifyContent: "flex-end" },
+  mascotBody: { width: 69, height: 61, position: "relative", borderTopLeftRadius: 34, borderTopRightRadius: 34, borderBottomLeftRadius: 27, borderBottomRightRadius: 27, backgroundColor: "#BDE6DE" },
+  mascotEyeLeft: { position: "absolute", left: 20, top: 24, width: 5, height: 7, borderRadius: 3, backgroundColor: "#17675E" },
+  mascotEyeRight: { position: "absolute", right: 20, top: 24, width: 5, height: 7, borderRadius: 3, backgroundColor: "#17675E" },
+  mascotSmile: { position: "absolute", left: 30, top: 35, width: 11, height: 6, borderBottomWidth: 2, borderColor: "#17675E", borderRadius: 8 },
+  mascotPin: { position: "absolute", right: 4, top: 0, width: 30, height: 34, alignItems: "center", justifyContent: "center", borderTopLeftRadius: 15, borderTopRightRadius: 15, borderBottomLeftRadius: 15, backgroundColor: "#FF765E", transform: [{ rotate: "45deg" }] },
+  mascotPinText: { color: "#FFFFFF", fontSize: 7 },
+  welcomeTitle: { marginTop: 13, color: "#17201D", fontSize: 18, fontWeight: "900" },
+  welcomeText: { marginTop: 7, color: "#5F6B66", fontSize: 12, lineHeight: 19, textAlign: "center" },
+  quickPrompts: { width: "100%", marginTop: 16, gap: 7 },
+  quickPrompt: { minHeight: 43, paddingHorizontal: 13, flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderRadius: 12, backgroundColor: "#FFFFFF" },
+  quickPromptText: { color: "#31504A", fontSize: 11.5, fontWeight: "800" },
+  quickPromptArrow: { color: "#0F857A", fontSize: 20 },
   bubble: {
     maxWidth: "86%",
     paddingHorizontal: 14,
