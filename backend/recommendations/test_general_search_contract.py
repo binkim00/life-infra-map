@@ -23,6 +23,29 @@ class GeneralSearchContractTests(TestCase):
     def setUp(self):
         cache.clear()
 
+    def test_db_nearby_order_is_applied_before_result_limit(self):
+        from recommendations.models import Place
+        from recommendations.services.map_search import search_saved_places
+        Place.objects.create(name="테스트브랜드", external_id="far-limit", category="cafe", lat=35.13, lng=129.1)
+        nearby = Place.objects.create(name="테스트브랜드 부산점", external_id="near-limit", category="cafe", lat=35.101, lng=129.1)
+        results, _, _ = search_saved_places(keyword="테스트브랜드", lat=35.1, lng=129.1, radius=5000, limit=1, nearest_first=True)
+        self.assertEqual(results[0]["id"], nearby.id)
+
+    @patch("recommendations.views.search_places_by_keyword", return_value={"documents": []})
+    @patch("recommendations.views.search_saved_map_places", return_value=([], 0, {}))
+    @patch("recommendations.views._resolve_anchor_location")
+    @patch("recommendations.views.get_naver_search_result", return_value={"candidates": []})
+    def test_explicit_region_centers_both_providers_before_search(self, naver, resolve, db, kakao):
+        resolve.return_value = {"status": "resolved", "lat": 35.16, "lng": 129.06, "label": "부산"}
+        self.client.get(self.url, {"q": "부산 스타벅스", "lat": 37.5, "lng": 127.1})
+        self.assertEqual(db.call_args.kwargs["lat"], 35.16)
+        self.assertEqual(kakao.call_args_list[0].kwargs["lat"], 35.16)
+        resolve.reset_mock()
+        self.client.get(self.url, {"q": "부산 스타벅스", "lat": 35.2, "lng": 129.1, "center_mode": "map", "radius": 3000})
+        self.assertEqual(db.call_args.kwargs["lat"], 35.2)
+        self.assertEqual(kakao.call_args_list[-1].kwargs["lat"], None)
+        resolve.assert_not_called()
+
     @patch("recommendations.views.get_naver_search_result", return_value={"candidates": []})
     @patch("recommendations.views.search_places_by_keyword")
     def test_nearby_kakao_branch_precedes_distant_exact_db_name(self, kakao, naver):
@@ -173,7 +196,9 @@ class GeneralSearchContractTests(TestCase):
         })
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["results"][0]["name"], "테스트브랜드 경성대부경대점")
-        resolve.assert_called_with("경성대", lat=35.09, lng=128.85, address_first=True)
+        resolve.assert_called_once_with("경성대", address_first=True)
+        self.assertEqual(search.call_args_list[0].kwargs["lat"], 35.14)
+        self.assertEqual(response.json()["location_context"]["lat"], 35.14)
         self.assertEqual(search.call_args_list[-1].kwargs["keyword"], "테스트브랜드")
         self.assertEqual(search.call_args_list[-1].kwargs["lat"], 35.14)
 

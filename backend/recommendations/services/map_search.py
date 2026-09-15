@@ -896,7 +896,7 @@ def build_radius_attempts(*, lat, lng, radius, has_keyword):
 
 
 def run_search_pass(*, source_queryset, include_tokens, exclude_tokens, matched_categories,
-                    lat, lng, radius, limit, prefiltered=False):
+                    lat, lng, radius, limit, prefiltered=False, nearest_first=False):
     """주어진 토큰 조합으로 한 번 검색하고 정렬/중복 제거까지 마친 결과를 돌려준다."""
     base_queryset = source_queryset if prefiltered else apply_keyword_filter(source_queryset, include_tokens, exclude_tokens)
 
@@ -940,7 +940,10 @@ def run_search_pass(*, source_queryset, include_tokens, exclude_tokens, matched_
             radius=attempt_radius or 0,
             db_distance=db_distance,
         )
-        deduped = dedupe_candidates(sort_candidates(candidates, has_location=True))
+        ordered = sort_candidates(candidates, has_location=True)
+        if nearest_first:
+            ordered.sort(key=lambda row: row["distance"] if row["distance"] is not None else math.inf)
+        deduped = dedupe_candidates(ordered)
 
         if len(deduped) >= limit:
             break
@@ -948,7 +951,7 @@ def run_search_pass(*, source_queryset, include_tokens, exclude_tokens, matched_
     return deduped
 
 
-def search_saved_places(*, keyword="", lat=None, lng=None, radius=0, limit=30, queryset=None, prefiltered=False):
+def search_saved_places(*, keyword="", lat=None, lng=None, radius=0, limit=30, queryset=None, prefiltered=False, nearest_first=False):
     """
     DB에 저장된 장소를 검색해 (후보 목록, 전체 건수, 검색 메타) 를 돌려준다.
 
@@ -976,6 +979,7 @@ def search_saved_places(*, keyword="", lat=None, lng=None, radius=0, limit=30, q
         radius=radius,
         limit=limit,
         prefiltered=prefiltered,
+        nearest_first=nearest_first,
     )
 
     dropped_tokens = []
@@ -1005,6 +1009,7 @@ def search_saved_places(*, keyword="", lat=None, lng=None, radius=0, limit=30, q
                 lng=lng,
                 radius=radius,
                 limit=limit,
+                nearest_first=nearest_first,
             )
         else:
             dropped_tokens = []

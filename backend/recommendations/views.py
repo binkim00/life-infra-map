@@ -901,7 +901,7 @@ def parse_limited_int(value, *, default=30, minimum=1, maximum=100):
     return min(max(parsed, minimum), maximum)
 
 
-def search_saved_map_places(*, keyword="", lat=None, lng=None, radius=0, limit=30, queryset=None, prefiltered=False):
+def search_saved_map_places(*, keyword="", lat=None, lng=None, radius=0, limit=30, queryset=None, prefiltered=False, nearest_first=False):
     candidates, total_count, query_info = search_saved_places(
         keyword=keyword,
         lat=lat,
@@ -910,6 +910,7 @@ def search_saved_map_places(*, keyword="", lat=None, lng=None, radius=0, limit=3
         limit=limit,
         queryset=queryset,
         prefiltered=prefiltered,
+        nearest_first=nearest_first,
     )
 
     places = load_places_by_ids([candidate["id"] for candidate in candidates])
@@ -1134,6 +1135,22 @@ def map_place_search(request):
 
     if keyword and not is_category_only_query(keyword) and not category_query:
         name_query = name_query or keyword
+    # 명시된 지점/지역은 후보 수집 전에 양쪽 공급자의 기준 위치로 확정한다.
+    if is_separated_place_search and center_mode != "map" and not anchor_location and name_query:
+        from .services.area_gazetteer import resolve_area_coordinates_by_token
+        branch = split_branch_qualified_query(keyword)
+        region_hint = branch.get("branch_location", "")
+        if not region_hint:
+            tokens, _ = tokenize_query(keyword)
+            if len(tokens) > 1 and resolve_area_coordinates_by_token(" ".join(tokens[:-1])):
+                region_hint = " ".join(tokens[:-1])
+        if region_hint:
+            explicit_anchor = _resolve_anchor_location(region_hint, address_first=True)
+            if explicit_anchor.get("status") == "resolved":
+                anchor_location = region_hint
+                resolved_anchor = explicit_anchor
+                search_lat = parse_optional_float(explicit_anchor.get("lat"))
+                search_lng = parse_optional_float(explicit_anchor.get("lng"))
     if name_query and not any(is_category_only_query(token) for token in tokenize_query(keyword)[0]):
         # '공원상회', '약국떡집'처럼 상호에 포함된 문자열은 업종 제약이 아니다.
         matched_basic_categories = []
@@ -1242,6 +1259,7 @@ def map_place_search(request):
             limit=limit,
             queryset=db_queryset,
             prefiltered=bool(is_separated_place_search and name_query),
+            nearest_first=is_separated_place_search,
         )
 
     complete_db_category = (
@@ -1304,7 +1322,7 @@ def map_place_search(request):
             # 공급자에 지점명이 더 길게 등록된 경우(예: `OO 경성대점` 대
             # `OO 경성대부경대점`) 완전 일치 질의가 0건이 될 수 있습니다.
             # 이때만 `점` 접미사를 제한적으로 완화한 관련도 질의를 한 번 더 합니다.
-            if name_query and not kakao_data.get("documents"):
+            if name_query and center_mode != "map" and not kakao_data.get("documents"):
                 variants = build_kakao_keyword_variants(keyword)
                 if variants:
                     variant_data = search_places_by_keyword(
@@ -1322,7 +1340,7 @@ def map_place_search(request):
             if name_query and not kakao_data.get("documents"):
                 branch_query = split_branch_qualified_query(keyword)
                 if branch_query["name_query"]:
-                    branch_anchor = _resolve_anchor_location(
+                    branch_anchor = resolved_anchor if anchor_location == branch_query["branch_location"] and resolved_anchor.get("status") == "resolved" else _resolve_anchor_location(
                         branch_query["branch_location"],
                         lat=search_lat,
                         lng=search_lng,

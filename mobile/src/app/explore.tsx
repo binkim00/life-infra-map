@@ -210,7 +210,7 @@ export default function ExploreScreen() {
   useEffect(() => {
     if (!submittedQuery || !searchRequestId) return;
     const nearbyCategorySearch = isNearbyCategoryQuery(submittedQuery);
-    if (nearbyCategorySearch && !searchCenterOverride && locationStatus === "requesting") return;
+    if (!searchCenterOverride && locationStatus === "requesting") return;
     const searchAroundCenter = Boolean(
       searchCenterOverride || nearbyCategorySearch,
     );
