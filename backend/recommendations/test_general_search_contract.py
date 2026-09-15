@@ -24,6 +24,16 @@ class GeneralSearchContractTests(TestCase):
         cache.clear()
 
     @patch("recommendations.views.get_naver_search_result", return_value={"candidates": []})
+    @patch("recommendations.views.search_places_by_keyword")
+    def test_nearby_kakao_branch_precedes_distant_exact_db_name(self, kakao, naver):
+        from recommendations.models import Place
+        Place.objects.create(name="테스트커피랩", external_id="far-exact", category="cafe", address="서울", lat=37.5, lng=127.1)
+        kakao.return_value = {"documents": [{"id": "near-branch", "place_name": "테스트커피랩 부산점", "category_name": "카페", "x": "129.101", "y": "35.101", "address_name": "부산"}]}
+        data = self.client.get(self.url, {"q": "테스트커피랩", "source": "all", "lat": 35.1, "lng": 129.1}).json()
+        self.assertEqual([p["name"] for p in data["results"]], ["테스트커피랩 부산점", "테스트커피랩"])
+        self.assertLess(data["results"][0]["distance"], data["results"][1]["distance"])
+
+    @patch("recommendations.views.get_naver_search_result", return_value={"candidates": []})
     @patch("recommendations.views.search_places_by_keyword", return_value={"documents": []})
     def test_named_db_place_is_merged_without_category_broadening(self, kakao, naver):
         from recommendations.models import Place

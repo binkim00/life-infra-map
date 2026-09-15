@@ -104,6 +104,7 @@ export default function ExploreScreen() {
   const [mapFitBoundsKey, setMapFitBoundsKey] = useState(0);
   const [deviceLocation, setDeviceLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [places, setPlaces] = useState<Place[]>([]);
+  const [listVisible, setListVisible] = useState(true);
   const [selectedPlace, setSelectedPlace] = useState<Place | null>(null);
   const [detailPlace, setDetailPlace] = useState<Place | null>(null);
   const [detailVisible, setDetailVisible] = useState(false);
@@ -171,7 +172,7 @@ export default function ExploreScreen() {
   useEffect(() => {
     if (hasInitialCenter) return;
     const namedSearch = Boolean(initialQuery && !isNearbyCategoryQuery(initialQuery));
-    const timer = setTimeout(() => void requestCurrentLocation(!namedSearch, namedSearch), 0);
+    const timer = setTimeout(() => void requestCurrentLocation(!namedSearch), 0);
     return () => clearTimeout(timer);
   }, [hasInitialCenter, initialQuery, requestCurrentLocation]);
 
@@ -465,7 +466,7 @@ export default function ExploreScreen() {
         </View>
       </SafeAreaView>
 
-      <View style={styles.resultSheet}>
+      <View style={[styles.resultSheet, listVisible && styles.listSheet]}>
         <View style={styles.sheetHandle} />
         {selectedPlace ? (
           <View style={styles.selectedSummary}>
@@ -505,7 +506,13 @@ export default function ExploreScreen() {
           <Text style={styles.resultCount}>
             {places.length ? `${places.length}곳` : ""}
           </Text>
+          <Pressable accessibilityRole="button" onPress={() => setListVisible((value) => !value)}>
+            <Text style={styles.routeButtonLabel}>{listVisible ? "지도 보기" : "목록 보기"}</Text>
+          </Pressable>
         </View>
+        <Text style={styles.sortCaption}>
+          {center.lat !== null ? (searchCenterOverride ? "현재 지도 중심에서 가까운순" : "검색 기준 위치에서 가까운순") : "위치 정보 없음 · 검색어 관련순"}
+        </Text>
 
         {status === "loading" ? (
           <View style={styles.compactStateBox}>
@@ -524,10 +531,12 @@ export default function ExploreScreen() {
           </View>
         ) : (
           <ScrollView
-            horizontal
+            key={listVisible ? "list" : "map"}
+            horizontal={!listVisible}
             keyboardShouldPersistTaps="handled"
             showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.horizontalResults}
+            style={listVisible ? styles.verticalScroll : undefined}
+            contentContainerStyle={listVisible ? styles.verticalResults : styles.horizontalResults}
           >
             {places.map((place, index) => {
               const selected = selectedPlace?.id === place.id;
@@ -539,6 +548,7 @@ export default function ExploreScreen() {
                   onPress={() => openPlaceDetails(place)}
                   style={[
                     styles.resultCard,
+                    listVisible && styles.listCard,
                     selected && styles.resultCardSelected,
                   ]}
                 >
@@ -561,6 +571,7 @@ export default function ExploreScreen() {
                     <Text numberOfLines={1} style={styles.resultMeta}>
                       {place.category_label || place.category} · {place.source_label || (place.result_source === "kakao" ? "카카오 장소" : "LifeMap 저장 장소")}
                     </Text>
+                    {listVisible ? <Text numberOfLines={2} style={styles.resultMeta}>{place.address || "주소 정보 없음"}</Text> : null}
                   </View>
                 </Pressable>
               );
@@ -646,6 +657,11 @@ const styles = StyleSheet.create({
     backgroundColor: "#CFD8D4",
   },
   horizontalResults: { gap: 8, paddingHorizontal: 12, paddingBottom: 2 },
+  listSheet: { maxHeight: "55%" },
+  verticalScroll: { flexShrink: 1 },
+  verticalResults: { gap: 8, paddingHorizontal: 12, paddingBottom: 12 },
+  listCard: { width: "100%" },
+  sortCaption: { color: Palette.muted, fontSize: 11, paddingHorizontal: 16, marginBottom: 8 },
   compactStateBox: {
     minHeight: 54,
     flexDirection: "row",

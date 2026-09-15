@@ -1055,6 +1055,15 @@ def merge_kakao_search_documents(*payloads):
     return {"documents": merged}
 
 
+def map_place_category_key(place):
+    category = str(place.get("category") or "")
+    for token in reversed(category.split(">")):
+        normalized = normalize_place_category(token.strip())
+        if normalized:
+            return normalized
+    return category.strip()
+
+
 def kakao_place_name_match_rank(place, name_query):
     """Rank exact/prefix name intent ahead of incidental address/category matches."""
     query_key = normalize_compact(name_query)
@@ -1418,8 +1427,7 @@ def map_place_search(request):
             logger.info("Naver fallback map search failed.", exc_info=True)
             web_error = exc.__class__.__name__
 
-    # 저장 장소는 관련도 순서를 그대로 유지하고, 카카오 장소만 거리순으로 정렬해 뒤에 붙입니다.
-    # 여기서 전체를 거리순으로 다시 정렬하면 검색어와 정확히 맞는 장소가 밀려납니다.
+    # 공급자 후보를 합친 뒤 동일한 검색 기준 좌표로 전체 거리순을 정한다.
     if search_lat is not None and search_lng is not None:
         kakao_results = sorted(kakao_results, key=lambda place: (
             # Name matches outrank incidental references (e.g. a parking lot
@@ -1464,12 +1472,22 @@ def map_place_search(request):
     if search_radius and search_lat is not None and search_lng is not None:
         combined_results = [p for p in combined_results if p.get("distance") is not None and p["distance"] <= search_radius]
     combined_results = merge_map_place_results(combined_results)
-    if name_query:
+    # 정확한 장소가 수집됐다면 이름에 검색어만 포함된 다른 업종은 후순위다.
+    # 같은 상호와 지점은 같은 그룹에서 거리순으로 비교한다.
+    exact_categories = {
+        map_place_category_key(p) for p in combined_results
+        if name_query and kakao_place_name_match_rank(p, name_query) == 0 and p.get("category")
+    }
+    if search_lat is not None and search_lng is not None:
         combined_results.sort(key=lambda p: (
-            kakao_place_name_match_rank(p, name_query),
+            bool(exact_categories) and map_place_category_key(p) not in exact_categories
+            and kakao_place_name_match_rank(p, name_query) != 0,
             p.get("distance") is None,
             p.get("distance") if p.get("distance") is not None else float("inf"),
+            kakao_place_name_match_rank(p, name_query),
         ))
+    elif name_query:
+        combined_results.sort(key=lambda p: kakao_place_name_match_rank(p, name_query))
     combined_results = combined_results[:limit]
     if request.GET.get("detail_level") == "summary":
         combined_results = [
