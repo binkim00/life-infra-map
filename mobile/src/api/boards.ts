@@ -43,7 +43,7 @@ export const boardsApi = {
       body: { nickname },
     }),
   updateProfileImage: (body: FormData) =>
-    apiRequest("/accounts/me/profile-image/", { method: "PATCH", body }),
+    apiRequest("/accounts/me/profile-image/", { method: "POST", body }),
   notifications: () => apiRequest<unknown[]>("/notifications/"),
   readNotification: (id: string | number) =>
     apiRequest(`/notifications/${id}/read/`, { method: "PATCH" }),

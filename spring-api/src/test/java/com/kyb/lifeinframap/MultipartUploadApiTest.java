@@ -114,6 +114,26 @@ class MultipartUploadApiTest extends ApiTestBase {
     }
 
     @Test
+    @DisplayName("Android 호환 POST multipart 요청으로 프로필 이미지를 변경한다")
+    void changesProfileImageWithPostMultipartRequest() throws Exception {
+        User user = createUser();
+        String imageKey = "profile_images/android-avatar.jpg";
+        MockMultipartFile image = image("profile_image", "android-avatar.jpg");
+        when(storageService.upload(any(MultipartFile.class), eq(StorageService.PROFILE_IMAGE_PREFIX)))
+                .thenReturn(imageKey);
+
+        mockMvc.perform(multipart("/api/accounts/me/profile-image")
+                        .file(image)
+                        .header("Authorization", bearer(user)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.user.profile_image_url", endsWith("/" + imageKey)));
+
+        verify(storageService).upload(any(MultipartFile.class), eq(StorageService.PROFILE_IMAGE_PREFIX));
+        assertThat(profileRepository.findByUserId(user.getId()).orElseThrow().getProfileImage())
+                .isEqualTo(imageKey);
+    }
+
+    @Test
     @DisplayName("게시글 이미지를 저장하고 게시글 응답과 DB에 저장소 키를 기록한다")
     void createsPostWithImage() throws Exception {
         User author = createUser();

@@ -107,7 +107,8 @@ public class ProfileController {
     }
 
     /** 프론트가 FormData 로 파일을 보냅니다. Django 와 같은 필드 이름을 씁니다. */
-    @PatchMapping(value = "/me/profile-image",
+    @RequestMapping(value = "/me/profile-image",
+            method = {RequestMethod.PATCH, RequestMethod.POST},
             consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
     @Transactional
     public ResponseEntity<?> updateProfileImageFile(
