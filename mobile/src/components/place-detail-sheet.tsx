@@ -56,8 +56,11 @@ const hasMapCoordinates = (place: Place) =>
 
 const kakaoDetailUrl = (place: Place) => {
   const url = place.place_url || place.kakao_place_url || "";
-  if (!url) return "";
-  return url.replace(/^http:\/\//i, "https://");
+  if (url) return url.replace(/^http:\/\//i, "https://");
+  if (place.kakao_place_id && /^\d{5,20}$/.test(place.kakao_place_id)) {
+    return `https://place.map.kakao.com/${place.kakao_place_id}`;
+  }
+  return "";
 };
 
 const isKakaoPlace = (place: Place) => {
@@ -114,6 +117,44 @@ function PlaceDetailContent({
       setExternalError("연결된 앱을 열지 못했습니다. 잠시 후 다시 시도해 주세요.");
     }
   };
+
+  if (showWebDetail && detailUrl) {
+    return (
+      <Modal animationType="slide" onRequestClose={() => setShowWebDetail(false)} visible={visible}>
+        <SafeAreaView style={styles.webDetailScreen} edges={["top", "bottom", "left", "right"]}>
+          <View style={styles.webDetailHeader}>
+            <View style={styles.webDetailHeading}>
+              <Text numberOfLines={1} style={styles.webDetailTitle}>{place.name}</Text>
+              <Text style={styles.webDetailCaption}>{kakaoSource ? "카카오가 제공하는 장소 정보" : "외부 원문에서 제공하는 장소 정보"}</Text>
+            </View>
+            <Pressable onPress={onClose} style={styles.closeButton}><Text style={styles.closeText}>닫기</Text></Pressable>
+          </View>
+          <View style={styles.utilityActions}>
+            <Pressable accessibilityRole="button" onPress={onSave} style={styles.utilityButton}><Text style={styles.utilityText}>저장</Text></Pressable>
+            <Pressable accessibilityRole="button" onPress={onReport} style={styles.utilityButton}><Text style={styles.utilityText}>정보 수정 제보</Text></Pressable>
+          </View>
+          {webDetailError ? (
+            <View style={styles.webDetailFallback}>
+              <Text style={styles.webDetailFallbackTitle}>카카오 장소 정보를 앱 안에서 열지 못했습니다.</Text>
+              <Text style={styles.webDetailFallbackText}>외부 카카오맵에서 최신 정보를 확인해 주세요.</Text>
+              <Pressable onPress={() => void openExternal(detailUrl)} style={styles.primaryButton}><Text style={styles.primaryButtonText}>카카오맵에서 열기</Text></Pressable>
+            </View>
+          ) : (
+            <WebView
+              source={{ uri: detailUrl }}
+              style={styles.webDetail}
+              javaScriptEnabled
+              domStorageEnabled
+              startInLoadingState
+              onError={() => setWebDetailError(true)}
+              onHttpError={() => setWebDetailError(true)}
+              renderLoading={() => <View style={styles.webDetailLoading}><ActivityIndicator color={Palette.accent} /><Text style={styles.webDetailFallbackText}>카카오 장소 정보를 불러오는 중입니다.</Text></View>}
+            />
+          )}
+        </SafeAreaView>
+      </Modal>
+    );
+  }
 
   return (
     <Modal
@@ -298,93 +339,6 @@ function PlaceDetailContent({
           </ScrollView>
         </View>
       </View>
-      <Modal
-        animationType="slide"
-        onRequestClose={() => setShowWebDetail(false)}
-        visible={visible && showWebDetail}
-      >
-        <SafeAreaView
-          style={styles.webDetailScreen}
-          edges={["top", "bottom", "left", "right"]}
-        >
-          <View style={styles.webDetailHeader}>
-            <View style={styles.webDetailHeading}>
-              <Text numberOfLines={1} style={styles.webDetailTitle}>
-                {place.name}
-              </Text>
-              <Text style={styles.webDetailCaption}>
-                {kakaoSource
-                  ? "앱 안에서 보는 카카오 장소 정보"
-                  : "외부 원문에서 제공하는 장소 정보"}
-              </Text>
-            </View>
-            <Pressable onPress={() => setShowWebDetail(false)} style={styles.closeButton}>
-              <Text style={styles.closeText}>기본 정보</Text>
-            </Pressable>
-          </View>
-          <View style={styles.utilityActions}>
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => setShowWebDetail(false)}
-              style={styles.utilityButton}
-            >
-              <Text style={styles.utilityText}>주소 · 시설 정보</Text>
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              onPress={onSave}
-              style={styles.utilityButton}
-            >
-              <Text style={styles.utilityText}>저장</Text>
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              onPress={onReport}
-              style={styles.utilityButton}
-            >
-              <Text style={styles.utilityText}>정보 수정 제보</Text>
-            </Pressable>
-          </View>
-          {webDetailError ? (
-            <View style={styles.webDetailFallback}>
-              <Text style={styles.webDetailFallbackTitle}>
-                상세정보를 앱 안에서 열지 못했습니다.
-              </Text>
-              <Text style={styles.webDetailFallbackText}>
-                {kakaoSource
-                  ? "카카오맵에서 사진과 최신 정보를 확인해 주세요."
-                  : "외부 원문에서 최신 정보를 확인해 주세요."}
-              </Text>
-              <Pressable
-                onPress={() => void openExternal(detailUrl)}
-                style={styles.primaryButton}
-              >
-                <Text style={styles.primaryButtonText}>
-                  {kakaoSource ? "카카오맵에서 열기" : "원문에서 열기"}
-                </Text>
-              </Pressable>
-            </View>
-          ) : detailUrl ? (
-            <WebView
-              source={{ uri: detailUrl }}
-              style={styles.webDetail}
-              javaScriptEnabled
-              domStorageEnabled
-              startInLoadingState
-              onError={() => setWebDetailError(true)}
-              onHttpError={() => setWebDetailError(true)}
-              renderLoading={() => (
-                <View style={styles.webDetailLoading}>
-                  <ActivityIndicator color={Palette.accent} />
-                  <Text style={styles.webDetailFallbackText}>
-                    장소 정보를 불러오는 중입니다.
-                  </Text>
-                </View>
-              )}
-            />
-          ) : null}
-        </SafeAreaView>
-      </Modal>
     </Modal>
   );
 }

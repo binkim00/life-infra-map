@@ -50,6 +50,7 @@ from recommendations.services.conversational_search_planner import build_convers
 from recommendations.services.db_recommender import search_db_recommendations
 from recommendations.services.naver_search_provider import build_naver_search_query
 from recommendations.services.recommendation_condition import build_recommendation_condition
+from recommendations.views import merge_map_place_results
 
 
 @override_settings(ALLOWED_HOSTS=["localhost", "testserver"])
@@ -8064,6 +8065,64 @@ class RecommendationSearchTests(TestCase):
         self.assertEqual(duplicate_results[0]["id"], kakao_synced_place.id)
         self.assertEqual(data["candidate_counts"]["kakao"], 0)
         self.assertEqual(duplicate_results[0]["place_url"], "https://place.map.kakao.com/987654321")
+
+    @patch("recommendations.views.search_places_by_keyword")
+    def test_general_map_search_merges_nearby_db_and_kakao_copies(self, mock_kakao):
+        saved_place = Place.objects.create(
+            name="스타벅스 서면중앙점",
+            category="cafe",
+            address="부산광역시 부산진구 서면로68번길 1",
+            lat=35.1568805,
+            lng=129.058076,
+            source="rest_restaurant",
+            external_id="official-source-id",
+        )
+        mock_kakao.return_value = {
+            "documents": [{
+                "id": "12790962",
+                "place_name": "스타벅스 서면중앙점",
+                "category_name": "음식점 > 카페",
+                "road_address_name": "부산 부산진구 서면로68번길 1",
+                "x": "129.0580652",
+                "y": "35.1568462",
+                "place_url": "http://place.map.kakao.com/12790962",
+                "phone": "051-123-4567",
+            }],
+        }
+
+        response = self.client.get(
+            "/api/recommendations/map-search/",
+            {"q": "스타벅스", "source": "all", "lat": 35.1577, "lng": 129.0591, "limit": 10},
+            HTTP_HOST="localhost",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        matching = [item for item in response.json()["results"] if item["name"] == saved_place.name]
+        self.assertEqual(len(matching), 1)
+        self.assertEqual(matching[0]["id"], saved_place.id)
+        self.assertEqual(matching[0]["result_source"], "db")
+        self.assertEqual(matching[0]["kakao_place_id"], "12790962")
+        self.assertEqual(matching[0]["place_url"], "http://place.map.kakao.com/12790962")
+        self.assertEqual(matching[0]["phone"], "051-123-4567")
+        self.assertEqual(matching[0]["duplicate_count"], 2)
+
+    def test_map_place_merge_accepts_optional_branch_suffix_only_when_nearby(self):
+        results = merge_map_place_results([
+            {
+                "id": 1, "name": "스타벅스 서면메디컬거리", "lat": 35.1579606,
+                "lng": 129.0573965, "result_source": "db", "duplicate_count": 1,
+            },
+            {
+                "id": "20046338", "name": "스타벅스 서면메디컬거리점", "lat": 35.157968,
+                "lng": 129.057388, "result_source": "kakao", "source": "kakao",
+                "external_id": "20046338", "place_url": "http://place.map.kakao.com/20046338",
+                "duplicate_count": 1,
+            },
+        ])
+
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["kakao_place_id"], "20046338")
+        self.assertEqual(results[0]["duplicate_count"], 2)
 
     @patch("recommendations.views.search_places_by_keyword", return_value={"documents": []})
     def test_general_map_search_matches_all_tokens_in_multi_word_query(self, mock_kakao):

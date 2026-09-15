@@ -93,25 +93,28 @@ export default function HomeScreen() {
             </Pressable>
           </View>
 
-          <View style={styles.hero}>
-            <Text style={styles.title}>오늘 어디로 갈까요?</Text>
-            <Text style={styles.description}>좋은 장소가, 좋은 하루를 만들어요.</Text>
-          </View>
+          <View style={styles.heroPanel}>
+            <View style={styles.hero}>
+              <Text style={styles.heroEyebrow}>내 주변 생활지도</Text>
+              <Text style={styles.title}>오늘 어디로 갈까요?</Text>
+              <Text style={styles.description}>검색부터 상황별 추천까지 한 번에 찾아보세요.</Text>
+            </View>
 
-          <View style={styles.modeStack}>
-            <Pressable onPress={() => router.push("/recommend")} style={({ pressed }) => [styles.modeCard, pressed && styles.pressed]}>
-              <View style={[styles.modeIcon, styles.modeIconCoral]}><AppIcon ios="sparkles" android="auto_awesome" size={26} color={Palette.coral} /></View>
-              <View style={styles.modeCopy}><Text style={styles.modeTitle}>상황으로 찾기</Text><Text style={styles.modeDescription}>지금 상황에 맞는 장소를 추천해요</Text></View>
-              <Text style={styles.chevron}>›</Text>
-            </Pressable>
-            <View style={styles.searchCard}>
-              <View style={styles.searchTop}>
-                <View style={[styles.modeIcon, styles.modeIconMint]}><AppIcon ios="magnifyingglass" android="search" size={26} color={Palette.accent} /></View>
-                <View style={styles.modeCopy}><Text style={styles.modeTitle}>일반 장소 검색</Text><Text style={styles.modeDescription}>장소명이나 지역·업종을 빠르게 찾아요</Text></View>
-              </View>
-              <View style={styles.searchRow}>
-                <TextInput value={placeQuery} onChangeText={setPlaceQuery} onSubmitEditing={() => openPlaceSearch()} placeholder="예: 서면역 약국, 광안리 주차장" placeholderTextColor="#7A8580" returnKeyType="search" style={styles.searchInput} />
-                <Pressable onPress={() => openPlaceSearch()} style={styles.searchButton}><Text style={styles.searchButtonText}>검색</Text></Pressable>
+            <View style={styles.modeStack}>
+              <Pressable onPress={() => router.push("/recommend")} style={({ pressed }) => [styles.modeCard, pressed && styles.pressed]}>
+                <View style={[styles.modeIcon, styles.modeIconCoral]}><AppIcon ios="sparkles" android="auto_awesome" size={26} color={Palette.coral} /></View>
+                <View style={styles.modeCopy}><Text style={styles.modeTitle}>상황으로 찾기</Text><Text style={styles.modeDescription}>지금 상황에 맞는 장소를 추천해요</Text></View>
+                <Text style={styles.chevron}>›</Text>
+              </Pressable>
+              <View style={styles.searchCard}>
+                <View style={styles.searchTop}>
+                  <View style={[styles.modeIcon, styles.modeIconMint]}><AppIcon ios="magnifyingglass" android="search" size={26} color={Palette.accent} /></View>
+                  <View style={styles.modeCopy}><Text style={styles.modeTitle}>일반 장소 검색</Text><Text style={styles.modeDescription}>장소명이나 지역·업종을 빠르게 찾아요</Text></View>
+                </View>
+                <View style={styles.searchRow}>
+                  <TextInput value={placeQuery} onChangeText={setPlaceQuery} onSubmitEditing={() => openPlaceSearch()} placeholder="예: 서면역 약국, 광안리 주차장" placeholderTextColor="#7A8580" returnKeyType="search" style={styles.searchInput} />
+                  <Pressable onPress={() => openPlaceSearch()} style={styles.searchButton}><Text style={styles.searchButtonText}>검색</Text></Pressable>
+                </View>
               </View>
             </View>
           </View>
@@ -174,11 +177,12 @@ const styles = StyleSheet.create({
   pinLogo: { width: 34, height: 39, alignItems: "center", paddingTop: 8, borderTopLeftRadius: 18, borderTopRightRadius: 18, borderBottomLeftRadius: 18, backgroundColor: Palette.accent, transform: [{ rotate: "45deg" }] }, pinDot: { width: 11, height: 11, borderRadius: 6, backgroundColor: "#FFFFFF" },
   brand: { color: Palette.ink, fontSize: 20, fontWeight: "900", letterSpacing: -0.7 }, brandCaption: { marginTop: 1, color: Palette.ink, fontSize: 8, fontWeight: "800", letterSpacing: 2.2 },
   iconButton: { width: 42, height: 42, alignItems: "center", justifyContent: "center", position: "relative" }, alertDot: { position: "absolute", right: 8, top: 7, width: 7, height: 7, borderRadius: 4, backgroundColor: Palette.coral },
-  hero: { paddingTop: 11 }, title: { color: Palette.ink, fontSize: 31, lineHeight: 38, fontWeight: "900", letterSpacing: -1.2 }, description: { marginTop: 5, color: Palette.muted, fontSize: 14, lineHeight: 21 },
-  modeStack: { gap: 10 }, modeCard: { minHeight: 82, padding: 15, flexDirection: "row", alignItems: "center", gap: 13, borderWidth: 1, borderColor: Palette.border, borderRadius: Radius.medium, backgroundColor: Palette.surface, boxShadow: Shadow.card },
+  heroPanel: { padding: 18, gap: 17, borderRadius: 28, backgroundColor: "#123F37", boxShadow: Shadow.card },
+  hero: { paddingHorizontal: 3, paddingTop: 2 }, heroEyebrow: { marginBottom: 7, color: "#8EDACC", fontSize: 11, fontWeight: "900", letterSpacing: 1.2 }, title: { color: "#FFFFFF", fontSize: 31, lineHeight: 38, fontWeight: "900", letterSpacing: -1.2 }, description: { marginTop: 5, color: "#CFE3DE", fontSize: 13, lineHeight: 20 },
+  modeStack: { gap: 10 }, modeCard: { minHeight: 78, padding: 14, flexDirection: "row", alignItems: "center", gap: 13, borderRadius: Radius.medium, backgroundColor: "#FFF4F1" },
   modeIcon: { width: 48, height: 48, alignItems: "center", justifyContent: "center", borderRadius: 17 }, modeIconCoral: { backgroundColor: Palette.coralSoft }, modeIconMint: { backgroundColor: Palette.accentSoft },
   modeCopy: { minWidth: 0, flex: 1 }, modeTitle: { color: Palette.ink, fontSize: 16, fontWeight: "900" }, modeDescription: { marginTop: 5, color: Palette.muted, fontSize: 11.5 }, chevron: { color: Palette.ink, fontSize: 27, fontWeight: "300" },
-  searchCard: { padding: 15, gap: 13, borderWidth: 1, borderColor: Palette.border, borderRadius: Radius.medium, backgroundColor: Palette.surface, boxShadow: Shadow.card }, searchTop: { flexDirection: "row", alignItems: "center", gap: 13 }, searchRow: { flexDirection: "row", gap: 8 },
+  searchCard: { padding: 14, gap: 13, borderRadius: Radius.medium, backgroundColor: Palette.surface }, searchTop: { flexDirection: "row", alignItems: "center", gap: 13 }, searchRow: { flexDirection: "row", gap: 8 },
   searchInput: { minWidth: 0, height: 45, flex: 1, paddingHorizontal: 13, borderWidth: 1, borderColor: "#CFDAD5", borderRadius: 12, color: Palette.ink, fontSize: 12.5 }, searchButton: { width: 72, height: 45, alignItems: "center", justifyContent: "center", borderRadius: 12, backgroundColor: Palette.accent }, searchButtonText: { color: "#FFFFFF", fontSize: 13, fontWeight: "900" },
   categoryRow: { gap: 8, paddingRight: 8 }, category: { width: 68, paddingVertical: 10, alignItems: "center", gap: 7, borderRadius: 15, backgroundColor: Palette.surfaceMuted }, categoryIcon: { height: 25, alignItems: "center", justifyContent: "center" }, categoryLabel: { color: Palette.ink, fontSize: 11, fontWeight: "800" },
   sectionHeader: { flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between", gap: 8 }, sectionTitle: { color: Palette.ink, fontSize: 17, fontWeight: "900", letterSpacing: -0.4 }, sectionCaption: { marginTop: 4, color: Palette.muted, fontSize: 11 }, more: { color: Palette.ink, fontSize: 11, fontWeight: "800" },

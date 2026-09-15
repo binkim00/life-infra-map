@@ -16,7 +16,6 @@ import { recommendationApi, searchMapPlaces } from "@/api/recommendations";
 import { useAuth } from "@/auth/auth-context";
 import { BottomNav } from "@/components/bottom-nav";
 import { PlacePhoto } from "@/components/place-photo";
-import { AppIcon } from "@/components/app-icon";
 import { PlaceDetailSheet } from "@/components/place-detail-sheet";
 import { PlaceMap } from "@/components/place-map";
 import {
@@ -532,13 +531,6 @@ export default function ExploreScreen() {
           >
             {places.map((place, index) => {
               const selected = selectedPlace?.id === place.id;
-              const kakaoLinked = Boolean(
-                place.kakao_place_url ||
-                place.place_url?.includes("map.kakao.com") ||
-                place.result_source === "kakao" ||
-                place.source_label?.toLowerCase().includes("kakao") ||
-                place.source_label?.includes("카카오"),
-              );
               return (
                 <Pressable
                   key={`${place.result_source}-${place.id}`}
@@ -551,17 +543,11 @@ export default function ExploreScreen() {
                   ]}
                 >
                   <View style={styles.resultPhotoWrap}>
-                    {kakaoLinked ? (
-                      <View style={styles.kakaoVisual}>
-                        <AppIcon ios="map.fill" android="map" size={25} color={Palette.accent} />
-                        <Text style={styles.kakaoVisualText}>KAKAO</Text>
+                    <PlacePhoto category={place.category} fallback={index} width={70} height={70} style={styles.resultPhoto} externalUrl={place.kakao_place_url || place.place_url} source={`${place.result_source || ""} ${place.source_label || ""}`}>
+                      <View style={[styles.resultNumber, selected && styles.resultNumberSelected]}>
+                        <Text style={[styles.resultNumberText, selected && styles.resultNumberTextSelected]}>{index + 1}</Text>
                       </View>
-                    ) : (
-                      <PlacePhoto category={place.category} fallback={index} width={70} height={70} style={styles.resultPhoto} />
-                    )}
-                    <View style={[styles.resultNumber, selected && styles.resultNumberSelected]}>
-                      <Text style={[styles.resultNumberText, selected && styles.resultNumberTextSelected]}>{index + 1}</Text>
-                    </View>
+                    </PlacePhoto>
                   </View>
                   <View style={styles.resultCopy}>
                     <View style={styles.resultNameRow}>

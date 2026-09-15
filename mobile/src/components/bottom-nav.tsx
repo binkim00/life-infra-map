@@ -21,7 +21,9 @@ export function BottomNav() {
           const active =
             item.path === "/"
               ? pathname === "/"
-              : pathname.startsWith(item.path);
+              : item.path === "/mypage"
+                ? pathname.startsWith("/mypage") && !pathname.startsWith("/mypage/saved-places")
+                : pathname.startsWith(item.path);
           return (
             <Pressable
               key={item.path}

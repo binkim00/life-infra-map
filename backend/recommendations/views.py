@@ -956,6 +956,84 @@ def serialize_kakao_map_place(place, *, lat=None, lng=None):
     }
 
 
+def map_place_names_equivalent(first_name, second_name):
+    """Treat a provider's optional branch suffix as the same nearby place."""
+    first = normalize_compact(first_name)
+    second = normalize_compact(second_name)
+    if not first or not second:
+        return False
+    if first == second:
+        return True
+    if first.endswith("점") and len(first) >= 4 and first[:-1] == second:
+        return True
+    if second.endswith("점") and len(second) >= 4 and second[:-1] == first:
+        return True
+    return False
+
+
+def merge_map_place_results(results, *, max_distance_m=40):
+    """Collapse DB/provider copies and retain the provider detail identity."""
+    merged = []
+    for candidate in results:
+        candidate_lat = parse_optional_float(candidate.get("lat"))
+        candidate_lng = parse_optional_float(candidate.get("lng"))
+        duplicate_index = None
+
+        if candidate_lat is not None and candidate_lng is not None:
+            for index, existing in enumerate(merged):
+                existing_lat = parse_optional_float(existing.get("lat"))
+                existing_lng = parse_optional_float(existing.get("lng"))
+                if existing_lat is None or existing_lng is None:
+                    continue
+                if not map_place_names_equivalent(existing.get("name"), candidate.get("name")):
+                    continue
+                if calculate_distance_m(
+                    existing_lat, existing_lng, candidate_lat, candidate_lng,
+                ) <= max_distance_m:
+                    duplicate_index = index
+                    break
+
+        if duplicate_index is None:
+            merged.append({**candidate})
+            continue
+
+        primary = merged[duplicate_index]
+        kakao_candidate = next(
+            (
+                place for place in (primary, candidate)
+                if place.get("result_source") == "kakao"
+                or place.get("source") == "kakao"
+                or "place.map.kakao.com" in str(place.get("place_url") or "")
+            ),
+            None,
+        )
+        if kakao_candidate:
+            kakao_url = (
+                kakao_candidate.get("kakao_place_url")
+                or kakao_candidate.get("place_url")
+                or ""
+            )
+            kakao_id = str(
+                kakao_candidate.get("kakao_place_id")
+                or kakao_candidate.get("external_id")
+                or kakao_candidate.get("id")
+                or ""
+            )
+            if kakao_url:
+                primary["kakao_place_url"] = kakao_url
+                primary["place_url"] = kakao_url
+            if kakao_id.isdigit():
+                primary["kakao_place_id"] = kakao_id
+
+        if not primary.get("phone") and candidate.get("phone"):
+            primary["phone"] = candidate["phone"]
+        primary["duplicate_count"] = int(primary.get("duplicate_count") or 1) + int(
+            candidate.get("duplicate_count") or 1
+        )
+
+    return merged
+
+
 def merge_kakao_search_documents(*payloads):
     """Merge provider result sets without letting one retrieval order erase another."""
     merged = []
@@ -980,7 +1058,7 @@ def merge_kakao_search_documents(*payloads):
 def kakao_place_name_match_rank(place, name_query):
     """Rank exact/prefix name intent ahead of incidental address/category matches."""
     query_key = normalize_compact(name_query)
-    name_key = normalize_compact(place.get("name", ""))
+    name_key = normalize_compact(place.get("name") or place.get("place_name", ""))
     if not query_key:
         return 0
     if name_key == query_key:
@@ -1184,10 +1262,27 @@ def map_place_search(request):
                 category_group_code=kakao_category_group or None,
             )
             # Coordinates make Kakao return only its distance-sorted first page.
-            # Also collect a relevance-sorted page for name/brand intent, then
-            # merge and rank locally. This is what lets an exact named place be
-            # found even when it is not among the nearest 15 incidental matches.
-            if name_query and search_lat is not None and search_lng is not None:
+            # If that page does not already contain an exact/prefix name match,
+            # collect a relevance-sorted page too. Skipping the redundant second
+            # request keeps common nearby business searches responsive while the
+            # fallback still rescues landmarks missing from the nearest 15.
+            nearby_name_ranks = [
+                kakao_place_name_match_rank(place, name_query)
+                for place in kakao_data.get("documents", [])
+            ]
+            # One prefix hit can be incidental (`부산역떡집` for `부산역`).
+            # An exact hit, or multiple prefix hits for a nearby brand search,
+            # is enough to avoid the redundant nationwide request.
+            has_strong_nearby_match = (
+                0 in nearby_name_ranks
+                or nearby_name_ranks.count(1) >= 2
+            )
+            if (
+                name_query
+                and search_lat is not None
+                and search_lng is not None
+                and not has_strong_nearby_match
+            ):
                 relevance_data = search_places_by_keyword(
                     keyword=keyword,
                     lat=None,
@@ -1368,6 +1463,7 @@ def map_place_search(request):
             place["distance"] = calculate_distance_m(search_lat, search_lng, plat, plng)
     if search_radius and search_lat is not None and search_lng is not None:
         combined_results = [p for p in combined_results if p.get("distance") is not None and p["distance"] <= search_radius]
+    combined_results = merge_map_place_results(combined_results)
     if name_query:
         combined_results.sort(key=lambda p: (
             kakao_place_name_match_rank(p, name_query),

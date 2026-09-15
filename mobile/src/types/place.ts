@@ -30,6 +30,7 @@ export type Place = {
   source_label?: string;
   result_source?: string;
   external_id?: string;
+  kakao_place_id?: string;
   place_url?: string;
   kakao_place_url?: string;
   phone?: string;
