@@ -15,6 +15,31 @@ import { WebView } from "react-native-webview";
 import { Palette, Radius, Shadow, Spacing } from "@/constants/theme";
 import type { Place } from "@/types/place";
 
+const WEB_CONTENT_HEIGHT_SCRIPT = `
+  (function () {
+    function reportHeight() {
+      var body = document.body;
+      var root = document.documentElement;
+      var height = Math.max(
+        body ? body.scrollHeight : 0,
+        body ? body.offsetHeight : 0,
+        root ? root.scrollHeight : 0,
+        root ? root.offsetHeight : 0
+      );
+      window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'contentHeight', height: height }));
+    }
+    window.addEventListener('load', reportHeight);
+    window.addEventListener('resize', reportHeight);
+    if (window.ResizeObserver && document.documentElement) {
+      new ResizeObserver(reportHeight).observe(document.documentElement);
+    }
+    setTimeout(reportHeight, 100);
+    setTimeout(reportHeight, 500);
+    setTimeout(reportHeight, 1500);
+  })();
+  true;
+`;
+
 const formatDistance = (distance?: number) => {
   if (distance === undefined || distance === null || distance <= 0)
     return "거리 정보 없음";
@@ -101,6 +126,8 @@ function PlaceDetailContent({
   const [externalError, setExternalError] = useState("");
   const webViewRef = useRef<WebView>(null);
   const [canGoBack, setCanGoBack] = useState(false);
+  const [webContentHeight, setWebContentHeight] = useState(720);
+  const [webReloadKey, setWebReloadKey] = useState(0);
   const insets = useSafeAreaInsets();
 
   if (!place) return null;
@@ -156,9 +183,9 @@ function PlaceDetailContent({
               </Pressable>
             </View>
           <ScrollView
-            style={embedded ? styles.summaryScroll : undefined}
             contentContainerStyle={styles.content}
             showsVerticalScrollIndicator={false}
+            nestedScrollEnabled
           >
             <View style={styles.infoCard}>
               <View style={styles.infoRow}>
@@ -297,9 +324,8 @@ function PlaceDetailContent({
               ) : null}
             </View>
 
-          </ScrollView>
-          {embedded ? (
-            <View style={styles.embeddedPanel}>
+            {embedded ? (
+            <View style={styles.embeddedSection}>
               <View style={styles.webDetailHeader}>
                 <Text style={styles.webDetailTitle}>{detailSourceName}</Text>
                 {canGoBack && !webDetailError ? (
@@ -311,7 +337,7 @@ function PlaceDetailContent({
               {webDetailError ? (
                 <View style={styles.webDetailFallback}>
                   <Text style={styles.webDetailFallbackTitle}>장소 정보를 불러오지 못했습니다.</Text>
-                  <Pressable accessibilityRole="button" onPress={() => { setCanGoBack(false); setWebDetailError(false); }} style={styles.primaryButton}>
+                  <Pressable accessibilityRole="button" onPress={() => { setCanGoBack(false); setWebDetailError(false); setWebContentHeight(720); setWebReloadKey((value) => value + 1); }} style={styles.primaryButton}>
                     <Text style={styles.primaryButtonText}>다시 시도</Text>
                   </Pressable>
                   <Pressable accessibilityRole="button" onPress={() => void openExternal(detailUrl)} style={styles.secondaryButton}>
@@ -320,12 +346,28 @@ function PlaceDetailContent({
                 </View>
               ) : (
                 <WebView
+                  key={webReloadKey}
                   ref={webViewRef}
                   source={{ uri: detailUrl }}
-                  style={styles.webDetail}
+                  style={[styles.webDetail, { height: webContentHeight }]}
                   javaScriptEnabled
                   domStorageEnabled
                   startInLoadingState
+                  scrollEnabled={false}
+                  nestedScrollEnabled={false}
+                  injectedJavaScript={WEB_CONTENT_HEIGHT_SCRIPT}
+                  onLoadEnd={() => webViewRef.current?.injectJavaScript(WEB_CONTENT_HEIGHT_SCRIPT)}
+                  onMessage={(event) => {
+                    try {
+                      const message = JSON.parse(event.nativeEvent.data);
+                      if (message.type !== "contentHeight") return;
+                      const height = Number(message.height);
+                      if (Number.isFinite(height) && height > 0)
+                        setWebContentHeight(Math.min(Math.max(Math.ceil(height), 560), 12000));
+                    } catch {
+                      // Ignore messages not emitted by the height bridge.
+                    }
+                  }}
                   onNavigationStateChange={(state) => setCanGoBack(state.canGoBack)}
                   onShouldStartLoadWithRequest={(request) => {
                     if (/^https?:\/\//i.test(request.url) || request.url === "about:blank") return true;
@@ -348,6 +390,7 @@ function PlaceDetailContent({
                 <Text style={styles.utilityText}>정보 수정 제보</Text>
               </Pressable>
             </View>
+          </ScrollView>
         </View>
       </View>
     </Modal>
@@ -357,8 +400,7 @@ function PlaceDetailContent({
 const styles = StyleSheet.create({
   embeddedSheet: { height: "90%", maxHeight: "90%" },
   fixedHeading: { paddingHorizontal: 16, paddingVertical: 12 },
-  summaryScroll: { flexGrow: 0, maxHeight: "35%" },
-  embeddedPanel: { flex: 1, minHeight: 120, marginHorizontal: 12, overflow: "hidden", borderRadius: 16, borderWidth: 1, borderColor: "#E1E8E4" },
+  embeddedSection: { minHeight: 120, overflow: "hidden", borderRadius: 16, borderWidth: 1, borderColor: "#E1E8E4", backgroundColor: "#FFFFFF" },
   backdrop: {
     flex: 1,
     justifyContent: "flex-end",
@@ -512,7 +554,7 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "700",
   },
-  webDetail: { flex: 1, backgroundColor: "#FFFFFF" },
+  webDetail: { width: "100%", backgroundColor: "#FFFFFF" },
   webDetailLoading: {
     position: "absolute",
     inset: 0,
@@ -522,7 +564,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFFFF",
   },
   webDetailFallback: {
-    flex: 1,
+    minHeight: 260,
     alignItems: "stretch",
     justifyContent: "center",
     padding: 24,
