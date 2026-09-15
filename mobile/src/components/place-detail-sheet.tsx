@@ -1,4 +1,4 @@
-import { type ComponentProps, useState } from "react";
+import { type ComponentProps, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Linking,
@@ -9,7 +9,7 @@ import {
   Text,
   View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { WebView } from "react-native-webview";
 
 import { Palette, Radius, Shadow, Spacing } from "@/constants/theme";
@@ -99,6 +99,9 @@ function PlaceDetailContent({
   const [showWebDetail, setShowWebDetail] = useState(() => Boolean(place && kakaoDetailUrl(place) && isKakaoPlace(place)));
   const [webDetailError, setWebDetailError] = useState(false);
   const [externalError, setExternalError] = useState("");
+  const webViewRef = useRef<WebView>(null);
+  const [canGoBack, setCanGoBack] = useState(false);
+  const insets = useSafeAreaInsets();
 
   if (!place) return null;
 
@@ -118,50 +121,18 @@ function PlaceDetailContent({
     }
   };
 
-  if (showWebDetail && detailUrl) {
-    return (
-      <Modal animationType="slide" onRequestClose={() => setShowWebDetail(false)} visible={visible}>
-        <SafeAreaView style={styles.webDetailScreen} edges={["top", "bottom", "left", "right"]}>
-          <View style={styles.webDetailHeader}>
-            <View style={styles.webDetailHeading}>
-              <Text numberOfLines={1} style={styles.webDetailTitle}>{place.name}</Text>
-              <Text style={styles.webDetailCaption}>{kakaoSource ? "카카오가 제공하는 장소 정보" : "외부 원문에서 제공하는 장소 정보"}</Text>
-            </View>
-            <Pressable onPress={onClose} style={styles.closeButton}><Text style={styles.closeText}>닫기</Text></Pressable>
-          </View>
-          <View style={styles.utilityActions}>
-            <Pressable accessibilityRole="button" onPress={onSave} style={styles.utilityButton}><Text style={styles.utilityText}>저장</Text></Pressable>
-            <Pressable accessibilityRole="button" onPress={onReport} style={styles.utilityButton}><Text style={styles.utilityText}>정보 수정 제보</Text></Pressable>
-          </View>
-          {webDetailError ? (
-            <View style={styles.webDetailFallback}>
-              <Text style={styles.webDetailFallbackTitle}>카카오 장소 정보를 앱 안에서 열지 못했습니다.</Text>
-              <Text style={styles.webDetailFallbackText}>외부 카카오맵에서 최신 정보를 확인해 주세요.</Text>
-              <Pressable onPress={() => void openExternal(detailUrl)} style={styles.primaryButton}><Text style={styles.primaryButtonText}>카카오맵에서 열기</Text></Pressable>
-            </View>
-          ) : (
-            <WebView
-              source={{ uri: detailUrl }}
-              style={styles.webDetail}
-              javaScriptEnabled
-              domStorageEnabled
-              startInLoadingState
-              onError={() => setWebDetailError(true)}
-              onHttpError={() => setWebDetailError(true)}
-              renderLoading={() => <View style={styles.webDetailLoading}><ActivityIndicator color={Palette.accent} /><Text style={styles.webDetailFallbackText}>카카오 장소 정보를 불러오는 중입니다.</Text></View>}
-            />
-          )}
-        </SafeAreaView>
-      </Modal>
-    );
-  }
+  const embedded = Boolean(showWebDetail && detailUrl);
+  const goBack = () => {
+    if (embedded && canGoBack && !webDetailError) webViewRef.current?.goBack();
+    else onClose();
+  };
 
   return (
     <Modal
       animationType="slide"
       transparent
       visible={visible}
-      onRequestClose={onClose}
+      onRequestClose={goBack}
     >
       <View style={styles.backdrop}>
         <Pressable
@@ -169,13 +140,9 @@ function PlaceDetailContent({
           onPress={onClose}
           style={StyleSheet.absoluteFill}
         />
-        <View style={styles.sheet}>
+        <View style={[styles.sheet, embedded && styles.embeddedSheet, { paddingBottom: insets.bottom }]}>
           <View style={styles.handle} />
-          <ScrollView
-            contentContainerStyle={styles.content}
-            showsVerticalScrollIndicator={false}
-          >
-            <View style={styles.headingRow}>
+            <View style={[styles.headingRow, styles.fixedHeading]}>
               <View style={styles.headingCopy}>
                 <Text style={styles.eyebrow}>{categoryLabel(place)}</Text>
                 <Text style={styles.name}>{place.name}</Text>
@@ -188,7 +155,11 @@ function PlaceDetailContent({
                 <Text style={styles.closeText}>닫기</Text>
               </Pressable>
             </View>
-
+          <ScrollView
+            style={embedded ? styles.summaryScroll : undefined}
+            contentContainerStyle={styles.content}
+            showsVerticalScrollIndicator={false}
+          >
             <View style={styles.infoCard}>
               <View style={styles.infoRow}>
                 <Text style={styles.infoLabel}>거리</Text>
@@ -298,7 +269,7 @@ function PlaceDetailContent({
             )}
 
             <View style={styles.primaryActions}>
-              {detailUrl ? (
+              {detailUrl && !embedded ? (
                 <Pressable
                   onPress={() => {
                     setWebDetailError(false);
@@ -326,8 +297,49 @@ function PlaceDetailContent({
               ) : null}
             </View>
 
+          </ScrollView>
+          {embedded ? (
+            <View style={styles.embeddedPanel}>
+              <View style={styles.webDetailHeader}>
+                <Text style={styles.webDetailTitle}>{detailSourceName}</Text>
+                {canGoBack && !webDetailError ? (
+                  <Pressable accessibilityRole="button" onPress={() => webViewRef.current?.goBack()} style={styles.closeButton}>
+                    <Text style={styles.closeText}>웹페이지 뒤로</Text>
+                  </Pressable>
+                ) : null}
+              </View>
+              {webDetailError ? (
+                <View style={styles.webDetailFallback}>
+                  <Text style={styles.webDetailFallbackTitle}>장소 정보를 불러오지 못했습니다.</Text>
+                  <Pressable accessibilityRole="button" onPress={() => { setCanGoBack(false); setWebDetailError(false); }} style={styles.primaryButton}>
+                    <Text style={styles.primaryButtonText}>다시 시도</Text>
+                  </Pressable>
+                  <Pressable accessibilityRole="button" onPress={() => void openExternal(detailUrl)} style={styles.secondaryButton}>
+                    <Text style={styles.secondaryButtonText}>외부에서 열기</Text>
+                  </Pressable>
+                </View>
+              ) : (
+                <WebView
+                  ref={webViewRef}
+                  source={{ uri: detailUrl }}
+                  style={styles.webDetail}
+                  javaScriptEnabled
+                  domStorageEnabled
+                  startInLoadingState
+                  onNavigationStateChange={(state) => setCanGoBack(state.canGoBack)}
+                  onShouldStartLoadWithRequest={(request) => {
+                    if (/^https?:\/\//i.test(request.url) || request.url === "about:blank") return true;
+                    void openExternal(request.url);
+                    return false;
+                  }}
+                  onError={() => setWebDetailError(true)}
+                  onHttpError={(event) => { if (event.nativeEvent.url === detailUrl) setWebDetailError(true); }}
+                  renderLoading={() => <View style={styles.webDetailLoading}><ActivityIndicator color={Palette.accent} /><Text style={styles.webDetailFallbackText}>장소 정보를 불러오는 중입니다.</Text></View>}
+                />
+              )}
+            </View>
+          ) : null}
             {externalError ? <Text style={styles.externalError}>{externalError}</Text> : null}
-
             <View style={styles.utilityActions}>
               <Pressable onPress={onSave} style={styles.utilityButton}>
                 <Text style={styles.utilityText}>저장</Text>
@@ -336,7 +348,6 @@ function PlaceDetailContent({
                 <Text style={styles.utilityText}>정보 수정 제보</Text>
               </Pressable>
             </View>
-          </ScrollView>
         </View>
       </View>
     </Modal>
@@ -344,6 +355,10 @@ function PlaceDetailContent({
 }
 
 const styles = StyleSheet.create({
+  embeddedSheet: { height: "90%", maxHeight: "90%" },
+  fixedHeading: { paddingHorizontal: 16, paddingVertical: 12 },
+  summaryScroll: { flexGrow: 0, maxHeight: "35%" },
+  embeddedPanel: { flex: 1, minHeight: 120, marginHorizontal: 12, overflow: "hidden", borderRadius: 16, borderWidth: 1, borderColor: "#E1E8E4" },
   backdrop: {
     flex: 1,
     justifyContent: "flex-end",
