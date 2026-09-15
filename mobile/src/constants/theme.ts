@@ -25,7 +25,7 @@ export const Colors = {
 } as const;
 
 export const Palette = {
-  canvas: "#F7F9F8",
+  canvas: "#FAFBF9",
   surface: "#FFFFFF",
   surfaceMuted: "#F0F4F2",
   ink: "#17201D",
@@ -48,15 +48,15 @@ export const Palette = {
 } as const;
 
 export const Radius = {
-  small: 12,
-  medium: 18,
-  large: 26,
+  small: 10,
+  medium: 16,
+  large: 22,
   pill: 999,
 } as const;
 
 export const Shadow = {
-  card: "0 8px 24px rgba(23, 32, 29, 0.07)",
-  raised: "0 12px 34px rgba(23, 32, 29, 0.12)",
+  card: "0 5px 18px rgba(23, 32, 29, 0.07)",
+  raised: "0 10px 28px rgba(23, 32, 29, 0.11)",
   marker: "0 5px 12px rgba(34, 34, 34, 0.2)",
 } as const;
 
@@ -99,5 +99,5 @@ export const Spacing = {
   six: 64,
 } as const;
 
-export const BottomTabInset = Platform.select({ ios: 50, android: 80 }) ?? 0;
+export const BottomTabInset = Platform.select({ ios: 86, android: 86 }) ?? 0;
 export const MaxContentWidth = 800;

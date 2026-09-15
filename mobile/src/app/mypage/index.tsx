@@ -17,6 +17,7 @@ import { recommendationApi } from "@/api/recommendations";
 import { useAuth, type AuthUser } from "@/auth/auth-context";
 import { BottomNav } from "@/components/bottom-nav";
 import { INPUT_PLACEHOLDER_COLOR, Screen, ui } from "@/components/screen";
+import { Palette, Radius } from "@/constants/theme";
 
 type SavedPlace = {
   id: number;
@@ -53,6 +54,7 @@ export default function MypageScreen() {
   const [memoDrafts, setMemoDrafts] = useState<Record<number, string>>({});
   const [message, setMessage] = useState("");
   const [imageBusy, setImageBusy] = useState(false);
+  const [nicknameEditing, setNicknameEditing] = useState(false);
   const load = async () => {
     const [mypage, saved] = await Promise.all([
       boardsApi.mypage(),
@@ -74,6 +76,7 @@ export default function MypageScreen() {
       };
       if (data.user) await setUser(data.user);
       setMessage("닉네임을 수정했습니다.");
+      setNicknameEditing(false);
     } catch {
       setMessage("닉네임을 수정하지 못했습니다.");
     }
@@ -150,20 +153,12 @@ export default function MypageScreen() {
   };
   return (
     <View style={styles.root}>
-      <Screen
-        title="마이페이지"
-        subtitle={user?.username || ""}
-        action={
-          <Pressable onPress={logout} style={ui.buttonSecondary}>
-            <Text style={ui.buttonSecondaryText}>로그아웃</Text>
-          </Pressable>
-        }
-      >
+      <Screen title="마이페이지" action={<Pressable accessibilityLabel="설정" onPress={() => router.push("/settings")} style={styles.settingsButton}><Text style={styles.settingsIcon}>⚙</Text></Pressable>}>
         {loading ? <LoadState loading={true} retry={reload} /> : null}
         {(
           <>
             <LoadState loading={false} error={loadError} retry={reload} />
-            <View style={ui.card}>
+            <View style={styles.profileCard}>
               <View style={styles.profileRow}>
                 {user?.profile_image_url || user?.profile_image ? (
                   <Image
@@ -173,11 +168,20 @@ export default function MypageScreen() {
                     style={styles.avatar}
                   />
                 ) : (
-                  <View style={styles.avatarPlaceholder} />
+                  <View style={styles.avatarPlaceholder}><Text style={styles.avatarLetter}>{(user?.nickname || user?.username || "MY").slice(0, 1)}</Text></View>
                 )}
-                <View style={ui.grow}>
-                  <Text style={ui.label}>닉네임</Text>
-                  <View style={ui.row}>
+                <View style={styles.profileCopy}>
+                  <Text style={styles.nickname}>{user?.nickname || user?.username || "여기일지도 회원"}</Text>
+                  <View style={styles.tierBadge}><Text style={styles.tierText}>Lv. 3 탐험가</Text></View>
+                  <Text style={styles.profileTagline}>좋은 곳을 발견하는 게 행복해요.</Text>
+                </View>
+              </View>
+              <View style={styles.profileActions}>
+                <Pressable disabled={imageBusy} onPress={updateImage} style={styles.profileAction}><Text style={styles.profileActionText}>{imageBusy ? "사진 처리 중…" : "사진 변경"}</Text></Pressable>
+                <Pressable onPress={() => setNicknameEditing((value) => !value)} style={styles.profileAction}><Text style={styles.profileActionText}>닉네임 수정</Text></Pressable>
+              </View>
+              {nicknameEditing ? (
+                <View style={styles.nicknameEditor}>
                     <TextInput
                       value={nickname}
                       onChangeText={setNickname}
@@ -185,18 +189,19 @@ export default function MypageScreen() {
                       placeholderTextColor={INPUT_PLACEHOLDER_COLOR}
                       style={[ui.input, ui.grow]}
                     />
-                    <Pressable onPress={saveNickname} style={ui.button}>
+                    <Pressable onPress={saveNickname} style={styles.saveNickname}>
                       <Text style={ui.buttonText}>저장</Text>
                     </Pressable>
-                  </View>
                 </View>
-              </View>
-              <Pressable disabled={imageBusy} onPress={updateImage} style={styles.imageButton}>
-                <Text style={styles.imageButtonText}>
-                  {imageBusy ? "사진 처리 중…" : "프로필 사진 변경"}
-                </Text>
-              </Pressable>
+              ) : null}
               {message ? <Text style={styles.message}>{message}</Text> : null}
+            </View>
+            <View style={styles.activity}>
+              <View style={styles.activityItem}><Text style={styles.count}>{places.length}</Text><Text style={styles.activityLabel}>저장한 장소</Text></View>
+              <View style={styles.activityDivider} />
+              <View style={styles.activityItem}><Text style={styles.count}>{profile.posts?.length || 0}</Text><Text style={styles.activityLabel}>작성한 글</Text></View>
+              <View style={styles.activityDivider} />
+              <View style={styles.activityItem}><Text style={styles.count}>{profile.comments?.length || 0}</Text><Text style={styles.activityLabel}>작성한 댓글</Text></View>
             </View>
             <View style={styles.links}>
               {LINKS.map(([label, path], index) => (
@@ -215,34 +220,16 @@ export default function MypageScreen() {
                   onPress={() => router.push("/admin")}
                   style={styles.link}
                 >
-                  <Text style={styles.adminText}>관리자 메뉴</Text>
+                  <Text style={styles.linkIcon}>♢</Text><Text style={styles.adminText}>관리자 메뉴</Text>
                   <Text style={styles.chevron}>›</Text>
                 </Pressable>
               ) : null}
             </View>
-            <View style={styles.activity}>
-              <View style={ui.card}>
-                <Text style={styles.count}>{profile.posts?.length || 0}</Text>
-                <Text style={ui.muted}>작성한 글</Text>
-              </View>
-              <View style={ui.card}>
-                <Text style={styles.count}>
-                  {profile.comments?.length || 0}
-                </Text>
-                <Text style={ui.muted}>작성한 댓글</Text>
-              </View>
-              <View style={ui.card}>
-                <Text style={styles.count}>
-                  {profile.liked_posts?.length || 0}
-                </Text>
-                <Text style={ui.muted}>좋아요한 글</Text>
-              </View>
-            </View>
-            <Text style={ui.sectionTitle}>저장한 장소 {places.length}</Text>
+            <View style={styles.sectionHeading}><Text style={ui.sectionTitle}>최근 저장 장소</Text><Pressable onPress={() => router.push("/mypage/saved-places" as never)}><Text style={styles.seeAll}>전체 보기  ›</Text></Pressable></View>
             <View style={styles.list}>
               {places.length ? (
-                places.map((place) => (
-                  <View key={place.id} style={ui.card}>
+                places.slice(0, 3).map((place) => (
+                  <View key={place.id} style={styles.savedCard}>
                     <View style={ui.row}>
                       <View style={ui.grow}>
                         <Pressable accessibilityRole="button" onPress={() => router.push(`/mypage/saved-places?savedId=${place.id}` as never)}>
@@ -277,9 +264,10 @@ export default function MypageScreen() {
                   </View>
                 ))
               ) : (
-                <Text style={ui.muted}>아직 저장한 장소가 없습니다.</Text>
+                <View style={styles.emptySaved}><Text style={styles.emptyTitle}>아직 저장한 장소가 없어요</Text><Text style={ui.muted}>마음에 드는 장소를 나만의 지도에 모아보세요.</Text></View>
               )}
             </View>
+            <Pressable onPress={logout} style={styles.logout}><Text style={styles.logoutText}>로그아웃</Text></Pressable>
           </>
         )}
       </Screen>
@@ -289,20 +277,29 @@ export default function MypageScreen() {
 }
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  profileRow: { flexDirection: "row", alignItems: "center", gap: 12 },
-  avatar: { width: 60, height: 60, borderRadius: 30 },
+  settingsButton: { width: 40, height: 40, alignItems: "center", justifyContent: "center" },
+  settingsIcon: { color: Palette.ink, fontSize: 21 },
+  profileCard: { padding: 18, borderWidth: 1, borderColor: Palette.border, borderRadius: Radius.large, backgroundColor: Palette.surface },
+  profileRow: { flexDirection: "row", alignItems: "center", gap: 15 },
+  avatar: { width: 78, height: 78, borderRadius: 39 },
   avatarPlaceholder: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: "#DCE7E2",
+    width: 78, height: 78, alignItems: "center", justifyContent: "center", borderRadius: 39, backgroundColor: "#DCEBE7",
   },
-  imageButton: { marginTop: 10 },
-  imageButtonText: { color: "#0F766E", fontSize: 11, fontWeight: "800" },
+  avatarLetter: { color: Palette.accent, fontSize: 27, fontWeight: "900" },
+  profileCopy: { minWidth: 0, flex: 1, alignItems: "flex-start" },
+  nickname: { color: Palette.ink, fontSize: 20, fontWeight: "900", letterSpacing: -0.5 },
+  tierBadge: { marginTop: 5, paddingHorizontal: 10, paddingVertical: 4, borderRadius: Radius.pill, backgroundColor: Palette.accent },
+  tierText: { color: "#FFFFFF", fontSize: 10, fontWeight: "900" },
+  profileTagline: { marginTop: 7, color: Palette.muted, fontSize: 10.5 },
+  profileActions: { marginTop: 15, flexDirection: "row", gap: 8 },
+  profileAction: { minHeight: 38, paddingHorizontal: 14, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "#B8C9C4", borderRadius: 10, backgroundColor: Palette.surface },
+  profileActionText: { color: Palette.ink, fontSize: 11, fontWeight: "800" },
+  nicknameEditor: { marginTop: 12, flexDirection: "row", gap: 8 },
+  saveNickname: { width: 66, minHeight: 48, alignItems: "center", justifyContent: "center", borderRadius: 10, backgroundColor: Palette.accent },
   message: { marginTop: 10, color: "#0F766E", fontSize: 11 },
-  links: { overflow: "hidden", borderRadius: 16, backgroundColor: "#FFFFFF" },
+  links: { overflow: "hidden", borderWidth: 1, borderColor: Palette.border, borderRadius: 16, backgroundColor: "#FFFFFF" },
   link: {
-    minHeight: 54,
+    minHeight: 52,
     paddingHorizontal: 16,
     flexDirection: "row",
     alignItems: "center",
@@ -313,9 +310,17 @@ const styles = StyleSheet.create({
   linkIcon: { width: 24, color: "#0F857A", fontSize: 16, fontWeight: "900", textAlign: "center" },
   adminText: { flex: 1, color: "#0F766E", fontSize: 13, fontWeight: "900" },
   chevron: { color: "#8A918E", fontSize: 23 },
-  activity: { flexDirection: "row", gap: 8 },
-  count: { marginBottom: 5, color: "#0F766E", fontSize: 22, fontWeight: "900" },
+  activity: { minHeight: 77, flexDirection: "row", alignItems: "center", borderRadius: 16, backgroundColor: Palette.accentSoft },
+  activityItem: { flex: 1, alignItems: "center" },
+  activityDivider: { width: 1, height: 31, backgroundColor: "#C9DFDA" },
+  count: { marginBottom: 3, color: "#0F766E", fontSize: 20, fontWeight: "900" },
+  activityLabel: { color: Palette.muted, fontSize: 10 },
+  sectionHeading: { marginTop: 3, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  seeAll: { color: Palette.accent, fontSize: 11, fontWeight: "800" },
   list: { gap: 8 },
+  savedCard: { padding: 14, borderWidth: 1, borderColor: Palette.border, borderRadius: 14, backgroundColor: Palette.surface },
+  emptySaved: { padding: 22, alignItems: "center", gap: 5, borderRadius: 15, backgroundColor: Palette.surfaceMuted },
+  emptyTitle: { color: Palette.ink, fontSize: 13, fontWeight: "900" },
   placeName: {
     marginBottom: 5,
     color: "#222222",
@@ -324,4 +329,6 @@ const styles = StyleSheet.create({
   },
   delete: { color: "#B42318", fontSize: 11, fontWeight: "800" },
   memo: { marginTop: 10 },
+  logout: { minHeight: 48, alignItems: "center", justifyContent: "center", borderRadius: 12, backgroundColor: Palette.coralSoft },
+  logoutText: { color: Palette.coral, fontSize: 13, fontWeight: "900" },
 });

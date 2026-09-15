@@ -1,68 +1,34 @@
-import { router } from "expo-router";
 import { searchLocation } from "@/utils/location";
+import { router } from "expo-router";
 import { useEffect, useState } from "react";
-import {
-  ActivityIndicator,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { searchMapPlaces } from "@/api/recommendations";
 import { BottomNav } from "@/components/bottom-nav";
-import {
-  BottomTabInset,
-  Palette,
-  Radius,
-  Shadow,
-  Spacing,
-} from "@/constants/theme";
+import { BottomTabInset, Palette, Radius, Shadow } from "@/constants/theme";
 import type { Place } from "@/types/place";
 
 const CATEGORIES = [
-  { label: "카페", query: "카페", symbol: "☕" },
-  { label: "식당", query: "식당", symbol: "●" },
+  { label: "카페", query: "카페", symbol: "▰" },
+  { label: "식당", query: "식당", symbol: "♜" },
   { label: "주차", query: "무료 주차장", symbol: "P" },
-  { label: "화장실", query: "공중화장실", symbol: "WC" },
+  { label: "화장실", query: "공중화장실", symbol: "●●" },
   { label: "공원", query: "공원", symbol: "♣" },
-  { label: "쉼터", query: "무더위 쉼터", symbol: "休" },
 ] as const;
 
 const formatDistance = (distance?: number) => {
-  if (distance === undefined) return "";
-  return distance < 1000
-    ? `${Math.round(distance)}m`
-    : `${(distance / 1000).toFixed(1)}km`;
+  if (!distance || distance <= 0) return "거리 확인 중";
+  return distance < 1000 ? `${Math.round(distance)}m` : `${(distance / 1000).toFixed(1)}km`;
 };
 
 export default function HomeScreen() {
-  const [query, setQuery] = useState("");
   const [placeQuery, setPlaceQuery] = useState("");
   const [nearbyPlaces, setNearbyPlaces] = useState<Place[]>([]);
   const [loading, setLoading] = useState(true);
   const [nearbyError, setNearbyError] = useState("");
   const [nearbyReloadKey, setNearbyReloadKey] = useState(0);
-  const [nearbyCenter, setNearbyCenter] = useState<{
-    lat: number;
-    lng: number;
-  } | null>(null);
-
-  const openRecommendation = (nextQuery = query) => {
-    const trimmed = nextQuery.trim();
-    if (!trimmed) return;
-    router.push({
-      pathname: "/recommend",
-      params: {
-        q: trimmed,
-        lat: nearbyCenter ? String(nearbyCenter.lat) : undefined,
-        lng: nearbyCenter ? String(nearbyCenter.lng) : undefined,
-      },
-    });
-  };
+  const [nearbyCenter, setNearbyCenter] = useState<{ lat: number; lng: number } | null>(null);
 
   const openPlaceSearch = (nextQuery = placeQuery) => {
     const trimmed = nextQuery.trim();
@@ -80,267 +46,118 @@ export default function HomeScreen() {
     const controller = new AbortController();
     let active = true;
     const loadNearbyParks = async () => {
-      const coordinates = await searchLocation();
-      if (!coordinates) {
-        throw new Error(
-          "주변 공원을 보려면 위치 권한이 필요합니다. 권한을 허용한 뒤 다시 시도해 주세요.",
-        );
-      }
-      const nextCenter = {
-        lat: coordinates.latitude,
-        lng: coordinates.longitude,
-      };
+      const coordinates = await searchLocation({ cachedOnly: true });
+      if (!coordinates) throw new Error("위치 버튼을 누르면 주변 장소를 볼 수 있어요.");
+      const nextCenter = { lat: coordinates.latitude, lng: coordinates.longitude };
       if (active) setNearbyCenter(nextCenter);
-      return searchMapPlaces({
-        query: "공원",
-        lat: nextCenter.lat,
-        lng: nextCenter.lng,
-        limit: 6,
-        signal: controller.signal,
-      });
+      return searchMapPlaces({ query: "공원", lat: nextCenter.lat, lng: nextCenter.lng, limit: 6, signal: controller.signal });
     };
-
     loadNearbyParks()
       .then((data) => {
-        if (active) {
-          setNearbyPlaces(data.results);
-          setNearbyError(data.message || "");
-        }
+        if (!active) return;
+        setNearbyPlaces(data.results);
+        setNearbyError(data.message || "");
       })
       .catch((error) => {
         if (!active || error?.name === "AbortError") return;
         setNearbyPlaces([]);
-        setNearbyCenter(null);
-        setNearbyError(
-          error instanceof Error
-            ? error.message
-            : "주변 장소를 불러오지 못했습니다.",
-        );
+        setNearbyError(error instanceof Error ? error.message : "주변 장소를 불러오지 못했습니다.");
       })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
-    return () => {
-      active = false;
-      controller.abort();
-    };
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; controller.abort(); };
   }, [nearbyReloadKey]);
+
+  const openNearby = (place?: Place) => router.push({
+    pathname: "/explore",
+    params: {
+      q: "공원",
+      placeId: place ? String(place.id) : undefined,
+      lat: nearbyCenter ? String(nearbyCenter.lat) : undefined,
+      lng: nearbyCenter ? String(nearbyCenter.lng) : undefined,
+    },
+  });
 
   return (
     <View style={styles.screen}>
       <SafeAreaView style={styles.safeArea} edges={["top", "left", "right"]}>
-        <ScrollView
-          contentContainerStyle={styles.content}
-          keyboardShouldPersistTaps="handled"
-        >
+        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
           <View style={styles.header}>
             <View style={styles.brandRow}>
-              <View style={styles.brandMark}><Text style={styles.brandMarkText}>⌖</Text></View>
-              <View>
-                <Text style={styles.brand}>여기일지도</Text>
-                <Text style={styles.brandCaption}>LIFE MAP</Text>
-              </View>
+              <View style={styles.pinLogo}><View style={styles.pinDot} /></View>
+              <View><Text style={styles.brand}>여기일지도</Text><Text style={styles.brandCaption}>LIFE MAP</Text></View>
             </View>
-            <Pressable
-              accessibilityLabel="알림 보기"
-              accessibilityRole="button"
-              onPress={() => router.push("/notifications")}
-              style={({ pressed }) => [styles.headerButton, pressed && styles.pressed]}
-            >
-              <Text style={styles.headerButtonText}>♢</Text>
+            <Pressable accessibilityLabel="알림 보기" onPress={() => router.push("/notifications")} style={styles.iconButton}>
+              <Text style={styles.bell}>♧</Text><View style={styles.alertDot} />
             </Pressable>
           </View>
 
           <View style={styles.hero}>
-            <Text style={styles.title}>
-              오늘 어디로 갈까요?
-            </Text>
-            <Text style={styles.description}>
-              상황과 조건을 말하면 확인할 수 있는 근거와 함께 추천해요.
-            </Text>
-            <View style={styles.searchBox}>
-              <TextInput
-                value={query}
-                onChangeText={setQuery}
-                onSubmitEditing={() => openRecommendation()}
-                placeholder="예: 조용히 오래 작업할 수 있는 카페"
-                placeholderTextColor="#5F6863"
-                returnKeyType="search"
-                style={styles.searchInput}
-              />
-              <Pressable
-                accessibilityRole="button"
-                disabled={!query.trim()}
-                onPress={() => openRecommendation()}
-                style={({ pressed }) => [
-                  styles.searchButton,
-                  !query.trim() && styles.buttonDisabled,
-                  pressed && styles.pressed,
-                ]}
-              >
-                <Text style={styles.searchButtonLabel}>추천받기</Text>
-              </Pressable>
-            </View>
+            <Text style={styles.title}>오늘 어디로 갈까요?</Text>
+            <Text style={styles.description}>좋은 장소가, 좋은 하루를 만들어요.</Text>
           </View>
 
-          <View style={styles.placeSearchCard}>
-            <View>
-              <View style={styles.searchTitleRow}>
-                <View style={styles.searchIcon}><Text style={styles.searchIconText}>⌕</Text></View>
-                <Text style={styles.placeSearchTitle}>일반 장소 검색</Text>
+          <View style={styles.modeStack}>
+            <Pressable onPress={() => router.push("/recommend")} style={({ pressed }) => [styles.modeCard, pressed && styles.pressed]}>
+              <View style={[styles.modeIcon, styles.modeIconCoral]}><Text style={styles.modeIconCoralText}>⌖</Text></View>
+              <View style={styles.modeCopy}><Text style={styles.modeTitle}>상황으로 찾기</Text><Text style={styles.modeDescription}>지금 상황에 맞는 장소를 추천해요</Text></View>
+              <Text style={styles.chevron}>›</Text>
+            </Pressable>
+            <View style={styles.searchCard}>
+              <View style={styles.searchTop}>
+                <View style={[styles.modeIcon, styles.modeIconMint]}><Text style={styles.modeIconMintText}>⌕</Text></View>
+                <View style={styles.modeCopy}><Text style={styles.modeTitle}>일반 장소 검색</Text><Text style={styles.modeDescription}>장소명이나 지역·업종을 빠르게 찾아요</Text></View>
               </View>
-              <Text style={styles.placeSearchDescription}>
-                장소명이나 지역·업종을 빠르게 찾습니다.
-              </Text>
-            </View>
-            <View style={styles.placeSearchBox}>
-              <TextInput
-                value={placeQuery}
-                onChangeText={setPlaceQuery}
-                onSubmitEditing={() => openPlaceSearch()}
-                placeholder="예: 서면역 약국, 광안리 주차장"
-                placeholderTextColor="#5F6863"
-                returnKeyType="search"
-                style={styles.placeSearchInput}
-              />
-              <Pressable
-                onPress={() => openPlaceSearch()}
-                style={styles.placeSearchButton}
-              >
-                <Text style={styles.placeSearchButtonLabel}>검색</Text>
-              </Pressable>
+              <View style={styles.searchRow}>
+                <TextInput value={placeQuery} onChangeText={setPlaceQuery} onSubmitEditing={() => openPlaceSearch()} placeholder="예: 서면역 약국, 광안리 주차장" placeholderTextColor="#7A8580" returnKeyType="search" style={styles.searchInput} />
+                <Pressable onPress={() => openPlaceSearch()} style={styles.searchButton}><Text style={styles.searchButtonText}>검색</Text></Pressable>
+              </View>
             </View>
           </View>
 
-          <View>
-            <Text style={styles.sectionLabel}>함께 만드는 지도</Text>
-            <Text style={styles.sectionCaption}>장소 이야기를 나누고, 빠진 정보를 알려주세요.</Text>
-            <View style={styles.serviceGrid}>
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => router.push("/boards/free")}
-                style={({ pressed }) => [styles.serviceCard, pressed && styles.pressed]}
-              >
-                <Text style={styles.serviceSymbol}>☵</Text>
-                <View style={styles.serviceCopy}>
-                  <Text style={styles.serviceTitle}>커뮤니티</Text>
-                  <Text style={styles.serviceText}>장소 팁과 이야기를 나눠요</Text>
-                </View>
-                <Text style={styles.serviceArrow}>›</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryRow}>
+            {CATEGORIES.map((item) => (
+              <Pressable key={item.label} onPress={() => openPlaceSearch(item.query)} style={({ pressed }) => [styles.category, pressed && styles.pressed]}>
+                <View style={styles.categoryIcon}><Text style={styles.categorySymbol}>{item.symbol}</Text></View><Text style={styles.categoryLabel}>{item.label}</Text>
               </Pressable>
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => router.push("/place-report")}
-                style={({ pressed }) => [styles.serviceCard, pressed && styles.pressed]}
-              >
-                <Text style={styles.serviceSymbol}>⌖</Text>
-                <View style={styles.serviceCopy}>
-                  <Text style={styles.serviceTitle}>장소 제보</Text>
-                  <Text style={styles.serviceText}>새 장소와 수정 정보를 알려요</Text>
-                </View>
-                <Text style={styles.serviceArrow}>›</Text>
-              </Pressable>
-            </View>
+            ))}
+          </ScrollView>
+
+          <View style={styles.sectionHeader}>
+            <View><Text style={styles.sectionTitle}>지금, 주변에 이런 곳은 어때요?</Text><Text style={styles.sectionCaption}>가까운 장소를 한눈에 둘러보세요.</Text></View>
+            <Pressable onPress={() => openNearby()}><Text style={styles.more}>더보기  ›</Text></Pressable>
           </View>
 
-          <View>
-            <Text style={styles.sectionLabel}>빠른 탐색</Text>
-            <View style={styles.categoryGrid}>
-              {CATEGORIES.map((item) => (
-                <Pressable
-                  key={item.label}
-                  onPress={() => openPlaceSearch(item.query)}
-                  style={styles.categoryCard}
-                >
-                  <View style={styles.categorySymbol}>
-                    <Text style={styles.categorySymbolText}>{item.symbol}</Text>
+          {loading ? (
+            <View style={styles.stateCard}><ActivityIndicator color={Palette.accent} /><Text style={styles.stateText}>주변 장소를 찾고 있어요</Text></View>
+          ) : nearbyPlaces.length ? (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.placesRow}>
+              {nearbyPlaces.slice(0, 5).map((place, index) => (
+                <Pressable key={place.id} onPress={() => openNearby(place)} style={({ pressed }) => [styles.placeCard, pressed && styles.pressed]}>
+                  <View style={[styles.placeVisual, index % 3 === 1 && styles.placeVisualWarm, index % 3 === 2 && styles.placeVisualGreen]}>
+                    <View style={styles.visualSun} /><View style={styles.visualBuilding} />
+                    <View style={styles.distanceBadge}><Text style={styles.distanceBadgeText}>⌖ {formatDistance(place.distance)}</Text></View>
                   </View>
-                  <Text style={styles.categoryLabel}>{item.label}</Text>
+                  <Text numberOfLines={1} style={styles.placeName}>{place.name}</Text>
+                  <Text numberOfLines={1} style={styles.placeMeta}>{place.category_label || "공원 · 산책하기 좋아요"}</Text>
+                  <View style={styles.placeFoot}><Text style={styles.star}>★</Text><Text style={styles.placeSource}>{place.source_label || "여기일지도"}</Text></View>
                 </Pressable>
               ))}
+            </ScrollView>
+          ) : (
+            <View style={styles.stateCard}>
+              <Text style={styles.stateTitle}>주변 장소를 아직 보여드릴 수 없어요</Text><Text style={styles.stateText}>{nearbyError || "위치 확인 후 다시 시도해 주세요."}</Text>
+              <Pressable onPress={() => { setLoading(true); setNearbyError(""); setNearbyReloadKey((value) => value + 1); }} style={styles.retryButton}><Text style={styles.retryText}>다시 시도</Text></Pressable>
             </View>
-          </View>
+          )}
 
-          <View>
-            <View style={styles.sectionHeader}>
-              <View>
-                <Text style={styles.sectionLabel}>주변 공원</Text>
-                <Text style={styles.sectionCaption}>
-                  서버에서 불러온 가까운 장소
-                </Text>
-              </View>
-              <Pressable
-                onPress={() =>
-                  router.push({
-                    pathname: "/explore",
-                    params: {
-                      q: "공원",
-                      lat: nearbyCenter ? String(nearbyCenter.lat) : undefined,
-                      lng: nearbyCenter ? String(nearbyCenter.lng) : undefined,
-                    },
-                  })
-                }
-              >
-                <Text style={styles.more}>전체 보기</Text>
-              </Pressable>
-            </View>
-            {loading ? (
-              <View style={styles.loading}>
-                <ActivityIndicator color={Palette.accent} />
-              </View>
-            ) : nearbyError ? (
-              <View style={styles.loadError}>
-                <Text style={styles.loadErrorText}>{nearbyError}</Text>
-                <Pressable
-                  onPress={() => {
-                    setLoading(true);
-                    setNearbyError("");
-                    setNearbyReloadKey((value) => value + 1);
-                  }}
-                  style={styles.retryButton}
-                >
-                  <Text style={styles.retryButtonLabel}>다시 시도</Text>
-                </Pressable>
-              </View>
-            ) : (
-              <View style={styles.placeList}>
-                {nearbyPlaces.map((place, index) => (
-                  <Pressable
-                    key={place.id}
-                    onPress={() =>
-                      router.push({
-                        pathname: "/explore",
-                        params: {
-                          q: "공원",
-                          placeId: String(place.id),
-                          lat: nearbyCenter ? String(nearbyCenter.lat) : undefined,
-                          lng: nearbyCenter ? String(nearbyCenter.lng) : undefined,
-                        },
-                      })
-                    }
-                    style={({ pressed }) => [
-                      styles.placeRow,
-                      pressed && styles.pressed,
-                    ]}
-                  >
-                    <Text style={styles.placeIndex}>
-                      {String(index + 1).padStart(2, "0")}
-                    </Text>
-                    <View style={styles.placeCopy}>
-                      <Text numberOfLines={1} style={styles.placeName}>
-                        {place.name}
-                      </Text>
-                      <Text numberOfLines={1} style={styles.placeAddress}>
-                        {place.address || place.category_label}
-                      </Text>
-                    </View>
-                    <Text style={styles.distance}>
-                      {formatDistance(place.distance)}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
-            )}
+          <Pressable onPress={() => router.push("/place-report")} style={({ pressed }) => [styles.discoveryBanner, pressed && styles.pressed]}>
+            <View style={styles.bannerCopy}><Text style={styles.bannerTitle}>지도의 작은 발견이{`\n`}오늘을 더 특별하게</Text><Text style={styles.bannerText}>빠진 장소와 정보를 알려주세요.</Text></View>
+            <View style={styles.miniMap}><View style={styles.mapRoadA} /><View style={styles.mapRoadB} /><View style={styles.mapPin}><Text style={styles.mapPinText}>●</Text></View></View>
+          </Pressable>
+
+          <View style={styles.communityRow}>
+            <Pressable onPress={() => router.push("/boards/free")} style={styles.communityButton}><Text style={styles.communityIcon}>☵</Text><Text style={styles.communityText}>커뮤니티</Text><Text style={styles.communityArrow}>›</Text></Pressable>
+            <Pressable onPress={() => router.push("/place-report")} style={styles.communityButton}><Text style={styles.communityIcon}>⌖</Text><Text style={styles.communityText}>장소 제보</Text><Text style={styles.communityArrow}>›</Text></Pressable>
           </View>
         </ScrollView>
       </SafeAreaView>
@@ -350,189 +167,25 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: Palette.canvas },
-  safeArea: { flex: 1 },
-  content: {
-    width: "100%",
-    maxWidth: 760,
-    alignSelf: "center",
-    paddingHorizontal: Spacing.three,
-    paddingTop: Spacing.three,
-    paddingBottom: BottomTabInset + Spacing.six,
-    gap: 30,
-  },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  brandRow: { flexDirection: "row", alignItems: "center", gap: 9 },
-  brandMark: { width: 34, height: 34, alignItems: "center", justifyContent: "center", borderRadius: 12, backgroundColor: Palette.accent },
-  brandMarkText: { color: "#FFFFFF", fontSize: 20, fontWeight: "900" },
-  brand: {
-    color: Palette.ink,
-    fontSize: 16,
-    fontWeight: "900",
-    letterSpacing: -0.4,
-  },
-  brandCaption: { marginTop: 1, color: Palette.muted, fontSize: 8, fontWeight: "800", letterSpacing: 1.8 },
-  headerButton: { width: 42, height: 42, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: Palette.border, borderRadius: 21, backgroundColor: Palette.surface },
-  headerButtonText: { color: Palette.ink, fontSize: 24, fontWeight: "700" },
-  hero: { paddingTop: Spacing.three },
-  title: {
-    color: "#17201D",
-    fontSize: 34,
-    lineHeight: 42,
-    fontWeight: "900",
-    letterSpacing: -1.3,
-  },
-  description: {
-    maxWidth: 480,
-    marginTop: 9,
-    color: Palette.muted,
-    fontSize: 14,
-    lineHeight: 22,
-  },
-  searchBox: {
-    marginTop: Spacing.three,
-    padding: 5,
-    flexDirection: "row",
-    borderRadius: 15,
-    backgroundColor: Palette.surface,
-    boxShadow: Shadow.card,
-  },
-  searchInput: {
-    minWidth: 0,
-    flex: 1,
-    height: 52,
-    paddingHorizontal: 15,
-    color: Palette.ink,
-    fontSize: 15,
-  },
-  searchButton: {
-    minWidth: 92,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 11,
-    backgroundColor: Palette.accent,
-  },
-  searchButtonLabel: { color: "#FFFFFF", fontSize: 14, fontWeight: "800" },
-  buttonDisabled: { opacity: 0.45 },
-  placeSearchCard: {
-    padding: 18,
-    gap: 12,
-    borderWidth: 1,
-    borderColor: "#DCE5E1",
-    borderRadius: Radius.medium,
-    backgroundColor: Palette.surface,
-    boxShadow: Shadow.card,
-  },
-  searchTitleRow: { flexDirection: "row", alignItems: "center", gap: 9 },
-  searchIcon: { width: 32, height: 32, alignItems: "center", justifyContent: "center", borderRadius: 12, backgroundColor: Palette.accentSoft },
-  searchIconText: { color: Palette.accent, fontSize: 20, fontWeight: "900" },
-  placeSearchTitle: { color: Palette.ink, fontSize: 15, fontWeight: "900" },
-  placeSearchDescription: {
-    marginTop: 5,
-    color: Palette.muted,
-    fontSize: 11,
-    lineHeight: 17,
-  },
-  placeSearchBox: { flexDirection: "row", gap: 8 },
-  placeSearchInput: {
-    minWidth: 0,
-    height: 44,
-    paddingHorizontal: 13,
-    flex: 1,
-    borderWidth: 1,
-    borderColor: "#D2DDD8",
-    borderRadius: Radius.small,
-    backgroundColor: Palette.surface,
-    color: Palette.ink,
-    fontSize: 12,
-  },
-  placeSearchButton: {
-    minWidth: 78,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: Radius.small,
-    backgroundColor: Palette.accent,
-  },
-  placeSearchButtonLabel: { color: "#FFFFFF", fontSize: 11, fontWeight: "900" },
-  sectionHeader: {
-    flexDirection: "row",
-    alignItems: "flex-end",
-    justifyContent: "space-between",
-  },
-  sectionLabel: { color: Palette.ink, fontSize: 18, fontWeight: "900" },
-  sectionCaption: { marginTop: 5, color: Palette.muted, fontSize: 12 },
-  more: { color: Palette.accent, fontSize: 12, fontWeight: "800" },
-  categoryGrid: { marginTop: 14, flexDirection: "row", flexWrap: "wrap", gap: 9 },
-  categoryCard: {
-    width: "31%",
-    flexGrow: 1,
-    paddingVertical: 15,
-    alignItems: "center",
-    gap: 9,
-    borderWidth: 1,
-    borderColor: "#E4E9E6",
-    borderRadius: Radius.medium,
-    backgroundColor: Palette.surface,
-  },
-  categorySymbol: {
-    width: 36,
-    height: 36,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 12,
-    backgroundColor: Palette.accentSoft,
-  },
-  categorySymbolText: {
-    color: Palette.accent,
-    fontSize: 11,
-    fontWeight: "900",
-  },
-  categoryLabel: { color: Palette.ink, fontSize: 12, fontWeight: "800" },
-  serviceGrid: { marginTop: 14, gap: 9 },
-  serviceCard: { minHeight: 72, padding: 14, flexDirection: "row", alignItems: "center", gap: 12, borderWidth: 1, borderColor: Palette.border, borderRadius: Radius.medium, backgroundColor: Palette.surface },
-  serviceSymbol: { width: 32, color: Palette.accent, fontSize: 23, fontWeight: "900", textAlign: "center" },
-  serviceCopy: { minWidth: 0, flex: 1 },
-  serviceTitle: { color: Palette.ink, fontSize: 14, fontWeight: "900" },
-  serviceText: { marginTop: 4, color: Palette.muted, fontSize: 11 },
-  serviceArrow: { color: Palette.muted, fontSize: 24 },
-  loading: { height: 130, alignItems: "center", justifyContent: "center" },
-  loadError: {
-    height: 130,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 12,
-  },
-  loadErrorText: { color: Palette.muted, fontSize: 12 },
-  retryButton: {
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    borderRadius: Radius.small,
-    backgroundColor: Palette.accent,
-  },
-  retryButtonLabel: { color: "#FFFFFF", fontSize: 12, fontWeight: "800" },
-  placeList: {
-    marginTop: 13,
-    overflow: "hidden",
-    borderRadius: Radius.medium,
-    backgroundColor: Palette.surface,
-  },
-  placeRow: {
-    minHeight: 72,
-    paddingHorizontal: 16,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 13,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: Palette.border,
-  },
-  placeIndex: { color: Palette.accent, fontSize: 11, fontWeight: "900" },
-  placeCopy: { minWidth: 0, flex: 1 },
-  placeName: { color: Palette.ink, fontSize: 14, fontWeight: "800" },
-  placeAddress: { marginTop: 5, color: Palette.muted, fontSize: 11 },
-  distance: { color: Palette.ink, fontSize: 12, fontWeight: "700" },
-  pressed: { opacity: 0.65 },
+  screen: { flex: 1, backgroundColor: Palette.canvas }, safeArea: { flex: 1 },
+  content: { paddingHorizontal: 20, paddingTop: 10, paddingBottom: BottomTabInset + 26, gap: 20 },
+  header: { height: 54, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }, brandRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  pinLogo: { width: 34, height: 39, alignItems: "center", paddingTop: 8, borderTopLeftRadius: 18, borderTopRightRadius: 18, borderBottomLeftRadius: 18, backgroundColor: Palette.accent, transform: [{ rotate: "45deg" }] }, pinDot: { width: 11, height: 11, borderRadius: 6, backgroundColor: "#FFFFFF" },
+  brand: { color: Palette.ink, fontSize: 20, fontWeight: "900", letterSpacing: -0.7 }, brandCaption: { marginTop: 1, color: Palette.ink, fontSize: 8, fontWeight: "800", letterSpacing: 2.2 },
+  iconButton: { width: 42, height: 42, alignItems: "center", justifyContent: "center", position: "relative" }, bell: { color: Palette.ink, fontSize: 25 }, alertDot: { position: "absolute", right: 8, top: 7, width: 7, height: 7, borderRadius: 4, backgroundColor: Palette.coral },
+  hero: { paddingTop: 11 }, title: { color: Palette.ink, fontSize: 31, lineHeight: 38, fontWeight: "900", letterSpacing: -1.2 }, description: { marginTop: 5, color: Palette.muted, fontSize: 14, lineHeight: 21 },
+  modeStack: { gap: 10 }, modeCard: { minHeight: 82, padding: 15, flexDirection: "row", alignItems: "center", gap: 13, borderWidth: 1, borderColor: Palette.border, borderRadius: Radius.medium, backgroundColor: Palette.surface, boxShadow: Shadow.card },
+  modeIcon: { width: 48, height: 48, alignItems: "center", justifyContent: "center", borderRadius: 17 }, modeIconCoral: { backgroundColor: Palette.coralSoft }, modeIconMint: { backgroundColor: Palette.accentSoft }, modeIconCoralText: { color: Palette.coral, fontSize: 27, fontWeight: "900" }, modeIconMintText: { color: Palette.accent, fontSize: 27, fontWeight: "900" },
+  modeCopy: { minWidth: 0, flex: 1 }, modeTitle: { color: Palette.ink, fontSize: 16, fontWeight: "900" }, modeDescription: { marginTop: 5, color: Palette.muted, fontSize: 11.5 }, chevron: { color: Palette.ink, fontSize: 27, fontWeight: "300" },
+  searchCard: { padding: 15, gap: 13, borderWidth: 1, borderColor: Palette.border, borderRadius: Radius.medium, backgroundColor: Palette.surface, boxShadow: Shadow.card }, searchTop: { flexDirection: "row", alignItems: "center", gap: 13 }, searchRow: { flexDirection: "row", gap: 8 },
+  searchInput: { minWidth: 0, height: 45, flex: 1, paddingHorizontal: 13, borderWidth: 1, borderColor: "#CFDAD5", borderRadius: 12, color: Palette.ink, fontSize: 12.5 }, searchButton: { width: 72, height: 45, alignItems: "center", justifyContent: "center", borderRadius: 12, backgroundColor: Palette.accent }, searchButtonText: { color: "#FFFFFF", fontSize: 13, fontWeight: "900" },
+  categoryRow: { gap: 8, paddingRight: 8 }, category: { width: 68, paddingVertical: 10, alignItems: "center", gap: 7, borderRadius: 15, backgroundColor: Palette.surfaceMuted }, categoryIcon: { height: 25, alignItems: "center", justifyContent: "center" }, categorySymbol: { color: Palette.accent, fontSize: 14, fontWeight: "900" }, categoryLabel: { color: Palette.ink, fontSize: 11, fontWeight: "800" },
+  sectionHeader: { flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between", gap: 8 }, sectionTitle: { color: Palette.ink, fontSize: 17, fontWeight: "900", letterSpacing: -0.4 }, sectionCaption: { marginTop: 4, color: Palette.muted, fontSize: 11 }, more: { color: Palette.ink, fontSize: 11, fontWeight: "800" },
+  placesRow: { gap: 10, paddingRight: 10 }, placeCard: { width: 164, paddingBottom: 11, overflow: "hidden", borderWidth: 1, borderColor: Palette.border, borderRadius: 15, backgroundColor: Palette.surface }, placeVisual: { height: 106, position: "relative", overflow: "hidden", backgroundColor: "#BDD9D3" }, placeVisualWarm: { backgroundColor: "#E8C6A5" }, placeVisualGreen: { backgroundColor: "#C8DDBE" },
+  visualSun: { position: "absolute", right: 18, top: 14, width: 32, height: 32, borderRadius: 16, backgroundColor: "rgba(255,255,255,0.62)" }, visualBuilding: { position: "absolute", left: 19, right: 19, bottom: 0, height: 62, borderTopLeftRadius: 9, borderTopRightRadius: 9, backgroundColor: "rgba(29,64,57,0.72)", borderWidth: 7, borderBottomWidth: 0, borderColor: "rgba(255,255,255,0.48)" },
+  distanceBadge: { position: "absolute", left: 8, bottom: 7, paddingHorizontal: 7, paddingVertical: 4, borderRadius: 8, backgroundColor: "rgba(23,32,29,0.76)" }, distanceBadgeText: { color: "#FFFFFF", fontSize: 9, fontWeight: "800" }, placeName: { marginTop: 10, paddingHorizontal: 10, color: Palette.ink, fontSize: 13, fontWeight: "900" }, placeMeta: { marginTop: 4, paddingHorizontal: 10, color: Palette.muted, fontSize: 9.5 }, placeFoot: { marginTop: 7, paddingHorizontal: 10, flexDirection: "row", alignItems: "center", gap: 5 }, star: { color: "#FFAA2A", fontSize: 11 }, placeSource: { color: Palette.accent, fontSize: 9.5, fontWeight: "700" },
+  stateCard: { minHeight: 112, padding: 18, alignItems: "center", justifyContent: "center", gap: 7, borderRadius: Radius.medium, backgroundColor: Palette.surfaceMuted }, stateTitle: { color: Palette.ink, fontSize: 13, fontWeight: "900", textAlign: "center" }, stateText: { color: Palette.muted, fontSize: 11, lineHeight: 17, textAlign: "center" }, retryButton: { marginTop: 4, paddingHorizontal: 13, paddingVertical: 8, borderRadius: 10, backgroundColor: Palette.accent }, retryText: { color: "#FFFFFF", fontSize: 11, fontWeight: "800" },
+  discoveryBanner: { minHeight: 132, padding: 18, flexDirection: "row", alignItems: "center", overflow: "hidden", borderRadius: Radius.medium, backgroundColor: "#DDF3EE" }, bannerCopy: { zIndex: 2, flex: 1 }, bannerTitle: { color: "#164B45", fontSize: 17, lineHeight: 24, fontWeight: "900" }, bannerText: { marginTop: 6, color: "#4D716B", fontSize: 10.5 },
+  miniMap: { width: 122, height: 92, position: "relative", overflow: "hidden", borderRadius: 15, backgroundColor: "rgba(255,255,255,0.74)", transform: [{ rotate: "-5deg" }] }, mapRoadA: { position: "absolute", left: -10, top: 37, width: 150, height: 13, backgroundColor: "#F4D9C7", transform: [{ rotate: "22deg" }] }, mapRoadB: { position: "absolute", left: 53, top: -10, width: 14, height: 120, backgroundColor: "#FFFFFF", transform: [{ rotate: "-18deg" }] }, mapPin: { position: "absolute", left: 50, top: 25, width: 29, height: 34, alignItems: "center", justifyContent: "center", borderTopLeftRadius: 15, borderTopRightRadius: 15, borderBottomLeftRadius: 15, backgroundColor: Palette.coral, transform: [{ rotate: "45deg" }] }, mapPinText: { color: "#FFFFFF", fontSize: 8 },
+  communityRow: { flexDirection: "row", gap: 10 }, communityButton: { minHeight: 58, paddingHorizontal: 13, flex: 1, flexDirection: "row", alignItems: "center", gap: 8, borderWidth: 1, borderColor: Palette.border, borderRadius: 15, backgroundColor: Palette.surface }, communityIcon: { color: Palette.accent, fontSize: 19, fontWeight: "900" }, communityText: { minWidth: 0, flex: 1, color: Palette.ink, fontSize: 12.5, fontWeight: "900" }, communityArrow: { color: Palette.muted, fontSize: 20 }, pressed: { opacity: 0.65, transform: [{ scale: 0.985 }] },
 });

@@ -1,10 +1,11 @@
 import { router } from "expo-router";
 import { useState } from "react";
-import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 import { ApiError } from "@/api/client";
 import { useAuth } from "@/auth/auth-context";
-import { Screen, ui } from "@/components/screen";
+import { Palette } from "@/constants/theme";
 
 export default function LoginScreen() {
   const { login } = useAuth();
@@ -15,181 +16,66 @@ export default function LoginScreen() {
   const [showPassword, setShowPassword] = useState(false);
 
   const submit = async () => {
-    if (!username || !password)
-      return setError("아이디와 비밀번호를 입력해주세요.");
+    if (!username || !password) return setError("아이디와 비밀번호를 입력해주세요.");
     try {
       setLoading(true);
       setError("");
       await login(username, password);
-      if (router.canGoBack()) router.back();
-      else router.replace("/");
+      if (router.canGoBack()) router.back(); else router.replace("/");
     } catch (caught) {
-      const data =
-        caught instanceof ApiError
-          ? (caught.data as { detail?: string })
-          : null;
+      const data = caught instanceof ApiError ? (caught.data as { detail?: string }) : null;
       setError(data?.detail || (caught instanceof Error ? caught.message : "로그인하지 못했습니다."));
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   };
 
   return (
-    <Screen
-      title="로그인"
-      subtitle="저장한 장소와 개인화 추천을 이용하세요."
-      back
-    >
-      <View style={styles.form}>
-        <View style={styles.brandCard}>
-          <Text style={styles.brand}>LIFE MAP</Text>
-          <Text style={styles.brandTitle}>
-            지금 필요한 장소를{`\n`}더 쉽게 찾아보세요.
-          </Text>
-          <Text style={styles.brandCopy}>
-            내 취향에 맞는 추천을 받고, 마음에 드는 장소를 저장할 수 있어요.
-          </Text>
-          <View style={styles.benefits}>
-            <Text style={styles.benefit}>상황 맞춤 추천</Text>
-            <Text style={styles.benefit}>장소 저장</Text>
-            <Text style={styles.benefit}>제보 관리</Text>
+    <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === "ios" ? "padding" : "height"}>
+      <SafeAreaView style={styles.safe} edges={["top", "bottom", "left", "right"]}>
+        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+          <View style={styles.topBar}>
+            <Pressable accessibilityLabel="뒤로 가기" onPress={() => router.canGoBack() ? router.back() : router.replace("/")} style={styles.back}><Text style={styles.backText}>‹</Text></Pressable>
+            <Text style={styles.language}>한국어⌄</Text>
           </View>
-        </View>
-        <View style={styles.loginCard}>
-          <View>
-            <Text style={styles.fieldLabel}>아이디</Text>
-            <TextInput
-              autoCapitalize="none"
-              autoComplete="username"
-              value={username}
-              onChangeText={setUsername}
-              placeholder="아이디를 입력하세요"
-              placeholderTextColor="#5F6863"
-              returnKeyType="next"
-              style={ui.input}
-            />
+
+          <View style={styles.brandArea}>
+            <View style={styles.brandMark}><View style={styles.brandMountain} /><View style={styles.brandPin}><View style={styles.brandPinDot} /></View></View>
+            <Text style={styles.brandTitle}>여기일지도</Text>
+            <Text style={styles.brandTagline}>아쩌면, 여기일지도</Text>
           </View>
-          <View>
-            <Text style={styles.fieldLabel}>비밀번호</Text>
-            <View style={styles.passwordRow}>
-              <TextInput
-                value={password}
-                onChangeText={setPassword}
-                onSubmitEditing={submit}
-                placeholder="비밀번호를 입력하세요"
-                placeholderTextColor="#7A8580"
-                autoComplete="current-password"
-                returnKeyType="done"
-                secureTextEntry={!showPassword}
-                style={[ui.input, styles.passwordInput]}
-              />
-              <Pressable
-                accessibilityLabel={showPassword ? "비밀번호 숨기기" : "비밀번호 보기"}
-                accessibilityRole="button"
-                onPress={() => setShowPassword((value) => !value)}
-                style={styles.passwordToggle}
-              >
-                <Text style={styles.passwordToggleText}>{showPassword ? "숨김" : "보기"}</Text>
-              </Pressable>
+
+          <View style={styles.form}>
+            <View style={styles.inputWrap}><Text style={styles.inputIcon}>♙</Text><TextInput autoCapitalize="none" autoComplete="username" value={username} onChangeText={setUsername} placeholder="아이디" placeholderTextColor="#87958F" returnKeyType="next" style={styles.input} /></View>
+            <View style={styles.inputWrap}>
+              <Text style={styles.inputIcon}>▢</Text>
+              <TextInput value={password} onChangeText={setPassword} onSubmitEditing={submit} placeholder="비밀번호" placeholderTextColor="#87958F" autoComplete="current-password" returnKeyType="done" secureTextEntry={!showPassword} style={styles.input} />
+              <Pressable accessibilityLabel={showPassword ? "비밀번호 숨기기" : "비밀번호 보기"} onPress={() => setShowPassword((value) => !value)} style={styles.passwordToggle}><Text style={styles.passwordToggleText}>{showPassword ? "●" : "◉"}</Text></Pressable>
             </View>
+            {error ? <Text style={styles.error}>●  {error}</Text> : null}
+            <Pressable disabled={loading} onPress={submit} style={({ pressed }) => [styles.loginButton, loading && styles.disabled, pressed && styles.pressed]}><Text style={styles.loginText}>{loading ? "로그인 중…" : "로그인"}</Text></Pressable>
+            <Pressable onPress={() => router.push("/signup")} style={styles.signupButton}><Text style={styles.signupText}>회원가입</Text></Pressable>
+            <View style={styles.orRow}><View style={styles.orLine} /><Text style={styles.orText}>또는</Text><View style={styles.orLine} /></View>
+            <Pressable onPress={() => router.replace("/explore")} style={styles.guestButton}><Text style={styles.guestText}>로그인 없이 둘러보기</Text></Pressable>
           </View>
-          {error ? <Text style={ui.error}>{error}</Text> : null}
-          <Pressable
-            disabled={loading}
-            onPress={submit}
-            style={[ui.button, loading && styles.buttonDisabled]}
-          >
-            <Text style={ui.buttonText}>
-              {loading ? "로그인 중..." : "로그인"}
-            </Text>
-          </Pressable>
-          <Pressable onPress={() => router.push("/signup")}>
-            <Text style={styles.link}>계정이 없으신가요? 회원가입</Text>
-          </Pressable>
-        </View>
-        <Pressable
-          onPress={() => router.replace("/explore")}
-          style={styles.guestButton}
-        >
-          <Text style={styles.guestButtonText}>로그인 없이 둘러보기</Text>
-        </Pressable>
-      </View>
-    </Screen>
+
+          <View style={styles.footerArt}>
+            <Text style={styles.footerCopy}>좋은 곳이{`\n`}당신을 기다리고 있어요.</Text>
+            <View style={styles.moon} /><View style={styles.hillBack} /><View style={styles.hillFront} />
+            <View style={styles.tower}><View style={styles.towerTop} /></View>
+          </View>
+        </ScrollView>
+      </SafeAreaView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  form: { width: "100%", maxWidth: 480, alignSelf: "center", gap: 14 },
-  brandCard: {
-    padding: 22,
-    borderRadius: 22,
-    backgroundColor: "#123D38",
-  },
-  brand: {
-    marginBottom: 14,
-    color: "#8DE0D2",
-    fontSize: 11,
-    fontWeight: "900",
-    letterSpacing: 2,
-  },
-  brandTitle: {
-    marginBottom: 9,
-    color: "#FFFFFF",
-    fontSize: 23,
-    fontWeight: "900",
-    lineHeight: 31,
-  },
-  brandCopy: { color: "#D1E7E2", fontSize: 13, lineHeight: 20 },
-  benefits: {
-    marginTop: 16,
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 7,
-  },
-  benefit: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    backgroundColor: "rgba(255, 255, 255, 0.12)",
-    color: "#FFFFFF",
-    fontSize: 11,
-    fontWeight: "700",
-  },
-  loginCard: {
-    gap: 14,
-    padding: 18,
-    borderWidth: 1,
-    borderColor: "#E2E7E4",
-    borderRadius: 20,
-    backgroundColor: "#FFFFFF",
-  },
-  fieldLabel: {
-    marginBottom: 8,
-    color: "#27312D",
-    fontSize: 13,
-    fontWeight: "800",
-  },
-  passwordRow: { position: "relative", justifyContent: "center" },
-  passwordInput: { paddingRight: 64 },
-  passwordToggle: { position: "absolute", right: 8, minWidth: 48, minHeight: 38, alignItems: "center", justifyContent: "center" },
-  passwordToggleText: { color: "#0F857A", fontSize: 12, fontWeight: "900" },
-  buttonDisabled: { opacity: 0.55 },
-  link: {
-    paddingTop: 2,
-    paddingBottom: 1,
-    textAlign: "center",
-    color: "#0F766E",
-    fontSize: 13,
-    fontWeight: "800",
-  },
-  guestButton: {
-    minHeight: 48,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "#C8D3CF",
-    borderRadius: 12,
-    backgroundColor: "#F5F7F6",
-  },
-  guestButtonText: { color: "#39443F", fontSize: 13, fontWeight: "800" },
+  screen: { flex: 1, backgroundColor: "#07524B" }, safe: { flex: 1 }, content: { flexGrow: 1, minHeight: 760, paddingHorizontal: 24, paddingBottom: 0 },
+  topBar: { height: 54, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }, back: { width: 42, height: 42, alignItems: "center", justifyContent: "center" }, backText: { color: "#FFFFFF", fontSize: 34, fontWeight: "300" }, language: { color: "#D9ECE8", fontSize: 12, fontWeight: "700" },
+  brandArea: { alignItems: "center", paddingTop: 13, paddingBottom: 31 }, brandMark: { width: 86, height: 86, position: "relative", overflow: "hidden", borderRadius: 43, backgroundColor: "#FCFAF4" }, brandMountain: { position: "absolute", left: 8, right: 8, bottom: -22, height: 70, backgroundColor: "#27867A", transform: [{ rotate: "45deg" }] }, brandPin: { position: "absolute", right: 19, top: 14, width: 31, height: 36, alignItems: "center", paddingTop: 8, borderTopLeftRadius: 16, borderTopRightRadius: 16, borderBottomLeftRadius: 16, backgroundColor: Palette.coral, transform: [{ rotate: "45deg" }] }, brandPinDot: { width: 9, height: 9, borderRadius: 5, backgroundColor: "#FFFFFF" },
+  brandTitle: { marginTop: 15, color: "#FFFFFF", fontSize: 32, fontWeight: "900", letterSpacing: -1.3 }, brandTagline: { marginTop: 4, color: "#DAECE8", fontSize: 13, letterSpacing: 2 },
+  form: { width: "100%", maxWidth: 440, alignSelf: "center", gap: 11 }, inputWrap: { height: 52, paddingHorizontal: 15, flexDirection: "row", alignItems: "center", gap: 10, borderRadius: 10, backgroundColor: "#FDFDFC" }, inputIcon: { width: 21, color: "#385E58", fontSize: 19, textAlign: "center" }, input: { minWidth: 0, flex: 1, color: Palette.ink, fontSize: 14 }, passwordToggle: { width: 38, height: 38, alignItems: "center", justifyContent: "center" }, passwordToggleText: { color: "#5B746F", fontSize: 19 }, error: { color: "#FF9A87", fontSize: 11.5, fontWeight: "700" },
+  loginButton: { height: 52, alignItems: "center", justifyContent: "center", borderRadius: 10, backgroundColor: Palette.coral }, loginText: { color: "#FFFFFF", fontSize: 16, fontWeight: "900" }, signupButton: { height: 36, alignItems: "center", justifyContent: "center" }, signupText: { color: "#FFFFFF", fontSize: 14, fontWeight: "800" },
+  orRow: { flexDirection: "row", alignItems: "center", gap: 14 }, orLine: { height: StyleSheet.hairlineWidth, flex: 1, backgroundColor: "rgba(255,255,255,0.55)" }, orText: { color: "#D2E5E1", fontSize: 12 }, guestButton: { height: 50, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "rgba(255,255,255,0.82)", borderRadius: 12 }, guestText: { color: "#FFFFFF", fontSize: 14, fontWeight: "800" },
+  footerArt: { minHeight: 180, marginTop: 29, position: "relative", overflow: "hidden" }, footerCopy: { zIndex: 3, marginLeft: 22, color: "#FFFFFF", fontSize: 15, lineHeight: 23, fontWeight: "700", transform: [{ rotate: "-6deg" }] }, moon: { position: "absolute", right: 52, top: 13, width: 16, height: 16, borderRadius: 8, backgroundColor: "#C8E7DF" }, hillBack: { position: "absolute", left: -70, right: 80, bottom: -105, height: 220, borderRadius: 120, backgroundColor: "#4C9A90", transform: [{ rotate: "8deg" }] }, hillFront: { position: "absolute", left: 95, right: -100, bottom: -118, height: 235, borderRadius: 130, backgroundColor: "#81BDB5", transform: [{ rotate: "-8deg" }] }, tower: { position: "absolute", right: 45, bottom: 24, width: 9, height: 62, backgroundColor: "#F1F5F1" }, towerTop: { position: "absolute", left: -5, top: -10, width: 19, height: 12, borderRadius: 6, backgroundColor: "#F1F5F1" },
+  disabled: { opacity: 0.55 }, pressed: { opacity: 0.72, transform: [{ scale: 0.99 }] },
 });

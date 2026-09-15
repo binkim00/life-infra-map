@@ -11,7 +11,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { Palette, Radius, Shadow, Spacing } from "@/constants/theme";
+import { Palette, Radius, Shadow } from "@/constants/theme";
 
 export const INPUT_PLACEHOLDER_COLOR = "#7A8580";
 
@@ -75,7 +75,7 @@ export function Screen({
 
 export const ui = StyleSheet.create({
   card: {
-    padding: 18,
+    padding: 16,
     borderWidth: 1,
     borderColor: Palette.border,
     borderRadius: Radius.medium,
@@ -83,7 +83,7 @@ export const ui = StyleSheet.create({
     boxShadow: Shadow.card,
   },
   input: {
-    minHeight: 50,
+    minHeight: 48,
     paddingHorizontal: 14,
     borderWidth: 1,
     borderColor: Palette.border,
@@ -104,7 +104,7 @@ export const ui = StyleSheet.create({
     fontSize: 15,
   },
   button: {
-    minHeight: 48,
+    minHeight: 46,
     paddingHorizontal: 18,
     alignItems: "center",
     justifyContent: "center",
@@ -112,7 +112,7 @@ export const ui = StyleSheet.create({
     backgroundColor: Palette.accent,
   },
   buttonDark: {
-    minHeight: 48,
+    minHeight: 46,
     paddingHorizontal: 18,
     alignItems: "center",
     justifyContent: "center",
@@ -171,13 +171,14 @@ const styles = StyleSheet.create({
     width: "100%",
     maxWidth: 760,
     alignSelf: "center",
-    paddingHorizontal: Spacing.three,
-    paddingTop: Spacing.three,
+    paddingHorizontal: 20,
+    paddingTop: 12,
     paddingBottom: 110,
-    gap: Spacing.three,
+    gap: 14,
   },
   header: {
-    marginBottom: 12,
+    minHeight: 52,
+    marginBottom: 4,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
@@ -192,20 +193,20 @@ const styles = StyleSheet.create({
   },
   headingCopy: { minWidth: 0, flex: 1 },
   back: {
-    width: 42,
-    height: 42,
+    width: 38,
+    height: 38,
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: 21,
-    backgroundColor: Palette.surface,
+    borderRadius: 19,
+    backgroundColor: "transparent",
   },
   backText: { color: Palette.ink, fontSize: 23, fontWeight: "700" },
   pressed: { opacity: 0.62, transform: [{ scale: 0.97 }] },
   title: {
     color: Palette.ink,
-    fontSize: 29,
+    fontSize: 24,
     fontWeight: "900",
     letterSpacing: -0.6,
   },
-  subtitle: { marginTop: 6, color: Palette.muted, fontSize: 13, lineHeight: 19 },
+  subtitle: { marginTop: 3, color: Palette.muted, fontSize: 12, lineHeight: 18 },
 });
