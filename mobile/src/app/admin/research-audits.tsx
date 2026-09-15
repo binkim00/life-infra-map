@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { router } from "expo-router";
-import { Pressable, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { apiRequest } from "@/api/client";
 import { Screen, ui } from "@/components/screen";
 import { LoadState } from "@/components/load-state";
 import { useResource } from "@/hooks/use-resource";
+import { Palette, Radius } from "@/constants/theme";
 
 type Judgment = { place_name: string; tag: string; status: string; reason: string };
 type Run = { id: number; run_key: string; payload: { rows?: number; accepted?: number; needs_verification?: number; rejected?: number; duplicate?: number; saved?: number; reasons?: Record<string, number>; judgments?: Judgment[] } };
@@ -20,8 +21,9 @@ export default function ResearchAuditsScreen() {
   return <Screen title="수집 판정 기록" subtitle="수집기의 판정 기록입니다. 관리자 승인과는 다릅니다." back>
     <Pressable style={ui.button} onPress={() => router.push("/admin/evidence" as never)}><Text style={ui.buttonText}>DB에 저장된 근거 검토하기</Text></Pressable>
     <LoadState loading={loading} error={error} retry={reload} empty={!data.results.length} emptyText="아직 저장된 수집 기록이 없습니다." />
-    {data.results.map(run => <View key={run.id} style={ui.card}>
-      <Text style={ui.sectionTitle}>{run.run_key}</Text>
+    {data.results.map(run => <View key={run.id} style={[ui.card, styles.run]}>
+      <View style={ui.row}><View style={styles.runIcon}><Text style={styles.runIconText}>↻</Text></View><View style={ui.grow}><Text style={styles.runTitle}>{run.run_key}</Text><Text style={ui.muted}>수집기 실행 기록</Text></View></View>
+      <View style={styles.stats}><View style={styles.stat}><Text style={styles.statValue}>{run.payload.rows ?? 0}</Text><Text style={styles.statLabel}>검사</Text></View><View style={styles.stat}><Text style={styles.statValue}>{run.payload.accepted ?? 0}</Text><Text style={styles.statLabel}>확정 가능</Text></View><View style={styles.stat}><Text style={styles.statValue}>{run.payload.needs_verification ?? 0}</Text><Text style={styles.statLabel}>확인 필요</Text></View></View>
       <Text style={ui.muted}>검사 {run.payload.rows ?? 0} · 즉시 확정 가능 {run.payload.accepted ?? 0} · 확인 필요 {run.payload.needs_verification ?? 0}</Text>
       <Text style={ui.muted}>탈락 {run.payload.rejected ?? 0} · 중복 {run.payload.duplicate ?? 0} · 저장 근거 {run.payload.saved ?? 0}</Text>
       {Object.entries(run.payload.reasons || {}).map(([reason, count]) => <Text key={reason} style={ui.muted}>{reason}: {count}건</Text>)}
@@ -37,3 +39,14 @@ export default function ResearchAuditsScreen() {
     </View>
   </Screen>;
 }
+
+const styles = StyleSheet.create({
+  run: { gap: 11 },
+  runIcon: { width: 40, height: 40, alignItems: "center", justifyContent: "center", borderRadius: 13, backgroundColor: Palette.accentSoft },
+  runIconText: { color: Palette.accent, fontSize: 20, fontWeight: "900" },
+  runTitle: { color: Palette.ink, fontSize: 15, fontWeight: "900" },
+  stats: { flexDirection: "row", gap: 6 },
+  stat: { flex: 1, padding: 9, alignItems: "center", borderRadius: Radius.small, backgroundColor: Palette.surfaceMuted },
+  statValue: { color: Palette.ink, fontSize: 16, fontWeight: "900" },
+  statLabel: { marginTop: 2, color: Palette.muted, fontSize: 8 },
+});

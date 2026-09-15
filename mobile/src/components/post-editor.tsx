@@ -14,6 +14,7 @@ import {
 
 import { boardsApi } from "@/api/boards";
 import { INPUT_PLACEHOLDER_COLOR, Screen, ui } from "@/components/screen";
+import { Palette, Radius } from "@/constants/theme";
 
 export function PostEditor({
   boardType,
@@ -75,9 +76,11 @@ export function PostEditor({
     }
   };
   return (
-    <Screen title={postId ? "게시글 수정" : "새 게시글"} back>
+    <Screen title={postId ? "게시글 수정" : "새 게시글"} subtitle="이웃에게 도움이 되는 장소 정보와 경험을 나눠주세요." back>
       {postId ? <LoadState loading={fetching} error={loadError} retry={reload} /> : null}
+      <View style={styles.guide}><Text style={styles.guideMark}>✦</Text><Text style={styles.guideText}>개인정보나 광고성 내용은 숨김 처리될 수 있어요.</Text></View>
       <View style={styles.form}>
+        <Text style={ui.label}>제목</Text>
         <TextInput
           value={title}
           onChangeText={setTitle}
@@ -85,6 +88,7 @@ export function PostEditor({
           placeholderTextColor={INPUT_PLACEHOLDER_COLOR}
           style={ui.input}
         />
+        <Text style={ui.label}>내용</Text>
         <TextInput
           value={content}
           onChangeText={setContent}
@@ -93,8 +97,8 @@ export function PostEditor({
           multiline
           style={ui.textarea}
         />
-        <Pressable accessibilityRole="button" onPress={pick} style={ui.buttonSecondary}>
-          <Text style={ui.buttonSecondaryText}>사진 선택</Text>
+        <Pressable accessibilityRole="button" onPress={pick} style={styles.photoButton}>
+          <Text style={styles.photoIcon}>＋</Text><View><Text style={styles.photoTitle}>사진 첨부</Text><Text style={styles.photoCopy}>장소나 정보를 잘 보여주는 사진을 선택하세요.</Text></View>
         </Pressable>
         {image ? (
           <View style={styles.imageWrap}>
@@ -114,6 +118,13 @@ export function PostEditor({
 }
 const styles = StyleSheet.create({
   form: { gap: 12 },
+  guide: { padding: 13, flexDirection: "row", alignItems: "center", gap: 9, borderRadius: Radius.medium, backgroundColor: Palette.accentSoft },
+  guideMark: { color: Palette.accent, fontSize: 18, fontWeight: "900" },
+  guideText: { color: Palette.accentDark, fontSize: 11, fontWeight: "700" },
+  photoButton: { minHeight: 68, paddingHorizontal: 14, flexDirection: "row", alignItems: "center", gap: 12, borderWidth: 1, borderStyle: "dashed", borderColor: Palette.accent, borderRadius: Radius.medium, backgroundColor: Palette.surface },
+  photoIcon: { color: Palette.accent, fontSize: 24, fontWeight: "500" },
+  photoTitle: { color: Palette.ink, fontSize: 13, fontWeight: "900" },
+  photoCopy: { marginTop: 3, color: Palette.muted, fontSize: 9 },
   image: { width: "100%", height: 220, borderRadius: 12, resizeMode: "cover" },
   imageWrap: { gap: 8 },
   removeImage: { minHeight: 40, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "#F0BABA", borderRadius: 12, backgroundColor: "#FFF0F0" },

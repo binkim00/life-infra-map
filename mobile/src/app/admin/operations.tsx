@@ -1,10 +1,11 @@
 import { router } from "expo-router";
 import { useState } from "react";
-import { Pressable, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { recommendationApi } from "@/api/recommendations";
 import { Screen, ui } from "@/components/screen";
 import { LoadState } from "@/components/load-state";
 import { useResource } from "@/hooks/use-resource";
+import { Palette, Radius } from "@/constants/theme";
 
 type Dashboard = {
   generated_at?: string;
@@ -53,15 +54,15 @@ export default function AdminOperationsScreen() {
         </Pressable>
       }
     >
-      <View style={ui.row}>
+      <View style={styles.range}>
         {[1, 7, 30].map((value) => (
           <Pressable
             key={value}
             onPress={() => setDays(value)}
-            style={days === value ? ui.button : ui.buttonSecondary}
+            style={[styles.rangeButton, days === value && styles.rangeButtonActive]}
           >
             <Text
-              style={days === value ? ui.buttonText : ui.buttonSecondaryText}
+              style={[styles.rangeText, days === value && styles.rangeTextActive]}
             >
               {value}일
             </Text>
@@ -79,26 +80,21 @@ export default function AdminOperationsScreen() {
           <Text style={ui.muted}>
             집계 시각 {new Date(data.generated_at).toLocaleString()} · 수집 후 갱신되는 저장 집계입니다. 현재 실시간 수치와 다를 수 있습니다.
           </Text>
-          <View style={[ui.row, { flexWrap: "wrap" }]}>
+          <View style={styles.metricGrid}>
             {metrics.map(([label, value]) => (
-              <View key={label} style={[ui.card, { minWidth: 140, flex: 1 }]}>
-                <Text style={ui.sectionTitle}>
+              <View key={label} style={[ui.card, styles.metric]}>
+                <Text style={styles.metricValue}>
                   {value === undefined ? "집계 없음" : value.toLocaleString()}
                 </Text>
                 <Text style={ui.muted}>{label}</Text>
               </View>
             ))}
           </View>
-          <View style={ui.card}>
-            <Text style={ui.sectionTitle}>수집 작업</Text>
-            <Text>
-              대기 {data.queue?.queued ?? "—"} · 처리 중{" "}
-              {data.queue?.processing ?? "—"}
-            </Text>
-            <Text>
-              재시도 {data.queue?.retry ?? "—"} · 실패{" "}
-              {data.queue?.failed ?? "—"}
-            </Text>
+          <View style={[ui.card, styles.queueCard]}>
+            <Text style={styles.queueTitle}>수집 작업 상태</Text>
+            <View style={styles.queueGrid}>
+              {[['대기', data.queue?.queued], ['처리 중', data.queue?.processing], ['재시도', data.queue?.retry], ['실패', data.queue?.failed]].map(([label, value]) => <View key={String(label)} style={styles.queueItem}><Text style={styles.queueValue}>{value ?? "—"}</Text><Text style={styles.queueLabel}>{label}</Text></View>)}
+            </View>
             <Text style={ui.muted}>
               최근 완료{" "}
               {data.runtime?.worker_last_success_at
@@ -141,3 +137,20 @@ export default function AdminOperationsScreen() {
     </Screen>
   );
 }
+
+const styles = StyleSheet.create({
+  range: { padding: 4, flexDirection: "row", gap: 4, borderRadius: Radius.medium, backgroundColor: Palette.surfaceMuted },
+  rangeButton: { minHeight: 38, flex: 1, alignItems: "center", justifyContent: "center", borderRadius: 12 },
+  rangeButtonActive: { backgroundColor: Palette.surface },
+  rangeText: { color: Palette.muted, fontSize: 11, fontWeight: "800" },
+  rangeTextActive: { color: Palette.ink },
+  metricGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  metric: { minWidth: "47%", flex: 1 },
+  metricValue: { marginBottom: 4, color: Palette.ink, fontSize: 24, fontWeight: "900" },
+  queueCard: { gap: 12, backgroundColor: Palette.ink },
+  queueTitle: { color: "#FFFFFF", fontSize: 16, fontWeight: "900" },
+  queueGrid: { flexDirection: "row", gap: 6 },
+  queueItem: { flex: 1, paddingVertical: 10, alignItems: "center", borderRadius: Radius.small, backgroundColor: "#25312D" },
+  queueValue: { color: "#70D4C9", fontSize: 17, fontWeight: "900" },
+  queueLabel: { marginTop: 3, color: "#BDC8C3", fontSize: 9 },
+});

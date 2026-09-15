@@ -5,6 +5,7 @@ import { useResource } from "@/hooks/use-resource";
 import { useAction } from "@/hooks/use-action";
 import { LoadState } from "@/components/load-state";
 import { Screen, ui, INPUT_PLACEHOLDER_COLOR } from "@/components/screen";
+import { Palette, Radius } from "@/constants/theme";
 
 type Evidence = {
   id: number;
@@ -77,7 +78,7 @@ export default function EvidenceQueueScreen() {
           <Text style={ui.buttonText}>검색</Text>
         </Pressable>
       </View>
-      <View style={[ui.row, { flexWrap: "wrap" }]}>
+      <View style={styles.statusTabs}>
         {STATUSES.map(([value, label]) => (
           <Pressable
             key={value}
@@ -85,10 +86,10 @@ export default function EvidenceQueueScreen() {
               setStatus(value);
               setPage(1);
             }}
-            style={status === value ? ui.button : ui.buttonSecondary}
+            style={[styles.statusTab, status === value && styles.statusTabActive]}
           >
             <Text
-              style={status === value ? ui.buttonText : ui.buttonSecondaryText}
+              style={[styles.statusTabText, status === value && styles.statusTabTextActive]}
             >
               {label}
             </Text>
@@ -102,13 +103,11 @@ export default function EvidenceQueueScreen() {
         retry={reload}
       />
       {!loading ? (
-        <Text style={ui.muted}>
-          {data.count}건 · {page}페이지
-        </Text>
+        <View style={styles.queueSummary}><Text style={styles.queueCount}>{data.count.toLocaleString()}</Text><View><Text style={styles.queueTitle}>현재 조건의 근거</Text><Text style={styles.queueCopy}>{page}페이지 · 원문과 장소 일치를 확인한 뒤 판정하세요.</Text></View></View>
       ) : null}
       {action.error ? <Text style={ui.error}>{action.error}</Text> : null}
       {data.results.map((item) => (
-        <View key={item.id} style={ui.card}>
+        <View key={item.id} style={[ui.card, styles.evidenceCard]}>
           <Text style={ui.sectionTitle}>
             {item.place_name} · {item.tag}
           </Text>
@@ -181,6 +180,16 @@ export default function EvidenceQueueScreen() {
 const styles = StyleSheet.create({
   searchRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   grow: { minWidth: 0, flex: 1 },
+  statusTabs: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
+  statusTab: { minHeight: 36, paddingHorizontal: 11, alignItems: "center", justifyContent: "center", borderRadius: Radius.pill, backgroundColor: Palette.surfaceMuted },
+  statusTabActive: { backgroundColor: Palette.ink },
+  statusTabText: { color: Palette.muted, fontSize: 10, fontWeight: "800" },
+  statusTabTextActive: { color: "#FFFFFF" },
+  queueSummary: { padding: 16, flexDirection: "row", alignItems: "center", gap: 14, borderRadius: Radius.large, backgroundColor: Palette.ink },
+  queueCount: { minWidth: 62, color: "#70D4C9", fontSize: 25, fontWeight: "900" },
+  queueTitle: { color: "#FFFFFF", fontSize: 13, fontWeight: "900" },
+  queueCopy: { marginTop: 3, color: "#BDC8C3", fontSize: 9 },
+  evidenceCard: { gap: 9 },
   decisionRow: { flexDirection: "row", flexWrap: "wrap", gap: 7 },
   decision: { minHeight: 40, paddingHorizontal: 12, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "#DFE7E3", borderRadius: 12, backgroundColor: "#FFFFFF" },
   decisionText: { color: "#17201D", fontSize: 11, fontWeight: "900" },

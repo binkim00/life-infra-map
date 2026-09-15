@@ -1,5 +1,6 @@
 import { StyleSheet, Text, View } from "react-native";
 import { Screen, ui } from "@/components/screen";
+import { Palette, Radius } from "@/constants/theme";
 const TIERS = [
   ["아이언", 0],
   ["브론즈", 50],
@@ -25,8 +26,11 @@ export default function UpgradeGuideScreen() {
       back
     >
       <View style={[ui.card, styles.notice]}>
+        <View style={styles.noticeIcon}><Text style={styles.noticeIconText}>↑</Text></View>
+        <View style={ui.grow}>
         <Text style={styles.noticeTitle}>승인된 기여만 점수에 반영돼요</Text>
         <Text style={ui.muted}>제보는 운영 검토가 끝난 뒤 반영되며, 반려되거나 중복인 내용은 점수에 포함되지 않습니다.</Text>
+        </View>
       </View>
       <Text style={ui.sectionTitle}>기여도 반영 기준</Text>
       <View style={styles.grid}>
@@ -41,7 +45,7 @@ export default function UpgradeGuideScreen() {
       <View style={styles.list}>
         {TIERS.map(([name, score]) => (
           <View key={name} style={[ui.card, styles.tier]}>
-            <View style={styles.badge}>
+            <View style={[styles.badge, { backgroundColor: score >= 500 ? Palette.ink : score >= 200 ? Palette.amberSoft : Palette.accentSoft }]}>
               <Text style={styles.badgeText}>{name.slice(0, 1)}</Text>
             </View>
             <View style={ui.grow}>
@@ -58,7 +62,7 @@ export default function UpgradeGuideScreen() {
 }
 const styles = StyleSheet.create({
   grid: { gap: 8 },
-  rule: { flexDirection: "row", alignItems: "center" },
+  rule: { flexDirection: "row", alignItems: "center", minHeight: 54 },
   list: { gap: 8 },
   tier: { flexDirection: "row", alignItems: "center", gap: 12 },
   badge: {
@@ -69,9 +73,11 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     backgroundColor: "#E6F4F1",
   },
-  badgeText: { color: "#0F766E", fontSize: 13, fontWeight: "900" },
+  badgeText: { color: Palette.accent, fontSize: 13, fontWeight: "900" },
   name: { flex: 1, color: "#222222", fontSize: 13, fontWeight: "900" },
   score: { color: "#0F766E", fontSize: 12, fontWeight: "900" },
-  notice: { borderColor: "#B9DED5", backgroundColor: "#EFF8F5" },
+  notice: { flexDirection: "row", alignItems: "center", gap: 12, borderColor: "#B9DED5", backgroundColor: "#EFF8F5" },
+  noticeIcon: { width: 40, height: 40, alignItems: "center", justifyContent: "center", borderRadius: Radius.medium, backgroundColor: Palette.accent },
+  noticeIconText: { color: "#FFFFFF", fontSize: 20, fontWeight: "900" },
   noticeTitle: { marginBottom: 6, color: "#0F6F66", fontSize: 14, fontWeight: "900" },
 });

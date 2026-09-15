@@ -4,6 +4,7 @@ import { router, type Href } from "expo-router";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { boardsApi } from "@/api/boards";
 import { Screen, ui } from "@/components/screen";
+import { Palette, Radius } from "@/constants/theme";
 type Inquiry = {
   id: number;
   title: string;
@@ -38,21 +39,20 @@ export default function MyInquiriesScreen() {
             accessibilityRole="button"
             accessibilityLabel={`${item.title} 문의 상세 보기`}
             onPress={() => router.push(`/inquiries/${item.id}` as Href)}
-            style={ui.card}
+            style={({ pressed }) => [ui.card, styles.card, pressed && styles.pressed]}
           >
             <View style={ui.row}>
-              <Text style={styles.title}>{item.title}</Text>
-              <Text style={styles.status}>
+              <View style={[styles.icon, item.status === "answered" && styles.iconAnswered]}><Text style={styles.iconText}>{item.status === "answered" ? "✓" : "?"}</Text></View>
+              <View style={ui.grow}>
+                <Text style={styles.title}>{item.title}</Text>
+                <Text style={ui.muted}>{item.created_at ? new Date(item.created_at).toLocaleDateString() : ""}</Text>
+              </View>
+              <Text style={[styles.status, item.status === "answered" && styles.statusAnswered]}>
                 {item.status === "answered" ? "답변 완료" : "접수"}
               </Text>
             </View>
-            <Text style={ui.muted}>
-              {item.created_at
-                ? new Date(item.created_at).toLocaleDateString()
-                : ""}
-            </Text>
             <Text style={styles.preview} numberOfLines={2}>{item.content}</Text>
-            <Text style={styles.more}>상세 보기 →</Text>
+            <Text style={styles.more}>문의 내용과 답변 보기  ›</Text>
           </Pressable>
         ))}
       </View>
@@ -61,8 +61,14 @@ export default function MyInquiriesScreen() {
 }
 const styles = StyleSheet.create({
   list: { gap: 8 },
+  card: { gap: 8 },
+  pressed: { opacity: 0.7 },
+  icon: { width: 38, height: 38, alignItems: "center", justifyContent: "center", borderRadius: 13, backgroundColor: Palette.amberSoft },
+  iconAnswered: { backgroundColor: Palette.accentSoft },
+  iconText: { color: Palette.accent, fontSize: 15, fontWeight: "900" },
   title: { flex: 1, color: "#222222", fontSize: 14, fontWeight: "900" },
-  status: { color: "#0F766E", fontSize: 10, fontWeight: "800" },
+  status: { paddingHorizontal: 8, paddingVertical: 5, borderRadius: Radius.pill, overflow: "hidden", backgroundColor: Palette.amberSoft, color: Palette.amber, fontSize: 10, fontWeight: "900" },
+  statusAnswered: { backgroundColor: Palette.accentSoft, color: Palette.accent },
   preview: { marginTop: 8, color: "#5E6964", fontSize: 12, lineHeight: 18 },
   more: { marginTop: 8, color: "#0F857A", fontSize: 11, fontWeight: "900" },
 });

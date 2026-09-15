@@ -6,6 +6,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { recommendationApi } from "@/api/recommendations";
 import { Screen, ui } from "@/components/screen";
 import { useAction } from "@/hooks/use-action";
+import { Palette, Radius } from "@/constants/theme";
 
 type Tag = {
   id: number;
@@ -85,11 +86,15 @@ export default function PreferencesScreen() {
       subtitle="추천에 더 반영할 조건을 선택하세요."
       back
     >
+      <View style={styles.intro}>
+        <Text style={styles.introMark}>✦</Text>
+        <View style={ui.grow}><Text style={styles.introTitle}>내 취향을 추천에 더 정확히 반영해요</Text><Text style={styles.introCopy}>직접 고른 조건은 자동으로 추정한 취향보다 우선 적용됩니다.</Text></View>
+      </View>
       <LoadState loading={loading} error={error} empty={!tags.length} retry={load} />
       {message ? <Text style={ui.success}>{message}</Text> : null}
       {action.error ? <Text style={ui.error}>{action.error}</Text> : null}
       {groups.map(([group, groupTags]) => (
-        <View key={group} style={ui.card}>
+        <View key={group} style={[ui.card, styles.groupCard]}>
           <Text style={styles.group}>{group}</Text>
           <View style={styles.tags}>
             {groupTags.map((tag) => {
@@ -115,13 +120,7 @@ export default function PreferencesScreen() {
       ))}
       <View style={ui.card}>
         <Text style={styles.group}>검색 기반 자동 선호</Text>
-        {preferences
-          .filter((item) => item.source !== "direct")
-          .map((item) => (
-            <Text key={item.id} style={ui.muted}>
-              • {item.label || item.key}
-            </Text>
-          ))}
+        <View style={styles.autoTags}>{preferences.filter((item) => item.source !== "direct").map((item) => <Text key={item.id} style={styles.autoTag}>{item.label || item.key}</Text>)}</View>
       </View>
       <Pressable
         accessibilityRole="button"
@@ -145,6 +144,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "900",
   },
+  intro: { padding: 16, flexDirection: "row", alignItems: "center", gap: 12, borderRadius: Radius.large, backgroundColor: Palette.ink },
+  introMark: { width: 38, color: "#70D4C9", fontSize: 26, fontWeight: "900" },
+  introTitle: { color: "#FFFFFF", fontSize: 14, fontWeight: "900" },
+  introCopy: { marginTop: 5, color: "#BDC8C3", fontSize: 10, lineHeight: 16 },
+  groupCard: { gap: 2 },
   tags: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   tag: {
     paddingHorizontal: 12,
@@ -156,5 +160,7 @@ const styles = StyleSheet.create({
   tagActive: { borderColor: "#0F766E", backgroundColor: "#E6F4F1" },
   tagText: { color: "#686159", fontSize: 11, fontWeight: "800" },
   tagTextActive: { color: "#0F766E" },
+  autoTags: { flexDirection: "row", flexWrap: "wrap", gap: 7 },
+  autoTag: { paddingHorizontal: 10, paddingVertical: 7, overflow: "hidden", borderRadius: Radius.pill, backgroundColor: Palette.surfaceMuted, color: Palette.muted, fontSize: 10, fontWeight: "700" },
   disabled: { opacity: 0.55 },
 });

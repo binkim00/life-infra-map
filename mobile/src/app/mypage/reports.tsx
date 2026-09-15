@@ -7,6 +7,7 @@ import { LoadState } from "@/components/load-state";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { recommendationApi } from "@/api/recommendations";
 import { Screen, ui } from "@/components/screen";
+import { Palette, Radius } from "@/constants/theme";
 import {
   placeReportStatusLabel,
   placeReportTypeLabel,
@@ -67,16 +68,24 @@ export default function MyReportsScreen() {
       />
       <View style={styles.list}>
         {reports.map((report) => (
-          <View key={report.id} style={ui.card}>
+          <Pressable
+            key={report.id}
+            accessibilityRole="button"
+            accessibilityLabel={`${report.place_name || `제보 ${report.id}`} 상세 보기`}
+            onPress={() => router.push({ pathname: "/mypage/report-detail" as never, params: { id: String(report.id) } })}
+            style={({ pressed }) => [ui.card, styles.report, pressed && styles.pressed]}
+          >
             <View style={ui.row}>
-              <Text style={styles.name}>
-                {report.place_name || `제보 #${report.id}`}
-              </Text>
-              <Text style={[styles.status, report.status === "rejected" && styles.statusRejected]}>
+              <View style={styles.reportIcon}><Text style={styles.reportIconText}>⌖</Text></View>
+              <View style={ui.grow}>
+                <Text style={styles.receipt}>제보 #{report.id}</Text>
+                <Text style={styles.name}>{report.place_name || "장소 이름 확인 중"}</Text>
+              </View>
+              <Text style={[styles.status, report.status === "approved" && styles.statusApproved, report.status === "rejected" && styles.statusRejected]}>
                 {placeReportStatusLabel(report.status)}
               </Text>
             </View>
-            <Text style={ui.muted}>
+            <Text style={styles.meta}>
               {placeReportTypeLabel(report.report_type)} ·{" "}
               {report.created_at
                 ? new Date(report.created_at).toLocaleDateString()
@@ -85,21 +94,11 @@ export default function MyReportsScreen() {
             {report.description ? (
               <Text style={styles.content}>{report.description}</Text>
             ) : null}
-            <Pressable
-              onPress={() =>
-                router.push({
-                  pathname: "/mypage/report-detail" as never,
-                  params: { id: String(report.id) },
-                })
-              }
-              style={ui.buttonSecondary}
-            >
-              <Text style={ui.buttonSecondaryText}>제보 상세 보기</Text>
-            </Pressable>
             {report.admin_note ? (
-              <Text style={ui.success}>관리자 답변: {report.admin_note}</Text>
+              <View style={styles.adminNote}><Text style={styles.adminNoteLabel}>검토 메모</Text><Text style={styles.adminNoteText}>{report.admin_note}</Text></View>
             ) : null}
-          </View>
+            <Text style={styles.more}>접수 내용과 처리 과정 보기  ›</Text>
+          </Pressable>
         ))}
       </View>
       <Pagination
@@ -113,13 +112,24 @@ export default function MyReportsScreen() {
 }
 const styles = StyleSheet.create({
   list: { gap: 8 },
+  report: { gap: 10 },
+  pressed: { opacity: 0.7, transform: [{ scale: 0.99 }] },
   filters: { flexDirection: "row", gap: 7 },
   filter: { minHeight: 38, flex: 1, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "#DFE7E3", borderRadius: 999, backgroundColor: "#FFFFFF" },
   filterActive: { borderColor: "#0F857A", backgroundColor: "#0F857A" },
   filterText: { color: "#5F6B66", fontSize: 11, fontWeight: "800" },
   filterTextActive: { color: "#FFFFFF" },
-  name: { flex: 1, color: "#222222", fontSize: 14, fontWeight: "900" },
-  status: { color: "#0F766E", fontSize: 11, fontWeight: "800" },
-  statusRejected: { color: "#D94B4B" },
+  reportIcon: { width: 42, height: 42, alignItems: "center", justifyContent: "center", borderRadius: 14, backgroundColor: Palette.accentSoft },
+  reportIconText: { color: Palette.accent, fontSize: 21, fontWeight: "900" },
+  receipt: { marginBottom: 2, color: Palette.muted, fontSize: 10, fontWeight: "700" },
+  name: { color: Palette.ink, fontSize: 15, fontWeight: "900" },
+  status: { paddingHorizontal: 9, paddingVertical: 6, borderRadius: Radius.pill, overflow: "hidden", backgroundColor: Palette.amberSoft, color: Palette.amber, fontSize: 10, fontWeight: "900" },
+  statusApproved: { backgroundColor: Palette.successSoft, color: Palette.success },
+  statusRejected: { backgroundColor: Palette.dangerSoft, color: Palette.danger },
+  meta: { color: Palette.muted, fontSize: 11 },
   content: { marginTop: 10, color: "#38403C", fontSize: 12, lineHeight: 19 },
+  adminNote: { padding: 12, borderRadius: Radius.small, backgroundColor: Palette.surfaceMuted },
+  adminNoteLabel: { marginBottom: 4, color: Palette.ink, fontSize: 10, fontWeight: "900" },
+  adminNoteText: { color: Palette.muted, fontSize: 11, lineHeight: 17 },
+  more: { color: Palette.accent, fontSize: 11, fontWeight: "900" },
 });

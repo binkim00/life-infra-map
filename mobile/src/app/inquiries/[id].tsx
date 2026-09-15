@@ -5,6 +5,7 @@ import { boardsApi } from "@/api/boards";
 import { LoadState } from "@/components/load-state";
 import { Screen, ui } from "@/components/screen";
 import { useResource } from "@/hooks/use-resource";
+import { Palette, Radius } from "@/constants/theme";
 
 type Inquiry = {
   id: number;
@@ -40,6 +41,7 @@ export default function InquiryDetailScreen() {
           </View>
           <Text style={ui.sectionTitle}>관리자 답변</Text>
           <View style={[ui.card, data.admin_reply ? styles.answered : styles.waiting]}>
+            <View style={styles.replyHeader}><View style={[styles.timelineDot, data.admin_reply && styles.timelineDone]}><Text style={styles.timelineText}>{data.admin_reply ? "✓" : "…"}</Text></View><Text style={styles.replyTitle}>{data.admin_reply ? "답변이 등록되었습니다" : "담당자가 확인하고 있습니다"}</Text></View>
             <Text style={data.admin_reply ? styles.reply : ui.muted}>
               {data.admin_reply || "아직 답변을 준비하고 있습니다."}
             </Text>
@@ -58,4 +60,9 @@ const styles = StyleSheet.create({
   answered: { borderColor: "#B9DED5", backgroundColor: "#EFF8F5" },
   waiting: { borderColor: "#E0E6E3", backgroundColor: "#F7F9F8" },
   reply: { color: "#23443C", fontSize: 13, lineHeight: 21 },
+  replyHeader: { marginBottom: 12, flexDirection: "row", alignItems: "center", gap: 9 },
+  timelineDot: { width: 30, height: 30, alignItems: "center", justifyContent: "center", borderRadius: Radius.pill, backgroundColor: Palette.surfaceMuted },
+  timelineDone: { backgroundColor: Palette.accent },
+  timelineText: { color: "#FFFFFF", fontSize: 12, fontWeight: "900" },
+  replyTitle: { color: Palette.ink, fontSize: 12, fontWeight: "900" },
 });

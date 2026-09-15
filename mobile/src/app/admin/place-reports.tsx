@@ -6,6 +6,7 @@ import { LoadState } from "@/components/load-state";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { recommendationApi } from "@/api/recommendations";
 import { Screen, ui } from "@/components/screen";
+import { Palette, Radius } from "@/constants/theme";
 import {
   placeReportStatusLabel,
   placeReportTypeLabel,
@@ -51,6 +52,7 @@ export default function AdminPlaceReportsScreen() {
           </Pressable>
         ))}
       </View>
+      {!loading && !error ? <View style={styles.summary}><Text style={styles.summaryNumber}>{items.length}</Text><View><Text style={styles.summaryTitle}>현재 페이지 제보</Text><Text style={styles.summaryCopy}>카드를 눌러 위치·사진·카테고리를 함께 확인하세요.</Text></View></View> : null}
       <LoadState
         loading={loading}
         error={error}
@@ -59,12 +61,13 @@ export default function AdminPlaceReportsScreen() {
       />
       <View style={styles.list}>
         {items.map((item) => (
-          <View key={item.id} style={ui.card}>
+          <Pressable key={item.id} onPress={() => router.push({ pathname: "/admin/place-report-detail" as never, params: { id: String(item.id) } })} style={({ pressed }) => [ui.card, styles.card, pressed && styles.pressed]}>
             <View style={ui.row}>
+              <View style={styles.icon}><Text style={styles.iconText}>⌖</Text></View>
               <Text style={styles.title}>
                 {item.suggested_name || item.place_name || `제보 #${item.id}`}
               </Text>
-              <Text style={styles.status}>
+              <Text style={[styles.status, item.status === "approved" && styles.statusApproved, item.status === "rejected" && styles.statusRejected]}>
                 {placeReportStatusLabel(item.status, item.status_label)}
               </Text>
             </View>
@@ -78,28 +81,8 @@ export default function AdminPlaceReportsScreen() {
             {item.suggested_tags?.length ? (
               <Text style={ui.muted}>{item.suggested_tags.join(" · ")}</Text>
             ) : null}
-            <Pressable
-              onPress={() =>
-                router.push({
-                  pathname: "/admin/place-report-detail" as never,
-                  params: { id: String(item.id) },
-                })
-              }
-              style={item.status === "pending" ? ui.button : ui.buttonSecondary}
-            >
-              <Text
-                style={
-                  item.status === "pending"
-                    ? ui.buttonText
-                    : ui.buttonSecondaryText
-                }
-              >
-                {item.status === "pending"
-                  ? "상세 확인 후 승인·반려"
-                  : "검토 결과 보기"}
-              </Text>
-            </Pressable>
-          </View>
+            <Text style={styles.more}>{item.status === "pending" ? "상세 확인 후 승인·반려" : "검토 결과 보기"}  ›</Text>
+          </Pressable>
         ))}
       </View>
       <Pagination
@@ -113,6 +96,14 @@ export default function AdminPlaceReportsScreen() {
 }
 const styles = StyleSheet.create({
   list: { gap: 8 },
+  card: { gap: 4 },
+  pressed: { opacity: 0.7 },
+  summary: { padding: 16, flexDirection: "row", alignItems: "center", gap: 14, borderRadius: Radius.large, backgroundColor: Palette.ink },
+  summaryNumber: { minWidth: 46, color: "#70D4C9", fontSize: 28, fontWeight: "900" },
+  summaryTitle: { color: "#FFFFFF", fontSize: 13, fontWeight: "900" },
+  summaryCopy: { marginTop: 3, color: "#BDC8C3", fontSize: 9 },
+  icon: { width: 36, height: 36, alignItems: "center", justifyContent: "center", borderRadius: 12, backgroundColor: Palette.accentSoft },
+  iconText: { color: Palette.accent, fontSize: 18, fontWeight: "900" },
   filters: { flexDirection: "row", gap: 7 },
   filter: { minHeight: 38, flex: 1, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "#DFE7E3", borderRadius: 999, backgroundColor: "#FFFFFF" },
   filterActive: { borderColor: "#0F857A", backgroundColor: "#0F857A" },
@@ -120,7 +111,9 @@ const styles = StyleSheet.create({
   filterTextActive: { color: "#FFFFFF" },
   categoryWarning: { marginTop: 8, padding: 9, borderRadius: 10, backgroundColor: "#FFF7E6", color: "#B7791F", fontSize: 11, fontWeight: "800" },
   title: { flex: 1, color: "#222222", fontSize: 14, fontWeight: "900" },
-  status: { color: "#0F766E", fontSize: 10, fontWeight: "800" },
+  status: { paddingHorizontal: 8, paddingVertical: 5, overflow: "hidden", borderRadius: Radius.pill, backgroundColor: Palette.amberSoft, color: Palette.amber, fontSize: 10, fontWeight: "900" },
+  statusApproved: { backgroundColor: Palette.successSoft, color: Palette.success },
+  statusRejected: { backgroundColor: Palette.dangerSoft, color: Palette.danger },
   description: {
     marginVertical: 10,
     color: "#38403C",
@@ -128,4 +121,5 @@ const styles = StyleSheet.create({
     lineHeight: 19,
   },
   reject: { color: "#B42318", fontSize: 12, fontWeight: "900" },
+  more: { marginTop: 6, color: Palette.accent, fontSize: 11, fontWeight: "900" },
 });

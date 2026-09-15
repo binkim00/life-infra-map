@@ -7,6 +7,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { boardsApi } from "@/api/boards";
 import { useAuth } from "@/auth/auth-context";
 import { Screen, ui } from "@/components/screen";
+import { Palette, Radius } from "@/constants/theme";
 type Notification = {
   id: number;
   title?: string;
@@ -60,15 +61,11 @@ export default function NotificationsScreen() {
             key={item.id}
             disabled={action.busy}
             onPress={() => action.run(() => open(item))}
-            style={[ui.card, !item.is_read && styles.unread]}
+            style={[styles.notification, !item.is_read && styles.unread]}
           >
-            <Text style={styles.title}>{item.title || "알림"}</Text>
-            <Text style={styles.content}>{item.message || item.content}</Text>
-            <Text style={ui.muted}>
-              {item.created_at
-                ? new Date(item.created_at).toLocaleString()
-                : ""}
-            </Text>
+            <View style={styles.notificationIcon}><Text style={styles.notificationIconText}>{(item.title || "").includes("댓글") ? "▢" : (item.title || "").includes("좋아요") ? "♥" : "●"}</Text></View>
+            <View style={ui.grow}><View style={styles.titleRow}><Text style={styles.title}>{item.title || "알림"}</Text>{!item.is_read ? <View style={styles.unreadDot} /> : null}</View><Text style={styles.content}>{item.message || item.content}</Text><Text style={ui.muted}>{item.created_at ? new Date(item.created_at).toLocaleString() : ""}</Text></View>
+            <Text style={styles.chevron}>›</Text>
           </Pressable>
         ))}
       </View>
@@ -77,7 +74,7 @@ export default function NotificationsScreen() {
 }
 const styles = StyleSheet.create({
   list: { gap: 8 },
-  unread: { borderColor: "#0F766E", backgroundColor: "#F3FAF8" },
-  title: { marginBottom: 7, color: "#222222", fontSize: 13, fontWeight: "900" },
-  content: { marginBottom: 8, color: "#38403C", fontSize: 12, lineHeight: 18 },
+  notification: { minHeight: 88, padding: 14, flexDirection: "row", alignItems: "center", gap: 11, borderWidth: 1, borderColor: Palette.border, borderRadius: Radius.medium, backgroundColor: Palette.surface },
+  unread: { borderColor: "#ABD6CD", backgroundColor: "#F3FAF8" }, notificationIcon: { width: 40, height: 40, alignItems: "center", justifyContent: "center", borderRadius: 14, backgroundColor: Palette.accentSoft }, notificationIconText: { color: Palette.accent, fontSize: 17, fontWeight: "900" }, titleRow: { flexDirection: "row", alignItems: "center", gap: 7 }, unreadDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: Palette.coral },
+  title: { marginBottom: 5, color: Palette.ink, fontSize: 13, fontWeight: "900" }, content: { marginBottom: 6, color: "#38403C", fontSize: 11.5, lineHeight: 17 }, chevron: { color: "#8A9691", fontSize: 23 },
 });

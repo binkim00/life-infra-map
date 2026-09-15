@@ -6,6 +6,7 @@ import { useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { boardsApi } from "@/api/boards";
 import { INPUT_PLACEHOLDER_COLOR, Screen, ui } from "@/components/screen";
+import { Palette, Radius } from "@/constants/theme";
 type User = {
   id: number;
   username?: string;
@@ -49,9 +50,10 @@ export default function AdminUsersScreen() {
           <Pressable
             key={user.id}
             onPress={() => router.push(`/admin/users/${user.id}` as never)}
-            style={ui.card}
+            style={({ pressed }) => [ui.card, styles.card, pressed && styles.pressed]}
           >
             <View style={ui.row}>
+              <View style={styles.avatar}><Text style={styles.avatarText}>{(user.nickname || user.username || "?").slice(0, 1).toUpperCase()}</Text></View>
               <View style={ui.grow}>
                 <Text style={styles.name}>
                   {user.nickname || user.username}
@@ -60,9 +62,10 @@ export default function AdminUsersScreen() {
                   {user.username} · {user.email || "이메일 없음"}
                 </Text>
               </View>
-              <Text style={styles.role}>
+              <Text style={[styles.role, user.role === "ADMIN" && styles.roleAdmin]}>
                 {user.role || user.tier || "USER"}
               </Text>
+              <Text style={styles.chevron}>›</Text>
             </View>
           </Pressable>
         ))}
@@ -72,6 +75,12 @@ export default function AdminUsersScreen() {
 }
 const styles = StyleSheet.create({
   list: { gap: 8 },
+  card: { paddingVertical: 13 },
+  pressed: { opacity: 0.7 },
+  avatar: { width: 42, height: 42, alignItems: "center", justifyContent: "center", borderRadius: 15, backgroundColor: Palette.accentSoft },
+  avatarText: { color: Palette.accent, fontSize: 15, fontWeight: "900" },
   name: { marginBottom: 5, color: "#222222", fontSize: 14, fontWeight: "900" },
-  role: { color: "#0F766E", fontSize: 10, fontWeight: "900" },
+  role: { paddingHorizontal: 8, paddingVertical: 5, overflow: "hidden", borderRadius: Radius.pill, backgroundColor: Palette.surfaceMuted, color: Palette.muted, fontSize: 9, fontWeight: "900" },
+  roleAdmin: { backgroundColor: Palette.coralSoft, color: Palette.coral },
+  chevron: { color: Palette.accent, fontSize: 21, fontWeight: "800" },
 });
