@@ -16,6 +16,7 @@ import { useAuth } from "@/auth/auth-context";
 import { BottomNav } from "@/components/bottom-nav";
 import { INPUT_PLACEHOLDER_COLOR, Screen, ui } from "@/components/screen";
 import { Palette, Radius } from "@/constants/theme";
+import { PlacePhoto } from "@/components/place-photo";
 
 type Post = {
   id: number;
@@ -64,11 +65,6 @@ export default function BoardListScreen() {
           </Pressable>
         }
       >
-        <View style={styles.communityHero}>
-          <Text style={styles.heroEyebrow}>LIFEMAP COMMUNITY</Text>
-          <Text style={styles.heroTitle}>동네의 진짜 정보를{`\n`}함께 나눠요</Text>
-          <Text style={styles.heroCopy}>장소 팁부터 새로운 소식까지, 필요한 이야기를 빠르게 찾아보세요.</Text>
-        </View>
         <View style={styles.tabs}>
           {Object.entries(LABELS).map(([value, label]) => (
             <Pressable
@@ -107,6 +103,7 @@ export default function BoardListScreen() {
                 }
                 style={styles.post}
               >
+                <PlacePhoto fallback={post.id} width={66} height={66} style={styles.postPhoto} />
                 <View style={ui.grow}>
                   {post.is_pinned ? <Text style={styles.pinned}>공지사항</Text> : null}
                   <Text numberOfLines={1} style={styles.title}>
@@ -131,10 +128,6 @@ export default function BoardListScreen() {
 }
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  communityHero: { padding: 20, borderRadius: Radius.large, backgroundColor: Palette.ink },
-  heroEyebrow: { color: "#70D4C9", fontSize: 9, fontWeight: "900", letterSpacing: 1.4 },
-  heroTitle: { marginTop: 8, color: "#FFFFFF", fontSize: 22, lineHeight: 29, fontWeight: "900", letterSpacing: -0.5 },
-  heroCopy: { marginTop: 10, maxWidth: 290, color: "#BDC8C3", fontSize: 11, lineHeight: 18 },
   tabs: { padding: 4, flexDirection: "row", gap: 4, borderRadius: Radius.medium, backgroundColor: Palette.surfaceMuted },
   tab: {
     flex: 1,
@@ -152,7 +145,7 @@ const styles = StyleSheet.create({
   clear: { color: Palette.muted, fontSize: 22 },
   list: { gap: 8 },
   post: {
-    padding: 16,
+    padding: 12,
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
@@ -161,6 +154,7 @@ const styles = StyleSheet.create({
     borderRadius: Radius.medium,
     backgroundColor: "#FFFFFF",
   },
+  postPhoto: { borderRadius: 12 },
   title: { color: "#222222", fontSize: 14, fontWeight: "900" },
   pinned: { marginBottom: 5, color: Palette.coral, fontSize: 9, fontWeight: "900" },
   meta: { marginTop: 6, color: "#777F7B", fontSize: 10 },

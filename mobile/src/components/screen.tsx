@@ -12,6 +12,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { Palette, Radius, Shadow } from "@/constants/theme";
+import { AppIcon } from "@/components/app-icon";
 
 export const INPUT_PLACEHOLDER_COLOR = "#7A8580";
 
@@ -40,7 +41,7 @@ export function Screen({
           keyboardShouldPersistTaps="handled"
         >
           <View style={styles.header}>
-            <View style={styles.headingRow}>
+            <View style={styles.appBar}>
               {back ? (
                 <Pressable
                   accessibilityLabel="뒤로 가기"
@@ -49,17 +50,21 @@ export function Screen({
                   onPress={() => router.back()}
                   style={({ pressed }) => [styles.back, pressed && styles.pressed]}
                 >
-                  <Text style={styles.backText}>←</Text>
+                  <AppIcon ios="chevron.left" android="arrow_back" size={22} color={Palette.ink} />
                 </Pressable>
-              ) : null}
-              <View style={styles.headingCopy}>
-                <Text style={styles.title}>{title}</Text>
-                {subtitle ? (
-                  <Text style={styles.subtitle}>{subtitle}</Text>
-                ) : null}
+              ) : (
+                <View style={styles.miniPin}><View style={styles.miniPinDot} /></View>
+              )}
+              <View style={styles.brandCopy}>
+                <Text style={styles.brand}>여기일지도</Text>
+                <Text style={styles.brandCaption}>LIFE MAP</Text>
               </View>
+              <View style={styles.appBarAction}>{action}</View>
             </View>
-            {action}
+            <View style={styles.headingCopy}>
+              <Text style={styles.title}>{title}</Text>
+              {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
+            </View>
           </View>
           {children}
         </ScrollView>
@@ -177,20 +182,21 @@ const styles = StyleSheet.create({
     gap: 14,
   },
   header: {
-    minHeight: 52,
-    marginBottom: 4,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 12,
+    marginBottom: 7,
+    gap: 20,
   },
-  headingRow: {
-    minWidth: 0,
-    flex: 1,
+  appBar: {
+    minHeight: 48,
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
   },
+  appBarAction: { marginLeft: "auto" },
+  miniPin: { width: 29, height: 33, alignItems: "center", paddingTop: 7, borderTopLeftRadius: 15, borderTopRightRadius: 15, borderBottomLeftRadius: 15, backgroundColor: Palette.accent, transform: [{ rotate: "45deg" }] },
+  miniPinDot: { width: 9, height: 9, borderRadius: 5, backgroundColor: "#FFFFFF" },
+  brandCopy: { justifyContent: "center" },
+  brand: { color: Palette.ink, fontSize: 15, fontWeight: "900", letterSpacing: -0.4 },
+  brandCaption: { marginTop: 1, color: Palette.muted, fontSize: 6, fontWeight: "800", letterSpacing: 1.4 },
   headingCopy: { minWidth: 0, flex: 1 },
   back: {
     width: 38,
@@ -200,7 +206,6 @@ const styles = StyleSheet.create({
     borderRadius: 19,
     backgroundColor: "transparent",
   },
-  backText: { color: Palette.ink, fontSize: 23, fontWeight: "700" },
   pressed: { opacity: 0.62, transform: [{ scale: 0.97 }] },
   title: {
     color: Palette.ink,

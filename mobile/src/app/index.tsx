@@ -6,15 +6,17 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { searchMapPlaces } from "@/api/recommendations";
 import { BottomNav } from "@/components/bottom-nav";
+import { AppIcon } from "@/components/app-icon";
+import { PlacePhoto } from "@/components/place-photo";
 import { BottomTabInset, Palette, Radius, Shadow } from "@/constants/theme";
 import type { Place } from "@/types/place";
 
 const CATEGORIES = [
-  { label: "카페", query: "카페", symbol: "▰" },
-  { label: "식당", query: "식당", symbol: "♜" },
-  { label: "주차", query: "무료 주차장", symbol: "P" },
-  { label: "화장실", query: "공중화장실", symbol: "●●" },
-  { label: "공원", query: "공원", symbol: "♣" },
+  { label: "카페", query: "카페", ios: "cup.and.saucer.fill", android: "local_cafe" },
+  { label: "식당", query: "식당", ios: "fork.knife", android: "restaurant" },
+  { label: "주차", query: "무료 주차장", ios: "parkingsign.circle.fill", android: "local_parking" },
+  { label: "화장실", query: "공중화장실", ios: "figure.dress.line.vertical.figure", android: "wc" },
+  { label: "공원", query: "공원", ios: "tree.fill", android: "park" },
 ] as const;
 
 const formatDistance = (distance?: number) => {
@@ -87,7 +89,7 @@ export default function HomeScreen() {
               <View><Text style={styles.brand}>여기일지도</Text><Text style={styles.brandCaption}>LIFE MAP</Text></View>
             </View>
             <Pressable accessibilityLabel="알림 보기" onPress={() => router.push("/notifications")} style={styles.iconButton}>
-              <Text style={styles.bell}>♧</Text><View style={styles.alertDot} />
+              <AppIcon ios="bell.fill" android="notifications" size={25} color={Palette.ink} /><View style={styles.alertDot} />
             </Pressable>
           </View>
 
@@ -98,13 +100,13 @@ export default function HomeScreen() {
 
           <View style={styles.modeStack}>
             <Pressable onPress={() => router.push("/recommend")} style={({ pressed }) => [styles.modeCard, pressed && styles.pressed]}>
-              <View style={[styles.modeIcon, styles.modeIconCoral]}><Text style={styles.modeIconCoralText}>⌖</Text></View>
+              <View style={[styles.modeIcon, styles.modeIconCoral]}><AppIcon ios="sparkles" android="auto_awesome" size={26} color={Palette.coral} /></View>
               <View style={styles.modeCopy}><Text style={styles.modeTitle}>상황으로 찾기</Text><Text style={styles.modeDescription}>지금 상황에 맞는 장소를 추천해요</Text></View>
               <Text style={styles.chevron}>›</Text>
             </Pressable>
             <View style={styles.searchCard}>
               <View style={styles.searchTop}>
-                <View style={[styles.modeIcon, styles.modeIconMint]}><Text style={styles.modeIconMintText}>⌕</Text></View>
+                <View style={[styles.modeIcon, styles.modeIconMint]}><AppIcon ios="magnifyingglass" android="search" size={26} color={Palette.accent} /></View>
                 <View style={styles.modeCopy}><Text style={styles.modeTitle}>일반 장소 검색</Text><Text style={styles.modeDescription}>장소명이나 지역·업종을 빠르게 찾아요</Text></View>
               </View>
               <View style={styles.searchRow}>
@@ -117,7 +119,7 @@ export default function HomeScreen() {
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryRow}>
             {CATEGORIES.map((item) => (
               <Pressable key={item.label} onPress={() => openPlaceSearch(item.query)} style={({ pressed }) => [styles.category, pressed && styles.pressed]}>
-                <View style={styles.categoryIcon}><Text style={styles.categorySymbol}>{item.symbol}</Text></View><Text style={styles.categoryLabel}>{item.label}</Text>
+                <View style={styles.categoryIcon}><AppIcon ios={item.ios} android={item.android} size={20} color={Palette.accent} /></View><Text style={styles.categoryLabel}>{item.label}</Text>
               </Pressable>
             ))}
           </ScrollView>
@@ -133,10 +135,9 @@ export default function HomeScreen() {
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.placesRow}>
               {nearbyPlaces.slice(0, 5).map((place, index) => (
                 <Pressable key={place.id} onPress={() => openNearby(place)} style={({ pressed }) => [styles.placeCard, pressed && styles.pressed]}>
-                  <View style={[styles.placeVisual, index % 3 === 1 && styles.placeVisualWarm, index % 3 === 2 && styles.placeVisualGreen]}>
-                    <View style={styles.visualSun} /><View style={styles.visualBuilding} />
+                  <PlacePhoto category={index % 2 ? "walk" : place.category || "park"} fallback={index} width={164} height={106} style={styles.placeVisual}>
                     <View style={styles.distanceBadge}><Text style={styles.distanceBadgeText}>⌖ {formatDistance(place.distance)}</Text></View>
-                  </View>
+                  </PlacePhoto>
                   <Text numberOfLines={1} style={styles.placeName}>{place.name}</Text>
                   <Text numberOfLines={1} style={styles.placeMeta}>{place.category_label || "공원 · 산책하기 좋아요"}</Text>
                   <View style={styles.placeFoot}><Text style={styles.star}>★</Text><Text style={styles.placeSource}>{place.source_label || "여기일지도"}</Text></View>
@@ -156,8 +157,8 @@ export default function HomeScreen() {
           </Pressable>
 
           <View style={styles.communityRow}>
-            <Pressable onPress={() => router.push("/boards/free")} style={styles.communityButton}><Text style={styles.communityIcon}>☵</Text><Text style={styles.communityText}>커뮤니티</Text><Text style={styles.communityArrow}>›</Text></Pressable>
-            <Pressable onPress={() => router.push("/place-report")} style={styles.communityButton}><Text style={styles.communityIcon}>⌖</Text><Text style={styles.communityText}>장소 제보</Text><Text style={styles.communityArrow}>›</Text></Pressable>
+            <Pressable onPress={() => router.push("/boards/free")} style={styles.communityButton}><AppIcon ios="bubble.left.and.bubble.right.fill" android="forum" size={19} color={Palette.accent} /><Text style={styles.communityText}>커뮤니티</Text><Text style={styles.communityArrow}>›</Text></Pressable>
+            <Pressable onPress={() => router.push("/place-report")} style={styles.communityButton}><AppIcon ios="mappin.and.ellipse" android="add_location_alt" size={20} color={Palette.accent} /><Text style={styles.communityText}>장소 제보</Text><Text style={styles.communityArrow}>›</Text></Pressable>
           </View>
         </ScrollView>
       </SafeAreaView>
@@ -172,20 +173,19 @@ const styles = StyleSheet.create({
   header: { height: 54, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }, brandRow: { flexDirection: "row", alignItems: "center", gap: 10 },
   pinLogo: { width: 34, height: 39, alignItems: "center", paddingTop: 8, borderTopLeftRadius: 18, borderTopRightRadius: 18, borderBottomLeftRadius: 18, backgroundColor: Palette.accent, transform: [{ rotate: "45deg" }] }, pinDot: { width: 11, height: 11, borderRadius: 6, backgroundColor: "#FFFFFF" },
   brand: { color: Palette.ink, fontSize: 20, fontWeight: "900", letterSpacing: -0.7 }, brandCaption: { marginTop: 1, color: Palette.ink, fontSize: 8, fontWeight: "800", letterSpacing: 2.2 },
-  iconButton: { width: 42, height: 42, alignItems: "center", justifyContent: "center", position: "relative" }, bell: { color: Palette.ink, fontSize: 25 }, alertDot: { position: "absolute", right: 8, top: 7, width: 7, height: 7, borderRadius: 4, backgroundColor: Palette.coral },
+  iconButton: { width: 42, height: 42, alignItems: "center", justifyContent: "center", position: "relative" }, alertDot: { position: "absolute", right: 8, top: 7, width: 7, height: 7, borderRadius: 4, backgroundColor: Palette.coral },
   hero: { paddingTop: 11 }, title: { color: Palette.ink, fontSize: 31, lineHeight: 38, fontWeight: "900", letterSpacing: -1.2 }, description: { marginTop: 5, color: Palette.muted, fontSize: 14, lineHeight: 21 },
   modeStack: { gap: 10 }, modeCard: { minHeight: 82, padding: 15, flexDirection: "row", alignItems: "center", gap: 13, borderWidth: 1, borderColor: Palette.border, borderRadius: Radius.medium, backgroundColor: Palette.surface, boxShadow: Shadow.card },
-  modeIcon: { width: 48, height: 48, alignItems: "center", justifyContent: "center", borderRadius: 17 }, modeIconCoral: { backgroundColor: Palette.coralSoft }, modeIconMint: { backgroundColor: Palette.accentSoft }, modeIconCoralText: { color: Palette.coral, fontSize: 27, fontWeight: "900" }, modeIconMintText: { color: Palette.accent, fontSize: 27, fontWeight: "900" },
+  modeIcon: { width: 48, height: 48, alignItems: "center", justifyContent: "center", borderRadius: 17 }, modeIconCoral: { backgroundColor: Palette.coralSoft }, modeIconMint: { backgroundColor: Palette.accentSoft },
   modeCopy: { minWidth: 0, flex: 1 }, modeTitle: { color: Palette.ink, fontSize: 16, fontWeight: "900" }, modeDescription: { marginTop: 5, color: Palette.muted, fontSize: 11.5 }, chevron: { color: Palette.ink, fontSize: 27, fontWeight: "300" },
   searchCard: { padding: 15, gap: 13, borderWidth: 1, borderColor: Palette.border, borderRadius: Radius.medium, backgroundColor: Palette.surface, boxShadow: Shadow.card }, searchTop: { flexDirection: "row", alignItems: "center", gap: 13 }, searchRow: { flexDirection: "row", gap: 8 },
   searchInput: { minWidth: 0, height: 45, flex: 1, paddingHorizontal: 13, borderWidth: 1, borderColor: "#CFDAD5", borderRadius: 12, color: Palette.ink, fontSize: 12.5 }, searchButton: { width: 72, height: 45, alignItems: "center", justifyContent: "center", borderRadius: 12, backgroundColor: Palette.accent }, searchButtonText: { color: "#FFFFFF", fontSize: 13, fontWeight: "900" },
-  categoryRow: { gap: 8, paddingRight: 8 }, category: { width: 68, paddingVertical: 10, alignItems: "center", gap: 7, borderRadius: 15, backgroundColor: Palette.surfaceMuted }, categoryIcon: { height: 25, alignItems: "center", justifyContent: "center" }, categorySymbol: { color: Palette.accent, fontSize: 14, fontWeight: "900" }, categoryLabel: { color: Palette.ink, fontSize: 11, fontWeight: "800" },
+  categoryRow: { gap: 8, paddingRight: 8 }, category: { width: 68, paddingVertical: 10, alignItems: "center", gap: 7, borderRadius: 15, backgroundColor: Palette.surfaceMuted }, categoryIcon: { height: 25, alignItems: "center", justifyContent: "center" }, categoryLabel: { color: Palette.ink, fontSize: 11, fontWeight: "800" },
   sectionHeader: { flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between", gap: 8 }, sectionTitle: { color: Palette.ink, fontSize: 17, fontWeight: "900", letterSpacing: -0.4 }, sectionCaption: { marginTop: 4, color: Palette.muted, fontSize: 11 }, more: { color: Palette.ink, fontSize: 11, fontWeight: "800" },
-  placesRow: { gap: 10, paddingRight: 10 }, placeCard: { width: 164, paddingBottom: 11, overflow: "hidden", borderWidth: 1, borderColor: Palette.border, borderRadius: 15, backgroundColor: Palette.surface }, placeVisual: { height: 106, position: "relative", overflow: "hidden", backgroundColor: "#BDD9D3" }, placeVisualWarm: { backgroundColor: "#E8C6A5" }, placeVisualGreen: { backgroundColor: "#C8DDBE" },
-  visualSun: { position: "absolute", right: 18, top: 14, width: 32, height: 32, borderRadius: 16, backgroundColor: "rgba(255,255,255,0.62)" }, visualBuilding: { position: "absolute", left: 19, right: 19, bottom: 0, height: 62, borderTopLeftRadius: 9, borderTopRightRadius: 9, backgroundColor: "rgba(29,64,57,0.72)", borderWidth: 7, borderBottomWidth: 0, borderColor: "rgba(255,255,255,0.48)" },
+  placesRow: { gap: 10, paddingRight: 10 }, placeCard: { width: 164, paddingBottom: 11, overflow: "hidden", borderWidth: 1, borderColor: Palette.border, borderRadius: 15, backgroundColor: Palette.surface }, placeVisual: { position: "relative" },
   distanceBadge: { position: "absolute", left: 8, bottom: 7, paddingHorizontal: 7, paddingVertical: 4, borderRadius: 8, backgroundColor: "rgba(23,32,29,0.76)" }, distanceBadgeText: { color: "#FFFFFF", fontSize: 9, fontWeight: "800" }, placeName: { marginTop: 10, paddingHorizontal: 10, color: Palette.ink, fontSize: 13, fontWeight: "900" }, placeMeta: { marginTop: 4, paddingHorizontal: 10, color: Palette.muted, fontSize: 9.5 }, placeFoot: { marginTop: 7, paddingHorizontal: 10, flexDirection: "row", alignItems: "center", gap: 5 }, star: { color: "#FFAA2A", fontSize: 11 }, placeSource: { color: Palette.accent, fontSize: 9.5, fontWeight: "700" },
   stateCard: { minHeight: 112, padding: 18, alignItems: "center", justifyContent: "center", gap: 7, borderRadius: Radius.medium, backgroundColor: Palette.surfaceMuted }, stateTitle: { color: Palette.ink, fontSize: 13, fontWeight: "900", textAlign: "center" }, stateText: { color: Palette.muted, fontSize: 11, lineHeight: 17, textAlign: "center" }, retryButton: { marginTop: 4, paddingHorizontal: 13, paddingVertical: 8, borderRadius: 10, backgroundColor: Palette.accent }, retryText: { color: "#FFFFFF", fontSize: 11, fontWeight: "800" },
   discoveryBanner: { minHeight: 132, padding: 18, flexDirection: "row", alignItems: "center", overflow: "hidden", borderRadius: Radius.medium, backgroundColor: "#DDF3EE" }, bannerCopy: { zIndex: 2, flex: 1 }, bannerTitle: { color: "#164B45", fontSize: 17, lineHeight: 24, fontWeight: "900" }, bannerText: { marginTop: 6, color: "#4D716B", fontSize: 10.5 },
   miniMap: { width: 122, height: 92, position: "relative", overflow: "hidden", borderRadius: 15, backgroundColor: "rgba(255,255,255,0.74)", transform: [{ rotate: "-5deg" }] }, mapRoadA: { position: "absolute", left: -10, top: 37, width: 150, height: 13, backgroundColor: "#F4D9C7", transform: [{ rotate: "22deg" }] }, mapRoadB: { position: "absolute", left: 53, top: -10, width: 14, height: 120, backgroundColor: "#FFFFFF", transform: [{ rotate: "-18deg" }] }, mapPin: { position: "absolute", left: 50, top: 25, width: 29, height: 34, alignItems: "center", justifyContent: "center", borderTopLeftRadius: 15, borderTopRightRadius: 15, borderBottomLeftRadius: 15, backgroundColor: Palette.coral, transform: [{ rotate: "45deg" }] }, mapPinText: { color: "#FFFFFF", fontSize: 8 },
-  communityRow: { flexDirection: "row", gap: 10 }, communityButton: { minHeight: 58, paddingHorizontal: 13, flex: 1, flexDirection: "row", alignItems: "center", gap: 8, borderWidth: 1, borderColor: Palette.border, borderRadius: 15, backgroundColor: Palette.surface }, communityIcon: { color: Palette.accent, fontSize: 19, fontWeight: "900" }, communityText: { minWidth: 0, flex: 1, color: Palette.ink, fontSize: 12.5, fontWeight: "900" }, communityArrow: { color: Palette.muted, fontSize: 20 }, pressed: { opacity: 0.65, transform: [{ scale: 0.985 }] },
+  communityRow: { flexDirection: "row", gap: 10 }, communityButton: { minHeight: 58, paddingHorizontal: 13, flex: 1, flexDirection: "row", alignItems: "center", gap: 8, borderWidth: 1, borderColor: Palette.border, borderRadius: 15, backgroundColor: Palette.surface }, communityText: { minWidth: 0, flex: 1, color: Palette.ink, fontSize: 12.5, fontWeight: "900" }, communityArrow: { color: Palette.muted, fontSize: 20 }, pressed: { opacity: 0.65, transform: [{ scale: 0.985 }] },
 });

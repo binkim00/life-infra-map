@@ -7,6 +7,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { recommendationApi } from "@/api/recommendations";
 import { Screen, ui } from "@/components/screen";
 import { Palette, Radius } from "@/constants/theme";
+import { PlacePhoto } from "@/components/place-photo";
 import {
   placeReportStatusLabel,
   placeReportTypeLabel,
@@ -63,7 +64,7 @@ export default function AdminPlaceReportsScreen() {
         {items.map((item) => (
           <Pressable key={item.id} onPress={() => router.push({ pathname: "/admin/place-report-detail" as never, params: { id: String(item.id) } })} style={({ pressed }) => [ui.card, styles.card, pressed && styles.pressed]}>
             <View style={ui.row}>
-              <View style={styles.icon}><Text style={styles.iconText}>⌖</Text></View>
+              <PlacePhoto category={item.suggested_category} fallback={item.id} width={52} height={52} style={styles.photo} />
               <Text style={styles.title}>
                 {item.suggested_name || item.place_name || `제보 #${item.id}`}
               </Text>
@@ -102,8 +103,7 @@ const styles = StyleSheet.create({
   summaryNumber: { minWidth: 46, color: "#70D4C9", fontSize: 28, fontWeight: "900" },
   summaryTitle: { color: "#FFFFFF", fontSize: 13, fontWeight: "900" },
   summaryCopy: { marginTop: 3, color: "#BDC8C3", fontSize: 9 },
-  icon: { width: 36, height: 36, alignItems: "center", justifyContent: "center", borderRadius: 12, backgroundColor: Palette.accentSoft },
-  iconText: { color: Palette.accent, fontSize: 18, fontWeight: "900" },
+  photo: { borderRadius: 12 },
   filters: { flexDirection: "row", gap: 7 },
   filter: { minHeight: 38, flex: 1, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "#DFE7E3", borderRadius: 999, backgroundColor: "#FFFFFF" },
   filterActive: { borderColor: "#0F857A", backgroundColor: "#0F857A" },

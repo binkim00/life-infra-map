@@ -8,7 +8,10 @@ import { LoadState } from "@/components/load-state";
 import { INPUT_PLACEHOLDER_COLOR, Screen, ui } from "@/components/screen";
 import { useResource } from "@/hooks/use-resource";
 import { useMemo, useRef, useState } from "react";
-import { Alert, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { AppIcon } from "@/components/app-icon";
+import { PlacePhoto } from "@/components/place-photo";
+import { Palette, Radius } from "@/constants/theme";
 
 type SavedPlaceGroup = {
   id: number;
@@ -40,6 +43,9 @@ export default function SavedPlacesScreen() {
   const [groups, setGroups] = useState<SavedPlaceGroup[]>([]);
   const [places, setPlaces] = useState<SavedPlace[]>([]);
   const [newGroupName, setNewGroupName] = useState("");
+  const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null);
+  const [showGroupMaker, setShowGroupMaker] = useState(false);
+  const [showGroupSettings, setShowGroupSettings] = useState(false);
   const [groupNameDrafts, setGroupNameDrafts] = useState<Record<number, string>>({});
   const [groupMemoDrafts, setGroupMemoDrafts] = useState<Record<number, string>>({});
   const [placeMemoDrafts, setPlaceMemoDrafts] = useState<Record<number, string>>({});
@@ -169,51 +175,39 @@ export default function SavedPlacesScreen() {
   };
 
   const renderPlace = (place: SavedPlace) => (
-    <View key={place.id} style={ui.card}>
-      <View style={styles.actions}>
-        <Pressable accessibilityRole="button" onPress={() => openPlace(place)}>
-          <Text style={styles.placeName}>{place.place_name || place.name || "이름 없는 장소"} · 상세보기</Text>
-        </Pressable>
-        <Pressable onPress={() => deletePlace(place)}>
-          <Text style={styles.delete}>장소 삭제</Text>
-        </Pressable>
-      </View>
-      {place.address ? <Text style={ui.muted}>{place.address}</Text> : null}
-      <Text style={styles.smallLabel}>그룹 선택</Text>
-      <View style={styles.chips}>
-        <Pressable
-          onPress={() => movePlace(place, null)}
-          style={[styles.chip, !place.group_id && styles.chipActive]}
-        >
-          <Text style={[styles.chipText, !place.group_id && styles.chipTextActive]}>미분류</Text>
-        </Pressable>
-        {groups.map((group) => (
-          <Pressable
-            key={group.id}
-            onPress={() => movePlace(place, group.id)}
-            style={[styles.chip, place.group_id === group.id && styles.chipActive]}
-          >
-            <Text style={[styles.chipText, place.group_id === group.id && styles.chipTextActive]}>
-              {group.name}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
-      <View style={styles.row}>
+    <View key={place.id} style={[ui.card, styles.placeCard]}>
+      <Pressable accessibilityRole="button" onPress={() => openPlace(place)} style={styles.placeTop}>
+        <PlacePhoto category={place.category} fallback={place.id} width={82} height={82} style={styles.placePhoto} />
+        <View style={styles.placeCopy}>
+          <Text style={styles.placeName}>{place.place_name || place.name || "이름 없는 장소"}</Text>
+          {place.address ? <Text numberOfLines={2} style={ui.muted}>{place.address}</Text> : <Text style={ui.muted}>주소 정보 없음</Text>}
+          <Text style={styles.detailLink}>장소 상세 보기  ›</Text>
+        </View>
+      </Pressable>
+      <View style={styles.memoBox}>
+        <Text style={styles.memoLabel}>메모</Text>
         <TextInput
           value={placeMemoDrafts[place.id] ?? place.memo ?? ""}
           onChangeText={(value) => setPlaceMemoDrafts((current) => ({ ...current, [place.id]: value }))}
           placeholder="이 장소에 대한 메모"
           placeholderTextColor={INPUT_PLACEHOLDER_COLOR}
           multiline
-          style={[ui.input, styles.grow]}
+          style={styles.memoInput}
         />
-        <Pressable onPress={() => savePlaceMemo(place)} style={ui.buttonSecondary}>
-          <Text style={ui.buttonSecondaryText}>메모 저장</Text>
-        </Pressable>
+        <Pressable onPress={() => savePlaceMemo(place)} style={styles.memoSave}><Text style={styles.memoSaveText}>저장</Text></Pressable>
+      </View>
+      <View style={styles.placeFooter}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
+          <Pressable onPress={() => movePlace(place, null)} style={[styles.chip, !place.group_id && styles.chipActive]}><Text style={[styles.chipText, !place.group_id && styles.chipTextActive]}>미분류</Text></Pressable>
+          {groups.map((group) => <Pressable key={group.id} onPress={() => movePlace(place, group.id)} style={[styles.chip, place.group_id === group.id && styles.chipActive]}><Text style={[styles.chipText, place.group_id === group.id && styles.chipTextActive]}>{group.name}</Text></Pressable>)}
+        </ScrollView>
+        <Pressable onPress={() => deletePlace(place)}><Text style={styles.delete}>삭제</Text></Pressable>
       </View>
     </View>
   );
+
+  const selectedGroup = groups.find((group) => group.id === selectedGroupId);
+  const selectedPlaces = placesByGroup.get(selectedGroupId) || [];
 
   return (
     <View style={styles.root}>
@@ -221,8 +215,12 @@ export default function SavedPlacesScreen() {
         <LoadState loading={loading} error={error} retry={reload} />
         {!loading && !error ? (
           <>
-            <View style={ui.card}>
-              <Text style={ui.sectionTitle}>새 그룹</Text>
+            <View style={styles.headingRow}>
+              <View><Text style={ui.sectionTitle}>내 그룹</Text><Text style={ui.muted}>그룹을 눌러 저장한 장소를 모아보세요.</Text></View>
+              <Pressable onPress={() => setShowGroupMaker((value) => !value)} style={styles.addGroup}><AppIcon ios="plus" android="add" size={17} color={Palette.accent} /><Text style={styles.addGroupText}>그룹 만들기</Text></Pressable>
+            </View>
+            {showGroupMaker ? <View style={[ui.card, styles.groupMaker]}>
+              <Text style={ui.label}>새 그룹 이름</Text>
               <View style={styles.row}>
                 <TextInput
                   value={newGroupName}
@@ -236,51 +234,48 @@ export default function SavedPlacesScreen() {
                   <Text style={ui.buttonText}>만들기</Text>
                 </Pressable>
               </View>
-            </View>
+            </View> : null}
 
             {message ? <Text style={styles.message}>{message}</Text> : null}
 
-            <Text style={ui.sectionTitle}>내 그룹 {groups.length}</Text>
-            {groups.length ? groups.map((group) => (
-              <View key={group.id} style={ui.card}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.groupRow}>
+              <Pressable onPress={() => { setSelectedGroupId(null); setShowGroupSettings(false); }} style={[styles.groupTile, styles.groupTileMint, selectedGroupId === null && styles.groupTileSelected]}>
+                <AppIcon ios="tray.full.fill" android="inbox" size={22} color={Palette.accentDark} /><Text style={styles.groupTileName}>미분류</Text><Text style={styles.groupCount}>{(placesByGroup.get(null) || []).length}곳</Text>
+              </Pressable>
+              {groups.map((group, index) => <Pressable key={group.id} onPress={() => { setSelectedGroupId(group.id); setShowGroupSettings(false); }} style={[styles.groupTile, index % 3 === 0 ? styles.groupTileCoral : index % 3 === 1 ? styles.groupTileLavender : styles.groupTileAmber, selectedGroupId === group.id && styles.groupTileSelected]}>
+                <AppIcon ios={index % 2 ? "person.2.fill" : "heart.fill"} android={index % 2 ? "group" : "favorite"} size={22} color={Palette.ink} /><Text numberOfLines={1} style={styles.groupTileName}>{group.name}</Text><Text style={styles.groupCount}>{(placesByGroup.get(group.id) || []).length}곳</Text>
+              </Pressable>)}
+            </ScrollView>
+
+            {selectedGroup ? <View style={styles.selectedHeader}><View><Text style={ui.sectionTitle}>{selectedGroup.name}</Text>{selectedGroup.memo ? <Text style={ui.muted}>{selectedGroup.memo}</Text> : null}</View><Pressable onPress={() => setShowGroupSettings((value) => !value)} style={styles.settingsButton}><AppIcon ios="ellipsis" android="more_horiz" size={20} color={Palette.muted} /></Pressable></View> : <Text style={ui.sectionTitle}>미분류</Text>}
+            {selectedGroup && showGroupSettings ? <View style={[ui.card, styles.groupSettings]}>
+                <Text style={ui.label}>그룹 이름과 설명</Text>
                 <TextInput
-                  value={groupNameDrafts[group.id] ?? group.name}
-                  onChangeText={(value) => setGroupNameDrafts((current) => ({ ...current, [group.id]: value }))}
+                  value={groupNameDrafts[selectedGroup.id] ?? selectedGroup.name}
+                  onChangeText={(value) => setGroupNameDrafts((current) => ({ ...current, [selectedGroup.id]: value }))}
                   placeholder="그룹 이름"
                   placeholderTextColor={INPUT_PLACEHOLDER_COLOR}
                   maxLength={100}
                   style={ui.input}
                 />
                 <TextInput
-                  value={groupMemoDrafts[group.id] ?? group.memo ?? ""}
-                  onChangeText={(value) => setGroupMemoDrafts((current) => ({ ...current, [group.id]: value }))}
+                  value={groupMemoDrafts[selectedGroup.id] ?? selectedGroup.memo ?? ""}
+                  onChangeText={(value) => setGroupMemoDrafts((current) => ({ ...current, [selectedGroup.id]: value }))}
                   placeholder="이 그룹에 대한 메모"
                   placeholderTextColor={INPUT_PLACEHOLDER_COLOR}
                   multiline
                   style={[ui.input, styles.groupMemo]}
                 />
                 <View style={styles.actions}>
-                  <Pressable onPress={() => saveGroup(group)} style={ui.buttonSecondary}>
+                  <Pressable onPress={() => saveGroup(selectedGroup)} style={ui.buttonSecondary}>
                     <Text style={ui.buttonSecondaryText}>이름·메모 저장</Text>
                   </Pressable>
-                  <Pressable onPress={() => deleteGroup(group)}>
+                  <Pressable onPress={() => deleteGroup(selectedGroup)}>
                     <Text style={styles.delete}>그룹 삭제</Text>
                   </Pressable>
                 </View>
-              </View>
-            )) : <Text style={ui.muted}>아직 만든 그룹이 없습니다.</Text>}
-
-            {[{ id: null, name: "미분류" } as const, ...groups].map((group) => {
-              const groupedPlaces = placesByGroup.get(group.id) || [];
-              return (
-                <View key={group.id ?? "ungrouped"} style={styles.section}>
-                  <Text style={ui.sectionTitle}>{group.name} {groupedPlaces.length}</Text>
-                  {groupedPlaces.length
-                    ? groupedPlaces.map(renderPlace)
-                    : <Text style={ui.muted}>이 그룹에 저장된 장소가 없습니다.</Text>}
-                </View>
-              );
-            })}
+              </View> : null}
+            <View style={styles.section}>{selectedPlaces.length ? selectedPlaces.map(renderPlace) : <View style={styles.emptyGroup}><AppIcon ios="bookmark" android="bookmark" size={30} color="#9BA8A2" /><Text style={styles.emptyTitle}>이 그룹은 아직 비어 있어요</Text><Text style={ui.muted}>검색 결과에서 저장 버튼을 눌러 장소를 담아보세요.</Text></View>}</View>
           </>
         ) : null}
       </Screen>
@@ -303,10 +298,39 @@ const styles = StyleSheet.create({
   grow: { flex: 1 },
   groupMemo: { minHeight: 84, marginTop: 8, textAlignVertical: "top" },
   actions: { marginTop: 8, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  headingRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 },
+  addGroup: { minHeight: 40, paddingHorizontal: 12, flexDirection: "row", alignItems: "center", gap: 5, borderRadius: Radius.pill, backgroundColor: Palette.accentSoft },
+  addGroupText: { color: Palette.accent, fontSize: 11, fontWeight: "900" },
+  groupMaker: { gap: 7 },
+  groupRow: { gap: 9, paddingRight: 12 },
+  groupTile: { width: 112, height: 112, padding: 13, justifyContent: "space-between", borderWidth: 2, borderColor: "transparent", borderRadius: Radius.medium },
+  groupTileSelected: { borderColor: Palette.accent },
+  groupTileMint: { backgroundColor: "#DDF4EF" },
+  groupTileCoral: { backgroundColor: "#FFD9D3" },
+  groupTileLavender: { backgroundColor: "#E6DFFC" },
+  groupTileAmber: { backgroundColor: "#FFE5AB" },
+  groupTileName: { color: Palette.ink, fontSize: 13, fontWeight: "900" },
+  groupCount: { color: Palette.muted, fontSize: 11, fontWeight: "800" },
+  selectedHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  settingsButton: { width: 40, height: 40, alignItems: "center", justifyContent: "center", borderRadius: 20, backgroundColor: Palette.surfaceMuted },
+  groupSettings: { gap: 8 },
   message: { color: "#0F766E", fontSize: 12, fontWeight: "700" },
   delete: { color: "#B42318", fontSize: 12, fontWeight: "800" },
-  section: { gap: 8 },
+  section: { gap: 10 },
+  placeCard: { gap: 12 },
+  placeTop: { flexDirection: "row", alignItems: "center", gap: 12 },
+  placePhoto: { borderRadius: 13 },
+  placeCopy: { minWidth: 0, flex: 1, gap: 4 },
   placeName: { color: "#222222", fontSize: 15, fontWeight: "900" },
+  detailLink: { marginTop: 2, color: Palette.accent, fontSize: 10, fontWeight: "900" },
+  memoBox: { minHeight: 54, paddingHorizontal: 11, flexDirection: "row", alignItems: "center", gap: 8, borderRadius: Radius.small, backgroundColor: Palette.surfaceMuted },
+  memoLabel: { color: Palette.accent, fontSize: 10, fontWeight: "900" },
+  memoInput: { minWidth: 0, flex: 1, paddingVertical: 8, color: Palette.ink, fontSize: 11 },
+  memoSave: { paddingHorizontal: 9, paddingVertical: 7, borderRadius: 8, backgroundColor: Palette.surface },
+  memoSaveText: { color: Palette.accent, fontSize: 10, fontWeight: "900" },
+  placeFooter: { flexDirection: "row", alignItems: "center", gap: 10 },
+  emptyGroup: { minHeight: 150, alignItems: "center", justifyContent: "center", gap: 7, borderRadius: Radius.medium, backgroundColor: Palette.surfaceMuted },
+  emptyTitle: { color: Palette.ink, fontSize: 13, fontWeight: "900" },
   smallLabel: { marginTop: 12, marginBottom: 6, color: "#59635F", fontSize: 11, fontWeight: "800" },
   chips: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
   chip: { borderWidth: 1, borderColor: "#DCE4E0", borderRadius: 999, paddingHorizontal: 10, paddingVertical: 7 },

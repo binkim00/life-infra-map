@@ -6,14 +6,15 @@ import { recommendationApi } from "@/api/recommendations";
 import { LoadState } from "@/components/load-state";
 import { useResource } from "@/hooks/use-resource";
 import { Palette, Radius } from "@/constants/theme";
+import { AppIcon } from "@/components/app-icon";
 const LINKS = [
-  ["수집 근거 검토", "확인 필요한 근거를 판정합니다.", "▤", "/admin/evidence"],
-  ["수집 판정 기록", "수집 실행과 저장 결과를 확인합니다.", "◷", "/admin/research-audits"],
-  ["회원 관리", "회원 정보와 제재를 관리합니다.", "◎", "/admin/users"],
-  ["커뮤니티 신고", "게시글과 댓글 신고를 처리합니다.", "!", "/admin/reports"],
-  ["장소 제보 검토", "사용자가 보낸 장소 정보를 검토합니다.", "⌖", "/admin/place-reports"],
-  ["문의 관리", "회원 문의를 확인하고 답변합니다.", "?", "/admin/inquiries"],
-  ["운영 현황", "수집과 검색 데이터 상태를 확인합니다.", "▥", "/admin/operations"],
+  ["수집 근거 검토", "확인 필요한 근거를 판정합니다.", "doc.text.magnifyingglass", "fact_check", "/admin/evidence"],
+  ["수집 판정 기록", "수집 실행과 저장 결과를 확인합니다.", "clock.arrow.circlepath", "history", "/admin/research-audits"],
+  ["회원 관리", "회원 정보와 제재를 관리합니다.", "person.2.fill", "group", "/admin/users"],
+  ["커뮤니티 신고", "게시글과 댓글 신고를 처리합니다.", "flag.fill", "flag", "/admin/reports"],
+  ["장소 제보 검토", "사용자가 보낸 장소 정보를 검토합니다.", "mappin.and.ellipse", "add_location_alt", "/admin/place-reports"],
+  ["문의 관리", "회원 문의를 확인하고 답변합니다.", "bubble.left.and.bubble.right.fill", "forum", "/admin/inquiries"],
+  ["운영 현황", "수집과 검색 데이터 상태를 확인합니다.", "chart.bar.fill", "bar_chart", "/admin/operations"],
 ] as const;
 export default function AdminScreen() {
   const { isAdmin } = useAuth();
@@ -54,13 +55,13 @@ export default function AdminScreen() {
           ) : null}
           <Text style={styles.sectionTitle}>관리 메뉴</Text>
           <View style={styles.list}>
-          {LINKS.map(([label, description, symbol, path]) => (
+          {LINKS.map(([label, description, ios, android, path]) => (
             <Pressable
               key={path}
               onPress={() => router.push(path as never)}
               style={({ pressed }) => [styles.link, pressed && styles.pressed]}
             >
-              <View style={styles.symbol}><Text style={styles.symbolText}>{symbol}</Text></View>
+              <View style={styles.symbol}><AppIcon ios={ios} android={android} size={20} color={Palette.accent} /></View>
               <View style={styles.copy}>
                 <Text style={styles.label}>{label}</Text>
                 <Text style={styles.description}>{description}</Text>
@@ -102,7 +103,6 @@ const styles = StyleSheet.create({
     borderBottomColor: "#E3E8E5",
   },
   symbol: { width: 38, height: 38, alignItems: "center", justifyContent: "center", borderRadius: 13, backgroundColor: Palette.accentSoft },
-  symbolText: { color: Palette.accent, fontSize: 17, fontWeight: "900" },
   copy: { minWidth: 0, flex: 1 },
   label: { color: Palette.ink, fontSize: 14, fontWeight: "900" },
   description: { marginTop: 4, color: Palette.muted, fontSize: 10 },

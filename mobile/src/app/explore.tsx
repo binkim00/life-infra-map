@@ -15,6 +15,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { recommendationApi, searchMapPlaces } from "@/api/recommendations";
 import { useAuth } from "@/auth/auth-context";
 import { BottomNav } from "@/components/bottom-nav";
+import { PlacePhoto } from "@/components/place-photo";
 import { PlaceDetailSheet } from "@/components/place-detail-sheet";
 import { PlaceMap } from "@/components/place-map";
 import {
@@ -541,20 +542,11 @@ export default function ExploreScreen() {
                     selected && styles.resultCardSelected,
                   ]}
                 >
-                  <View
-                    style={[
-                      styles.resultNumber,
-                      selected && styles.resultNumberSelected,
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.resultNumberText,
-                        selected && styles.resultNumberTextSelected,
-                      ]}
-                    >
-                      {index + 1}
-                    </Text>
+                  <View style={styles.resultPhotoWrap}>
+                    <PlacePhoto category={place.category} fallback={index} width={70} height={70} style={styles.resultPhoto} />
+                    <View style={[styles.resultNumber, selected && styles.resultNumberSelected]}>
+                      <Text style={[styles.resultNumberText, selected && styles.resultNumberTextSelected]}>{index + 1}</Text>
+                    </View>
                   </View>
                   <View style={styles.resultCopy}>
                     <View style={styles.resultNameRow}>
@@ -881,10 +873,10 @@ const styles = StyleSheet.create({
   stateText: { color: Palette.muted, fontSize: 13 },
   resultList: { gap: 9 },
   resultCard: {
-    width: 238,
+    width: 292,
     padding: 11,
     flexDirection: "row",
-    alignItems: "flex-start",
+    alignItems: "center",
     gap: 12,
     borderWidth: 1,
     borderColor: "#E3E8E5",
@@ -895,13 +887,18 @@ const styles = StyleSheet.create({
     borderColor: Palette.accent,
     backgroundColor: "#F7FBFA",
   },
+  resultPhotoWrap: { width: 70, height: 70, position: "relative" },
+  resultPhoto: { borderRadius: 10 },
   resultNumber: {
-    width: 30,
-    height: 30,
+    width: 24,
+    height: 24,
+    position: "absolute",
+    left: 5,
+    top: 5,
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: 15,
-    backgroundColor: "#EEF2F0",
+    borderRadius: 12,
+    backgroundColor: "rgba(255,255,255,0.92)",
   },
   resultNumberSelected: { backgroundColor: Palette.accent },
   resultNumberText: { color: Palette.muted, fontSize: 11, fontWeight: "900" },

@@ -8,6 +8,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { recommendationApi } from "@/api/recommendations";
 import { Screen, ui } from "@/components/screen";
 import { Palette, Radius } from "@/constants/theme";
+import { PlacePhoto } from "@/components/place-photo";
 import {
   placeReportStatusLabel,
   placeReportTypeLabel,
@@ -76,7 +77,7 @@ export default function MyReportsScreen() {
             style={({ pressed }) => [ui.card, styles.report, pressed && styles.pressed]}
           >
             <View style={ui.row}>
-              <View style={styles.reportIcon}><Text style={styles.reportIconText}>⌖</Text></View>
+              <PlacePhoto category={report.report_type === "new_place" ? "cafe" : undefined} fallback={report.id} width={58} height={58} style={styles.reportPhoto} />
               <View style={ui.grow}>
                 <Text style={styles.receipt}>제보 #{report.id}</Text>
                 <Text style={styles.name}>{report.place_name || "장소 이름 확인 중"}</Text>
@@ -119,8 +120,7 @@ const styles = StyleSheet.create({
   filterActive: { borderColor: "#0F857A", backgroundColor: "#0F857A" },
   filterText: { color: "#5F6B66", fontSize: 11, fontWeight: "800" },
   filterTextActive: { color: "#FFFFFF" },
-  reportIcon: { width: 42, height: 42, alignItems: "center", justifyContent: "center", borderRadius: 14, backgroundColor: Palette.accentSoft },
-  reportIconText: { color: Palette.accent, fontSize: 21, fontWeight: "900" },
+  reportPhoto: { borderRadius: 13 },
   receipt: { marginBottom: 2, color: Palette.muted, fontSize: 10, fontWeight: "700" },
   name: { color: Palette.ink, fontSize: 15, fontWeight: "900" },
   status: { paddingHorizontal: 9, paddingVertical: 6, borderRadius: Radius.pill, overflow: "hidden", backgroundColor: Palette.amberSoft, color: Palette.amber, fontSize: 10, fontWeight: "900" },

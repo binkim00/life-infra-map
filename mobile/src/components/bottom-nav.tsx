@@ -2,14 +2,15 @@ import { router, usePathname } from "expo-router";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { Palette, Shadow } from "@/constants/theme";
+import { AppIcon } from "@/components/app-icon";
 
 const ITEMS = [
-  { label: "홈", symbol: "⌂", path: "/" as const },
-  { label: "검색", symbol: "⌕", path: "/explore" as const },
-  { label: "추천", symbol: "✦", path: "/recommend" as const },
-  { label: "저장", symbol: "◇", path: "/mypage/saved-places" as const },
-  { label: "MY", symbol: "◯", path: "/mypage" as const },
-];
+  { label: "홈", ios: "house.fill", android: "home", path: "/" as const },
+  { label: "검색", ios: "magnifyingglass", android: "search", path: "/explore" as const },
+  { label: "추천", ios: "sparkles", android: "auto_awesome", path: "/recommend" as const },
+  { label: "저장", ios: "bookmark.fill", android: "bookmark", path: "/mypage/saved-places" as const },
+  { label: "MY", ios: "person.fill", android: "person", path: "/mypage" as const },
+] as const;
 
 export function BottomNav() {
   const pathname = usePathname();
@@ -30,7 +31,7 @@ export function BottomNav() {
               onPress={() => router.push(item.path as never)}
               style={({ pressed }) => [styles.item, pressed && styles.pressed]}
             >
-              <Text style={[styles.symbol, active && styles.symbolActive]}>{item.symbol}</Text>
+              <AppIcon ios={item.ios} android={item.android} size={21} color={active ? Palette.accent : "#89918D"} />
               <Text style={[styles.label, active && styles.labelActive]}>
                 {item.label}
               </Text>
@@ -72,8 +73,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 3,
   },
-  symbol: { color: "#89918D", fontSize: 20, lineHeight: 23, fontWeight: "800" },
-  symbolActive: { color: Palette.accent },
   label: { color: "#89918D", fontSize: 10, fontWeight: "800" },
   labelActive: { color: Palette.accent },
   pressed: { opacity: 0.58, transform: [{ scale: 0.96 }] },
