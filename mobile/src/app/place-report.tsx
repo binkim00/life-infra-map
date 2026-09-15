@@ -82,6 +82,7 @@ function PlaceReportForm({ params }: { params: ReportParams }) {
   const [draftReady, setDraftReady] = useState(false);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
+  const [locating, setLocating] = useState(false);
   const draftKey = useMemo(() => reportDraftKey(params.placeId,
     params.name ? JSON.stringify([params.name, params.address || "", params.lat || "", params.lng || ""]) : undefined),
     [params.placeId, params.name, params.address, params.lat, params.lng]);
@@ -156,6 +157,8 @@ function PlaceReportForm({ params }: { params: ReportParams }) {
   }, [address, category, description, draftKey, draftReady, images, lat, lng, name, ownerKey, requestId, tags, type]);
   const locate = async () => {
     try {
+      if (locating) return;
+      setLocating(true);
       const coordinates = await searchLocation();
       if (!coordinates) return setMessage("위치 권한이 필요합니다.");
       setLat(coordinates.latitude.toFixed(6));
@@ -164,10 +167,17 @@ function PlaceReportForm({ params }: { params: ReportParams }) {
       setMessage("현재 위치를 입력했습니다.");
     } catch {
       setMessage("현재 위치를 확인하지 못했습니다.");
+    } finally {
+      setLocating(false);
     }
   };
   const pick = async () => {
     try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        setMessage("사진을 첨부하려면 사진 접근 권한을 허용해 주세요.");
+        return;
+      }
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ["images"],
         allowsMultipleSelection: true,
@@ -231,9 +241,19 @@ function PlaceReportForm({ params }: { params: ReportParams }) {
   }
   return (
     <Screen
-      title="장소 정보 제보"
-      subtitle="관리자 검토 후 검색 데이터에 반영됩니다."
+      title="장소 제보"
+      subtitle="빠진 장소와 달라진 정보를 알려주세요. 검토 후 검색에 반영됩니다."
       back
+      footer={
+        <Pressable
+          accessibilityRole="button"
+          disabled={loading}
+          onPress={submit}
+          style={[ui.button, loading && styles.disabled]}
+        >
+          <Text style={ui.buttonText}>{loading ? "안전하게 접수하는 중…" : "제보 접수"}</Text>
+        </Pressable>
+      }
     >
       {!isLoggedIn ? (
         <Text style={ui.muted}>
@@ -241,7 +261,10 @@ function PlaceReportForm({ params }: { params: ReportParams }) {
           로그인이 필요합니다.
         </Text>
       ) : null}
-      <Text style={ui.muted}>작성 내용과 선택한 사진은 접수될 때까지 이 기기에 자동 저장됩니다.</Text>
+      <View style={styles.draftNotice}>
+        <Text style={styles.draftTitle}>작성 중인 내용은 자동 저장돼요</Text>
+        <Text style={ui.muted}>앱을 닫아도 접수 전까지 이 기기에서 다시 이어 쓸 수 있습니다.</Text>
+      </View>
       <View style={styles.options}>
         {TYPES.map((item) => (
           <Pressable
@@ -260,6 +283,7 @@ function PlaceReportForm({ params }: { params: ReportParams }) {
           </Pressable>
         ))}
       </View>
+      <Text style={styles.sectionTitle}>기본 정보</Text>
       <TextInput
         value={name}
         onChangeText={setName}
@@ -295,6 +319,8 @@ function PlaceReportForm({ params }: { params: ReportParams }) {
         placeholderTextColor={INPUT_PLACEHOLDER_COLOR}
         style={ui.input}
       />
+      <Text style={styles.sectionTitle}>지도에서 위치 선택</Text>
+      <Text style={ui.muted}>지도를 움직인 뒤 원하는 지점을 누르거나 현재 위치를 사용하세요.</Text>
       <View style={ui.row}>
         <TextInput
           value={lat}
@@ -313,10 +339,9 @@ function PlaceReportForm({ params }: { params: ReportParams }) {
           style={[ui.input, ui.grow]}
         />
       </View>
-      <Pressable onPress={locate} style={ui.buttonSecondary}>
-        <Text style={ui.buttonSecondaryText}>현재 위치 사용</Text>
+      <Pressable disabled={locating} onPress={locate} style={[ui.buttonSecondary, locating && styles.disabled]}>
+        <Text style={ui.buttonSecondaryText}>{locating ? "위치 확인 중…" : "현재 위치 사용"}</Text>
       </Pressable>
-      <Text style={ui.muted}>지도를 이동한 뒤 원하는 지점을 누르면 핀이 표시됩니다.</Text>
       <PlaceMap
         place={pickedPlace}
         displayMode="selected"
@@ -325,6 +350,7 @@ function PlaceReportForm({ params }: { params: ReportParams }) {
         currentLocation={deviceLocation}
         fitBoundsKey={pickedPlace ? `report-pin:${pickedPlace.lat}:${pickedPlace.lng}` : "report-pin-empty"}
       />
+      <Text style={styles.sectionTitle}>장소 특징</Text>
       <View style={styles.tags}>
         {TAGS.map((tag) => (
           <Pressable
@@ -342,6 +368,7 @@ function PlaceReportForm({ params }: { params: ReportParams }) {
           </Pressable>
         ))}
       </View>
+      <Text style={styles.sectionTitle}>제보 내용</Text>
       <TextInput
         value={description}
         onChangeText={setDescription}
@@ -350,26 +377,31 @@ function PlaceReportForm({ params }: { params: ReportParams }) {
         multiline
         style={ui.textarea}
       />
-      <Pressable onPress={pick} style={ui.buttonSecondary}>
+      <Pressable accessibilityRole="button" onPress={pick} style={ui.buttonSecondary}>
         <Text style={ui.buttonSecondaryText}>
           사진 선택 ({images.length}/5)
         </Text>
       </Pressable>
       <View style={styles.images}>
         {images.map((image) => (
-          <Image
-            key={image.uri}
-            source={{ uri: image.uri }}
-            style={styles.image}
-          />
+          <View key={image.uri} style={styles.imageWrap}>
+            <Image source={{ uri: image.uri }} style={styles.image} />
+            <Pressable
+              accessibilityLabel="첨부 사진 삭제"
+              onPress={() => {
+                void removeDraftImages([image]);
+                setImages((current) => current.filter((item) => item.uri !== image.uri));
+              }}
+              style={styles.removeImage}
+            >
+              <Text style={styles.removeImageText}>×</Text>
+            </Pressable>
+          </View>
         ))}
       </View>
-      {message ? <Text style={ui.error}>{message}</Text> : null}
-      <Pressable disabled={loading} onPress={submit} style={ui.button}>
-        <Text style={ui.buttonText}>
-          {loading ? "접수 중..." : "제보 접수"}
-        </Text>
-      </Pressable>
+      {message ? (
+        <Text style={/(필요|못|실패|입력|선택해)/.test(message) ? ui.error : ui.success}>{message}</Text>
+      ) : null}
     </Screen>
   );
 }
@@ -396,4 +428,11 @@ const styles = StyleSheet.create({
   tagText: { color: "#38403C", fontSize: 10, fontWeight: "700" },
   images: { flexDirection: "row", flexWrap: "wrap", gap: 7 },
   image: { width: 72, height: 72, borderRadius: 9 },
+  imageWrap: { position: "relative" },
+  removeImage: { position: "absolute", top: -6, right: -6, width: 24, height: 24, alignItems: "center", justifyContent: "center", borderRadius: 12, backgroundColor: "#17201D" },
+  removeImageText: { marginTop: -2, color: "#FFFFFF", fontSize: 18, fontWeight: "800" },
+  sectionTitle: { marginTop: 4, color: "#17201D", fontSize: 16, fontWeight: "900" },
+  draftNotice: { padding: 14, gap: 4, borderRadius: 14, backgroundColor: "#E9F5F2" },
+  draftTitle: { color: "#0F857A", fontSize: 12, fontWeight: "900" },
+  disabled: { opacity: 0.55 },
 });

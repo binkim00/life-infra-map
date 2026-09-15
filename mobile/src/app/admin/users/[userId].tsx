@@ -3,7 +3,7 @@ import { useAction } from "@/hooks/use-action";
 import { LoadState } from "@/components/load-state";
 import { useLocalSearchParams } from "expo-router";
 import { useState } from "react";
-import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { Alert, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { boardsApi } from "@/api/boards";
 import { INPUT_PLACEHOLDER_COLOR, Screen, ui } from "@/components/screen";
 type UserData = {
@@ -64,6 +64,24 @@ export default function AdminUserDetailScreen() {
     setMessage("");
     setStatus("메시지를 보냈습니다.");
   };
+  const requestPenalty = (type: string, label: string, days: number) => {
+    if (!reason.trim()) {
+      setStatus("제재 사유를 입력해 주세요.");
+      return;
+    }
+    Alert.alert(
+      "회원 제재 확인",
+      `${label} 조치를 적용할까요? 적용 후에는 운영 기록에 남습니다.`,
+      [
+        { text: "취소", style: "cancel" },
+        {
+          text: "적용",
+          style: "destructive",
+          onPress: () => action.run(() => penalty(type, days)),
+        },
+      ],
+    );
+  };
   return (
     <Screen
       title={data.nickname || data.username || "회원 상세"}
@@ -72,7 +90,16 @@ export default function AdminUserDetailScreen() {
     >
       <LoadState loading={loading} error={error} retry={load} />
       {action.error ? <Text style={ui.error}>{action.error}</Text> : null}
-      {status ? <Text style={ui.success}>{status}</Text> : null}
+      {status ? (
+        <Text style={status.includes("입력") ? ui.error : ui.success}>{status}</Text>
+      ) : null}
+      {data.id ? (
+        <View style={styles.summary}>
+          <View><Text style={styles.summaryNumber}>{data.posts?.length || 0}</Text><Text style={ui.muted}>게시글</Text></View>
+          <View><Text style={styles.summaryNumber}>{data.comments?.length || 0}</Text><Text style={ui.muted}>댓글</Text></View>
+          <View><Text style={styles.summaryNumber}>{data.penalties?.length || 0}</Text><Text style={ui.muted}>제재 이력</Text></View>
+        </View>
+      ) : null}
       <View style={ui.card}>
         <Text style={ui.label}>제재 사유</Text>
         <TextInput
@@ -87,7 +114,7 @@ export default function AdminUserDetailScreen() {
             <Pressable
               key={type}
               disabled={action.busy || loading || Boolean(error)}
-              onPress={() => action.run(() => penalty(type, days))}
+              onPress={() => requestPenalty(type, label, days)}
               style={ui.buttonSecondary}
             >
               <Text
@@ -113,8 +140,12 @@ export default function AdminUserDetailScreen() {
           multiline
           style={ui.textarea}
         />
-        <Pressable disabled={action.busy || loading || Boolean(error)} onPress={() => action.run(notify)} style={[ui.button, styles.actions]}>
-          <Text style={ui.buttonText}>메시지 보내기</Text>
+        <Pressable
+          disabled={action.busy || loading || Boolean(error) || !message.trim()}
+          onPress={() => action.run(notify)}
+          style={[ui.button, styles.actions, !message.trim() && styles.disabled]}
+        >
+          <Text style={ui.buttonText}>{action.busy ? "보내는 중…" : "알림 보내기"}</Text>
         </Pressable>
       </View>
     </Screen>
@@ -123,4 +154,7 @@ export default function AdminUserDetailScreen() {
 const styles = StyleSheet.create({
   actions: { marginTop: 10, flexWrap: "wrap" },
   danger: { color: "#B42318", fontSize: 12, fontWeight: "900" },
+  summary: { padding: 18, flexDirection: "row", justifyContent: "space-around", borderRadius: 18, backgroundColor: "#E9F5F2" },
+  summaryNumber: { marginBottom: 3, color: "#0F857A", fontSize: 22, fontWeight: "900", textAlign: "center" },
+  disabled: { opacity: 0.45 },
 });

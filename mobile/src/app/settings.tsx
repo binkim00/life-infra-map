@@ -12,14 +12,21 @@ const DEFAULTS = {
 };
 export default function SettingsScreen() {
   const [settings, setSettings] = useState(DEFAULTS);
+  const [saveError, setSaveError] = useState("");
   const { loading, error, reload } = useResource(async () => {
     const raw = await AsyncStorage.getItem(KEY);
       if (raw) setSettings({ ...DEFAULTS, ...JSON.parse(raw) });
   }, undefined);
-  const toggle = (key: keyof typeof settings, value: boolean) => {
+  const toggle = async (key: keyof typeof settings, value: boolean) => {
     const next = { ...settings, [key]: value };
     setSettings(next);
-    AsyncStorage.setItem(KEY, JSON.stringify(next));
+    setSaveError("");
+    try {
+      await AsyncStorage.setItem(KEY, JSON.stringify(next));
+    } catch {
+      setSettings(settings);
+      setSaveError("설정을 저장하지 못했습니다. 다시 시도해 주세요.");
+    }
   };
   const rows: [keyof typeof settings, string, string][] = [
     [
@@ -41,6 +48,7 @@ export default function SettingsScreen() {
   return (
     <Screen title="설정" subtitle="알림과 화면 표시 방식을 관리합니다." back>
       <LoadState loading={loading} error={error} retry={reload} />
+      {saveError ? <Text style={ui.error}>{saveError}</Text> : null}
       <View style={styles.list}>
         {rows.map(([key, title, description]) => (
           <View key={key} style={[ui.card, styles.row]}>
@@ -51,7 +59,7 @@ export default function SettingsScreen() {
             <Switch
               disabled={loading || Boolean(error)}
               value={settings[key]}
-              onValueChange={(value) => toggle(key, value)}
+              onValueChange={(value) => void toggle(key, value)}
               trackColor={{ true: "#0F766E" }}
             />
           </View>

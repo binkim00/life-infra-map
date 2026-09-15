@@ -5,6 +5,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { recommendationApi } from "@/api/recommendations";
 import { Screen, ui } from "@/components/screen";
+import { useAction } from "@/hooks/use-action";
 
 type Tag = {
   id: number;
@@ -23,6 +24,7 @@ type Preference = {
 
 export default function PreferencesScreen() {
   const [message, setMessage] = useState("");
+  const action = useAction();
   const { data, loading, error, reload: load } = useResource(
     async () => {
       const [tagData, prefData] = await Promise.all([
@@ -85,6 +87,7 @@ export default function PreferencesScreen() {
     >
       <LoadState loading={loading} error={error} empty={!tags.length} retry={load} />
       {message ? <Text style={ui.success}>{message}</Text> : null}
+      {action.error ? <Text style={ui.error}>{action.error}</Text> : null}
       {groups.map(([group, groupTags]) => (
         <View key={group} style={ui.card}>
           <Text style={styles.group}>{group}</Text>
@@ -120,6 +123,18 @@ export default function PreferencesScreen() {
             </Text>
           ))}
       </View>
+      <Pressable
+        accessibilityRole="button"
+        disabled={action.busy || loading}
+        onPress={() => action.run(async () => {
+          await recommendationApi.rebuildPreferences();
+          setMessage("최근 검색과 활동을 반영해 취향을 다시 계산했습니다.");
+          load();
+        })}
+        style={[ui.button, (action.busy || loading) && styles.disabled]}
+      >
+        <Text style={ui.buttonText}>{action.busy ? "다시 계산하는 중…" : "취향 다시 계산"}</Text>
+      </Pressable>
     </Screen>
   );
 }
@@ -141,4 +156,5 @@ const styles = StyleSheet.create({
   tagActive: { borderColor: "#0F766E", backgroundColor: "#E6F4F1" },
   tagText: { color: "#686159", fontSize: 11, fontWeight: "800" },
   tagTextActive: { color: "#0F766E" },
+  disabled: { opacity: 0.55 },
 });

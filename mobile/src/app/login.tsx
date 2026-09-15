@@ -12,6 +12,7 @@ export default function LoginScreen() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const submit = async () => {
     if (!username || !password)
@@ -70,17 +71,27 @@ export default function LoginScreen() {
           </View>
           <View>
             <Text style={styles.fieldLabel}>비밀번호</Text>
-            <TextInput
-              value={password}
-              onChangeText={setPassword}
-              onSubmitEditing={submit}
-              placeholder="비밀번호를 입력하세요"
-              placeholderTextColor="#5F6863"
-              autoComplete="current-password"
-              returnKeyType="done"
-              secureTextEntry
-              style={ui.input}
-            />
+            <View style={styles.passwordRow}>
+              <TextInput
+                value={password}
+                onChangeText={setPassword}
+                onSubmitEditing={submit}
+                placeholder="비밀번호를 입력하세요"
+                placeholderTextColor="#7A8580"
+                autoComplete="current-password"
+                returnKeyType="done"
+                secureTextEntry={!showPassword}
+                style={[ui.input, styles.passwordInput]}
+              />
+              <Pressable
+                accessibilityLabel={showPassword ? "비밀번호 숨기기" : "비밀번호 보기"}
+                accessibilityRole="button"
+                onPress={() => setShowPassword((value) => !value)}
+                style={styles.passwordToggle}
+              >
+                <Text style={styles.passwordToggleText}>{showPassword ? "숨김" : "보기"}</Text>
+              </Pressable>
+            </View>
           </View>
           {error ? <Text style={ui.error}>{error}</Text> : null}
           <Pressable
@@ -158,6 +169,10 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "800",
   },
+  passwordRow: { position: "relative", justifyContent: "center" },
+  passwordInput: { paddingRight: 64 },
+  passwordToggle: { position: "absolute", right: 8, minWidth: 48, minHeight: 38, alignItems: "center", justifyContent: "center" },
+  passwordToggleText: { color: "#0F857A", fontSize: 12, fontWeight: "900" },
   buttonDisabled: { opacity: 0.55 },
   link: {
     paddingTop: 2,

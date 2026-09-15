@@ -36,9 +36,9 @@ export default function AdminReportsScreen() {
           <View key={item.id} style={ui.card}>
             <View style={ui.row}>
               <Text style={styles.title}>
-                신고 #{item.id} · {item.target_type}
+                신고 #{item.id} · {item.target_type === "post" ? "게시글" : item.target_type === "comment" ? "댓글" : "콘텐츠"}
               </Text>
-              <Text style={styles.status}>{item.status}</Text>
+              <Text style={styles.status}>{({ pending: "대기", passed: "기각", penalized: "조치 완료" } as Record<string, string>)[item.status || ""] || "확인 필요"}</Text>
             </View>
             <Text style={styles.reason}>{item.reason}</Text>
             <TextInput
@@ -56,14 +56,14 @@ export default function AdminReportsScreen() {
                 onPress={() => action.run(() => process(item, "passed"))}
                 style={ui.buttonSecondary}
               >
-                <Text style={ui.buttonSecondaryText}>패스</Text>
+                <Text style={ui.buttonSecondaryText}>신고 기각</Text>
               </Pressable>
               <Pressable
                 disabled={action.busy}
                 onPress={() => action.run(() => process(item, "penalized"))}
                 style={ui.buttonSecondary}
               >
-                <Text style={ui.buttonSecondaryText}>조치 완료</Text>
+                <Text style={styles.actionText}>작성자 조치 완료</Text>
               </Pressable>
             </View>
           </View>
@@ -77,5 +77,6 @@ const styles = StyleSheet.create({
   title: { flex: 1, color: "#222222", fontSize: 13, fontWeight: "900" },
   status: { color: "#0F766E", fontSize: 10, fontWeight: "800" },
   reason: { marginVertical: 10, color: "#38403C", fontSize: 12 },
+  actionText: { color: "#D94B4B", fontSize: 12, fontWeight: "900" },
   delete: { color: "#B42318", fontSize: 12, fontWeight: "900" },
 });

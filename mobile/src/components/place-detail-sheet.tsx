@@ -92,6 +92,7 @@ function PlaceDetailContent({
 }) {
   const [showWebDetail, setShowWebDetail] = useState(false);
   const [webDetailError, setWebDetailError] = useState(false);
+  const [externalError, setExternalError] = useState("");
 
   if (!place) return null;
 
@@ -100,6 +101,16 @@ function PlaceDetailContent({
   const detailSourceName = kakaoSource ? "카카오 장소 정보" : "원문 상세정보";
   const tags = place.tags?.slice(0, 8) || [];
   const smoking = place.smoking;
+  const openExternal = async (url: string) => {
+    setExternalError("");
+    try {
+      const supported = await Linking.canOpenURL(url);
+      if (!supported) throw new Error("unsupported");
+      await Linking.openURL(url);
+    } catch {
+      setExternalError("연결된 앱을 열지 못했습니다. 잠시 후 다시 시도해 주세요.");
+    }
+  };
 
   return (
     <Modal
@@ -154,7 +165,7 @@ function PlaceDetailContent({
                   <View style={styles.infoRow}>
                     <Text style={styles.infoLabel}>전화</Text>
                     <Pressable
-                      onPress={() => Linking.openURL(`tel:${place.phone}`)}
+                      onPress={() => void openExternal(`tel:${place.phone}`)}
                     >
                       <Text style={[styles.infoValue, styles.link]}>
                         {place.phone}
@@ -261,7 +272,7 @@ function PlaceDetailContent({
               ) : null}
               {place.kakao_place_url || hasMapCoordinates(place) ? (
                 <Pressable
-                  onPress={() => Linking.openURL(kakaoMapUrl(place))}
+                  onPress={() => void openExternal(kakaoMapUrl(place))}
                   style={styles.secondaryButton}
                 >
                   <Text style={styles.secondaryButtonText}>
@@ -270,6 +281,8 @@ function PlaceDetailContent({
                 </Pressable>
               ) : null}
             </View>
+
+            {externalError ? <Text style={styles.externalError}>{externalError}</Text> : null}
 
             <View style={styles.utilityActions}>
               <Pressable onPress={onSave} style={styles.utilityButton}>
@@ -340,7 +353,7 @@ function PlaceDetailContent({
                   : "외부 원문에서 최신 정보를 확인해 주세요."}
               </Text>
               <Pressable
-                onPress={() => Linking.openURL(detailUrl)}
+                onPress={() => void openExternal(detailUrl)}
                 style={styles.primaryButton}
               >
                 <Text style={styles.primaryButtonText}>
@@ -460,6 +473,12 @@ const styles = StyleSheet.create({
     color: Palette.muted,
     fontSize: 12,
     lineHeight: 18,
+  },
+  externalError: {
+    color: Palette.danger,
+    fontSize: 11,
+    fontWeight: "700",
+    textAlign: "center",
   },
   primaryActions: { gap: 8 },
   primaryButton: {

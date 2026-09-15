@@ -9,6 +9,7 @@ import {
 import { WebView, type WebViewMessageEvent } from "react-native-webview";
 
 import type { Place } from "@/types/place";
+import { placeIdentity } from "@/utils/place-identity";
 
 const embedUrl =
   process.env.EXPO_PUBLIC_KAKAO_MAP_EMBED_URL ||
@@ -72,7 +73,7 @@ export function PlaceMap({
     const visible = validPlaces.slice(0, MAX_VISIBLE_MARKERS);
     if (
       !hasMapCoordinates(place) ||
-      visible.some((item) => String(item.id) === String(place.id))
+      visible.some((item) => placeIdentity(item) === placeIdentity(place))
     )
       return visible;
     return [...visible.slice(0, MAX_VISIBLE_MARKERS - 1), place];
@@ -80,9 +81,9 @@ export function PlaceMap({
 
   const sendState = useCallback(() => {
     const placesSignature = mapPlaces
-      .map((item) => `${item.id}:${item.lat}:${item.lng}`)
+      .map((item) => `${placeIdentity(item)}:${item.lat}:${item.lng}`)
       .join("|");
-    const selectedId = place ? String(place.id) : null;
+    const selectedId = place ? placeIdentity(place) : null;
     const viewportKey = String(
       fitBoundsKey ??
         `${displayMode}:${placesSignature}:${currentLocation?.lat ?? ""}:${currentLocation?.lng ?? ""}`,
@@ -98,10 +99,10 @@ export function PlaceMap({
       type: "life-infra-map:set-places",
       places: mapPlaces.map((item, mapIndex) => {
         const resultIndex = validPlaces.findIndex(
-          (candidate) => String(candidate.id) === String(item.id),
+          (candidate) => placeIdentity(candidate) === placeIdentity(item),
         );
         return {
-          id: String(item.id),
+          id: placeIdentity(item),
           name: item.name,
           category: item.category_label || item.category || "",
           lat: Number(item.lat),
@@ -202,7 +203,7 @@ export function PlaceMap({
         }
         if (data?.type !== "life-infra-map:select-place") return;
         const selected = validPlaces.find(
-          (item) => String(item.id) === String(data.id),
+          (item) => placeIdentity(item) === String(data.id),
         );
         if (selected) onSelectPlace?.(selected);
       } catch {

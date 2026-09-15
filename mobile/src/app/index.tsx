@@ -24,10 +24,12 @@ import {
 import type { Place } from "@/types/place";
 
 const CATEGORIES = [
-  { label: "주차장", query: "무료 주차장", symbol: "P" },
+  { label: "카페", query: "카페", symbol: "☕" },
+  { label: "식당", query: "식당", symbol: "●" },
+  { label: "주차", query: "무료 주차장", symbol: "P" },
   { label: "화장실", query: "공중화장실", symbol: "WC" },
-  { label: "공원", query: "공원", symbol: "休" },
-  { label: "쉼터", query: "무더위 쉼터", symbol: "涼" },
+  { label: "공원", query: "공원", symbol: "♣" },
+  { label: "쉼터", query: "무더위 쉼터", symbol: "休" },
 ] as const;
 
 const formatDistance = (distance?: number) => {
@@ -132,16 +134,29 @@ export default function HomeScreen() {
           keyboardShouldPersistTaps="handled"
         >
           <View style={styles.header}>
-            <Text style={styles.brand}>LIFE MAP</Text>
-            <Text style={styles.location}>전국 검색 · 위치 선택 가능</Text>
+            <View style={styles.brandRow}>
+              <View style={styles.brandMark}><Text style={styles.brandMarkText}>⌖</Text></View>
+              <View>
+                <Text style={styles.brand}>여기일지도</Text>
+                <Text style={styles.brandCaption}>LIFE MAP</Text>
+              </View>
+            </View>
+            <Pressable
+              accessibilityLabel="알림 보기"
+              accessibilityRole="button"
+              onPress={() => router.push("/notifications")}
+              style={({ pressed }) => [styles.headerButton, pressed && styles.pressed]}
+            >
+              <Text style={styles.headerButtonText}>♢</Text>
+            </Pressable>
           </View>
 
           <View style={styles.hero}>
             <Text style={styles.title}>
-              지금 상황에 맞는 장소를{`\n`}이유와 함께.
+              오늘 어디로 갈까요?
             </Text>
             <Text style={styles.description}>
-              원하는 분위기와 조건을 말하면 근거를 확인해 추천합니다.
+              상황과 조건을 말하면 확인할 수 있는 근거와 함께 추천해요.
             </Text>
             <View style={styles.searchBox}>
               <TextInput
@@ -163,14 +178,17 @@ export default function HomeScreen() {
                   pressed && styles.pressed,
                 ]}
               >
-                <Text style={styles.searchButtonLabel}>찾기</Text>
+                <Text style={styles.searchButtonLabel}>추천받기</Text>
               </Pressable>
             </View>
           </View>
 
           <View style={styles.placeSearchCard}>
             <View>
-              <Text style={styles.placeSearchTitle}>일반 장소 검색</Text>
+              <View style={styles.searchTitleRow}>
+                <View style={styles.searchIcon}><Text style={styles.searchIconText}>⌕</Text></View>
+                <Text style={styles.placeSearchTitle}>일반 장소 검색</Text>
+              </View>
               <Text style={styles.placeSearchDescription}>
                 장소명이나 지역·업종을 빠르게 찾습니다.
               </Text>
@@ -189,7 +207,38 @@ export default function HomeScreen() {
                 onPress={() => openPlaceSearch()}
                 style={styles.placeSearchButton}
               >
-                <Text style={styles.placeSearchButtonLabel}>일반 검색</Text>
+                <Text style={styles.placeSearchButtonLabel}>검색</Text>
+              </Pressable>
+            </View>
+          </View>
+
+          <View>
+            <Text style={styles.sectionLabel}>함께 만드는 지도</Text>
+            <Text style={styles.sectionCaption}>장소 이야기를 나누고, 빠진 정보를 알려주세요.</Text>
+            <View style={styles.serviceGrid}>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => router.push("/boards/free")}
+                style={({ pressed }) => [styles.serviceCard, pressed && styles.pressed]}
+              >
+                <Text style={styles.serviceSymbol}>☵</Text>
+                <View style={styles.serviceCopy}>
+                  <Text style={styles.serviceTitle}>커뮤니티</Text>
+                  <Text style={styles.serviceText}>장소 팁과 이야기를 나눠요</Text>
+                </View>
+                <Text style={styles.serviceArrow}>›</Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => router.push("/place-report")}
+                style={({ pressed }) => [styles.serviceCard, pressed && styles.pressed]}
+              >
+                <Text style={styles.serviceSymbol}>⌖</Text>
+                <View style={styles.serviceCopy}>
+                  <Text style={styles.serviceTitle}>장소 제보</Text>
+                  <Text style={styles.serviceText}>새 장소와 수정 정보를 알려요</Text>
+                </View>
+                <Text style={styles.serviceArrow}>›</Text>
               </Pressable>
             </View>
           </View>
@@ -301,45 +350,51 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: "#F5F7F6" },
+  screen: { flex: 1, backgroundColor: Palette.canvas },
   safeArea: { flex: 1 },
   content: {
     width: "100%",
     maxWidth: 760,
     alignSelf: "center",
-    padding: Spacing.four,
+    paddingHorizontal: Spacing.three,
+    paddingTop: Spacing.three,
     paddingBottom: BottomTabInset + Spacing.six,
-    gap: 38,
+    gap: 30,
   },
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
   },
+  brandRow: { flexDirection: "row", alignItems: "center", gap: 9 },
+  brandMark: { width: 34, height: 34, alignItems: "center", justifyContent: "center", borderRadius: 12, backgroundColor: Palette.accent },
+  brandMarkText: { color: "#FFFFFF", fontSize: 20, fontWeight: "900" },
   brand: {
     color: Palette.ink,
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: "900",
-    letterSpacing: 1.8,
+    letterSpacing: -0.4,
   },
-  location: { color: Palette.muted, fontSize: 12, fontWeight: "700" },
-  hero: { paddingTop: Spacing.four },
+  brandCaption: { marginTop: 1, color: Palette.muted, fontSize: 8, fontWeight: "800", letterSpacing: 1.8 },
+  headerButton: { width: 42, height: 42, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: Palette.border, borderRadius: 21, backgroundColor: Palette.surface },
+  headerButtonText: { color: Palette.ink, fontSize: 24, fontWeight: "700" },
+  hero: { paddingTop: Spacing.three },
   title: {
     color: "#17201D",
-    fontSize: 38,
-    lineHeight: 48,
+    fontSize: 34,
+    lineHeight: 42,
     fontWeight: "900",
     letterSpacing: -1.3,
   },
   description: {
     maxWidth: 480,
-    marginTop: 14,
+    marginTop: 9,
     color: Palette.muted,
     fontSize: 14,
     lineHeight: 22,
   },
   searchBox: {
-    marginTop: Spacing.four,
+    marginTop: Spacing.three,
     padding: 5,
     flexDirection: "row",
     borderRadius: 15,
@@ -355,7 +410,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
   },
   searchButton: {
-    minWidth: 72,
+    minWidth: 92,
     alignItems: "center",
     justifyContent: "center",
     borderRadius: 11,
@@ -364,13 +419,17 @@ const styles = StyleSheet.create({
   searchButtonLabel: { color: "#FFFFFF", fontSize: 14, fontWeight: "800" },
   buttonDisabled: { opacity: 0.45 },
   placeSearchCard: {
-    padding: 16,
+    padding: 18,
     gap: 12,
     borderWidth: 1,
     borderColor: "#DCE5E1",
     borderRadius: Radius.medium,
-    backgroundColor: "#F8FBFA",
+    backgroundColor: Palette.surface,
+    boxShadow: Shadow.card,
   },
+  searchTitleRow: { flexDirection: "row", alignItems: "center", gap: 9 },
+  searchIcon: { width: 32, height: 32, alignItems: "center", justifyContent: "center", borderRadius: 12, backgroundColor: Palette.accentSoft },
+  searchIconText: { color: Palette.accent, fontSize: 20, fontWeight: "900" },
   placeSearchTitle: { color: Palette.ink, fontSize: 15, fontWeight: "900" },
   placeSearchDescription: {
     marginTop: 5,
@@ -407,10 +466,10 @@ const styles = StyleSheet.create({
   sectionLabel: { color: Palette.ink, fontSize: 18, fontWeight: "900" },
   sectionCaption: { marginTop: 5, color: Palette.muted, fontSize: 12 },
   more: { color: Palette.accent, fontSize: 12, fontWeight: "800" },
-  categoryGrid: { marginTop: 14, flexDirection: "row", gap: 9 },
+  categoryGrid: { marginTop: 14, flexDirection: "row", flexWrap: "wrap", gap: 9 },
   categoryCard: {
-    flex: 1,
-    minWidth: 0,
+    width: "31%",
+    flexGrow: 1,
     paddingVertical: 15,
     alignItems: "center",
     gap: 9,
@@ -433,6 +492,13 @@ const styles = StyleSheet.create({
     fontWeight: "900",
   },
   categoryLabel: { color: Palette.ink, fontSize: 12, fontWeight: "800" },
+  serviceGrid: { marginTop: 14, gap: 9 },
+  serviceCard: { minHeight: 72, padding: 14, flexDirection: "row", alignItems: "center", gap: 12, borderWidth: 1, borderColor: Palette.border, borderRadius: Radius.medium, backgroundColor: Palette.surface },
+  serviceSymbol: { width: 32, color: Palette.accent, fontSize: 23, fontWeight: "900", textAlign: "center" },
+  serviceCopy: { minWidth: 0, flex: 1 },
+  serviceTitle: { color: Palette.ink, fontSize: 14, fontWeight: "900" },
+  serviceText: { marginTop: 4, color: Palette.muted, fontSize: 11 },
+  serviceArrow: { color: Palette.muted, fontSize: 24 },
   loading: { height: 130, alignItems: "center", justifyContent: "center" },
   loadError: {
     height: 130,

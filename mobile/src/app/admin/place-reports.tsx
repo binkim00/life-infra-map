@@ -19,9 +19,11 @@ type Report = {
   status_label?: string;
   description?: string;
   suggested_tags?: string[];
+  suggested_category?: string;
 };
 export default function AdminPlaceReportsScreen() {
   const [page, setPage] = useState(1);
+  const [status, setStatus] = useState("pending");
   const {
     data: items,
     loading,
@@ -30,11 +32,11 @@ export default function AdminPlaceReportsScreen() {
   } = useResource<Report[]>(
     () =>
       recommendationApi
-        .adminPlaceReports({ page, page_size: 50 })
+        .adminPlaceReports({ page, page_size: 50, ...(status === "all" ? {} : { status }) })
         .then((data) => (data.results || []) as Report[]),
     [],
     true,
-    String(page),
+    `${page}:${status}`,
   );
   return (
     <Screen
@@ -42,6 +44,13 @@ export default function AdminPlaceReportsScreen() {
       subtitle="승인 시 검색 데이터와 기여도에 반영됩니다."
       back
     >
+      <View style={styles.filters}>
+        {[["pending", "대기"], ["approved", "승인"], ["rejected", "반려"], ["all", "전체"]].map(([value, label]) => (
+          <Pressable key={value} onPress={() => { setStatus(value); setPage(1); }} style={[styles.filter, status === value && styles.filterActive]}>
+            <Text style={[styles.filterText, status === value && styles.filterTextActive]}>{label}</Text>
+          </Pressable>
+        ))}
+      </View>
       <LoadState
         loading={loading}
         error={error}
@@ -62,6 +71,9 @@ export default function AdminPlaceReportsScreen() {
             <Text style={ui.muted}>
               {placeReportTypeLabel(item.report_type)}
             </Text>
+            {item.report_type === "new_place" && !item.suggested_category ? (
+              <Text style={styles.categoryWarning}>승인 전에 카테고리를 선택해야 합니다.</Text>
+            ) : null}
             <Text style={styles.description}>{item.description}</Text>
             {item.suggested_tags?.length ? (
               <Text style={ui.muted}>{item.suggested_tags.join(" · ")}</Text>
@@ -101,6 +113,12 @@ export default function AdminPlaceReportsScreen() {
 }
 const styles = StyleSheet.create({
   list: { gap: 8 },
+  filters: { flexDirection: "row", gap: 7 },
+  filter: { minHeight: 38, flex: 1, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "#DFE7E3", borderRadius: 999, backgroundColor: "#FFFFFF" },
+  filterActive: { borderColor: "#0F857A", backgroundColor: "#0F857A" },
+  filterText: { color: "#5F6B66", fontSize: 11, fontWeight: "800" },
+  filterTextActive: { color: "#FFFFFF" },
+  categoryWarning: { marginTop: 8, padding: 9, borderRadius: 10, backgroundColor: "#FFF7E6", color: "#B7791F", fontSize: 11, fontWeight: "800" },
   title: { flex: 1, color: "#222222", fontSize: 14, fontWeight: "900" },
   status: { color: "#0F766E", fontSize: 10, fontWeight: "800" },
   description: {

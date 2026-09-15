@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Image, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { recommendationApi } from "@/api/recommendations";
 import { useResource } from "@/hooks/use-resource";
 import { useAction } from "@/hooks/use-action";
@@ -10,6 +10,8 @@ import {
   normalizePlaceCategory,
   placeCategoryLabel,
 } from "@/constants/place-categories";
+import { PlaceMap } from "./place-map";
+import type { Place } from "@/types/place";
 
 type ReportData = {
   id?: number;
@@ -54,6 +56,18 @@ export function ReportDetail({
   );
   const effectiveCategory =
     reviewCategory || normalizePlaceCategory(data.suggested_category);
+  const pendingAdmin = admin && Boolean(data.id) && !["approved", "rejected"].includes(data.status || "");
+  const reportPlace: Place | null =
+    Number.isFinite(Number(data.suggested_lat)) && Number.isFinite(Number(data.suggested_lng))
+      ? {
+          id: `report:${data.id || id}`,
+          name: data.suggested_name || data.place_name || "제보 위치",
+          category: data.suggested_category || "",
+          address: data.suggested_address,
+          lat: Number(data.suggested_lat),
+          lng: Number(data.suggested_lng),
+        }
+      : null;
   const review = (approve: boolean) =>
     action.run(async () => {
       if (approve) {
@@ -69,12 +83,29 @@ export function ReportDetail({
       await reload();
     });
   return (
-    <Screen title={receipt ? "제보 접수 완료" : "제보 상세"} back>
+    <Screen
+      title={receipt ? `제보 접수 #${id}` : admin ? `장소 제보 #${id}` : "제보 상세"}
+      subtitle={admin ? "제출 내용과 위치를 확인한 뒤 처리해 주세요." : "접수 내용과 검토 진행 상태를 확인하세요."}
+      back
+      footer={pendingAdmin ? (
+        <View style={styles.footerActions}>
+          <Pressable disabled={action.busy} onPress={() => review(false)} style={[styles.rejectButton, action.busy && styles.disabled]}>
+            <Text style={styles.rejectText}>반려</Text>
+          </Pressable>
+          <Pressable disabled={action.busy} onPress={() => review(true)} style={[ui.button, styles.footerButton, action.busy && styles.disabled]}>
+            <Text style={ui.buttonText}>{action.busy ? "처리 중…" : "승인"}</Text>
+          </Pressable>
+        </View>
+      ) : undefined}
+    >
       {receipt ? (
-        <Text style={ui.success}>
-          접수번호 #{id} · 서버에 접수되었습니다. 검토 결과는 제보 내역에서
-          확인할 수 있습니다.
-        </Text>
+        <View style={styles.receiptBanner}>
+          <Text style={styles.receiptIcon}>✓</Text>
+          <View style={ui.grow}>
+            <Text style={styles.receiptTitle}>안전하게 접수되었습니다</Text>
+            <Text style={ui.muted}>검토 결과는 제보 내역과 알림에서 확인할 수 있어요.</Text>
+          </View>
+        </View>
       ) : null}
       <LoadState loading={loading} error={error} retry={reload} />
       {data.id ? (
@@ -96,13 +127,17 @@ export function ReportDetail({
             <Text style={ui.muted}>
               카테고리: {placeCategoryLabel(data.suggested_category)}
             </Text>
-            <Text style={ui.muted}>
-              위도 {data.suggested_lat ?? "미입력"} · 경도{" "}
-              {data.suggested_lng ?? "미입력"}
-            </Text>
             <Text>{data.description}</Text>
             <Text style={ui.muted}>{data.suggested_tags?.join(" · ")}</Text>
           </View>
+          {reportPlace ? (
+            <View style={styles.mapCard}>
+              <Text style={styles.sectionTitle}>제보 위치</Text>
+              <PlaceMap place={reportPlace} displayMode="selected" focusSelected fitBoundsKey={`report-detail:${id}`} />
+            </View>
+          ) : (
+            <Text style={ui.muted}>지도에 표시할 위치가 없습니다.</Text>
+          )}
           {data.admin_note ? (
             <Text style={ui.success}>검토 메모: {data.admin_note}</Text>
           ) : null}
@@ -120,7 +155,7 @@ export function ReportDetail({
           ) : (
             <Text style={ui.muted}>첨부 사진 없음</Text>
           )}
-          {admin && !["approved", "rejected"].includes(data.status || "") ? (
+          {pendingAdmin ? (
             <>
               <Text style={ui.sectionTitle}>관리자 검토</Text>
               <Text style={ui.muted}>
@@ -161,22 +196,6 @@ export function ReportDetail({
                 multiline
                 style={ui.textarea}
               />
-              <View style={ui.row}>
-                <Pressable
-                  disabled={action.busy}
-                  onPress={() => review(true)}
-                  style={ui.button}
-                >
-                  <Text style={ui.buttonText}>승인</Text>
-                </Pressable>
-                <Pressable
-                  disabled={action.busy}
-                  onPress={() => review(false)}
-                  style={ui.buttonSecondary}
-                >
-                  <Text style={ui.buttonSecondaryText}>반려</Text>
-                </Pressable>
-              </View>
             </>
           ) : null}
         </>
@@ -186,3 +205,16 @@ export function ReportDetail({
     </Screen>
   );
 }
+
+const styles = StyleSheet.create({
+  receiptBanner: { padding: 16, flexDirection: "row", alignItems: "center", gap: 12, borderRadius: 18, backgroundColor: "#EAF8F1" },
+  receiptIcon: { width: 38, height: 38, paddingTop: 7, borderRadius: 19, overflow: "hidden", backgroundColor: "#16875B", color: "#FFFFFF", fontSize: 18, fontWeight: "900", textAlign: "center" },
+  receiptTitle: { color: "#116B49", fontSize: 15, fontWeight: "900" },
+  mapCard: { gap: 10 },
+  sectionTitle: { color: "#17201D", fontSize: 16, fontWeight: "900" },
+  footerActions: { flexDirection: "row", gap: 8 },
+  footerButton: { flex: 1 },
+  rejectButton: { minHeight: 48, flex: 1, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "#F0BABA", borderRadius: 12, backgroundColor: "#FFF0F0" },
+  rejectText: { color: "#D94B4B", fontSize: 14, fontWeight: "900" },
+  disabled: { opacity: 0.55 },
+});

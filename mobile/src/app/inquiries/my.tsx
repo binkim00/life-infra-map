@@ -1,7 +1,6 @@
 import { useResource } from "@/hooks/use-resource";
 import { LoadState } from "@/components/load-state";
-import { router } from "expo-router";
-import { useState } from "react";
+import { router, type Href } from "expo-router";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { boardsApi } from "@/api/boards";
 import { Screen, ui } from "@/components/screen";
@@ -14,7 +13,6 @@ type Inquiry = {
   created_at?: string;
 };
 export default function MyInquiriesScreen() {
-  const [open, setOpen] = useState<number | null>(null);
   const { data: items, loading, error, reload: load } = useResource<Inquiry[]>(
     () => boardsApi.myInquiries().then((data) => data as Inquiry[]), [],
   );
@@ -37,7 +35,9 @@ export default function MyInquiriesScreen() {
         {items.map((item) => (
           <Pressable
             key={item.id}
-            onPress={() => setOpen(open === item.id ? null : item.id)}
+            accessibilityRole="button"
+            accessibilityLabel={`${item.title} 문의 상세 보기`}
+            onPress={() => router.push(`/inquiries/${item.id}` as Href)}
             style={ui.card}
           >
             <View style={ui.row}>
@@ -51,16 +51,8 @@ export default function MyInquiriesScreen() {
                 ? new Date(item.created_at).toLocaleDateString()
                 : ""}
             </Text>
-            {open === item.id ? (
-              <View style={styles.detail}>
-                <Text style={styles.content}>{item.content}</Text>
-                {item.admin_reply ? (
-                  <Text style={ui.success}>답변: {item.admin_reply}</Text>
-                ) : (
-                  <Text style={ui.muted}>아직 등록된 답변이 없습니다.</Text>
-                )}
-              </View>
-            ) : null}
+            <Text style={styles.preview} numberOfLines={2}>{item.content}</Text>
+            <Text style={styles.more}>상세 보기 →</Text>
           </Pressable>
         ))}
       </View>
@@ -71,6 +63,6 @@ const styles = StyleSheet.create({
   list: { gap: 8 },
   title: { flex: 1, color: "#222222", fontSize: 14, fontWeight: "900" },
   status: { color: "#0F766E", fontSize: 10, fontWeight: "800" },
-  detail: { marginTop: 14, gap: 10 },
-  content: { color: "#38403C", fontSize: 12, lineHeight: 19 },
+  preview: { marginTop: 8, color: "#5E6964", fontSize: 12, lineHeight: 18 },
+  more: { marginTop: 8, color: "#0F857A", fontSize: 11, fontWeight: "900" },
 });

@@ -32,6 +32,8 @@ type MypageData = {
   liked_posts?: unknown[];
 };
 const LINKS = [
+  ["커뮤니티", "/boards/free"],
+  ["새 장소 제보", "/place-report"],
   ["장소 보관함", "/mypage/saved-places"],
   ["선호 태그", "/mypage/preferences"],
   ["검색 기록", "/mypage/search-history"],
@@ -197,12 +199,13 @@ export default function MypageScreen() {
               {message ? <Text style={styles.message}>{message}</Text> : null}
             </View>
             <View style={styles.links}>
-              {LINKS.map(([label, path]) => (
+              {LINKS.map(([label, path], index) => (
                 <Pressable
                   key={path}
                   onPress={() => router.push(path as never)}
                   style={styles.link}
                 >
+                  <Text style={styles.linkIcon}>{["☵", "⌖", "▱", "#", "⌕", "✓", "?", "♢", "⚙", "i", "↑"][index] || "•"}</Text>
                   <Text style={styles.linkText}>{label}</Text>
                   <Text style={styles.chevron}>›</Text>
                 </Pressable>
@@ -307,6 +310,7 @@ const styles = StyleSheet.create({
     borderBottomColor: "#E3E8E5",
   },
   linkText: { flex: 1, color: "#222222", fontSize: 13, fontWeight: "800" },
+  linkIcon: { width: 24, color: "#0F857A", fontSize: 16, fontWeight: "900", textAlign: "center" },
   adminText: { flex: 1, color: "#0F766E", fontSize: 13, fontWeight: "900" },
   chevron: { color: "#8A918E", fontSize: 23 },
   activity: { flexDirection: "row", gap: 8 },

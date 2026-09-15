@@ -122,6 +122,7 @@ export default function ExploreScreen() {
     "idle" | "loading" | "success" | "error"
   >(initialQuery ? "loading" : "idle");
   const [message, setMessage] = useState("");
+  const [saveBusy, setSaveBusy] = useState(false);
   const [center, setCenter] = useState<{
     lat: number | null;
     lng: number | null;
@@ -290,34 +291,39 @@ export default function ExploreScreen() {
             : undefined,
         name: detailPlace.name,
         address: detailPlace.address || "",
-        lat: String(detailPlace.lat),
-        lng: String(detailPlace.lng),
+        lat: Number.isFinite(Number(detailPlace.lat)) ? String(detailPlace.lat) : undefined,
+        lng: Number.isFinite(Number(detailPlace.lng)) ? String(detailPlace.lng) : undefined,
       },
     });
   };
 
   const saveSelectedPlace = async () => {
-    if (!selectedPlace || !requireLogin()) return;
+    const target = detailPlace || selectedPlace;
+    if (!target || saveBusy || !requireLogin()) return;
     try {
+      setSaveBusy(true);
       await recommendationApi.savePlace({
-        placeKey: `${selectedPlace.result_source || "db"}:${selectedPlace.external_id || selectedPlace.id}`,
-        placeId: selectedPlace.result_source === "db" ? selectedPlace.id : null,
-        externalId: selectedPlace.external_id || "",
-        source: selectedPlace.result_source || "db",
-        name: selectedPlace.name,
-        category: selectedPlace.category,
-        address: selectedPlace.address,
-        lat: selectedPlace.lat,
-        lng: selectedPlace.lng,
-        detailUrl: selectedPlace.place_url || "",
-        kakaoPlaceUrl: selectedPlace.kakao_place_url || "",
+        placeKey: `${target.result_source || "db"}:${target.external_id || target.id}`,
+        placeId: target.result_source === "db" ? target.id : null,
+        externalId: target.external_id || "",
+        source: target.result_source || "db",
+        name: target.name,
+        category: target.category,
+        address: target.address,
+        lat: target.lat,
+        lng: target.lng,
+        detailUrl: target.place_url || "",
+        kakaoPlaceUrl: target.kakao_place_url || "",
         raw: {},
       });
       setMessage("장소를 저장했습니다.");
+      setDetailVisible(false);
     } catch (error) {
       setMessage(
         error instanceof Error ? error.message : "장소를 저장하지 못했습니다.",
       );
+    } finally {
+      setSaveBusy(false);
     }
   };
 
@@ -582,7 +588,7 @@ export default function ExploreScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: "#F5F7F6" },
+  screen: { flex: 1, backgroundColor: Palette.canvas },
   mapCanvas: { position: "absolute", inset: 0, backgroundColor: Palette.map },
   mapOverlay: { position: "absolute", inset: 0, justifyContent: "flex-start" },
   searchControls: {

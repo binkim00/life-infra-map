@@ -4,11 +4,11 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Palette, Shadow } from "@/constants/theme";
 
 const ITEMS = [
-  { label: "홈", path: "/" as const },
-  { label: "일반검색", path: "/explore" as const },
-  { label: "게시판", path: "/boards/free" as const },
-  { label: "장소 제보", path: "/place-report" as const },
-  { label: "MY", path: "/mypage" as const },
+  { label: "홈", symbol: "⌂", path: "/" as const },
+  { label: "검색", symbol: "⌕", path: "/explore" as const },
+  { label: "추천", symbol: "✦", path: "/recommend" as const },
+  { label: "저장", symbol: "▱", path: "/mypage/saved-places" as const },
+  { label: "MY", symbol: "○", path: "/mypage" as const },
 ];
 
 export function BottomNav() {
@@ -24,10 +24,13 @@ export function BottomNav() {
           return (
             <Pressable
               key={item.path}
+              accessibilityRole="button"
+              accessibilityState={{ selected: active }}
+              accessibilityLabel={item.label}
               onPress={() => router.push(item.path as never)}
-              style={styles.item}
+              style={({ pressed }) => [styles.item, pressed && styles.pressed]}
             >
-              <View style={[styles.dot, active && styles.dotActive]} />
+              <Text style={[styles.symbol, active && styles.symbolActive]}>{item.symbol}</Text>
               <Text style={[styles.label, active && styles.labelActive]}>
                 {item.label}
               </Text>
@@ -44,32 +47,34 @@ const styles = StyleSheet.create({
     position: "absolute",
     left: 0,
     right: 0,
-    bottom: 18,
+    bottom: 12,
     alignItems: "center",
     paddingHorizontal: 18,
   },
   nav: {
     width: "100%",
     maxWidth: 520,
-    height: 66,
-    paddingHorizontal: 18,
+    height: 72,
+    paddingHorizontal: 10,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-around",
     borderWidth: 1,
     borderColor: "#E1E6E3",
-    borderRadius: 24,
+    borderRadius: 26,
     backgroundColor: Palette.surface,
     boxShadow: Shadow.card,
   },
   item: {
-    minWidth: 52,
+    minWidth: 56,
+    minHeight: 54,
     alignItems: "center",
     justifyContent: "center",
-    gap: 6,
+    gap: 3,
   },
-  dot: { width: 4, height: 4, borderRadius: 2, backgroundColor: "transparent" },
-  dotActive: { backgroundColor: Palette.accent },
-  label: { color: "#89918D", fontSize: 11, fontWeight: "800" },
-  labelActive: { color: Palette.ink },
+  symbol: { color: "#89918D", fontSize: 22, lineHeight: 25, fontWeight: "800" },
+  symbolActive: { color: Palette.accent },
+  label: { color: "#89918D", fontSize: 10, fontWeight: "800" },
+  labelActive: { color: Palette.accent },
+  pressed: { opacity: 0.58, transform: [{ scale: 0.96 }] },
 });

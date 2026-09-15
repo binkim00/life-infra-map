@@ -24,6 +24,10 @@ export default function UpgradeGuideScreen() {
       subtitle="활동과 승인된 제보를 기준으로 티어가 계산됩니다."
       back
     >
+      <View style={[ui.card, styles.notice]}>
+        <Text style={styles.noticeTitle}>승인된 기여만 점수에 반영돼요</Text>
+        <Text style={ui.muted}>제보는 운영 검토가 끝난 뒤 반영되며, 반려되거나 중복인 내용은 점수에 포함되지 않습니다.</Text>
+      </View>
       <Text style={ui.sectionTitle}>기여도 반영 기준</Text>
       <View style={styles.grid}>
         {RULES.map(([label, score]) => (
@@ -68,4 +72,6 @@ const styles = StyleSheet.create({
   badgeText: { color: "#0F766E", fontSize: 13, fontWeight: "900" },
   name: { flex: 1, color: "#222222", fontSize: 13, fontWeight: "900" },
   score: { color: "#0F766E", fontSize: 12, fontWeight: "900" },
+  notice: { borderColor: "#B9DED5", backgroundColor: "#EFF8F5" },
+  noticeTitle: { marginBottom: 6, color: "#0F6F66", fontSize: 14, fontWeight: "900" },
 });

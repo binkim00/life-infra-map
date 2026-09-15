@@ -105,6 +105,42 @@ class MobileAdminWorkflowTests(TestCase):
         self.assertEqual(self.client.get(url).data["description"], report.description)
         self.assertEqual(self.client.get("/api/recommendations/place-reports/").data["results"][0]["description"], report.description)
 
+    def test_user_report_list_filters_status_without_exposing_other_users(self):
+        PlaceReport.objects.create(
+            user=self.user,
+            report_type="new_place",
+            suggested_name="검토 중 제보",
+            status="pending",
+        )
+        PlaceReport.objects.create(
+            user=self.user,
+            report_type="wrong_info",
+            suggested_name="승인 제보",
+            status="approved",
+        )
+        PlaceReport.objects.create(
+            user=self.other,
+            report_type="new_place",
+            suggested_name="다른 회원 제보",
+            status="approved",
+        )
+        self.client.force_authenticate(self.user)
+        response = self.client.get(
+            "/api/recommendations/place-reports/",
+            {"status": "approved"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["count"], 1)
+        self.assertEqual(response.data["results"][0]["suggested_name"], "승인 제보")
+        self.assertEqual(
+            self.client.get(
+                "/api/recommendations/place-reports/",
+                {"status": "unknown"},
+            ).status_code,
+            400,
+        )
+
     def test_historical_manifest_preview_simulation_apply_and_replay(self):
         import hashlib
         import json

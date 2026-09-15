@@ -35,6 +35,11 @@ export function PostEditor({
     }
   }, undefined, Boolean(postId), postId || "new");
   const pick = async () => {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      setError("사진을 첨부하려면 사진 접근 권한을 허용해 주세요.");
+      return;
+    }
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ["images"],
       quality: 0.85,
@@ -88,11 +93,16 @@ export function PostEditor({
           multiline
           style={ui.textarea}
         />
-        <Pressable onPress={pick} style={ui.buttonSecondary}>
+        <Pressable accessibilityRole="button" onPress={pick} style={ui.buttonSecondary}>
           <Text style={ui.buttonSecondaryText}>사진 선택</Text>
         </Pressable>
         {image ? (
-          <Image source={{ uri: image.uri }} style={styles.image} />
+          <View style={styles.imageWrap}>
+            <Image source={{ uri: image.uri }} style={styles.image} />
+            <Pressable accessibilityRole="button" onPress={() => setImage(null)} style={styles.removeImage}>
+              <Text style={styles.removeImageText}>사진 제거</Text>
+            </Pressable>
+          </View>
         ) : null}
         {error ? <Text style={ui.error}>{error}</Text> : null}
         <Pressable disabled={loading || Boolean(postId && (fetching || loadError))} onPress={submit} style={ui.button}>
@@ -105,4 +115,7 @@ export function PostEditor({
 const styles = StyleSheet.create({
   form: { gap: 12 },
   image: { width: "100%", height: 220, borderRadius: 12, resizeMode: "cover" },
+  imageWrap: { gap: 8 },
+  removeImage: { minHeight: 40, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "#F0BABA", borderRadius: 12, backgroundColor: "#FFF0F0" },
+  removeImageText: { color: "#D94B4B", fontSize: 12, fontWeight: "900" },
 });

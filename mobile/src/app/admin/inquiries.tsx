@@ -21,8 +21,10 @@ export default function AdminInquiriesScreen() {
     () => boardsApi.adminInquiries().then((data) => data as Inquiry[]), [],
   );
   const answer = async (item: Inquiry) => {
+    const reply = (drafts[item.id] ?? item.admin_reply ?? "").trim();
+    if (!reply) throw new Error("답변 내용을 입력해 주세요.");
     await boardsApi.updateAdminInquiry(item.id, {
-      adminReply: drafts[item.id] ?? item.admin_reply ?? "",
+      adminReply: reply,
       status: "answered",
     });
     load();
@@ -49,8 +51,8 @@ export default function AdminInquiriesScreen() {
               multiline
               style={ui.textarea}
             />
-            <Pressable disabled={action.busy} onPress={() => action.run(() => answer(item))} style={ui.button}>
-              <Text style={ui.buttonText}>답변 저장</Text>
+            <Pressable disabled={action.busy || !(drafts[item.id] ?? item.admin_reply ?? "").trim()} onPress={() => action.run(() => answer(item))} style={[ui.button, (action.busy || !(drafts[item.id] ?? item.admin_reply ?? "").trim()) && styles.disabled]}>
+              <Text style={ui.buttonText}>{action.busy ? "답변 등록 중…" : "답변 등록"}</Text>
             </Pressable>
           </View>
         ))}
@@ -68,4 +70,5 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 19,
   },
+  disabled: { opacity: 0.45 },
 });

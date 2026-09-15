@@ -487,6 +487,15 @@ def place_reports(request):
             .prefetch_related("images")
             .order_by("-created_at")
         )
+        report_status = request.GET.get("status", "").strip()
+        if report_status:
+            valid_statuses = {choice for choice, _ in PlaceReport.STATUS_CHOICES}
+            if report_status not in valid_statuses:
+                return Response(
+                    {"detail": "제보 처리 상태를 확인해 주세요."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            reports = reports.filter(status=report_status)
         return paginated_response(
             reports,
             PlaceReportListSerializer,

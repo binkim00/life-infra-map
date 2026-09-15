@@ -4,6 +4,7 @@ import { LoadState } from "@/components/load-state";
 import { router, useLocalSearchParams } from "expo-router";
 import { useState } from "react";
 import {
+  Alert,
   Image,
   Pressable,
   StyleSheet,
@@ -48,28 +49,29 @@ export default function BoardDetailScreen() {
   const { user, requireLogin } = useAuth();
   const [comment, setComment] = useState("");
   const [reportReason, setReportReason] = useState("");
+  const [commentReportDrafts, setCommentReportDrafts] = useState<Record<number, string>>({});
   const [replyDrafts, setReplyDrafts] = useState<Record<number, string>>({});
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editingText, setEditingText] = useState("");
   const [error, setError] = useState("");
   const deleteAction = useAction();
+  const interaction = useAction();
   const { data: post, loading, error: loadError, reload: load } = useResource<Post | null>(
     () => boardsApi.post(postId).then(data => data as unknown as Post), null, true, postId,
   );
-  const addComment = async () => {
+  const addComment = () => interaction.run(async () => {
     if (!requireLogin() || !comment.trim()) return;
-    try {
-      await boardsApi.createComment(postId, { content: comment.trim() });
-      setComment("");
-      void load();
-    } catch {
-      setError("댓글을 등록하지 못했습니다.");
-    }
-  };
-  const remove = () => deleteAction.run(async () => {
-    await boardsApi.deletePost(postId);
-    router.replace(`/boards/${boardType}` as never);
+    await boardsApi.createComment(postId, { content: comment.trim() });
+    setComment("");
+    await load();
   });
+  const remove = () => Alert.alert("게시글 삭제", "삭제한 게시글은 복구할 수 없습니다. 삭제할까요?", [
+    { text: "취소", style: "cancel" },
+    { text: "삭제", style: "destructive", onPress: () => deleteAction.run(async () => {
+      await boardsApi.deletePost(postId);
+      router.replace(`/boards/${boardType}` as never);
+    }) },
+  ]);
   if (!post)
     return (
       <Screen title="게시글" back>
@@ -83,6 +85,7 @@ export default function BoardDetailScreen() {
       back
     >
       {deleteAction.error ? <Text style={ui.error}>{deleteAction.error}</Text> : null}
+      {interaction.error ? <Text style={ui.error}>{interaction.error}</Text> : null}
       <View style={ui.card}>
         <Text style={styles.content}>{post.content}</Text>
         {post.image_url ? (
@@ -91,16 +94,12 @@ export default function BoardDetailScreen() {
       </View>
       <View style={ui.row}>
         <Pressable
-          onPress={async () => {
-            if (requireLogin()) {
-              try {
-                await boardsApi.likePost(postId);
-                void load();
-              } catch {
-                setError("좋아요를 반영하지 못했습니다.");
-              }
-            }
-          }}
+          disabled={interaction.busy}
+          onPress={() => interaction.run(async () => {
+            if (!requireLogin()) return;
+            await boardsApi.likePost(postId);
+            await load();
+          })}
           style={ui.buttonSecondary}
         >
           <Text style={ui.buttonSecondaryText}>
@@ -132,23 +131,20 @@ export default function BoardDetailScreen() {
           style={[ui.input, ui.grow]}
         />
         <Pressable
-          onPress={async () => {
+          disabled={interaction.busy || !reportReason.trim()}
+          onPress={() => interaction.run(async () => {
             if (!requireLogin() || !reportReason.trim()) return;
-            try {
-              await boardsApi.reportPost(postId, { reason: reportReason.trim() });
-              setReportReason("");
-              setError("신고가 접수되었습니다.");
-            } catch {
-              setError("신고를 접수하지 못했습니다.");
-            }
-          }}
+            await boardsApi.reportPost(postId, { reason: reportReason.trim() });
+            setReportReason("");
+            setError("신고가 접수되었습니다.");
+          })}
           style={ui.buttonSecondary}
         >
           <Text style={styles.deleteText}>게시글 신고</Text>
         </Pressable>
       </View>
       {error ? (
-        <Text style={error === "신고가 접수되었습니다." ? ui.success : ui.error}>
+        <Text style={error.includes("접수되었습니다.") ? ui.success : ui.error}>
           {error}
         </Text>
       ) : null}
@@ -161,7 +157,7 @@ export default function BoardDetailScreen() {
           placeholderTextColor={INPUT_PLACEHOLDER_COLOR}
           style={[ui.input, ui.grow]}
         />
-        <Pressable onPress={addComment} style={ui.button}>
+        <Pressable disabled={interaction.busy || !comment.trim()} onPress={addComment} style={[ui.button, !comment.trim() && styles.disabled]}>
           <Text style={ui.buttonText}>등록</Text>
         </Pressable>
       </View>
@@ -181,13 +177,12 @@ export default function BoardDetailScreen() {
                   style={[ui.input, ui.grow]}
                 />
                 <Pressable
-                  onPress={async () => {
-                    await boardsApi.updateComment(item.id, {
-                      content: editingText,
-                    });
+                  disabled={interaction.busy || !editingText.trim()}
+                  onPress={() => interaction.run(async () => {
+                    await boardsApi.updateComment(item.id, { content: editingText.trim() });
                     setEditingId(null);
-                    load();
-                  }}
+                    await load();
+                  })}
                   style={ui.buttonSecondary}
                 >
                   <Text style={ui.buttonSecondaryText}>저장</Text>
@@ -198,30 +193,24 @@ export default function BoardDetailScreen() {
             )}
             <View style={ui.row}>
               <Pressable
-                onPress={async () => {
+                disabled={interaction.busy}
+                onPress={() => interaction.run(async () => {
                   if (!requireLogin()) return;
-                  try {
-                    await boardsApi.likeComment(item.id);
-                    void load();
-                  } catch {
-                    setError("댓글 좋아요를 반영하지 못했습니다.");
-                  }
-                }}
+                  await boardsApi.likeComment(item.id);
+                  await load();
+                })}
               >
                 <Text style={styles.action}>
                   좋아요 {item.likes_count || 0}
                 </Text>
               </Pressable>
               <Pressable
-                onPress={async () => {
+                disabled={interaction.busy}
+                onPress={() => interaction.run(async () => {
                   if (!requireLogin()) return;
-                  try {
-                    await boardsApi.dislikeComment(item.id);
-                    void load();
-                  } catch {
-                    setError("댓글 싫어요를 반영하지 못했습니다.");
-                  }
-                }}
+                  await boardsApi.dislikeComment(item.id);
+                  await load();
+                })}
               >
                 <Text style={styles.action}>
                   싫어요 {item.dislikes_count || 0}
@@ -237,27 +226,31 @@ export default function BoardDetailScreen() {
                   >
                     <Text style={styles.action}>수정</Text>
                   </Pressable>
-                  <Pressable
-                    onPress={async () => {
-                      await boardsApi.deleteComment(item.id);
-                      load();
-                    }}
-                  >
+                  <Pressable onPress={() => Alert.alert("댓글 삭제", "이 댓글을 삭제할까요?", [
+                    { text: "취소", style: "cancel" },
+                    { text: "삭제", style: "destructive", onPress: () => interaction.run(async () => { await boardsApi.deleteComment(item.id); await load(); }) },
+                  ])}>
                     <Text style={styles.deleteText}>삭제</Text>
                   </Pressable>
                 </>
               ) : null}
+              <TextInput
+                value={commentReportDrafts[item.id] || ""}
+                onChangeText={(value) => setCommentReportDrafts((current) => ({ ...current, [item.id]: value }))}
+                placeholder="댓글 신고 사유"
+                placeholderTextColor={INPUT_PLACEHOLDER_COLOR}
+                style={[ui.input, styles.reportInput]}
+              />
               <Pressable
-                onPress={async () => {
-                  if (!requireLogin() || !reportReason.trim()) return;
-                  await boardsApi.reportComment(item.id, {
-                    reason: reportReason.trim(),
-                  });
-                  setReportReason("");
-                }}
-              >
-                <Text style={styles.deleteText}>신고</Text>
-              </Pressable>
+                disabled={interaction.busy || !commentReportDrafts[item.id]?.trim()}
+                onPress={() => interaction.run(async () => {
+                  const reason = commentReportDrafts[item.id]?.trim();
+                  if (!requireLogin() || !reason) return;
+                  await boardsApi.reportComment(item.id, { reason });
+                  setCommentReportDrafts((current) => ({ ...current, [item.id]: "" }));
+                  setError("댓글 신고가 접수되었습니다.");
+                })}
+              ><Text style={styles.deleteText}>신고</Text></Pressable>
             </View>
             <View style={[ui.row, styles.replyBox]}>
               <TextInput
@@ -273,7 +266,8 @@ export default function BoardDetailScreen() {
                 style={[ui.input, ui.grow]}
               />
               <Pressable
-                onPress={async () => {
+                disabled={interaction.busy || !replyDrafts[item.id]?.trim()}
+                onPress={() => interaction.run(async () => {
                   const content = replyDrafts[item.id]?.trim();
                   if (!requireLogin() || !content) return;
                   await boardsApi.createComment(postId, {
@@ -281,8 +275,8 @@ export default function BoardDetailScreen() {
                     parent: item.id,
                   });
                   setReplyDrafts((current) => ({ ...current, [item.id]: "" }));
-                  load();
-                }}
+                  await load();
+                })}
                 style={ui.buttonSecondary}
               >
                 <Text style={ui.buttonSecondaryText}>답글</Text>
@@ -329,4 +323,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#F5F7F6",
   },
   deleteText: { color: "#B42318", fontSize: 11, fontWeight: "800" },
+  reportInput: { minWidth: 120, flex: 1, minHeight: 42, fontSize: 12 },
+  disabled: { opacity: 0.45 },
 });

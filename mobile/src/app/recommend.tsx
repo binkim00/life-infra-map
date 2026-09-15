@@ -144,6 +144,7 @@ export default function RecommendScreen() {
   const [detailVisible, setDetailVisible] = useState(false);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
+  const [actionBusy, setActionBusy] = useState<"" | "save" | "map">("");
   const [searchPlan, setSearchPlan] = useState<Record<string, unknown> | null>(
     null,
   );
@@ -396,8 +397,9 @@ export default function RecommendScreen() {
     }
   };
   const save = async () => {
-    if (!selected || !requireLogin()) return;
+    if (!selected || actionBusy || !requireLogin()) return;
     try {
+      setActionBusy("save");
       await recommendationApi.savePlace({
         placeKey: `${selected.source || "db"}:${selected.external_id || selected.place_id || selected.id}`,
         placeId:
@@ -418,15 +420,28 @@ export default function RecommendScreen() {
       setMessage("장소를 저장했습니다.");
     } catch {
       setMessage("장소를 저장하지 못했습니다. 다시 시도해 주세요.");
+    } finally {
+      setActionBusy("");
     }
   };
-  const openMap = () => {
-    if (!selected) return;
-    Linking.openURL(
-      selected.place_url ||
-        selected.kakao_place_url ||
-        `https://map.kakao.com/link/map/${encodeURIComponent(selected.name)},${selected.lat},${selected.lng}`,
-    );
+  const openMap = async () => {
+    if (!selected || actionBusy) return;
+    const coordinatesAvailable = Number.isFinite(Number(selected.lat)) && Number.isFinite(Number(selected.lng));
+    const url = selected.place_url || selected.kakao_place_url || (coordinatesAvailable
+      ? `https://map.kakao.com/link/map/${encodeURIComponent(selected.name)},${selected.lat},${selected.lng}`
+      : "");
+    if (!url) {
+      setMessage("지도에서 열 수 있는 위치 정보가 없습니다.");
+      return;
+    }
+    try {
+      setActionBusy("map");
+      await Linking.openURL(url);
+    } catch {
+      setMessage("지도 앱을 열지 못했습니다. 잠시 후 다시 시도해 주세요.");
+    } finally {
+      setActionBusy("");
+    }
   };
   const report = () => {
     if (!selected) return;
@@ -441,16 +456,16 @@ export default function RecommendScreen() {
             : undefined,
         name: selected.name,
         address: selected.address || "",
-        lat: String(selected.lat),
-        lng: String(selected.lng),
+        lat: Number.isFinite(Number(selected.lat)) ? String(selected.lat) : undefined,
+        lng: Number.isFinite(Number(selected.lng)) ? String(selected.lng) : undefined,
       },
     });
   };
   return (
     <View style={styles.root}>
       <Screen
-        title="상황 기반 장소 추천"
-        subtitle="상황과 조건을 이해해 이유가 있는 결과를 정렬합니다."
+        title="상황 맞춤 추천"
+        subtitle="원하는 상황과 꼭 필요한 조건을 알려주세요. 근거를 구분해 추천합니다."
         back
         footer={
           <>
@@ -582,8 +597,8 @@ export default function RecommendScreen() {
                     >
                       <Text style={ui.buttonSecondaryText}>상세정보</Text>
                     </Pressable>
-                    <Pressable onPress={openMap} style={ui.buttonSecondary}>
-                      <Text style={ui.buttonSecondaryText}>지도</Text>
+                    <Pressable disabled={Boolean(actionBusy)} onPress={() => void openMap()} style={ui.buttonSecondary}>
+                      <Text style={ui.buttonSecondaryText}>{actionBusy === "map" ? "여는 중…" : "지도"}</Text>
                     </Pressable>
                   </View>
                 </View>
@@ -591,8 +606,8 @@ export default function RecommendScreen() {
             ) : null}
             {selected ? (
               <View style={ui.row}>
-                <Pressable onPress={save} style={[ui.buttonSecondary, ui.grow]}>
-                  <Text style={ui.buttonSecondaryText}>저장</Text>
+                <Pressable disabled={Boolean(actionBusy)} onPress={save} style={[ui.buttonSecondary, ui.grow]}>
+                  <Text style={ui.buttonSecondaryText}>{actionBusy === "save" ? "저장 중…" : "저장"}</Text>
                 </Pressable>
                 <Pressable
                   onPress={report}
@@ -610,7 +625,7 @@ export default function RecommendScreen() {
             <View style={styles.list}>
               {results.map((place, index) => (
                 <Pressable
-                  key={String(place.id)}
+                  key={`${place.source || place.result_source || "place"}:${place.id}`}
                   accessibilityRole="button"
                   accessibilityLabel={`${place.name} 상세정보`}
                   onPress={() => {
@@ -641,16 +656,16 @@ export default function RecommendScreen() {
                         <Text style={ui.muted}>{place.result_tier_label}</Text>
                       ) : null}
                       {place.matched_conditions?.length ? (
-                        <Text style={styles.tags}>
-                          충족:{" "}
-                          {place.matched_conditions.slice(0, 3).join(" · ")}
-                        </Text>
+                        <View style={styles.conditionBlock}>
+                          <Text style={styles.conditionLabel}>✓ 근거 있음</Text>
+                          <Text style={styles.tags}>{place.matched_conditions.slice(0, 3).join(" · ")}</Text>
+                        </View>
                       ) : null}
                       {place.missing_conditions?.length ? (
-                        <Text style={styles.missing}>
-                          확인 필요:{" "}
-                          {place.missing_conditions.slice(0, 3).join(" · ")}
-                        </Text>
+                        <View style={[styles.conditionBlock, styles.missingBlock]}>
+                          <Text style={styles.missingLabel}>? 확인 필요</Text>
+                          <Text style={styles.missing}>{place.missing_conditions.slice(0, 3).join(" · ")}</Text>
+                        </View>
                       ) : null}
                       {(["empty", "thin"] as const).includes(
                         place.evidence_quality_level as "empty" | "thin",
@@ -781,4 +796,8 @@ const styles = StyleSheet.create({
   reason: { marginTop: 8, color: "#38403C", fontSize: 11, lineHeight: 17 },
   tags: { marginTop: 7, color: "#0F766E", fontSize: 10, fontWeight: "700" },
   missing: { marginTop: 7, color: "#A33A21", fontSize: 10, fontWeight: "700" },
+  conditionBlock: { marginTop: 9, padding: 9, borderRadius: 10, backgroundColor: "#E9F5F2" },
+  missingBlock: { backgroundColor: "#FFF7E6" },
+  conditionLabel: { color: "#0F857A", fontSize: 10, fontWeight: "900" },
+  missingLabel: { color: "#B7791F", fontSize: 10, fontWeight: "900" },
 });

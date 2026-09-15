@@ -11,6 +11,7 @@ import {
 } from "react-native";
 
 import { useAuth } from "@/auth/auth-context";
+import { ApiError } from "@/api/client";
 import { INPUT_PLACEHOLDER_COLOR, Screen, ui } from "@/components/screen";
 
 export default function SignupScreen() {
@@ -25,10 +26,16 @@ export default function SignupScreen() {
   const [image, setImage] = useState<ImagePicker.ImagePickerAsset | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const field = (key: keyof typeof form, value: string) =>
     setForm((current) => ({ ...current, [key]: value }));
 
   const pickImage = async () => {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      setError("프로필 사진을 선택하려면 사진 접근 권한을 허용해 주세요.");
+      return;
+    }
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ["images"],
       quality: 0.8,
@@ -58,8 +65,13 @@ export default function SignupScreen() {
       setError("");
       await signup(body);
       router.replace("/");
-    } catch {
-      setError("회원가입에 실패했습니다. 입력 내용을 확인해주세요.");
+    } catch (cause) {
+      if (cause instanceof ApiError && cause.data && typeof cause.data === "object") {
+        const first = Object.values(cause.data as Record<string, unknown>)[0];
+        setError(Array.isArray(first) && first[0] ? String(first[0]) : cause.message);
+      } else {
+        setError(cause instanceof Error ? cause.message : "회원가입에 실패했습니다. 입력 내용을 확인해 주세요.");
+      }
     } finally {
       setLoading(false);
     }
@@ -100,24 +112,31 @@ export default function SignupScreen() {
           placeholderTextColor={INPUT_PLACEHOLDER_COLOR}
           style={ui.input}
         />
-        <TextInput
-          value={form.password}
-          onChangeText={(v) => field("password", v)}
-          placeholder="비밀번호"
-          placeholderTextColor={INPUT_PLACEHOLDER_COLOR}
-          secureTextEntry
-          style={ui.input}
-        />
+        <View style={styles.passwordRow}>
+          <TextInput
+            value={form.password}
+            onChangeText={(v) => field("password", v)}
+            placeholder="비밀번호"
+            placeholderTextColor={INPUT_PLACEHOLDER_COLOR}
+            secureTextEntry={!showPassword}
+            style={[ui.input, styles.passwordInput]}
+          />
+          <Pressable accessibilityRole="button" onPress={() => setShowPassword((value) => !value)} style={styles.passwordToggle}>
+            <Text style={styles.passwordToggleText}>{showPassword ? "숨김" : "보기"}</Text>
+          </Pressable>
+        </View>
         <TextInput
           value={form.passwordConfirm}
           onChangeText={(v) => field("passwordConfirm", v)}
+          onSubmitEditing={submit}
           placeholder="비밀번호 확인"
           placeholderTextColor={INPUT_PLACEHOLDER_COLOR}
-          secureTextEntry
+          secureTextEntry={!showPassword}
+          returnKeyType="done"
           style={ui.input}
         />
         {error ? <Text style={ui.error}>{error}</Text> : null}
-        <Pressable disabled={loading} onPress={submit} style={ui.button}>
+        <Pressable disabled={loading} onPress={submit} style={[ui.button, loading && styles.disabled]}>
           <Text style={ui.buttonText}>
             {loading ? "처리 중..." : "가입하기"}
           </Text>
@@ -138,4 +157,9 @@ const styles = StyleSheet.create({
     backgroundColor: "#DCE7E2",
   },
   pickText: { color: "#0F766E", fontSize: 12, fontWeight: "800" },
+  passwordRow: { position: "relative", justifyContent: "center" },
+  passwordInput: { paddingRight: 64 },
+  passwordToggle: { position: "absolute", right: 8, minWidth: 48, minHeight: 38, alignItems: "center", justifyContent: "center" },
+  passwordToggleText: { color: "#0F857A", fontSize: 12, fontWeight: "900" },
+  disabled: { opacity: 0.55 },
 });

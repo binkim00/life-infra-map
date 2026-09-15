@@ -11,9 +11,9 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { Palette, Radius, Spacing } from "@/constants/theme";
+import { Palette, Radius, Shadow, Spacing } from "@/constants/theme";
 
-export const INPUT_PLACEHOLDER_COLOR = "#5F6863";
+export const INPUT_PLACEHOLDER_COLOR = "#7A8580";
 
 export function Screen({
   title,
@@ -42,8 +42,14 @@ export function Screen({
           <View style={styles.header}>
             <View style={styles.headingRow}>
               {back ? (
-                <Pressable onPress={() => router.back()} style={styles.back}>
-                  <Text style={styles.backText}>‹</Text>
+                <Pressable
+                  accessibilityLabel="뒤로 가기"
+                  accessibilityRole="button"
+                  hitSlop={10}
+                  onPress={() => router.back()}
+                  style={({ pressed }) => [styles.back, pressed && styles.pressed]}
+                >
+                  <Text style={styles.backText}>←</Text>
                 </Pressable>
               ) : null}
               <View style={styles.headingCopy}>
@@ -69,39 +75,40 @@ export function Screen({
 
 export const ui = StyleSheet.create({
   card: {
-    padding: 16,
+    padding: 18,
     borderWidth: 1,
-    borderColor: "#E2E7E4",
+    borderColor: Palette.border,
     borderRadius: Radius.medium,
     backgroundColor: Palette.surface,
+    boxShadow: Shadow.card,
   },
   input: {
     minHeight: 50,
     paddingHorizontal: 14,
     borderWidth: 1,
-    borderColor: "#DCE3DF",
+    borderColor: Palette.border,
     borderRadius: Radius.small,
     backgroundColor: Palette.surface,
     color: Palette.ink,
-    fontSize: 14,
+    fontSize: 15,
   },
   textarea: {
     minHeight: 130,
     padding: 14,
     textAlignVertical: "top",
     borderWidth: 1,
-    borderColor: "#DCE3DF",
+    borderColor: Palette.border,
     borderRadius: Radius.small,
     backgroundColor: Palette.surface,
     color: Palette.ink,
-    fontSize: 14,
+    fontSize: 15,
   },
   button: {
     minHeight: 48,
     paddingHorizontal: 18,
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: Radius.small,
+    borderRadius: Radius.medium,
     backgroundColor: Palette.accent,
   },
   buttonDark: {
@@ -118,12 +125,12 @@ export const ui = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 1,
-    borderColor: "#DCE3DF",
+    borderColor: Palette.border,
     borderRadius: Radius.small,
     backgroundColor: Palette.surface,
   },
-  buttonText: { color: "#FFFFFF", fontSize: 13, fontWeight: "900" },
-  buttonSecondaryText: { color: Palette.ink, fontSize: 13, fontWeight: "800" },
+  buttonText: { color: "#FFFFFF", fontSize: 14, fontWeight: "900" },
+  buttonSecondaryText: { color: Palette.ink, fontSize: 14, fontWeight: "800" },
   label: {
     marginBottom: 7,
     color: Palette.ink,
@@ -134,8 +141,8 @@ export const ui = StyleSheet.create({
   error: {
     padding: 12,
     borderRadius: Radius.small,
-    backgroundColor: "#FFF0EE",
-    color: "#B42318",
+    backgroundColor: Palette.dangerSoft,
+    color: Palette.danger,
     fontSize: 12,
   },
   success: {
@@ -147,29 +154,30 @@ export const ui = StyleSheet.create({
   },
   row: { flexDirection: "row", alignItems: "center", gap: 10 },
   grow: { minWidth: 0, flex: 1 },
-  sectionTitle: { color: Palette.ink, fontSize: 18, fontWeight: "900" },
+  sectionTitle: { color: Palette.ink, fontSize: 19, fontWeight: "900", letterSpacing: -0.35 },
 });
 
 const styles = StyleSheet.create({
   footer: {
     padding: 12,
     gap: 8,
-    backgroundColor: "#F5F7F6",
+    backgroundColor: Palette.canvas,
     borderTopWidth: 1,
     borderColor: "#DCE3DF",
   },
-  screen: { flex: 1, backgroundColor: "#F5F7F6" },
+  screen: { flex: 1, backgroundColor: Palette.canvas },
   safe: { flex: 1 },
   content: {
     width: "100%",
     maxWidth: 760,
     alignSelf: "center",
-    padding: Spacing.four,
+    paddingHorizontal: Spacing.three,
+    paddingTop: Spacing.three,
     paddingBottom: 110,
     gap: Spacing.three,
   },
   header: {
-    marginBottom: 8,
+    marginBottom: 12,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
@@ -184,19 +192,20 @@ const styles = StyleSheet.create({
   },
   headingCopy: { minWidth: 0, flex: 1 },
   back: {
-    width: 38,
-    height: 38,
+    width: 42,
+    height: 42,
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: 19,
+    borderRadius: 21,
     backgroundColor: Palette.surface,
   },
-  backText: { marginTop: -3, color: Palette.ink, fontSize: 30 },
+  backText: { color: Palette.ink, fontSize: 23, fontWeight: "700" },
+  pressed: { opacity: 0.62, transform: [{ scale: 0.97 }] },
   title: {
     color: Palette.ink,
-    fontSize: 28,
+    fontSize: 29,
     fontWeight: "900",
     letterSpacing: -0.6,
   },
-  subtitle: { marginTop: 5, color: Palette.muted, fontSize: 12 },
+  subtitle: { marginTop: 6, color: Palette.muted, fontSize: 13, lineHeight: 19 },
 });
