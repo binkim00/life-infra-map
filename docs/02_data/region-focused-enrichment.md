@@ -6,7 +6,7 @@ The bootstrap collector keeps an ordered focus cohort while Balanced Mode remain
 
 `부산 우선 -> 서울 -> 수도권 -> 광역시 -> 전국`
 
-API evidence collection currently uses `부산광역시,서울특별시` with a `70,30` split and a daily place limit of 100. In bootstrap mode the scheduler limits new jobs to `TAG_COLLECTION_FOCUS_CATEGORIES`, which defaults to `cafe,restaurant`.
+API evidence collection currently uses a daily 6,000-place cohort: Busan 3,000, Seoul 2,000, Gyeonggi 700, and Incheon 300. The focus category set includes every supported collection profile so the regional targets can be filled without shortening the 90-day revisit cooldown.
 
 AI web research keeps the staged expansion plan above. Adding Seoul to the bounded API evidence batch does not automatically advance AI web research to the metropolitan, metro-city, or nationwide stages.
 

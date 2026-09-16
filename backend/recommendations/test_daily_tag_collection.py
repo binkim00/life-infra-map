@@ -2,6 +2,7 @@ from datetime import timedelta
 from io import StringIO
 from unittest.mock import patch
 
+from django.db.models import Count
 from django.test import TestCase, override_settings
 from django.utils import timezone
 
@@ -447,13 +448,13 @@ class DailyTagCollectionTests(TestCase):
     @override_settings(
         TAG_COLLECTION_MODE="bootstrap",
         TAG_COLLECTION_FOCUS_REGIONS=("부산광역시", "서울특별시"),
-        TAG_COLLECTION_FOCUS_REGION_WEIGHTS="70,30",
+        TAG_COLLECTION_FOCUS_REGION_WEIGHTS="50,50",
         TAG_COLLECTION_FOCUS_CATEGORIES=("cafe",),
         TAG_COLLECTION_BOOTSTRAP_CATEGORY_MAX_SHARE=100,
         TAG_COLLECTION_DAILY_API_LIMIT=100,
         TAG_COLLECTION_DAILY_PLACE_LIMIT=10,
     )
-    def test_scheduler_keeps_busan_priority_while_adding_seoul(self):
+    def test_scheduler_splits_busan_and_seoul_evenly(self):
         for index in range(10):
             self.make_place(900 + index, category="cafe", region="부산광역시")
             self.make_place(920 + index, category="cafe", region="서울특별시")
@@ -463,12 +464,83 @@ class DailyTagCollectionTests(TestCase):
         self.assertEqual(stats["planned"], 10)
         self.assertEqual(
             PlaceTagCollectionJob.objects.filter(place__address__startswith="부산").count(),
-            7,
+            5,
         )
         self.assertEqual(
             PlaceTagCollectionJob.objects.filter(place__address__startswith="서울").count(),
-            3,
+            5,
         )
+
+    @override_settings(
+        TAG_COLLECTION_MODE="bootstrap",
+        TAG_COLLECTION_FOCUS_REGIONS=("부산광역시", "서울특별시"),
+        TAG_COLLECTION_FOCUS_REGION_WEIGHTS="50,50",
+        TAG_COLLECTION_FOCUS_CATEGORIES=("cafe",),
+        TAG_COLLECTION_BOOTSTRAP_CATEGORY_MAX_SHARE=100,
+        TAG_COLLECTION_DAILY_API_LIMIT=100,
+        TAG_COLLECTION_DAILY_PLACE_LIMIT=4,
+    )
+    def test_scheduler_corrects_partial_day_region_imbalance(self):
+        for index in range(4):
+            busan = self.make_place(950 + index, category="cafe", region="부산광역시")
+            self.make_place(960 + index, category="cafe", region="서울특별시")
+            if index < 2:
+                PlaceTagCollectionJob.objects.create(
+                    place=busan,
+                    provider="naver_search",
+                    cycle_date=timezone.localdate(),
+                    status="completed",
+                    context={"region": "부산광역시"},
+                )
+
+        stats = scheduler_tick()
+
+        self.assertEqual(stats["planned"], 2)
+        self.assertEqual(
+            PlaceTagCollectionJob.objects.filter(context__region="부산광역시").count(),
+            2,
+        )
+        self.assertEqual(
+            PlaceTagCollectionJob.objects.filter(context__region="서울특별시").count(),
+            2,
+        )
+
+    @override_settings(
+        TAG_COLLECTION_DAILY_API_LIMIT=1000,
+        TAG_COLLECTION_BOOTSTRAP_CATEGORY_MAX_SHARE=100,
+        TAG_COLLECTION_CATEGORY_PRIORITIES={"cafe": 20},
+    )
+    def test_explicit_region_weights_apply_across_different_region_tiers(self):
+        regions = ("부산광역시", "서울특별시", "경기도", "인천광역시")
+        weights = {
+            "부산광역시": 30,
+            "서울특별시": 20,
+            "경기도": 7,
+            "인천광역시": 3,
+        }
+        for region_index, region in enumerate(regions):
+            for index in range(60):
+                self.make_place(
+                    1100 + region_index * 100 + index,
+                    category="cafe",
+                    region=region,
+                )
+
+        stats = plan_daily_jobs(
+            cycle_date=timezone.localdate(),
+            place_limit=60,
+            mode="bootstrap",
+            categories=("cafe",),
+            regions=regions,
+            region_priority_weights=weights,
+        )
+
+        self.assertEqual(stats["places"], 60)
+        counts = dict(
+            PlaceTagCollectionJob.objects.values_list("context__region")
+            .annotate(count=Count("id"))
+        )
+        self.assertEqual(counts, weights)
 
     def test_stale_budget_is_a_hard_cap_during_fallback(self):
         candidates = [

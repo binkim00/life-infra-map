@@ -222,11 +222,18 @@ def plan_bootstrap_jobs(
         math.ceil(100 / max(1, len(categories))),
     )
     category_share = effective_category_share / 100
-    # A deliberate one-region/one-category bootstrap is a bounded operational
-    # batch, so its single stratum must be allowed to fill the requested limit.
-    # Nationwide plans keep the 500-row cap to bound priority scoring work.
-    stratum_cap = place_limit if len(regions) == 1 and len(categories) == 1 else 500
-    per_stratum = max(100, min(stratum_cap, math.ceil(place_limit * category_share)))
+    # Size each region/category pool for the largest configured region share.
+    # This keeps bounded small runs cheap while allowing a deliberate large
+    # focus cohort to fill its requested regional quota.
+    configured_region_total = sum((region_priority_weights or {}).values())
+    max_region_share = (
+        max(region_priority_weights.values()) / configured_region_total
+        if configured_region_total else 1 / max(1, len(regions))
+    )
+    per_stratum = max(
+        100,
+        math.ceil(place_limit * max_region_share * category_share),
+    )
     places_by_id = {}
     region_by_place_id = {}
     region_weights = {}
@@ -295,7 +302,9 @@ def plan_bootstrap_jobs(
             region_name: max(0, float(region_priority_weights.get(region_name, 0)))
             for region_name, _ in regions
         }
-    if len(regions) > 1 and len({contexts[place.id]["tier"] for place in places}) == 1:
+    if region_priority_weights and len(regions) > 1:
+        selected = weighted_region_selection(candidates, limit=place_limit, region_weights=region_weights)
+    elif len(regions) > 1 and len({contexts[place.id]["tier"] for place in places}) == 1:
         selected = weighted_region_selection(candidates, limit=place_limit, region_weights=region_weights)
     else:
         selected = weighted_tier_selection(

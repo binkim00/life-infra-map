@@ -3,6 +3,7 @@ from datetime import timedelta
 
 from django.conf import settings
 from django.core.management.base import BaseCommand
+from django.db.models import Count
 from django.utils import timezone
 
 from recommendations.management.commands.plan_daily_tag_collection import plan_daily_jobs
@@ -57,6 +58,27 @@ def scheduler_tick():
             if len(parsed_weights) == len(focus_regions) and sum(parsed_weights) > 0
             else None
         )
+        if region_priority_weights:
+            total_weight = sum(region_priority_weights.values())
+            targets = {
+                region: settings.TAG_COLLECTION_DAILY_PLACE_LIMIT * weight // total_weight
+                for region, weight in region_priority_weights.items()
+            }
+            for region in focus_regions:
+                if sum(targets.values()) >= settings.TAG_COLLECTION_DAILY_PLACE_LIMIT:
+                    break
+                targets[region] += 1
+            existing_regions = dict(
+                PlaceTagCollectionJob.objects.filter(cycle_date=today)
+                .values_list("context__region")
+                .annotate(count=Count("id"))
+            )
+            deficits = {
+                region: max(0, targets[region] - int(existing_regions.get(region, 0)))
+                for region in focus_regions
+            }
+            if sum(deficits.values()) == remaining:
+                region_priority_weights = deficits
         focus_categories = tuple(
             getattr(settings, "TAG_COLLECTION_FOCUS_CATEGORIES", ()) or ()
         )
