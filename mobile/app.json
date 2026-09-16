@@ -2,7 +2,7 @@
   "expo": {
     "name": "생활 인프라 지도",
     "slug": "life-infra-map",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "lifeinframap",

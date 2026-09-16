@@ -95,6 +95,7 @@ backend/data/raw/
 backend/data/staging/
 backend/tmp/
 /tmp/
+/artifacts/
 /semantic-ui-test/
 
 
