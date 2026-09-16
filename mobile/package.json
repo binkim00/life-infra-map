@@ -47,6 +47,7 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "check:server": "node ../scripts/check-server-apis.mjs",
+    "test": "node --test tests/*.test.cjs",
     "lint": "expo lint"
   },
   "private": true

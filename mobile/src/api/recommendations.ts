@@ -1,16 +1,27 @@
 import { ApiError, apiRequest } from "./client";
+import type { RequestRetryInfo } from "./request-retry";
 import type { MapSearchResponse } from "@/types/place";
 
 export const recommendationApi = {
   evidenceQueue: (params: Record<string, string | number>) =>
-    apiRequest<Record<string, unknown>>("/recommendations/admin/evidence/", { params }),
+    apiRequest<Record<string, unknown>>("/recommendations/admin/evidence/", {
+      params,
+    }),
   evidenceReview: (id: number, body: { status: string; note: string }) =>
-    apiRequest(`/recommendations/admin/evidence/${id}/`, { method: "POST", body }),
-  mapSearch: (params: Record<string, unknown>, signal?: AbortSignal) =>
+    apiRequest(`/recommendations/admin/evidence/${id}/`, {
+      method: "POST",
+      body,
+    }),
+  mapSearch: (
+    params: Record<string, unknown>,
+    signal?: AbortSignal,
+    onRetry?: (info: RequestRetryInfo) => void,
+  ) =>
     apiRequest<MapSearchResponse>("/recommendations/place-search/", {
       params: params as Record<string, string | number>,
       signal,
       auth: false,
+      onRetry,
     }),
   aiSearch: (body: unknown) =>
     apiRequest<Record<string, unknown>>("/recommendations/ai-search/", {
@@ -102,23 +113,33 @@ export const recommendationApi = {
   savedPlaceGroups: () =>
     apiRequest<Record<string, unknown>>("/recommendations/saved-place-groups/"),
   createSavedPlaceGroup: (body: unknown) =>
-    apiRequest("/recommendations/saved-place-groups/", { method: "POST", body }),
+    apiRequest("/recommendations/saved-place-groups/", {
+      method: "POST",
+      body,
+    }),
   updateSavedPlaceGroup: (id: number | string, body: unknown) =>
     apiRequest(`/recommendations/saved-place-groups/${id}/`, {
       method: "PATCH",
       body,
     }),
   deleteSavedPlaceGroup: (id: number | string) =>
-    apiRequest(`/recommendations/saved-place-groups/${id}/`, { method: "DELETE" }),
+    apiRequest(`/recommendations/saved-place-groups/${id}/`, {
+      method: "DELETE",
+    }),
   moveSavedPlaceToGroup: (id: number | string, groupId: number | null) =>
     apiRequest(`/recommendations/saved-places/${id}/group/`, {
       method: "PATCH",
       body: { group_id: groupId },
     }),
   createPlaceReport: (body: FormData) =>
-    apiRequest<{ report: { id: number; created_at: string }; idempotent_replay: boolean }>("/recommendations/place-reports/", { method: "POST", body }),
+    apiRequest<{
+      report: { id: number; created_at: string };
+      idempotent_replay: boolean;
+    }>("/recommendations/place-reports/", { method: "POST", body }),
   myPlaceReport: (id: string | number) =>
-    apiRequest<Record<string, unknown>>(`/recommendations/place-reports/${id}/`),
+    apiRequest<Record<string, unknown>>(
+      `/recommendations/place-reports/${id}/`,
+    ),
   myPlaceReports: (params: Record<string, unknown> = {}) =>
     apiRequest<Record<string, unknown>>("/recommendations/place-reports/", {
       params: params as Record<string, string | number>,
@@ -156,6 +177,7 @@ export async function searchMapPlaces({
   centerMode,
   limit = 30,
   signal,
+  onRetry,
 }: {
   query: string;
   lat?: number | null;
@@ -164,6 +186,7 @@ export async function searchMapPlaces({
   centerMode?: "auto" | "map";
   limit?: number;
   signal?: AbortSignal;
+  onRetry?: (info: RequestRetryInfo) => void;
 }) {
   const params = {
     detail_level: "summary",
@@ -176,7 +199,7 @@ export async function searchMapPlaces({
     limit,
   };
   try {
-    return await recommendationApi.mapSearch(params, signal);
+    return await recommendationApi.mapSearch(params, signal, onRetry);
   } catch (error) {
     if (!(error instanceof ApiError) || ![404, 405].includes(error.status))
       throw error;
@@ -184,6 +207,7 @@ export async function searchMapPlaces({
       params,
       signal,
       auth: false,
+      onRetry,
     });
   }
 }

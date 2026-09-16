@@ -1,6 +1,6 @@
 import { router, useLocalSearchParams } from "expo-router";
 import { searchLocation } from "@/utils/location";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -26,6 +26,15 @@ import {
   Spacing,
 } from "@/constants/theme";
 import type { Place } from "@/types/place";
+
+type SearchRequestBasis = {
+  query: string;
+  lat: number | null;
+  lng: number | null;
+  radius?: number;
+  centerMode: "auto" | "map";
+  searchCenter: { lat: number; lng: number } | null;
+};
 
 const FILTERS = [
   { label: "전체", query: "" },
@@ -102,7 +111,10 @@ export default function ExploreScreen() {
   const [submittedQuery, setSubmittedQuery] = useState(initialQuery);
   const [searchRequestId, setSearchRequestId] = useState(initialQuery ? 1 : 0);
   const [mapFitBoundsKey, setMapFitBoundsKey] = useState(0);
-  const [deviceLocation, setDeviceLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [deviceLocation, setDeviceLocation] = useState<{
+    lat: number;
+    lng: number;
+  } | null>(null);
   const [places, setPlaces] = useState<Place[]>([]);
   const [listVisible, setListVisible] = useState(true);
   const [selectedPlace, setSelectedPlace] = useState<Place | null>(null);
@@ -124,6 +136,9 @@ export default function ExploreScreen() {
     "idle" | "loading" | "success" | "error"
   >(initialQuery ? "loading" : "idle");
   const [message, setMessage] = useState("");
+  const [searchFailed, setSearchFailed] = useState(false);
+  const lastSearchBasis = useRef<SearchRequestBasis | null>(null);
+  const forcedSearchBasis = useRef<SearchRequestBasis | null>(null);
   const [saveBusy, setSaveBusy] = useState(false);
   const [center, setCenter] = useState<{
     lat: number | null;
@@ -135,44 +150,59 @@ export default function ExploreScreen() {
     label: hasInitialCenter ? "현재 위치" : "위치 확인 중",
   });
 
-  const requestCurrentLocation = useCallback(async (showError = true, cachedOnly = false) => {
-    try {
-      const coordinates = await searchLocation({ cachedOnly });
-      if (!coordinates) {
+  const requestCurrentLocation = useCallback(
+    async (showError = true, cachedOnly = false) => {
+      try {
+        const coordinates = await searchLocation({ cachedOnly });
+        if (!coordinates) {
+          setLocationStatus("unavailable");
+          setCenter({ lat: null, lng: null, label: "위치 권한 필요" });
+          if (showError) {
+            setStatus("error");
+            setSearchFailed(false);
+            setMessage(
+              "주변 검색을 사용하려면 현재 위치 권한을 허용해 주세요.",
+            );
+          }
+          return false;
+        }
+        setDeviceLocation({
+          lat: coordinates.latitude,
+          lng: coordinates.longitude,
+        });
+        setCenter({
+          lat: coordinates.latitude,
+          lng: coordinates.longitude,
+          label: "현재 위치",
+        });
+        setLocationStatus("ready");
+        setMessage("");
+        return true;
+      } catch {
         setLocationStatus("unavailable");
-        setCenter({ lat: null, lng: null, label: "위치 권한 필요" });
+        setCenter({ lat: null, lng: null, label: "위치 확인 실패" });
         if (showError) {
           setStatus("error");
-          setMessage("주변 검색을 사용하려면 현재 위치 권한을 허용해 주세요.");
+          setSearchFailed(false);
+          setMessage(
+            "현재 위치를 확인하지 못했습니다. 위치 설정을 확인해 주세요.",
+          );
         }
         return false;
       }
-      setDeviceLocation({ lat: coordinates.latitude, lng: coordinates.longitude });
-      setCenter({
-        lat: coordinates.latitude,
-        lng: coordinates.longitude,
-        label: "현재 위치",
-      });
-      setLocationStatus("ready");
-      setMessage("");
-      return true;
-    } catch {
-      setLocationStatus("unavailable");
-      setCenter({ lat: null, lng: null, label: "위치 확인 실패" });
-      if (showError) {
-        setStatus("error");
-        setMessage(
-          "현재 위치를 확인하지 못했습니다. 위치 설정을 확인해 주세요.",
-        );
-      }
-      return false;
-    }
-  }, []);
+    },
+    [],
+  );
 
   useEffect(() => {
     if (hasInitialCenter) return;
-    const namedSearch = Boolean(initialQuery && !isNearbyCategoryQuery(initialQuery));
-    const timer = setTimeout(() => void requestCurrentLocation(!namedSearch), 0);
+    const namedSearch = Boolean(
+      initialQuery && !isNearbyCategoryQuery(initialQuery),
+    );
+    const timer = setTimeout(
+      () => void requestCurrentLocation(!namedSearch),
+      0,
+    );
     return () => clearTimeout(timer);
   }, [hasInitialCenter, initialQuery, requestCurrentLocation]);
 
@@ -189,6 +219,8 @@ export default function ExploreScreen() {
       setQuery(trimmed);
       setStatus("loading");
       setMessage("");
+      setSearchFailed(false);
+      forcedSearchBasis.current = null;
       setSubmittedQuery(trimmed);
       setSearchCenterOverride(searchCenter);
       // 같은 검색어를 다시 눌러도 실제 요청을 새로 보냅니다.
@@ -204,6 +236,7 @@ export default function ExploreScreen() {
     setSelectedPlace(null);
     setSearchCenterOverride(null);
     setMessage("");
+    setSearchFailed(false);
     setStatus("idle");
   };
 
@@ -211,29 +244,47 @@ export default function ExploreScreen() {
     if (!submittedQuery || !searchRequestId) return;
     const nearbyCategorySearch = isNearbyCategoryQuery(submittedQuery);
     if (!searchCenterOverride && locationStatus === "requesting") return;
+    const forcedBasis = forcedSearchBasis.current;
+    forcedSearchBasis.current = null;
     const searchAroundCenter = Boolean(
       searchCenterOverride || nearbyCategorySearch,
     );
-    const controller = new AbortController();
-    searchMapPlaces({
+    const requestBasis: SearchRequestBasis = forcedBasis || {
       query: submittedQuery,
       lat: searchCenterOverride?.lat ?? center.lat,
       lng: searchCenterOverride?.lng ?? center.lng,
       radius: searchAroundCenter ? radius : undefined,
       centerMode: searchCenterOverride ? "map" : "auto",
+      searchCenter: searchCenterOverride,
+    };
+    lastSearchBasis.current = requestBasis;
+    const controller = new AbortController();
+    searchMapPlaces({
+      query: requestBasis.query,
+      lat: requestBasis.lat,
+      lng: requestBasis.lng,
+      radius: requestBasis.radius,
+      centerMode: requestBasis.centerMode,
       signal: controller.signal,
+      onRetry: () => {
+        if (controller.signal.aborted) return;
+        setStatus("loading");
+        setMessage("서버 연결이 잠시 불안정합니다. 다시 연결하고 있어요.");
+      },
     })
       .then((data) => {
         if (controller.signal.aborted) return;
         setPlaces(data.results);
         // 지도에서 다시 찾을 때는 사용자가 선택한 영역을 그대로 유지한다.
-        if (!searchCenterOverride) setMapFitBoundsKey((value) => value + 1);
+        if (!requestBasis.searchCenter)
+          setMapFitBoundsKey((value) => value + 1);
         const requested = data.results.find(
           (place) => String(place.id) === params.placeId,
         );
         setSelectedPlace(requested || data.results[0] || null);
         setStatus("success");
         setMessage("");
+        setSearchFailed(false);
         if (isLoggedIn)
           void recommendationApi.saveSearchLog({
             query: submittedQuery,
@@ -255,9 +306,8 @@ export default function ExploreScreen() {
       })
       .catch((error) => {
         if (controller.signal.aborted || error?.name === "AbortError") return;
-        setPlaces([]);
-        setSelectedPlace(null);
         setStatus("error");
+        setSearchFailed(true);
         setMessage(
           error instanceof Error ? error.message : "서버에 연결할 수 없습니다.",
         );
@@ -274,6 +324,16 @@ export default function ExploreScreen() {
     locationStatus,
     searchCenterOverride,
   ]);
+
+  const retryLastSearch = () => {
+    const basis = lastSearchBasis.current;
+    if (!basis) return;
+    forcedSearchBasis.current = basis;
+    setStatus("loading");
+    setMessage("");
+    setSearchFailed(false);
+    setSearchRequestId((value) => value + 1);
+  };
 
   const openPlaceDetails = (place: Place) => {
     setSelectedPlace(place);
@@ -293,8 +353,12 @@ export default function ExploreScreen() {
             : undefined,
         name: detailPlace.name,
         address: detailPlace.address || "",
-        lat: Number.isFinite(Number(detailPlace.lat)) ? String(detailPlace.lat) : undefined,
-        lng: Number.isFinite(Number(detailPlace.lng)) ? String(detailPlace.lng) : undefined,
+        lat: Number.isFinite(Number(detailPlace.lat))
+          ? String(detailPlace.lat)
+          : undefined,
+        lng: Number.isFinite(Number(detailPlace.lng))
+          ? String(detailPlace.lng)
+          : undefined,
       },
     });
   };
@@ -506,18 +570,42 @@ export default function ExploreScreen() {
           <Text style={styles.resultCount}>
             {places.length ? `${places.length}곳` : ""}
           </Text>
-          <Pressable accessibilityRole="button" onPress={() => setListVisible((value) => !value)}>
-            <Text style={styles.routeButtonLabel}>{listVisible ? "지도 보기" : "목록 보기"}</Text>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => setListVisible((value) => !value)}
+          >
+            <Text style={styles.routeButtonLabel}>
+              {listVisible ? "지도 보기" : "목록 보기"}
+            </Text>
           </Pressable>
         </View>
         <Text style={styles.sortCaption}>
-          {center.lat !== null ? (searchCenterOverride ? "현재 지도 중심에서 가까운순" : "검색 기준 위치에서 가까운순") : "위치 정보 없음 · 검색어 관련순"}
+          {center.lat !== null
+            ? searchCenterOverride
+              ? "현재 지도 중심에서 가까운순"
+              : "검색 기준 위치에서 가까운순"
+            : "위치 정보 없음 · 검색어 관련순"}
         </Text>
 
         {status === "loading" ? (
           <View style={styles.compactStateBox}>
             <ActivityIndicator color={Palette.accent} />
-            <Text style={styles.stateText}>장소를 찾고 있습니다.</Text>
+            <Text style={styles.stateText}>
+              {message || "장소를 찾고 있습니다."}
+            </Text>
+          </View>
+        ) : status === "error" ? (
+          <View style={[styles.compactStateBox, styles.errorStateBox]}>
+            <Text style={styles.stateText}>{message}</Text>
+            {searchFailed ? (
+              <Pressable
+                accessibilityRole="button"
+                onPress={retryLastSearch}
+                style={styles.retryButton}
+              >
+                <Text style={styles.retryButtonText}>다시 시도</Text>
+              </Pressable>
+            ) : null}
           </View>
         ) : message ? (
           <View style={styles.compactStateBox}>
@@ -536,7 +624,9 @@ export default function ExploreScreen() {
             keyboardShouldPersistTaps="handled"
             showsHorizontalScrollIndicator={false}
             style={listVisible ? styles.verticalScroll : undefined}
-            contentContainerStyle={listVisible ? styles.verticalResults : styles.horizontalResults}
+            contentContainerStyle={
+              listVisible ? styles.verticalResults : styles.horizontalResults
+            }
           >
             {places.map((place, index) => {
               const selected = selectedPlace?.id === place.id;
@@ -553,9 +643,29 @@ export default function ExploreScreen() {
                   ]}
                 >
                   <View style={styles.resultPhotoWrap}>
-                    <PlacePhoto category={place.category} fallback={index} width={70} height={70} style={styles.resultPhoto} externalUrl={place.kakao_place_url || place.place_url} source={`${place.result_source || ""} ${place.source_label || ""}`}>
-                      <View style={[styles.resultNumber, selected && styles.resultNumberSelected]}>
-                        <Text style={[styles.resultNumberText, selected && styles.resultNumberTextSelected]}>{index + 1}</Text>
+                    <PlacePhoto
+                      category={place.category}
+                      fallback={index}
+                      width={70}
+                      height={70}
+                      style={styles.resultPhoto}
+                      externalUrl={place.kakao_place_url || place.place_url}
+                      source={`${place.result_source || ""} ${place.source_label || ""}`}
+                    >
+                      <View
+                        style={[
+                          styles.resultNumber,
+                          selected && styles.resultNumberSelected,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.resultNumberText,
+                            selected && styles.resultNumberTextSelected,
+                          ]}
+                        >
+                          {index + 1}
+                        </Text>
                       </View>
                     </PlacePhoto>
                   </View>
@@ -569,9 +679,17 @@ export default function ExploreScreen() {
                       </Text>
                     </View>
                     <Text numberOfLines={1} style={styles.resultMeta}>
-                      {place.category_label || place.category} · {place.source_label || (place.result_source === "kakao" ? "카카오 장소" : "LifeMap 저장 장소")}
+                      {place.category_label || place.category} ·{" "}
+                      {place.source_label ||
+                        (place.result_source === "kakao"
+                          ? "카카오 장소"
+                          : "LifeMap 저장 장소")}
                     </Text>
-                    {listVisible ? <Text numberOfLines={2} style={styles.resultMeta}>{place.address || "주소 정보 없음"}</Text> : null}
+                    {listVisible ? (
+                      <Text numberOfLines={2} style={styles.resultMeta}>
+                        {place.address || "주소 정보 없음"}
+                      </Text>
+                    ) : null}
                   </View>
                 </Pressable>
               );
@@ -661,7 +779,12 @@ const styles = StyleSheet.create({
   verticalScroll: { flexShrink: 1 },
   verticalResults: { gap: 8, paddingHorizontal: 12, paddingBottom: 12 },
   listCard: { width: "100%" },
-  sortCaption: { color: Palette.muted, fontSize: 11, paddingHorizontal: 16, marginBottom: 8 },
+  sortCaption: {
+    color: Palette.muted,
+    fontSize: 11,
+    paddingHorizontal: 16,
+    marginBottom: 8,
+  },
   compactStateBox: {
     minHeight: 54,
     flexDirection: "row",
@@ -670,6 +793,16 @@ const styles = StyleSheet.create({
     gap: 9,
     paddingHorizontal: 16,
   },
+  errorStateBox: { flexDirection: "column", paddingVertical: 12 },
+  retryButton: {
+    minHeight: 36,
+    paddingHorizontal: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: Radius.medium,
+    backgroundColor: Palette.accent,
+  },
+  retryButtonText: { color: "#FFFFFF", fontSize: 13, fontWeight: "800" },
   fullMapPlaceholder: {
     position: "absolute",
     inset: 0,
@@ -887,7 +1020,7 @@ const styles = StyleSheet.create({
     borderRadius: Radius.medium,
     backgroundColor: Palette.surface,
   },
-  stateText: { color: Palette.muted, fontSize: 13 },
+  stateText: { color: Palette.muted, fontSize: 13, textAlign: "center" },
   resultList: { gap: 9 },
   resultCard: {
     width: 292,
@@ -906,8 +1039,21 @@ const styles = StyleSheet.create({
   },
   resultPhotoWrap: { width: 70, height: 70, position: "relative" },
   resultPhoto: { borderRadius: 10 },
-  kakaoVisual: { width: 70, height: 70, alignItems: "center", justifyContent: "center", gap: 4, borderRadius: 10, backgroundColor: Palette.accentSoft },
-  kakaoVisualText: { color: Palette.accentDark, fontSize: 8, fontWeight: "900", letterSpacing: 0.8 },
+  kakaoVisual: {
+    width: 70,
+    height: 70,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 4,
+    borderRadius: 10,
+    backgroundColor: Palette.accentSoft,
+  },
+  kakaoVisualText: {
+    color: Palette.accentDark,
+    fontSize: 8,
+    fontWeight: "900",
+    letterSpacing: 0.8,
+  },
   resultNumber: {
     width: 24,
     height: 24,

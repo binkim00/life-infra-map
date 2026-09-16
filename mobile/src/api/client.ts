@@ -2,6 +2,14 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as SecureStore from "expo-secure-store";
 import { Platform } from "react-native";
 
+import {
+  CONNECTION_ERROR_MESSAGE,
+  httpErrorMessage,
+  runWithConnectionRetry,
+  TIMEOUT_ERROR_MESSAGE,
+  type RequestRetryInfo,
+} from "./request-retry";
+
 export const DJANGO_API = (
   process.env.EXPO_PUBLIC_DJANGO_API_BASE_URL ||
   "https://life-infra-map-db.taile29cc8.ts.net/django/api"
@@ -57,11 +65,27 @@ const clearAuthToken = async () => {
 export class ApiError extends Error {
   status: number;
   data: unknown;
+  kind: "connection" | "timeout" | "client" | "server";
 
-  constructor(status: number, data: unknown, message?: string) {
+  constructor(
+    status: number,
+    data: unknown,
+    message?: string,
+    kind?: "connection" | "timeout" | "client" | "server",
+  ) {
     super(message || `요청에 실패했습니다. (${status})`);
+    this.name = "ApiError";
     this.status = status;
     this.data = data;
+    this.kind =
+      kind ||
+      (status === 0
+        ? "connection"
+        : status === 408
+          ? "timeout"
+          : status >= 500
+            ? "server"
+            : "client");
   }
 }
 
@@ -125,11 +149,24 @@ type RequestOptions = Omit<RequestInit, "body" | "signal"> & {
   auth?: boolean;
   signal?: AbortSignal;
   timeoutMs?: number;
+  onRetry?: (info: RequestRetryInfo) => void;
 };
 
 // Funnel 경유 첫 요청이나 큰 검색 응답도 정상적으로 받을 수 있게 하되,
 // 연결이 끊긴 경우에는 무한 로딩으로 남지 않도록 상한을 둡니다.
 const DEFAULT_TIMEOUT_MS = 30_000;
+
+class TransportError extends Error {
+  kind: "connection" | "timeout";
+  cause: unknown;
+
+  constructor(kind: "connection" | "timeout", cause: unknown) {
+    super(kind);
+    this.name = "TransportError";
+    this.kind = kind;
+    this.cause = cause;
+  }
+}
 
 export async function apiRequest<T>(
   path: string,
@@ -142,6 +179,7 @@ export async function apiRequest<T>(
     params,
     signal: externalSignal,
     timeoutMs = DEFAULT_TIMEOUT_MS,
+    onRetry,
     ...requestOptions
   } = options;
   const spring = isSpringPath(path);
@@ -162,42 +200,55 @@ export async function apiRequest<T>(
     requestToken = token;
     if (token) headers.set("Authorization", `Bearer ${token}`);
   }
-  const requestController = new AbortController();
-  let didTimeout = false;
-  const abortFromExternalSignal = () =>
-    requestController.abort(externalSignal?.reason);
-  if (externalSignal?.aborted) abortFromExternalSignal();
-  else externalSignal?.addEventListener("abort", abortFromExternalSignal);
-  const timeoutId = setTimeout(() => {
-    didTimeout = true;
-    requestController.abort();
-  }, timeoutMs);
-
   let response: Response;
   try {
-    response = await fetch(url, {
-      ...requestOptions,
-      headers,
-      signal: requestController.signal,
-      body:
-        body === undefined
-          ? undefined
-          : formData
-            ? (body as FormData)
-            : JSON.stringify(body),
+    response = await runWithConnectionRetry({
+      method: requestOptions.method,
+      signal: externalSignal,
+      onRetry,
+      shouldRetry: (error) =>
+        error instanceof TransportError && error.kind === "connection",
+      request: async () => {
+        const requestController = new AbortController();
+        let didTimeout = false;
+        const abortFromExternalSignal = () =>
+          requestController.abort(externalSignal?.reason);
+        if (externalSignal?.aborted) abortFromExternalSignal();
+        else
+          externalSignal?.addEventListener("abort", abortFromExternalSignal, {
+            once: true,
+          });
+        const timeoutId = setTimeout(() => {
+          didTimeout = true;
+          requestController.abort();
+        }, timeoutMs);
+        try {
+          return await fetch(url, {
+            ...requestOptions,
+            headers,
+            signal: requestController.signal,
+            body:
+              body === undefined
+                ? undefined
+                : formData
+                  ? (body as FormData)
+                  : JSON.stringify(body),
+          });
+        } catch (error) {
+          if (didTimeout) throw new TransportError("timeout", error);
+          if (externalSignal?.aborted) throw error;
+          throw new TransportError("connection", error);
+        } finally {
+          clearTimeout(timeoutId);
+          externalSignal?.removeEventListener("abort", abortFromExternalSignal);
+        }
+      },
     });
   } catch (error) {
-    if (didTimeout)
-      throw new ApiError(408, null, "서버 응답 시간이 초과되었습니다.");
     if (externalSignal?.aborted) throw error;
-    throw new ApiError(
-      0,
-      null,
-      "네트워크 연결을 확인한 뒤 다시 시도해 주세요.",
-    );
-  } finally {
-    clearTimeout(timeoutId);
-    externalSignal?.removeEventListener("abort", abortFromExternalSignal);
+    if (error instanceof TransportError && error.kind === "timeout")
+      throw new ApiError(408, null, TIMEOUT_ERROR_MESSAGE, "timeout");
+    throw new ApiError(0, null, CONNECTION_ERROR_MESSAGE, "connection");
   }
   const contentType = response.headers.get("content-type") || "";
   const data =
@@ -213,11 +264,11 @@ export async function apiRequest<T>(
       (await authStorage.read()).token === requestToken
     )
       await authStorage.clear();
-    const detail =
-      data && typeof data === "object" && "detail" in data
-        ? String((data as { detail?: unknown }).detail)
-        : undefined;
-    throw new ApiError(response.status, data, detail);
+    throw new ApiError(
+      response.status,
+      data,
+      httpErrorMessage(response.status, data),
+    );
   }
   return data as T;
 }
