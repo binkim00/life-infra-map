@@ -99,7 +99,7 @@ class Command(BaseCommand):
 
 def plan_daily_jobs(
     *, cycle_date, place_limit, provider="naver_search", mode="balanced",
-    categories=None, regions=None, dry_run=False,
+    categories=None, regions=None, dry_run=False, region_priority_weights=None,
 ):
     place_limit = max(1, int(place_limit))
     safe_limit = math.floor(
@@ -122,16 +122,10 @@ def plan_daily_jobs(
         - int(queued_requests),
     )
     recent_cutoff = cycle_date - timedelta(days=settings.TAG_COLLECTION_REVISIT_DAYS)
-    stale_place_ids = PlaceTagEvidence.objects.filter(
-        expires_at__lte=timezone.now(),
-        source__in=WEB_EVIDENCE_SOURCES,
-    ).values_list("place_id", flat=True)
     recent_place_ids = PlaceTagCollectionJob.objects.filter(
         provider=provider,
         cycle_date__gte=recent_cutoff,
         status__in=("queued", "processing", "completed", "retry"),
-    ).filter(
-        Q(cycle_date=cycle_date) | ~Q(place_id__in=stale_place_ids)
     ).values_list("place_id", flat=True)
     categories = tuple(categories or COLLECTION_PROFILES)
     unknown_categories = set(categories) - set(COLLECTION_PROFILES)
@@ -153,6 +147,7 @@ def plan_daily_jobs(
             categories=categories,
             regions=selected_regions,
             dry_run=dry_run,
+            region_priority_weights=region_priority_weights,
         )
     per_stratum = max(2, math.ceil(place_limit / (len(REGIONS) * len(categories))) * 2)
     pools = []
@@ -216,7 +211,7 @@ def plan_daily_jobs(
 
 def plan_bootstrap_jobs(
     *, cycle_date, place_limit, provider, budget, recent_place_ids,
-    categories, regions=REGIONS, dry_run,
+    categories, regions=REGIONS, dry_run, region_priority_weights=None,
 ):
     # A nationally even pool can starve a high-value category when its records
     # are concentrated in one city (the current cafe registry is mostly Busan).
@@ -274,17 +269,13 @@ def plan_bootstrap_jobs(
             ).order_by("-confidence", "place_id").values_list("place_id", flat=True)[:per_stratum]
             candidate_rows = Place.objects.filter(id__in=candidate_place_ids)
             discovery_rows = base.order_by("id")[:per_stratum]
-            # Launch-quality feedback is actionable work, not just a score.
-            # Let queued place/tag demand bypass the normal revisit window,
-            # while the per-day unique job and quota limits remain in force.
-            today_job_place_ids = PlaceTagCollectionJob.objects.filter(
-                cycle_date=cycle_date,
-                provider=provider,
-            ).values_list("place_id", flat=True)
+            # Search demand still raises priority, but it must not make the
+            # unattended daily plan revisit a recently collected place. An
+            # explicit one-off recheck belongs in a separate operator flow.
             demanded_place_ids = TagEnrichmentRequest.objects.filter(
                 place__in=eligible,
                 status="queued",
-            ).exclude(place_id__in=today_job_place_ids).order_by(
+            ).exclude(place_id__in=recent_place_ids).order_by(
                 "-priority", "created_at"
             ).values_list("place_id", flat=True)[:per_stratum]
             demand_rows = Place.objects.filter(id__in=demanded_place_ids)
@@ -299,6 +290,11 @@ def plan_bootstrap_jobs(
     for place in places:
         contexts[place.id]["region"] = region_by_place_id.get(place.id, "")
     candidates = [(place, contexts[place.id]) for place in places]
+    if region_priority_weights:
+        region_weights = {
+            region_name: max(0, float(region_priority_weights.get(region_name, 0)))
+            for region_name, _ in regions
+        }
     if len(regions) > 1 and len({contexts[place.id]["tier"] for place in places}) == 1:
         selected = weighted_region_selection(candidates, limit=place_limit, region_weights=region_weights)
     else:

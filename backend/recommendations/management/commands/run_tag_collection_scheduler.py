@@ -39,7 +39,24 @@ def scheduler_tick():
     existing = PlaceTagCollectionJob.objects.filter(cycle_date=today).count()
     remaining = max(0, settings.TAG_COLLECTION_DAILY_PLACE_LIMIT - existing)
     if remaining:
-        focus_region = getattr(settings, "TAG_COLLECTION_FOCUS_REGION", "").strip()
+        focus_regions = tuple(
+            getattr(settings, "TAG_COLLECTION_FOCUS_REGIONS", ()) or ()
+        )
+        if not focus_regions:
+            focus_region = getattr(settings, "TAG_COLLECTION_FOCUS_REGION", "").strip()
+            focus_regions = (focus_region,) if focus_region else ()
+        raw_weights = str(
+            getattr(settings, "TAG_COLLECTION_FOCUS_REGION_WEIGHTS", "") or ""
+        ).split(",")
+        try:
+            parsed_weights = tuple(max(0, int(value.strip())) for value in raw_weights)
+        except ValueError:
+            parsed_weights = ()
+        region_priority_weights = (
+            dict(zip(focus_regions, parsed_weights))
+            if len(parsed_weights) == len(focus_regions) and sum(parsed_weights) > 0
+            else None
+        )
         focus_categories = tuple(
             getattr(settings, "TAG_COLLECTION_FOCUS_CATEGORIES", ()) or ()
         )
@@ -48,8 +65,9 @@ def scheduler_tick():
             place_limit=remaining,
             provider=settings.TAG_ENRICHMENT_PROVIDER,
             mode=settings.TAG_COLLECTION_MODE,
-            regions=(focus_region,) if settings.TAG_COLLECTION_MODE == "bootstrap" and focus_region else None,
+            regions=focus_regions if settings.TAG_COLLECTION_MODE == "bootstrap" and focus_regions else None,
             categories=focus_categories if settings.TAG_COLLECTION_MODE == "bootstrap" and focus_categories else None,
+            region_priority_weights=region_priority_weights,
         )
         planned = result["places"]
     counts = {

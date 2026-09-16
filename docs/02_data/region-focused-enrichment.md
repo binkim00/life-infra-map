@@ -1,12 +1,14 @@
 # Region-focused cafe/restaurant enrichment
 
-The bootstrap collector keeps one focus region while Balanced Mode remains available for long-term nationwide coverage.
+The bootstrap collector keeps an ordered focus cohort while Balanced Mode remains available for long-term nationwide coverage.
 
 ## Current sequence
 
-`부산 -> 서울 -> 인천 -> 대구 -> 대전 -> 광주 -> 울산`
+`부산 우선 -> 서울 -> 수도권 -> 광역시 -> 전국`
 
-`TAG_COLLECTION_FOCUS_REGION` defaults to `부산광역시`. In bootstrap mode the scheduler limits new jobs to `TAG_COLLECTION_FOCUS_CATEGORIES`, which defaults to `cafe,restaurant`. Changing the focus region is an explicit configuration change; the calendar does not advance it.
+API evidence collection currently uses `부산광역시,서울특별시` with a `70,30` split and a daily place limit of 100. In bootstrap mode the scheduler limits new jobs to `TAG_COLLECTION_FOCUS_CATEGORIES`, which defaults to `cafe,restaurant`.
+
+AI web research keeps the staged expansion plan above. Adding Seoul to the bounded API evidence batch does not automatically advance AI web research to the metropolitan, metro-city, or nationwide stages.
 
 ## Cycle workflow
 

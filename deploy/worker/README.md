@@ -47,12 +47,14 @@ docker compose --env-file /home/ubuntu/life-infra-map/deploy/db/.env -f docker-c
 - `life-infra-map-tag-scheduler`
 - `life-infra-map-tag-worker`
 
-기본 수집 범위는 1차 출시 품질을 만들기 위해 `bootstrap`, `부산광역시`,
-`cafe,restaurant`로 제한합니다. 서울로 전환하거나 병행할 때는 Compose 실행 환경에서
-`TAG_COLLECTION_FOCUS_REGION`과 `TAG_COLLECTION_FOCUS_CATEGORIES`를 명시적으로 바꾸고,
+기본 수집 범위는 `bootstrap`, `부산광역시,서울특별시`, `cafe,restaurant`입니다.
+지역 배분은 부산 70%, 서울 30%로 부산 우선순위를 유지합니다. Compose 실행 환경에서
+`TAG_COLLECTION_FOCUS_REGIONS`, `TAG_COLLECTION_FOCUS_REGION_WEIGHTS`,
+`TAG_COLLECTION_FOCUS_CATEGORIES`를 명시적으로 바꾸고,
 지역별 `recommendation_searchable_coverage_pct`를 확인한 뒤 재기동합니다.
 
-하루 신규 장소 작업은 기본 50곳으로 제한합니다. 운영에서 상한을 바꿀 때는
+하루 신규 장소 작업은 기본 100곳으로 제한합니다. 장소별 약 2회 호출 기준으로
+약 200회 수준이며 provider 일일 안전 한도 안에서 동작합니다. 운영에서 상한을 바꿀 때는
 `TAG_COLLECTION_DAILY_PLACE_LIMIT`를 명시하고, scheduler가 같은 날짜에 이미 만든
 작업 수도 이 상한에 포함되는지 로그의 `planned`, `queued`, `processing`, `completed`로
 확인합니다.

@@ -1,5 +1,6 @@
 from django.db import transaction
-from django.db.models import Q
+from django.conf import settings
+from django.db.models import Count, Exists, OuterRef, Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework.decorators import api_view, permission_classes
@@ -53,8 +54,26 @@ def serialize(row):
 def evidence_queue(request):
     rows = PlaceTagEvidence.objects.filter(source__in=WEB_EVIDENCE_SOURCES)
     status = request.GET.get("status", "pending")
+    suppressed_count = 0
     if status == "pending":
         rows = rows.filter(Q(review__isnull=True) | Q(review__status="pending"))
+        pending_count = rows.count()
+        threshold = settings.EVIDENCE_REVIEW_SATURATION_THRESHOLD
+        approved_same_tag = PlaceTagEvidence.objects.filter(
+            place_id=OuterRef("place_id"),
+            tag_id=OuterRef("tag_id"),
+            polarity=OuterRef("polarity"),
+            source__in=WEB_EVIDENCE_SOURCES,
+            review__status="approved",
+        ).exclude(source_reference="").filter(
+            Q(expires_at__isnull=True) | Q(expires_at__gt=timezone.now())
+        ).values("place_id").annotate(
+            source_count=Count("source_reference", distinct=True)
+        ).filter(source_count__gte=threshold)
+        rows = rows.annotate(review_saturated=Exists(approved_same_tag)).filter(
+            review_saturated=False
+        )
+        suppressed_count = pending_count - rows.count()
     elif status in {"approved", "approved_limited", "rejected", "research"}:
         rows = rows.filter(review__status=status)
     elif status != "all":
@@ -76,7 +95,8 @@ def evidence_queue(request):
         row.id: row for row in PlaceTagEvidence.objects.filter(id__in=ids)
         .select_related("place", "tag", "review").defer("place__raw")
     }
-    return Response({"count": count, "page": page, "has_next": count > page * 20,
+    return Response({"count": count, "suppressed_count": suppressed_count,
+                     "page": page, "has_next": count > page * 20,
                      "results": [serialize(selected[pk]) for pk in ids]})
 
 

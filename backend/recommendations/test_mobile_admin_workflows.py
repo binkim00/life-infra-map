@@ -3,7 +3,7 @@ import uuid
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
 
@@ -30,6 +30,38 @@ class MobileAdminWorkflowTests(TestCase):
         response = self.client.get(url)
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["results"][0]["quote"], "조용한 공간")
+
+    @override_settings(EVIDENCE_REVIEW_SATURATION_THRESHOLD=3)
+    def test_pending_queue_hides_same_tag_after_three_independent_approvals(self):
+        now = timezone.now()
+        for index in range(3):
+            approved = PlaceTagEvidence.objects.create(
+                place=self.place,
+                tag=self.tag,
+                source="naver_blog_search",
+                source_reference=f"https://blog.example/approved-{index}",
+                polarity=self.evidence.polarity,
+                evidence=f"독립 승인 근거 {index}",
+                expires_at=now + timedelta(days=30),
+            )
+            EvidenceReview.objects.create(
+                evidence=approved,
+                status="approved",
+                note="원문 확인",
+                reviewer=self.admin,
+            )
+
+        self.client.force_authenticate(self.admin)
+        response = self.client.get("/api/recommendations/admin/evidence/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["count"], 0)
+        self.assertEqual(response.data["suppressed_count"], 1)
+
+        all_rows = self.client.get(
+            "/api/recommendations/admin/evidence/", {"status": "all"}
+        ).data
+        self.assertEqual(all_rows["count"], 4)
 
     def test_research_audits_are_admin_only_and_preserve_missing_judgments(self):
         from .models import ResearchAudit

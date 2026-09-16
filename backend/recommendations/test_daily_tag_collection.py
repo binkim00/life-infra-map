@@ -238,7 +238,7 @@ class DailyTagCollectionTests(TestCase):
         TAG_COLLECTION_BOOTSTRAP_CATEGORY_MAX_SHARE=100,
         TAG_COLLECTION_CATEGORY_PRIORITIES={"cafe": 20},
     )
-    def test_queued_launch_demand_bypasses_revisit_window_and_targets_exact_tag(self):
+    def test_queued_launch_demand_respects_revisit_window(self):
         demanded = self.make_place(510, category="cafe", region="부산광역시")
         self.make_place(511, category="cafe", region="부산광역시")
         PlaceTagCollectionJob.objects.create(
@@ -266,9 +266,43 @@ class DailyTagCollectionTests(TestCase):
 
         self.assertEqual(stats["places"], 1)
         job = PlaceTagCollectionJob.objects.get(cycle_date=timezone.localdate())
-        self.assertEqual(job.place_id, demanded.id)
-        self.assertEqual(job.context["adaptive_reason"], "launch_evidence_demand")
-        self.assertEqual(job.context["targeted_tags"][0], "조용함")
+        self.assertNotEqual(job.place_id, demanded.id)
+
+    @override_settings(
+        TAG_COLLECTION_DAILY_API_LIMIT=100,
+        TAG_COLLECTION_BOOTSTRAP_CATEGORY_MAX_SHARE=100,
+        TAG_COLLECTION_CATEGORY_PRIORITIES={"cafe": 20},
+    )
+    def test_expired_evidence_does_not_bypass_revisit_cooldown(self):
+        recent = self.make_place(520, category="cafe", region="부산광역시")
+        fresh = self.make_place(521, category="cafe", region="부산광역시")
+        tag = Tag.objects.create(name="콘센트있음")
+        PlaceTagEvidence.objects.create(
+            place=recent,
+            tag=tag,
+            source="naver_blog_search",
+            expires_at=timezone.now() - timedelta(days=1),
+        )
+        PlaceTagCollectionJob.objects.create(
+            place=recent,
+            provider="naver_search",
+            cycle_date=timezone.localdate() - timedelta(days=1),
+            status="completed",
+        )
+
+        stats = plan_daily_jobs(
+            cycle_date=timezone.localdate(),
+            place_limit=1,
+            mode="bootstrap",
+            categories=("cafe",),
+            regions=("부산광역시",),
+        )
+
+        self.assertEqual(stats["places"], 1)
+        self.assertEqual(
+            PlaceTagCollectionJob.objects.get(cycle_date=timezone.localdate()).place_id,
+            fresh.id,
+        )
 
     def test_completed_enrichment_request_does_not_keep_priority_or_target(self):
         place = self.make_place(512, category="cafe", region="부산광역시")
@@ -397,6 +431,8 @@ class DailyTagCollectionTests(TestCase):
     @override_settings(
         TAG_COLLECTION_MODE="bootstrap",
         TAG_COLLECTION_FOCUS_REGION="부산광역시",
+        TAG_COLLECTION_FOCUS_REGIONS=("부산광역시",),
+        TAG_COLLECTION_FOCUS_REGION_WEIGHTS="100",
         TAG_COLLECTION_FOCUS_CATEGORIES=("cafe", "restaurant"),
         TAG_COLLECTION_DAILY_API_LIMIT=100,
         TAG_COLLECTION_DAILY_PLACE_LIMIT=2,
@@ -407,6 +443,32 @@ class DailyTagCollectionTests(TestCase):
         self.make_place(803, category="cafe", region="서울특별시")
         scheduler_tick()
         self.assertFalse(PlaceTagCollectionJob.objects.exclude(place__address__startswith="부산").exists())
+
+    @override_settings(
+        TAG_COLLECTION_MODE="bootstrap",
+        TAG_COLLECTION_FOCUS_REGIONS=("부산광역시", "서울특별시"),
+        TAG_COLLECTION_FOCUS_REGION_WEIGHTS="70,30",
+        TAG_COLLECTION_FOCUS_CATEGORIES=("cafe",),
+        TAG_COLLECTION_BOOTSTRAP_CATEGORY_MAX_SHARE=100,
+        TAG_COLLECTION_DAILY_API_LIMIT=100,
+        TAG_COLLECTION_DAILY_PLACE_LIMIT=10,
+    )
+    def test_scheduler_keeps_busan_priority_while_adding_seoul(self):
+        for index in range(10):
+            self.make_place(900 + index, category="cafe", region="부산광역시")
+            self.make_place(920 + index, category="cafe", region="서울특별시")
+
+        stats = scheduler_tick()
+
+        self.assertEqual(stats["planned"], 10)
+        self.assertEqual(
+            PlaceTagCollectionJob.objects.filter(place__address__startswith="부산").count(),
+            7,
+        )
+        self.assertEqual(
+            PlaceTagCollectionJob.objects.filter(place__address__startswith="서울").count(),
+            3,
+        )
 
     def test_stale_budget_is_a_hard_cap_during_fallback(self):
         candidates = [
