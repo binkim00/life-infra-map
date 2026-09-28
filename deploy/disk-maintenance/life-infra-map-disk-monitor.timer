@@ -1,0 +1,11 @@
+[Unit]
+Description=Check Life Infra Map root disk every six hours
+
+[Timer]
+OnCalendar=*-*-* 00,06,12,18:15:00 UTC
+RandomizedDelaySec=5min
+Persistent=true
+Unit=life-infra-map-disk-monitor.service
+
+[Install]
+WantedBy=timers.target

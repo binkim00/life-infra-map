@@ -1,0 +1,19 @@
+[Unit]
+Description=Monitor Life Infra Map root disk and alert on threshold changes
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/life-infra-map/app
+Environment=DISK_GUARD_SNS_TOPIC_ARN=arn:aws:sns:ap-northeast-2:497902501857:life-infra-map-alerts
+ExecStartPre=+/usr/bin/install -d -o ubuntu -g ubuntu -m 0700 /home/ubuntu/life-infra-map/runtime/disk-maintenance
+ExecStart=/usr/bin/python3 /home/ubuntu/life-infra-map/app/deploy/disk-maintenance/disk_guard.py monitor
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/ubuntu/life-infra-map/runtime
+InaccessiblePaths=-/home/ubuntu/.ssh -/home/ubuntu/.aws -/home/ubuntu/life-infra-map/app/backend/.env -/home/ubuntu/life-infra-map/app/deploy/db/.env
