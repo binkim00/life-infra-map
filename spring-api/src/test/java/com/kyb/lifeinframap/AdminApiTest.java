@@ -202,7 +202,25 @@ class AdminApiTest extends ApiTestBase {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$").isArray())
                 .andExpect(jsonPath("$[0].title").value("문의 제목"))
+                .andExpect(jsonPath("$[0].category").value("general"))
                 .andExpect(jsonPath("$.results").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("서비스 불편 문의는 유형을 보존하고 잘못된 유형은 거부한다")
+    void inquiryCategoryIsValidated() throws Exception {
+        User author = createUser(false);
+        mockMvc.perform(post("/api/inquiries")
+                        .header("Authorization", bearer(author))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\"불편 사항\",\"content\":\"검색이 느립니다\",\"category\":\"service_issue\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.category").value("service_issue"));
+        mockMvc.perform(post("/api/inquiries")
+                        .header("Authorization", bearer(author))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\"불편 사항\",\"content\":\"검색이 느립니다\",\"category\":\"unknown\"}"))
+                .andExpect(status().isBadRequest());
     }
 
     @Test

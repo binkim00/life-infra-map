@@ -38,14 +38,16 @@ public class PublicWriteRateLimitFilter extends OncePerRequestFilter {
             return true;
         }
         String path = request.getRequestURI();
-        return !"/api/auth/login".equals(path) && !"/api/accounts/signup".equals(path);
+        return !"/api/auth/login".equals(path) && !"/api/auth/refresh".equals(path)
+                && !"/api/auth/social/exchange".equals(path)
+                && !"/api/accounts/signup".equals(path);
     }
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
         String path = request.getRequestURI();
-        int limit = "/api/auth/login".equals(path) ? loginLimit : signupLimit;
+        int limit = "/api/accounts/signup".equals(path) ? signupLimit : loginLimit;
         String key = path + ":" + request.getRemoteAddr();
         long now = Instant.now().toEpochMilli();
         long cutoff = now - 60_000;

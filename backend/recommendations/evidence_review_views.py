@@ -23,7 +23,7 @@ def research_audits(request):
     rows = ResearchAudit.objects.order_by("-created_at", "-id")
     count = rows.count()
     return Response({"count": count, "has_next": count > page * 5,
-                     "results": [{"id": r.id, "run_key": r.run_key, "payload": r.payload}
+                     "results": [{"id": r.id, "run_key": r.run_key, "created_at": r.created_at, "payload": r.payload}
                                  for r in rows[(page-1)*5:page*5]]})
 
 
@@ -42,7 +42,7 @@ def serialize(row):
         "freshness": "historical" if historical else "current",
         "freshness_label": "과거 자료·현재 미확인" if historical else "유효기간 내 자료",
         "content_approved": bool(review and review.status == "approved"),
-        "search_eligible": bool((review is None or review.status == "approved") and not historical),
+        "search_eligible": bool(review and review.status == "approved" and not historical),
         "usage_scope": "search" if review and review.status == "approved" else (
             "archive_only" if review and review.status == "approved_limited" else "none"
         ),

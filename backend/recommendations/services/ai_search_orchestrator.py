@@ -5424,6 +5424,46 @@ def run_ai_search_candidates(request_data, *, user=None):
     }
 
 
+FILTER_CATEGORY_LABELS = {
+    "cafe": "카페", "restaurant": "식당", "city_park": "공원",
+    "parking": "주차장", "toilet": "화장실", "shelter": "쉼터",
+}
+FILTER_REQUIREMENTS = {
+    "parking": "주차가능", "outlet": "콘센트있음", "quiet": "조용함",
+    "pet": "반려동물동반", "high_chair": "유아의자있음",
+}
+
+
+def apply_selected_filters(frame, selected):
+    """Apply only allowlisted choices; never let client JSON become a search plan."""
+    if not isinstance(selected, dict):
+        return frame
+    category = selected.get("category")
+    location = str(selected.get("location") or "").strip()
+    raw_required = selected.get("required")
+    if (category not in FILTER_CATEGORY_LABELS or not 1 <= len(location) <= 80
+            or not isinstance(raw_required, list) or len(raw_required) > 5
+            or any(key not in FILTER_REQUIREMENTS for key in raw_required)):
+        return frame
+    label = FILTER_CATEGORY_LABELS[category]
+    required = list(dict.fromkeys(FILTER_REQUIREMENTS[key] for key in raw_required))
+    return {
+        **frame,
+        "location_mode": "explicit", "anchor_location": location,
+        "target_objects": [label], "candidate_place_types": [label],
+        "candidate_category_codes": [category],
+        "result_match_terms": [label],
+        "primary_search_queries": [label],
+        "required_features": required,
+        "constraints": list(dict.fromkeys([*(frame.get("constraints") or []), *required])),
+        "structured_conditions": [
+            {"label": value, "type": "feature", "required": True, "source": "selected_filter"}
+            for value in required
+        ],
+        "fallback_enabled": False,
+    }
+
+
 def run_ai_search(request_data, *, user=None):
     total_started = time.perf_counter()
     timings = {
@@ -5495,6 +5535,12 @@ def run_ai_search(request_data, *, user=None):
     frame = _normalize_current_context_anchor_frame(
         intent_plan.get("frame") if isinstance(intent_plan.get("frame"), dict) else {}
     )
+    if isinstance(request_data.get("selected_filters"), dict):
+        selected_frame = apply_selected_filters(frame, request_data["selected_filters"])
+        if selected_frame is not frame:
+            frame = selected_frame
+            intent_plan = {**intent_plan, "action": "search", "decision_action": "search", "frame": frame}
+            action = "search"
     if force_map_center:
         frame = {
             **frame,

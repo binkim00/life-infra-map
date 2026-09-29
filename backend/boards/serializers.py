@@ -253,6 +253,7 @@ class PostDetailSerializer(serializers.ModelSerializer):
             "author_nickname_color",
             "board_type",
             "title",
+            "category",
             "content",
             "image",
             "image_url",
@@ -489,6 +490,7 @@ class InquirySerializer(serializers.ModelSerializer):
             "author",
             "author_username",
             "title",
+            "category",
             "content",
             "status",
             "admin_reply",
@@ -532,6 +534,7 @@ class InquiryHistorySerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "title",
+            "category",
             "content",
             "status",
             "admin_reply",

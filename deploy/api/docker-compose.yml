@@ -9,6 +9,8 @@ services:
     init: true
     env_file:
       - ../../backend/.env
+    volumes:
+      - ${CODEX_CONTENT_REVIEW_RUNTIME_DIR:-/home/ubuntu/life-infra-map/runtime/codex-evidence/content-review}:/codex-content-review
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-life_infra_map}
       POSTGRES_USER: ${POSTGRES_USER:-life_infra_map}

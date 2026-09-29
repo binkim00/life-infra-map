@@ -29,6 +29,7 @@ type AuthContextValue = {
   isLoggedIn: boolean;
   isAdmin: boolean;
   login: (username: string, password: string) => Promise<void>;
+  exchangeSocialTicket: (ticket: string) => Promise<void>;
   signup: (payload: FormData) => Promise<void>;
   logout: () => Promise<void>;
   refreshMe: () => Promise<void>;
@@ -51,6 +52,11 @@ export function AuthProvider({ children }: PropsWithChildren) {
   const [user, setUserState] = useState<AuthUser | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
+
+  useEffect(() => authStorage.subscribe((current) => {
+    setToken(current.token);
+    setUserState(current.user);
+  }), []);
 
   useEffect(() => {
     let active = true;
@@ -102,9 +108,10 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
   const applyAuth = async (data: Record<string, unknown>) => {
     const nextToken = String(data.access_token || data.token || "");
+    const refreshToken = String(data.refresh_token || "") || null;
     const nextUser = (data.user || null) as AuthUser | null;
     if (!nextToken) throw new Error("서버가 인증 토큰을 반환하지 않았습니다.");
-    await authStorage.write(nextToken, nextUser);
+    await authStorage.write(nextToken, nextUser, refreshToken);
     setToken(nextToken);
     setUserState(nextUser);
   };
@@ -126,6 +133,12 @@ export function AuthProvider({ children }: PropsWithChildren) {
         });
         await applyAuth(data);
       },
+      exchangeSocialTicket: async (ticket) => {
+        const data = await apiRequest<Record<string, unknown>>("/auth/social/exchange", {
+          method: "POST", body: { ticket }, auth: false,
+        });
+        await applyAuth(data);
+      },
       signup: async (payload) => {
         const data = await apiRequest<Record<string, unknown>>(
           "/accounts/signup/",
@@ -135,7 +148,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
       },
       logout: async () => {
         try {
-          if (token) await apiRequest("/accounts/logout/", { method: "POST" });
+          const stored = await authStorage.read();
+          if (stored.refreshToken) await apiRequest("/auth/logout", { method: "POST", body: { refresh_token: stored.refreshToken }, auth: false });
         } catch {
           /* local logout still proceeds */
         }
@@ -151,12 +165,12 @@ export function AuthProvider({ children }: PropsWithChildren) {
         );
         const nextUser = unwrapUser(data);
         if (!nextUser) return;
-        await authStorage.write(token, nextUser);
+        await authStorage.write((await authStorage.read()).token || token, nextUser);
         setUserState(nextUser);
       },
       setUser: async (nextUser) => {
         setUserState(nextUser);
-        if (token && nextUser) await authStorage.write(token, nextUser);
+        if (token && nextUser) await authStorage.write((await authStorage.read()).token || token, nextUser);
       },
       requireLogin: () => {
         if (token) return true;

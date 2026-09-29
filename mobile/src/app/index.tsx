@@ -101,6 +101,11 @@ export default function HomeScreen() {
             </View>
 
             <View style={styles.modeStack}>
+              <Pressable onPress={() => router.push("/filter-search" as never)} style={({ pressed }) => [styles.modeCard, pressed && styles.pressed]}>
+                <View style={[styles.modeIcon, styles.modeIconMint]}><AppIcon ios="slider.horizontal.3" android="tune" size={26} color={Palette.accent} /></View>
+                <View style={styles.modeCopy}><Text style={styles.modeTitle}>조건 골라 찾기</Text><Text style={styles.modeDescription}>지역·상황·필수 조건을 선택해요</Text></View>
+                <Text style={styles.chevron}>›</Text>
+              </Pressable>
               <Pressable onPress={() => router.push("/recommend")} style={({ pressed }) => [styles.modeCard, pressed && styles.pressed]}>
                 <View style={[styles.modeIcon, styles.modeIconCoral]}><AppIcon ios="sparkles" android="auto_awesome" size={26} color={Palette.coral} /></View>
                 <View style={styles.modeCopy}><Text style={styles.modeTitle}>상황으로 찾기</Text><Text style={styles.modeDescription}>지금 상황에 맞는 장소를 추천해요</Text></View>

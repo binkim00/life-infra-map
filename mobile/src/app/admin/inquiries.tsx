@@ -9,6 +9,7 @@ import { Palette, Radius } from "@/constants/theme";
 type Inquiry = {
   id: number;
   title: string;
+  category?: string;
   content?: string;
   status?: string;
   admin_reply?: string;
@@ -43,6 +44,7 @@ export default function AdminInquiriesScreen() {
                 <Text style={[styles.status, item.status === "answered" && styles.statusAnswered]}>{({ pending: "접수", answered: "답변 완료", closed: "종료" } as Record<string, string>)[item.status || ""] || "확인 필요"}</Text>
             </View>
             <Text style={styles.content}>{item.content}</Text>
+            <Text style={ui.muted}>유형: {({ general: "일반 문의", service_issue: "서비스 불편", bug: "오류 신고" } as Record<string, string>)[item.category || "general"] || "분류 확인 필요"}</Text>
             <TextInput
               value={drafts[item.id] ?? item.admin_reply ?? ""}
               onChangeText={(value) =>

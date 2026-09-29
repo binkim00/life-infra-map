@@ -8,6 +8,7 @@ import { Palette, Radius } from "@/constants/theme";
 type Inquiry = {
   id: number;
   title: string;
+  category?: string;
   content: string;
   status?: string;
   admin_reply?: string;
@@ -45,6 +46,7 @@ export default function MyInquiriesScreen() {
               <View style={[styles.icon, item.status === "answered" && styles.iconAnswered]}><Text style={styles.iconText}>{item.status === "answered" ? "✓" : "?"}</Text></View>
               <View style={ui.grow}>
                 <Text style={styles.title}>{item.title}</Text>
+                <Text style={ui.muted}>{({ general: "일반 문의", service_issue: "서비스 불편", bug: "오류 신고" } as Record<string, string>)[item.category || "general"] || "기타 문의"}</Text>
                 <Text style={ui.muted}>{item.created_at ? new Date(item.created_at).toLocaleDateString() : ""}</Text>
               </View>
               <Text style={[styles.status, item.status === "answered" && styles.statusAnswered]}>

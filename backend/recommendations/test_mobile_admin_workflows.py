@@ -30,6 +30,7 @@ class MobileAdminWorkflowTests(TestCase):
         response = self.client.get(url)
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["results"][0]["quote"], "조용한 공간")
+        self.assertFalse(response.data["results"][0]["search_eligible"])
 
     @override_settings(EVIDENCE_REVIEW_SATURATION_THRESHOLD=3)
     def test_pending_queue_hides_same_tag_after_three_independent_approvals(self):

@@ -4,17 +4,22 @@ import { isSpringPath, stripTrailingSlash } from './serviceRoutes'
 
 // 검색은 Django, 나머지는 Spring 이 담당합니다.
 const DJANGO_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://100.71.169.91:8000/api'
-const SPRING_BASE_URL = import.meta.env.VITE_SPRING_API_BASE_URL || 'http://100.71.169.91:8081/api'
+export const SPRING_BASE_URL = import.meta.env.VITE_SPRING_API_BASE_URL || 'http://100.71.169.91:8081/api'
 
 const api = axios.create({
   baseURL: DJANGO_BASE_URL,
 })
 
 let unauthorizedHandler = null
+let sessionRenewedHandler = null
 let isHandlingUnauthorized = false
+let refreshPromise = null
 
 export const setUnauthorizedHandler = (handler) => {
   unauthorizedHandler = typeof handler === 'function' ? handler : null
+}
+export const setSessionRenewedHandler = (handler) => {
+  sessionRenewedHandler = typeof handler === 'function' ? handler : null
 }
 
 const getStoredAuthToken = () => {
@@ -24,10 +29,14 @@ const getStoredAuthToken = () => {
     return ''
   }
 }
+const getStoredRefreshToken = () => {
+  try { return localStorage.getItem('refreshToken') } catch { return null }
+}
 
 const clearStoredAuth = () => {
   try {
     localStorage.removeItem('authToken')
+    localStorage.removeItem('refreshToken')
     localStorage.removeItem('authUser')
   } catch (error) {
     // localStorage can be unavailable in restricted browser contexts.
@@ -51,6 +60,7 @@ const isAuthEntryRequest = (config = {}) => {
     url.includes('/accounts/login')
     || url.includes('/accounts/signup')
     || url.includes('/auth/login')
+    || url.includes('/auth/social/exchange')
   )
 }
 
@@ -95,14 +105,49 @@ api.interceptors.request.use((config) => {
 
 api.interceptors.response.use(
   (response) => response,
-  (error) => {
+  async (error) => {
     const status = error?.response?.status
     const config = error?.config || {}
     const hadAuthCredential = Boolean(
       getAuthorizationHeader(config.headers) || getStoredAuthToken(),
     )
 
-    if (status === 401 && hadAuthCredential && !isAuthEntryRequest(config)) {
+    if (status === 401 && config._authRetried && getStoredAuthToken() === getAuthorizationHeader(config.headers).replace(/^Bearer\s+/i, '')) {
+      handleUnauthorizedResponse(error)
+    }
+    if (status === 401 && hadAuthCredential && !isAuthEntryRequest(config) && !config._authRetried) {
+      const failedToken = getAuthorizationHeader(config.headers).replace(/^Bearer\s+/i, '')
+      const currentToken = getStoredAuthToken()
+      if (failedToken && currentToken && currentToken !== failedToken) {
+        config._authRetried = true
+        config.headers.Authorization = `Bearer ${currentToken}`
+        return api(config)
+      }
+      const refreshToken = getStoredRefreshToken()
+      if (refreshToken) {
+        if (!refreshPromise) {
+          refreshPromise = axios.post(`${SPRING_BASE_URL}/auth/refresh`, { refresh_token: refreshToken })
+            .then(({ data }) => {
+              if (getStoredRefreshToken() !== refreshToken) return null
+              localStorage.setItem('authToken', data.access_token)
+              localStorage.setItem('refreshToken', data.refresh_token)
+              localStorage.setItem('authUser', JSON.stringify(data.user))
+              sessionRenewedHandler?.(data)
+              return data.access_token
+            })
+            .finally(() => { refreshPromise = null })
+        }
+        try {
+          const nextToken = await refreshPromise
+          if (nextToken) {
+            config._authRetried = true
+            config.headers.Authorization = `Bearer ${nextToken}`
+            return api(config)
+          }
+        } catch (refreshError) {
+          if (!refreshError.response) return Promise.reject(refreshError)
+        }
+      }
       handleUnauthorizedResponse(error)
     }
 

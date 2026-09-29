@@ -1,0 +1,11 @@
+[Unit]
+Description=Run second-pass Codex evidence review each day
+
+[Timer]
+OnCalendar=*-*-* 04:30:00 Asia/Seoul
+RandomizedDelaySec=10m
+Persistent=true
+Unit=life-infra-map-codex-content-review.service
+
+[Install]
+WantedBy=timers.target

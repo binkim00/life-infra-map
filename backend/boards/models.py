@@ -313,6 +313,11 @@ class Notification(models.Model):
 
 
 class Inquiry(models.Model):
+    CATEGORY_CHOICES = [
+        ("general", "일반 문의"),
+        ("service_issue", "서비스 불편"),
+        ("bug", "오류 신고"),
+    ]
     STATUS_CHOICES = [
         ("pending", "답변 대기"),
         ("answered", "답변 완료"),
@@ -326,6 +331,7 @@ class Inquiry(models.Model):
         verbose_name="작성자",
     )
     title = models.CharField(max_length=200, verbose_name="제목")
+    category = models.CharField(max_length=20, choices=CATEGORY_CHOICES, default="general", verbose_name="문의 유형")
     content = models.TextField(verbose_name="내용")
     status = models.CharField(
         max_length=20,

@@ -1,5 +1,7 @@
 package com.kyb.lifeinframap.security;
 
+import com.kyb.lifeinframap.auth.service.SocialOAuthSettings;
+import com.kyb.lifeinframap.auth.service.SocialOAuthSuccessHandler;
 import java.nio.charset.StandardCharsets;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -29,16 +31,24 @@ public class SecurityConfig {
     public SecurityFilterChain filterChain(
             HttpSecurity http,
             JwtAuthenticationFilter jwtFilter,
-            PublicWriteRateLimitFilter rateLimitFilter) throws Exception {
+            PublicWriteRateLimitFilter rateLimitFilter,
+            SocialOAuthSettings socialSettings,
+            SocialOAuthSuccessHandler socialSuccessHandler) throws Exception {
         http
-                // 토큰 기반이라 세션과 CSRF 를 쓰지 않습니다.
+                // Social OAuth state is stored in a short-lived session when enabled.
                 .cors(cors -> {})
                 .csrf(csrf -> csrf.disable())
-                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .sessionManagement(session -> session.sessionCreationPolicy(
+                        socialSettings.providers().isEmpty() ? SessionCreationPolicy.STATELESS
+                                : SessionCreationPolicy.IF_REQUIRED))
                 .httpBasic(basic -> basic.disable())
                 .formLogin(form -> form.disable())
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.POST, "/api/auth/login").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/auth/refresh", "/api/auth/logout").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/auth/social/providers", "/api/auth/social/*/start").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/auth/social/exchange").permitAll()
+                        .requestMatchers("/api/oauth2/authorization/*", "/api/login/oauth2/code/*").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/accounts/signup").permitAll()
                         .requestMatchers("/api/health").permitAll()
                         // `/api/tiers/**` 는 이관 중 Django 계산 결과와 대조하려고 열어 두었다가 닫았습니다.
@@ -55,6 +65,22 @@ public class SecurityConfig {
                         .authenticationEntryPoint(unauthorizedEntryPoint()))
                 .addFilterBefore(rateLimitFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterAfter(jwtFilter, PublicWriteRateLimitFilter.class);
+        if (!socialSettings.providers().isEmpty()) {
+            http.oauth2Login(oauth -> oauth
+                    .clientRegistrationRepository(socialSettings.repository())
+                    .authorizationEndpoint(endpoint -> endpoint.baseUri("/api/oauth2/authorization"))
+                    .redirectionEndpoint(endpoint -> endpoint.baseUri("/api/login/oauth2/code/*"))
+                    .successHandler(socialSuccessHandler)
+                    .failureHandler((request, response, exception) -> {
+                        var session = request.getSession(false);
+                        String client = session == null ? "" : String.valueOf(session.getAttribute("social_client"));
+                        String nonce = session == null ? "" : String.valueOf(session.getAttribute("social_nonce"));
+                        if (session != null) session.invalidate();
+                        String target = "mobile".equals(client) ? "lifeinframap://oauth/callback"
+                                : socialSettings.publicBaseUrl() + "/oauth/callback";
+                        response.sendRedirect(target + "?error=login_failed&nonce=" + nonce);
+                    }));
+        }
         return http.build();
     }
 

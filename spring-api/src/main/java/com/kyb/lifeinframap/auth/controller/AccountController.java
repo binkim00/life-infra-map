@@ -7,6 +7,7 @@ import com.kyb.lifeinframap.account.domain.UserProfile;
 import com.kyb.lifeinframap.account.repository.UserProfileRepository;
 import com.kyb.lifeinframap.account.repository.UserRepository;
 import com.kyb.lifeinframap.security.JwtService;
+import com.kyb.lifeinframap.auth.service.RefreshTokenService;
 import jakarta.validation.Valid;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validator;
@@ -40,6 +41,7 @@ public class AccountController {
     private final UserProfileRepository profileRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
+    private final RefreshTokenService refreshTokens;
     private final com.kyb.lifeinframap.storage.service.StorageService storageService;
     private final com.kyb.lifeinframap.account.service.UserPayloadFactory userPayloadFactory;
     private final Validator validator;
@@ -49,6 +51,7 @@ public class AccountController {
             UserProfileRepository profileRepository,
             PasswordEncoder passwordEncoder,
             JwtService jwtService,
+            RefreshTokenService refreshTokens,
             com.kyb.lifeinframap.storage.service.StorageService storageService,
             com.kyb.lifeinframap.account.service.UserPayloadFactory userPayloadFactory,
             Validator validator) {
@@ -56,6 +59,7 @@ public class AccountController {
         this.profileRepository = profileRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
+        this.refreshTokens = refreshTokens;
         this.storageService = storageService;
         this.userPayloadFactory = userPayloadFactory;
         this.validator = validator;
@@ -144,6 +148,7 @@ public class AccountController {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("message", "회원가입이 완료되었습니다.");
         body.put("access_token", jwtService.issueAccessToken(user.getId(), user.getUsername()));
+        body.put("refresh_token", refreshTokens.issue(user));
         body.put("token_type", "Bearer");
         body.put("expires_in", jwtService.getAccessTokenSeconds());
         body.put("user", userPayloadFactory.of(user, nickname, profileImageKey));

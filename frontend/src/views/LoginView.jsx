@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 
 import { useAuthStore } from '@/stores/auth'
+import api, { SPRING_BASE_URL } from '@/api/axios'
 
 import styles from './LoginView.module.css'
 
@@ -14,6 +15,23 @@ const LoginView = () => {
   const [errorMessage, setErrorMessage] = useState('')
   const [penaltyInfo, setPenaltyInfo] = useState(null)
   const [isLoading, setIsLoading] = useState(false)
+  const [socialProviders, setSocialProviders] = useState([])
+
+  useEffect(() => {
+    let active = true
+    api.get('/auth/social/providers').then(({ data }) => {
+      if (active) setSocialProviders(data.providers || [])
+    }).catch(() => {})
+    return () => { active = false }
+  }, [])
+
+  const startSocial = (provider) => {
+    const bytes = new Uint8Array(24)
+    window.crypto.getRandomValues(bytes)
+    const nonce = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
+    sessionStorage.setItem('socialLoginNonce', nonce)
+    window.location.assign(`${SPRING_BASE_URL}/auth/social/${provider}/start?client=web&nonce=${nonce}`)
+  }
 
   const handleLogin = async (event) => {
     event.preventDefault()
@@ -87,6 +105,13 @@ const LoginView = () => {
             {isLoading ? '로그인 중...' : '로그인'}
           </button>
         </form>
+
+        {socialProviders.length > 0 && <div className={styles.authForm}>
+          {socialProviders.map((provider) => <button type="button" key={provider}
+            onClick={() => startSocial(provider)}>
+            {({ naver: '네이버', google: '구글', kakao: '카카오' })[provider]}로 계속하기
+          </button>)}
+        </div>}
 
         <Link to="/signup" className={styles.authLink}>
           계정이 없으신가요? 회원가입

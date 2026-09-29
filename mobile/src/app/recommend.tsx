@@ -136,6 +136,7 @@ export default function RecommendScreen() {
     q?: string;
     lat?: string;
     lng?: string;
+    selectedFilters?: string;
   }>();
   const { requireLogin, isLoggedIn } = useAuth();
   const initialLat = Number(params.lat);
@@ -199,6 +200,7 @@ export default function RecommendScreen() {
       type?: "show_unverified" | "relax_constraints";
       condition_labels?: string[];
     },
+    selectedFilters?: { location: string; category: string; required: string[] },
   ) => {
     const text = next.trim();
     if (!text || loading) return;
@@ -223,6 +225,7 @@ export default function RecommendScreen() {
           lng: center.lng,
           limit: 10,
           conversation_action: conversationAction,
+          selected_filters: selectedFilters,
         },
       );
       const data = raw as AiResponse;
@@ -306,7 +309,13 @@ export default function RecommendScreen() {
       .then(() => {
         if (params.q && !initialQuerySentRef.current) {
           initialQuerySentRef.current = true;
-          void submitTurn(params.q);
+          let selectedFilters;
+          try {
+            selectedFilters = params.selectedFilters ? JSON.parse(params.selectedFilters) : undefined;
+          } catch {
+            selectedFilters = undefined;
+          }
+          void submitTurn(params.q, undefined, selectedFilters);
         }
       })
       .catch(() =>

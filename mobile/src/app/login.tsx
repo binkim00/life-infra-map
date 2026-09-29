@@ -1,19 +1,52 @@
 import { router } from "expo-router";
-import { useState } from "react";
+import * as Crypto from "expo-crypto";
+import * as WebBrowser from "expo-web-browser";
+import { useEffect, useState } from "react";
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { ApiError } from "@/api/client";
+import { ApiError, apiRequest, SPRING_API } from "@/api/client";
 import { useAuth } from "@/auth/auth-context";
 import { Palette } from "@/constants/theme";
 
 export default function LoginScreen() {
-  const { login } = useAuth();
+  const { login, exchangeSocialTicket } = useAuth();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [socialProviders, setSocialProviders] = useState<string[]>([]);
+
+  useEffect(() => {
+    let active = true;
+    apiRequest<{ providers: string[] }>("/auth/social/providers", { auth: false })
+      .then((data) => { if (active) setSocialProviders(data.providers || []); })
+      .catch(() => {});
+    return () => { active = false; };
+  }, []);
+
+  const socialLogin = async (provider: string) => {
+    try {
+      setLoading(true);
+      setError("");
+      const bytes = await Crypto.getRandomBytesAsync(24);
+      const nonce = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+      const callback = "lifeinframap://oauth/callback";
+      const start = `${SPRING_API}/auth/social/${provider}/start?client=mobile&nonce=${nonce}`;
+      const result = await WebBrowser.openAuthSessionAsync(start, callback);
+      if (result.type !== "success") return;
+      const url = new URL(result.url);
+      if (url.protocol !== "lifeinframap:" || url.hostname !== "oauth" || url.pathname !== "/callback"
+          || url.searchParams.get("nonce") !== nonce || !url.searchParams.get("ticket")) {
+        throw new Error("소셜 로그인 응답을 확인하지 못했습니다.");
+      }
+      await exchangeSocialTicket(url.searchParams.get("ticket")!);
+      if (router.canGoBack()) router.back(); else router.replace("/");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "소셜 로그인을 완료하지 못했습니다.");
+    } finally { setLoading(false); }
+  };
 
   const submit = async () => {
     if (!username || !password) return setError("아이디와 비밀번호를 입력해주세요.");
@@ -52,6 +85,10 @@ export default function LoginScreen() {
             </View>
             {error ? <Text style={styles.error}>●  {error}</Text> : null}
             <Pressable disabled={loading} onPress={submit} style={({ pressed }) => [styles.loginButton, loading && styles.disabled, pressed && styles.pressed]}><Text style={styles.loginText}>{loading ? "로그인 중…" : "로그인"}</Text></Pressable>
+            {socialProviders.map((provider) => <Pressable key={provider} disabled={loading}
+              onPress={() => void socialLogin(provider)} style={styles.signupButton}>
+              <Text style={styles.signupText}>{({ naver: "네이버", google: "구글", kakao: "카카오" } as Record<string, string>)[provider]}로 계속하기</Text>
+            </Pressable>)}
             <Pressable onPress={() => router.push("/signup")} style={styles.signupButton}><Text style={styles.signupText}>회원가입</Text></Pressable>
             <View style={styles.orRow}><View style={styles.orLine} /><Text style={styles.orText}>또는</Text><View style={styles.orLine} /></View>
             <Pressable onPress={() => router.replace("/explore")} style={styles.guestButton}><Text style={styles.guestText}>로그인 없이 둘러보기</Text></Pressable>

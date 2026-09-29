@@ -5,9 +5,9 @@ from django.core.management.base import BaseCommand
 from django.db import transaction
 from django.utils import timezone
 
-from recommendations.models import PlaceTag, PlaceTagEvidence, Tag, TagEnrichmentRequest
+from recommendations.models import Place, PlaceTag, PlaceTagEvidence, Tag, TagEnrichmentRequest
 from recommendations.services.subjective_tag_evidence_provider import collect_subjective_tag_evidence
-from recommendations.services.tag_source_policy import evidence_source_for
+from recommendations.services.tag_source_policy import WEB_EVIDENCE_SOURCES, evidence_source_for
 from recommendations.services.tag_freshness import evidence_ttl
 
 
@@ -87,6 +87,11 @@ def save_candidate_evidence(request, result, *, observed_at):
 
 @transaction.atomic
 def save_place_candidate_evidence(place, tag_name, result, *, observed_at):
+    from recommendations.services.automatic_content_review import canonical_reference
+
+    # Serialize saves for the same place so URL variants cannot race past the
+    # lookup. A repeated article must not renew an expired observation.
+    Place.objects.select_for_update().get(pk=place.pk)
     tag, _ = Tag.objects.get_or_create(
         name=tag_name,
         defaults={'tag_type': 'recommendation', 'description': '수요 기반 웹 근거 후보 태그'},
@@ -95,6 +100,12 @@ def save_place_candidate_evidence(place, tag_name, result, *, observed_at):
     polarity = result['polarity']
     raw = result.get('raw') or {}
     evidence_source = evidence_source_for(raw)
+    article = canonical_reference(source_url)
+    for previous in PlaceTagEvidence.objects.filter(
+        place=place, tag=tag, polarity=polarity, source__in=WEB_EVIDENCE_SOURCES,
+    ).order_by('id').iterator(chunk_size=200):
+        if canonical_reference(previous.source_reference) == article:
+            return previous, False
     key_value = '{}|{}|{}|{}|{}'.format(
         place.id,
         tag.id,
@@ -104,7 +115,7 @@ def save_place_candidate_evidence(place, tag_name, result, *, observed_at):
     )
     ttl = evidence_ttl(tag_name, evidence_source)
     freshness_anchor = observed_at or timezone.now()
-    evidence, created = PlaceTagEvidence.objects.update_or_create(
+    evidence, created = PlaceTagEvidence.objects.get_or_create(
         evidence_key=hashlib.sha256(key_value.encode('utf-8')).hexdigest(),
         defaults={
             'place': place,
@@ -129,9 +140,10 @@ def save_place_candidate_evidence(place, tag_name, result, *, observed_at):
             'expires_at': freshness_anchor + ttl if ttl else None,
         },
     )
-    from recommendations.services.automatic_content_review import auto_review_content
-    auto_review_content(evidence)
-    refresh_candidate_aggregate(place, tag)
+    if created:
+        from recommendations.services.automatic_content_review import auto_review_content
+        auto_review_content(evidence)
+        refresh_candidate_aggregate(place, tag)
     return evidence, created
 
 

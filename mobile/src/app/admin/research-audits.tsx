@@ -8,8 +8,9 @@ import { useResource } from "@/hooks/use-resource";
 import { Palette, Radius } from "@/constants/theme";
 
 type Judgment = { place_name: string; tag: string; status: string; reason: string };
-type Run = { id: number; run_key: string; payload: { rows?: number; accepted?: number; needs_verification?: number; rejected?: number; duplicate?: number; saved?: number; reasons?: Record<string, number>; judgments?: Judgment[] } };
+type Run = { id: number; run_key: string; created_at?: string; payload: { run_status?: "running" | "completed" | "failed"; stage?: "prepare" | "research" | "verify"; started_at?: string; finished_at?: string; failure_summary?: string; rows?: number; accepted?: number; needs_verification?: number; rejected?: number; duplicate?: number; saved?: number; reasons?: Record<string, number>; judgments?: Judgment[] } };
 const labels: Record<string, string> = { accepted: "즉시 확정 가능", needs_verification: "확인 필요", rejected: "탈락", duplicate: "중복", candidate_pending: "접근 실패·재조사", ambiguous: "판정 보류" };
+const stageLabels = { prepare: "대상 준비", research: "웹 조사", verify: "원문 검증" };
 
 export default function ResearchAuditsScreen() {
   const [page, setPage] = useState(1);
@@ -22,7 +23,9 @@ export default function ResearchAuditsScreen() {
     <Pressable style={ui.button} onPress={() => router.push("/admin/evidence" as never)}><Text style={ui.buttonText}>DB에 저장된 근거 검토하기</Text></Pressable>
     <LoadState loading={loading} error={error} retry={reload} empty={!data.results.length} emptyText="아직 저장된 수집 기록이 없습니다." />
     {data.results.map(run => <View key={run.id} style={[ui.card, styles.run]}>
-      <View style={ui.row}><View style={styles.runIcon}><Text style={styles.runIconText}>↻</Text></View><View style={ui.grow}><Text style={styles.runTitle}>{run.run_key}</Text><Text style={ui.muted}>수집기 실행 기록</Text></View></View>
+      <View style={ui.row}><View style={styles.runIcon}><Text style={styles.runIconText}>↻</Text></View><View style={ui.grow}><Text style={styles.runTitle}>{run.run_key}</Text><Text style={ui.muted}>{run.payload.run_status === "running" ? "진행 중" : run.payload.run_status === "failed" ? "실패" : run.payload.run_status === "completed" ? "완료" : "과거 완료 기록"} · {run.payload.stage ? stageLabels[run.payload.stage] : "단계 기록 없음"}</Text></View></View>
+      <Text style={ui.muted}>시작: {run.payload.started_at ? new Date(run.payload.started_at).toLocaleString() : run.created_at ? new Date(run.created_at).toLocaleString() : "기록 없음"}{run.payload.finished_at ? ` · 종료: ${new Date(run.payload.finished_at).toLocaleString()}` : ""}</Text>
+      {run.payload.failure_summary ? <Text style={ui.error}>{run.payload.failure_summary}</Text> : null}
       <View style={styles.stats}><View style={styles.stat}><Text style={styles.statValue}>{run.payload.rows ?? 0}</Text><Text style={styles.statLabel}>검사</Text></View><View style={styles.stat}><Text style={styles.statValue}>{run.payload.accepted ?? 0}</Text><Text style={styles.statLabel}>확정 가능</Text></View><View style={styles.stat}><Text style={styles.statValue}>{run.payload.needs_verification ?? 0}</Text><Text style={styles.statLabel}>확인 필요</Text></View></View>
       <Text style={ui.muted}>검사 {run.payload.rows ?? 0} · 즉시 확정 가능 {run.payload.accepted ?? 0} · 확인 필요 {run.payload.needs_verification ?? 0}</Text>
       <Text style={ui.muted}>탈락 {run.payload.rejected ?? 0} · 중복 {run.payload.duplicate ?? 0} · 저장 근거 {run.payload.saved ?? 0}</Text>

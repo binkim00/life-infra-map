@@ -53,6 +53,16 @@ app:
     # 배포 환경에서는 반드시 JWT_SECRET 환경변수로 덮어쓰고, Django 쪽에도 같은 값을 주입하세요.
     secret: ${JWT_SECRET:local-dev-secret-key-at-least-32-bytes-long}
     access-token-minutes: ${JWT_ACCESS_MINUTES:120}
+    refresh-token-days: ${JWT_REFRESH_DAYS:30}
+  social:
+    enabled: ${SOCIAL_LOGIN_ENABLED:false}
+    public-base-url: ${SOCIAL_PUBLIC_BASE_URL:}
+    google-client-id: ${SOCIAL_GOOGLE_CLIENT_ID:}
+    google-client-secret: ${SOCIAL_GOOGLE_CLIENT_SECRET:}
+    naver-client-id: ${SOCIAL_NAVER_CLIENT_ID:}
+    naver-client-secret: ${SOCIAL_NAVER_CLIENT_SECRET:}
+    kakao-client-id: ${SOCIAL_KAKAO_CLIENT_ID:}
+    kakao-client-secret: ${SOCIAL_KAKAO_CLIENT_SECRET:}
 
 logging:
   level:

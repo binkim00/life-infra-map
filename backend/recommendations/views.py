@@ -959,8 +959,9 @@ def serialize_kakao_map_place(place, *, lat=None, lng=None):
 
 def map_place_names_equivalent(first_name, second_name):
     """Treat a provider's optional branch suffix as the same nearby place."""
-    first = normalize_compact(first_name)
-    second = normalize_compact(second_name)
+    # Parentheses commonly contain an English rendering of the same name.
+    first = normalize_compact(str(first_name or "").split("(", 1)[0])
+    second = normalize_compact(str(second_name or "").split("(", 1)[0])
     if not first or not second:
         return False
     if first == second:
@@ -970,6 +971,21 @@ def map_place_names_equivalent(first_name, second_name):
     if second.endswith("점") and len(second) >= 4 and second[:-1] == first:
         return True
     return False
+
+
+def map_place_address_core(address):
+    """Ignore unit/floor notes appended to the same road address."""
+    core = str(address or "").split("(", 1)[0].split("（", 1)[0].strip()
+    for full, short in (
+        ("서울특별시", "서울"), ("부산광역시", "부산"), ("대구광역시", "대구"),
+        ("인천광역시", "인천"), ("광주광역시", "광주"), ("대전광역시", "대전"),
+        ("울산광역시", "울산"), ("세종특별자치시", "세종"),
+        ("제주특별자치도", "제주"),
+    ):
+        if core.startswith(full + " "):
+            core = short + core[len(full):]
+            break
+    return normalize_compact(core)
 
 
 def merge_map_place_results(results, *, max_distance_m=40):
@@ -988,9 +1004,15 @@ def merge_map_place_results(results, *, max_distance_m=40):
                     continue
                 if not map_place_names_equivalent(existing.get("name"), candidate.get("name")):
                     continue
-                if calculate_distance_m(
+                distance = calculate_distance_m(
                     existing_lat, existing_lng, candidate_lat, candidate_lng,
-                ) <= max_distance_m:
+                )
+                existing_address = map_place_address_core(existing.get("address"))
+                same_address = (
+                    len(existing_address) >= 8
+                    and existing_address == map_place_address_core(candidate.get("address"))
+                )
+                if distance <= max_distance_m or (same_address and distance <= 120):
                     duplicate_index = index
                     break
 
@@ -1251,16 +1273,34 @@ def map_place_search(request):
         db_queryset = apply_keyword_filter(db_queryset, [], tokenize_query(keyword)[1])
 
     if source in {"all", "db"} and not basic_db_skipped:
+        name_tokens = tokenize_query(name_query)[0] if is_separated_place_search and name_query else []
+        prefix_token = normalize_compact(name_tokens[0]) if len(name_tokens) > 1 else ""
+        use_prefix = bool(
+            db_queryset is not None and len(prefix_token) >= 3
+            and not is_category_only_query(prefix_token)
+            and not prefix_token.endswith(("역", "동", "구", "시", "군", "읍", "면", "리"))
+        )
         db_results, db_total_count, query_info = search_saved_map_places(
             keyword=category_query or keyword,
             lat=search_lat,
             lng=search_lng,
             radius=search_radius,
             limit=limit,
-            queryset=db_queryset,
+            queryset=db_queryset.filter(name__startswith=prefix_token) if use_prefix else db_queryset,
             prefiltered=bool(is_separated_place_search and name_query),
             nearest_first=is_separated_place_search,
         )
+        if use_prefix and len(db_results) < limit:
+            db_results, db_total_count, query_info = search_saved_map_places(
+                keyword=category_query or keyword,
+                lat=search_lat,
+                lng=search_lng,
+                radius=search_radius,
+                limit=limit,
+                queryset=db_queryset,
+                prefiltered=True,
+                nearest_first=True,
+            )
 
     complete_db_category = (
         is_separated_place_search

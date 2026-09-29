@@ -921,12 +921,14 @@ def run_search_pass(*, source_queryset, include_tokens, exclude_tokens, matched_
 
     deduped = []
 
-    for attempt_radius in build_radius_attempts(
-        lat=lat,
-        lng=lng,
-        radius=radius,
+    # The caller has already narrowed an exact/name query in SQL. Repeating
+    # that same expensive text filter for every expanding radius adds latency
+    # without changing the nationwide candidate set.
+    attempts = [None] if prefiltered and not radius else build_radius_attempts(
+        lat=lat, lng=lng, radius=radius,
         has_keyword=bool(include_tokens or exclude_tokens),
-    ):
+    )
+    for attempt_radius in attempts:
         queryset, db_distance = apply_radius_filter(base_queryset, lat, lng, attempt_radius)
 
         candidates = collect_scored_candidates(
