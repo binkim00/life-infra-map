@@ -1335,6 +1335,19 @@ def map_place_search(request):
         from .services.map_search import apply_keyword_filter
         db_queryset = apply_keyword_filter(db_queryset, [], tokenize_query(keyword)[1])
 
+    category_prefiltered = bool(
+        is_separated_place_search
+        and anchor_location
+        and category_query
+        and len(matched_basic_categories) == 1
+        and not name_query
+        and resolved_anchor.get("status") == "resolved"
+    )
+    if category_prefiltered:
+        # The parsed category is already a precise DB predicate. Repeating
+        # broad keyword/tag matching scans unrelated nearby places.
+        db_queryset = Place.objects.filter(category=matched_basic_categories[0])
+
     if source in {"all", "db"} and not basic_db_skipped:
         name_tokens = tokenize_query(name_query)[0] if is_separated_place_search and name_query else []
         prefix_token = normalize_compact(name_tokens[0]) if len(name_tokens) > 1 else ""
@@ -1350,7 +1363,7 @@ def map_place_search(request):
             radius=search_radius,
             limit=limit,
             queryset=db_queryset.filter(name__startswith=prefix_token) if use_prefix else db_queryset,
-            prefiltered=bool(is_separated_place_search and name_query),
+            prefiltered=bool((is_separated_place_search and name_query) or category_prefiltered),
             nearest_first=is_separated_place_search,
         )
         if use_prefix and len(db_results) < limit and not (

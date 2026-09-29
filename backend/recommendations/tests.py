@@ -8616,18 +8616,20 @@ class RecommendationSearchTests(TestCase):
         self._create_place(name="서면 주차장", category="parking", external_id="area-parking", lat=35.158, lng=129.061)
         self._create_place(name="서면 식당", category="restaurant", external_id="area-restaurant", lat=35.158, lng=129.062)
 
-        for query, category in (("서면 카페", "cafe"), ("서면 주차장", "parking")):
-            with self.subTest(query=query):
-                response = self.client.get(
-                    "/api/recommendations/place-search/",
-                    {"q": query, "source": "all", "lat": 35.1579, "lng": 129.0592, "center_mode": "auto"},
-                    HTTP_HOST="localhost",
-                )
-                self.assertEqual(response.status_code, 200)
-                data = response.json()
-                self.assertTrue(data["location_context"]["anchor_resolved"])
-                self.assertTrue(data["results"])
-                self.assertTrue(all(row["category"] == category for row in data["results"]))
+        with patch("recommendations.services.map_search.apply_keyword_filter") as mock_keyword_filter:
+            for query, category in (("서면 카페", "cafe"), ("서면 주차장", "parking")):
+                with self.subTest(query=query):
+                    response = self.client.get(
+                        "/api/recommendations/place-search/",
+                        {"q": query, "source": "all", "lat": 35.1579, "lng": 129.0592, "center_mode": "auto"},
+                        HTTP_HOST="localhost",
+                    )
+                    self.assertEqual(response.status_code, 200)
+                    data = response.json()
+                    self.assertTrue(data["location_context"]["anchor_resolved"])
+                    self.assertTrue(data["results"])
+                    self.assertTrue(all(row["category"] == category for row in data["results"]))
+            mock_keyword_filter.assert_not_called()
         mock_address.assert_not_called()
 
     @patch("recommendations.views.search_places_by_keyword")
