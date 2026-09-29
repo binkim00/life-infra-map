@@ -505,6 +505,22 @@ def _resolve_anchor_location(anchor_location, *, lat=None, lng=None, address_fir
             "address": "",
         }
 
+    # Exact known areas should not be overridden by an ambiguous address API
+    # response. This is common for short names such as "서면".
+    area = resolve_area_coordinates(anchor_location)
+    if area:
+        area_lat, area_lng, area_label = area
+        return {
+            "status": "resolved",
+            "reason": "",
+            "lat": area_lat,
+            "lng": area_lng,
+            "label": area_label,
+            "source": "area_gazetteer",
+            "external_id": "",
+            "address": "",
+        }
+
     if address_first:
         try:
             addresses = search_address(anchor_location).get("documents", [])
@@ -521,21 +537,6 @@ def _resolve_anchor_location(anchor_location, *, lat=None, lng=None, address_fir
                 }
         elif len(addresses) > 1:
             return {"status": "unresolved", "reason": "ambiguous_address", "lat": None, "lng": None, "label": anchor_location}
-
-    # `서면`, `광안리` 같은 통칭 지명은 카카오 검색으로 풀리지 않으므로 사전에서 먼저 해결한다.
-    area = resolve_area_coordinates(anchor_location)
-    if area:
-        area_lat, area_lng, area_label = area
-        return {
-            "status": "resolved",
-            "reason": "",
-            "lat": area_lat,
-            "lng": area_lng,
-            "label": area_label,
-            "source": "area_gazetteer",
-            "external_id": "",
-            "address": "",
-        }
 
     coordinates = _coordinate_pair(anchor_location)
     if coordinates:

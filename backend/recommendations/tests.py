@@ -8593,6 +8593,28 @@ class RecommendationSearchTests(TestCase):
         )
 
     @patch("recommendations.views.search_places_by_keyword", return_value={"documents": []})
+    @patch("recommendations.services.ai_search_orchestrator.search_address")
+    def test_known_area_category_search_ignores_ambiguous_address_results(self, mock_address, mock_kakao):
+        mock_address.return_value = {"documents": [{"x": "129.0"}, {"x": "128.0"}]}
+        self._create_place(name="서면 카페", category="cafe", external_id="area-cafe", lat=35.158, lng=129.060)
+        self._create_place(name="서면 주차장", category="parking", external_id="area-parking", lat=35.158, lng=129.061)
+        self._create_place(name="서면 식당", category="restaurant", external_id="area-restaurant", lat=35.158, lng=129.062)
+
+        for query, category in (("서면 카페", "cafe"), ("서면 주차장", "parking")):
+            with self.subTest(query=query):
+                response = self.client.get(
+                    "/api/recommendations/place-search/",
+                    {"q": query, "source": "all", "lat": 35.1579, "lng": 129.0592, "center_mode": "auto"},
+                    HTTP_HOST="localhost",
+                )
+                self.assertEqual(response.status_code, 200)
+                data = response.json()
+                self.assertTrue(data["location_context"]["anchor_resolved"])
+                self.assertTrue(data["results"])
+                self.assertTrue(all(row["category"] == category for row in data["results"]))
+        mock_address.assert_not_called()
+
+    @patch("recommendations.views.search_places_by_keyword", return_value={"documents": []})
     def test_general_map_search_without_radius_does_not_apply_default_radius(self, mock_kakao):
         far_place = Place.objects.create(
             name="멀리 있는 테스트 카페",
