@@ -10,7 +10,7 @@
 | Google Play | 현재 Chrome의 `kimyb301@gmail.com`은 Play Console 개발자 계정 만들기 화면으로 이동 | 사용할 소유 계정과 개발자 등록·결제·인증 결정 |
 | App Store Connect | 현재 Chrome에서 Apple 계정 로그인 화면 | Apple Developer 팀/멤버십 및 기존 앱 등록 여부 확인 |
 | iOS | Expo 설정에 `com.binkim00.lifeinframap` 식별자 있음. IPA 빌드·iPhone 실기기·TestFlight 검증 없음 | Apple 계정과 빌드 환경 확보 후 실기기 검증 |
-| 공개 서버 연결 | `mobile/eas.json`의 preview/production 주소가 Tailscale `.ts.net` 주소 | 일반 사용자가 접근할 공개 HTTPS 주소와 OAuth·지도 허용 도메인 검증 |
+| 공개 서버 연결 | `yeogiljido.com`의 HTTPS와 공개 API 상태 확인 완료. `mobile/eas.json`의 preview/production 주소는 여전히 Tailscale `.ts.net` | 새 주소의 OAuth·지도 허용 도메인·모바일 실기기 검증 후 출시 설정 변경 |
 
 ## 공식 주소 후보
 
@@ -28,11 +28,11 @@
 - 운영 EC2에 Elastic IP `13.124.108.133` (`eipalloc-0b95f5355ad180878`)을 연결했고 EC2 재조회로 확인했다. 기존 자동 할당 주소 `43.201.27.210`은 더 이상 접속 주소가 아니다. MobaXterm 바로가기의 SSH 호스트를 새 IP 또는 도메인으로 갱신해야 한다. AWS는 현재 자동 할당 IPv4와 사용 중 Elastic IP에 동일한 시간당 공인 IPv4 요금을 안내한다. [EC2 주소 지속성](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/how-ec2-instance-stop-start-works.html) · [공인 IPv4 요금](https://aws.amazon.com/vpc/pricing/)
 - Porkbun의 루트 레코드를 `A yeogiljido.com → 13.124.108.133`으로 수정했고, 로컬 DNS 조회에서도 동일 IP를 확인했다. 판매처 기본 와일드카드 CNAME 및 기존 MX/TXT는 보존했다. DNS 연결만으로 HTTPS 서비스가 시작되지는 않는다.
 - 현재 게이트웨이는 서버 내부 `127.0.0.1:3000`에서만 수신한다. 공개 도메인을 확정한 뒤 HTTPS 종단을 앞에 두고 `/django/api/`, `/spring/api/`, `/kakao-map-embed.html`, 웹 화면이 정상 동작하는지 점검한다. 그 후 모바일 API 주소, 소셜 로그인 콜백, Kakao 허용 도메인을 함께 변경한다. 공개 전에 관리자 접근 범위와 API 권한도 다시 검증한다.
-- EC2 보안 그룹은 현재 SSH 22만 지정된 한 IP에 허용한다. Tailscale은 전용 인터페이스 443을 사용한다. 공개 연결용 Caddy 구성은 `deploy/public-edge/`에 작성했고 Compose 구조 및 실제 Caddy 이미지의 설정 검사를 통과했다. 두 파일을 서버에 복사해 해시 일치와 설정 검사를 확인했으나 서비스는 실행하지 않았다. 운영 보안 그룹의 80/443 공개는 자동 승인 심사가 명시적 공개 범위 승인 부재로 거절했으며 현재 사용자 승인을 기다린다. 인증서 발급과 외부 접속 검증은 미완료다.
+- 사용자가 운영 보안 그룹의 80/443 전 세계 공개를 명시적으로 승인했다. 두 포트만 열고 SSH `/32` 제한은 유지했다. Caddy가 EC2 사설 주소에 바인딩돼 기존 Tailscale 443과 공존하며, Let's Encrypt 인증서와 외부 HTTPS 응답, HTTP→HTTPS 이동을 확인했다. 공개 게이트웨이·Django·Spring 상태 확인은 모두 200이고 비인증 관리자 API는 401이다. 상세 보안 점검과 남은 조치는 [공개 전환 보안 점검](SECURITY_REVIEW_2026-09-29.md)에 기록했다.
 
 ## 권장 진행 순서
 
-1. **공개 HTTPS 연결:** Django·Spring·카카오 지도 임베드의 안정적인 공개 도메인을 정하고, 인증·지도·검색·문의의 실제 휴대폰 연결을 점검한다. 현재 `eas.json` 값을 그대로 출시용으로 사용하지 않는다.
+1. **공개 연결 마무리:** HTTPS 및 Django·Spring 상태 확인은 끝났다. 새 도메인에서 소셜 로그인 콜백·카카오 지도 허용 도메인, 검색·문의의 실제 휴대폰 연결을 점검한다. 현재 `eas.json` 값을 그대로 출시용으로 사용하지 않는다.
 2. **Android 출시 준비:** Play 개발자 계정을 정하고 앱을 등록한다. 출시용 패키지 `com.binkim00.lifeinframap`에 맞는 서명·AAB를 만들고 내부 테스트 트랙에서 로그인, 지도, 검색, 문의, 관리자 권한을 검증한다. 지금 설치한 `.test` APK는 스토어 업로드물이 아니다.
 3. **iOS 빌드:** Windows PC에서는 Android 로컬 빌드를 계속 사용한다. iOS는 우선 Expo EAS의 macOS 빌드 환경을 사용해 첫 IPA와 TestFlight 검증을 진행하는 것이 현실적이다. 빌드 횟수·비용이 부담되면 macOS/Xcode 로컬 빌드 환경을 확보한 뒤 옮긴다. EAS Submit은 Windows에서도 실행할 수 있다. [Expo 로컬 빌드](https://docs.expo.dev/build-reference/local-builds/) · [iOS 제출](https://docs.expo.dev/submit/ios/)
 4. **자동 배포:** CI가 안정적으로 유지되고 공개 연결 및 출시 경로가 정해지면, 처음에는 명시적으로 눌러 실행하는 배포 흐름을 만든다. 배포 전 백업, 배포 후 상태·핵심 API 검사, 실패 시 복구를 기록한다. 자동으로 모든 push를 운영에 배포하는 방식은 운영 검증이 쌓인 뒤 결정한다.

@@ -1,4 +1,11 @@
 yeogiljido.com {
+    bind 172.31.32.178
     encode zstd gzip
+    header {
+        -Server
+        X-Content-Type-Options nosniff
+        Referrer-Policy strict-origin-when-cross-origin
+        Strict-Transport-Security "max-age=86400"
+    }
     reverse_proxy 127.0.0.1:3000
 }
