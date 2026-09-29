@@ -277,7 +277,8 @@ class GeneralSearchContractTests(TestCase):
 
     @patch("recommendations.views.search_places_by_keyword", return_value={"documents": []})
     def test_named_search_forwards_device_location_without_changing_query(self, search):
-        for query in ("테스트브랜드", "새로운 상호", "테스트브랜드 중앙점"):
+        # A branch-qualified name is intentionally recentered near that branch.
+        for query in ("테스트브랜드", "새로운 상호"):
             for lat, lng in ((35.16, 129.06), (37.56, 126.97), (36.35, 127.38)):
                 with self.subTest(query=query, lat=lat):
                     response = self.client.get(self.url, {"q": query, "lat": lat, "lng": lng})
