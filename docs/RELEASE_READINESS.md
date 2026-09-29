@@ -25,9 +25,10 @@
 - 가비아 검색 화면에서는 `yeogiiljido.kr`의 등록 가능과 위 가격을 한 화면에서 확인했다. Porkbun 검색 화면에서는 `.app`과 짧은 `.com`의 등록 가능 여부를 각각 확인했다. 판매처·프로모션·환율·세금에 따라 결제액은 달라질 수 있다.
 - `yeogiljido.com`은 결제 전 Porkbun 장바구니에서 1년 등록·연 예상 갱신·주문 합계가 모두 **US$11.08**로 표시됐다. 사용자가 구매를 완료했으며 구매 성공 화면에서 해당 도메인을 확인했다. 현재 DNS는 판매처 기본 `ALIAS`/와일드카드 `CNAME`으로 `uixie.porkbun.com`을 가리키며, 기존 메일 `MX`/`TXT` 레코드도 있다. 실제 청구액은 별도 주문 영수증을 확인하지 않았다.
 - 현재 AWS 계정은 Route 53 Domains의 등록 가능 여부·가격 조회에서 `Free Tier accounts are not supported for this service`를 반환했다. 해당 계정으로 도메인을 등록한다는 전제를 두지 않는다. 외부 등록업체의 DNS 관리 기능을 사용하면 Route 53 호스팅 영역을 새로 만들 필요는 없다.
-- 운영 EC2의 현재 주소는 자동 할당 IPv4다. 중지·시작 뒤 변경될 수 있으므로 도메인을 연결하기 전에 고정 주소(Elastic IP 등)를 정하고, MobaXterm 접속 정보도 새 주소로 갱신해야 한다. AWS는 현재 자동 할당 IPv4와 사용 중 Elastic IP에 동일한 시간당 공인 IPv4 요금을 안내한다. [EC2 주소 지속성](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/how-ec2-instance-stop-start-works.html) · [공인 IPv4 요금](https://aws.amazon.com/vpc/pricing/)
+- 운영 EC2에 Elastic IP `13.124.108.133` (`eipalloc-0b95f5355ad180878`)을 연결했고 EC2 재조회로 확인했다. 기존 자동 할당 주소 `43.201.27.210`은 더 이상 접속 주소가 아니다. MobaXterm 바로가기의 SSH 호스트를 새 IP 또는 도메인으로 갱신해야 한다. AWS는 현재 자동 할당 IPv4와 사용 중 Elastic IP에 동일한 시간당 공인 IPv4 요금을 안내한다. [EC2 주소 지속성](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/how-ec2-instance-stop-start-works.html) · [공인 IPv4 요금](https://aws.amazon.com/vpc/pricing/)
+- Porkbun의 루트 레코드를 `A yeogiljido.com → 13.124.108.133`으로 수정했고, 로컬 DNS 조회에서도 동일 IP를 확인했다. 판매처 기본 와일드카드 CNAME 및 기존 MX/TXT는 보존했다. DNS 연결만으로 HTTPS 서비스가 시작되지는 않는다.
 - 현재 게이트웨이는 서버 내부 `127.0.0.1:3000`에서만 수신한다. 공개 도메인을 확정한 뒤 HTTPS 종단을 앞에 두고 `/django/api/`, `/spring/api/`, `/kakao-map-embed.html`, 웹 화면이 정상 동작하는지 점검한다. 그 후 모바일 API 주소, 소셜 로그인 콜백, Kakao 허용 도메인을 함께 변경한다. 공개 전에 관리자 접근 범위와 API 권한도 다시 검증한다.
-- EC2 보안 그룹은 현재 SSH 22만 지정된 한 IP에 허용하고, 고정 IP는 없다. Tailscale은 전용 인터페이스 443을 사용한다. 공개 연결용 Caddy 구성은 `deploy/public-edge/`에 작성했고 Compose 구조 검사를 통과했다. 서버 배포·Caddy 실제 설정 검증·고정 IP·DNS·80/443 개방은 아직 진행하지 않았다.
+- EC2 보안 그룹은 현재 SSH 22만 지정된 한 IP에 허용한다. Tailscale은 전용 인터페이스 443을 사용한다. 공개 연결용 Caddy 구성은 `deploy/public-edge/`에 작성했고 Compose 구조 및 실제 Caddy 이미지의 설정 검사를 통과했다. 두 파일을 서버에 복사해 해시 일치와 설정 검사를 확인했으나 서비스는 실행하지 않았다. 운영 보안 그룹의 80/443 공개는 자동 승인 심사가 명시적 공개 범위 승인 부재로 거절했으며 현재 사용자 승인을 기다린다. 인증서 발급과 외부 접속 검증은 미완료다.
 
 ## 권장 진행 순서
 
