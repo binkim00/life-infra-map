@@ -14,7 +14,7 @@
 
 ## 공식 주소 후보
 
-- 사용자는 서비스 이름을 로마자로 쓰는 주소를 선호하며, 처음 제시한 `yeogiiljido.com` 대신 **`yeogiljido.com`을 공식 주소로 선택했다**. 2026-09-29 판매처 검색에서 아래 후보가 모두 등록 가능으로 표시됐다. 결제 전 등록 가능 여부와 가격을 다시 확인한다. 선택한 주소는 아직 구매하지 않았다.
+- 사용자는 서비스 이름을 로마자로 쓰는 주소를 선호하며, 처음 제시한 `yeogiiljido.com` 대신 **`yeogiljido.com`을 공식 주소로 선택했다**. 2026-09-29 Porkbun의 구매 성공 화면과 도메인 관리 목록에서 등록 및 2027-09-29 만료일을 확인했다.
 
   | 후보 | 장점 | 첫해 | 이후 연간 갱신 | 확인처 |
   | --- | --- | ---: | ---: | --- |
@@ -23,10 +23,11 @@
   | `yeogiljido.com` | 짧고 익숙한 .com 주소 | US$11.08 | US$11.08 | [Porkbun 가격표](https://porkbun.com/products/domains) |
 
 - 가비아 검색 화면에서는 `yeogiiljido.kr`의 등록 가능과 위 가격을 한 화면에서 확인했다. Porkbun 검색 화면에서는 `.app`과 짧은 `.com`의 등록 가능 여부를 각각 확인했다. 판매처·프로모션·환율·세금에 따라 결제액은 달라질 수 있다.
-- `yeogiljido.com`은 Porkbun 장바구니에서 1년 등록·연 예상 갱신·주문 합계가 모두 **US$11.08**로 표시됐다. 추가 상품은 선택하지 않았다. 계정 로그인·결제는 진행하지 않았다. 도메인 등록은 취소·환불이 불가하다는 판매처 안내가 있으므로, 사용자가 철자와 금액을 확인한 후 직접 결제한다.
+- `yeogiljido.com`은 결제 전 Porkbun 장바구니에서 1년 등록·연 예상 갱신·주문 합계가 모두 **US$11.08**로 표시됐다. 사용자가 구매를 완료했으며 구매 성공 화면에서 해당 도메인을 확인했다. 현재 DNS는 판매처 기본 `ALIAS`/와일드카드 `CNAME`으로 `uixie.porkbun.com`을 가리키며, 기존 메일 `MX`/`TXT` 레코드도 있다. 실제 청구액은 별도 주문 영수증을 확인하지 않았다.
 - 현재 AWS 계정은 Route 53 Domains의 등록 가능 여부·가격 조회에서 `Free Tier accounts are not supported for this service`를 반환했다. 해당 계정으로 도메인을 등록한다는 전제를 두지 않는다. 외부 등록업체의 DNS 관리 기능을 사용하면 Route 53 호스팅 영역을 새로 만들 필요는 없다.
 - 운영 EC2의 현재 주소는 자동 할당 IPv4다. 중지·시작 뒤 변경될 수 있으므로 도메인을 연결하기 전에 고정 주소(Elastic IP 등)를 정하고, MobaXterm 접속 정보도 새 주소로 갱신해야 한다. AWS는 현재 자동 할당 IPv4와 사용 중 Elastic IP에 동일한 시간당 공인 IPv4 요금을 안내한다. [EC2 주소 지속성](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/how-ec2-instance-stop-start-works.html) · [공인 IPv4 요금](https://aws.amazon.com/vpc/pricing/)
 - 현재 게이트웨이는 서버 내부 `127.0.0.1:3000`에서만 수신한다. 공개 도메인을 확정한 뒤 HTTPS 종단을 앞에 두고 `/django/api/`, `/spring/api/`, `/kakao-map-embed.html`, 웹 화면이 정상 동작하는지 점검한다. 그 후 모바일 API 주소, 소셜 로그인 콜백, Kakao 허용 도메인을 함께 변경한다. 공개 전에 관리자 접근 범위와 API 권한도 다시 검증한다.
+- EC2 보안 그룹은 현재 SSH 22만 지정된 한 IP에 허용하고, 고정 IP는 없다. Tailscale은 전용 인터페이스 443을 사용한다. 공개 연결용 Caddy 구성은 `deploy/public-edge/`에 작성했고 Compose 구조 검사를 통과했다. 서버 배포·Caddy 실제 설정 검증·고정 IP·DNS·80/443 개방은 아직 진행하지 않았다.
 
 ## 권장 진행 순서
 
