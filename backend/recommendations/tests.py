@@ -8403,6 +8403,21 @@ class RecommendationSearchTests(TestCase):
         self.assertEqual([row["name"] for row in rows], ["가까운 카페", "먼 카페"])
         mock_annotate.assert_not_called()
 
+    def test_map_search_merges_same_mall_branch_alias_without_merging_other_facility(self):
+        from recommendations.views import merge_map_place_results
+
+        base = {"lat": 35.147, "lng": 129.066, "address": "부산 남구 문현금융로 40", "distance": 100}
+        rows = merge_map_place_results([
+            {**base, "name": "스타벅스 BIFC몰점", "category": "cafe"},
+            {**base, "name": "스타벅스 BIFCMall", "category": "cafe", "lat": 35.1472},
+            {**base, "name": "브라운도트호텔 부산역점", "category": "hotel"},
+            {**base, "name": "쏘카존 브라운도트호텔 부산역점", "category": "car_sharing"},
+        ])
+
+        self.assertEqual(len(rows), 3)
+        self.assertEqual(rows[0]["duplicate_count"], 2)
+        self.assertEqual({row["category"] for row in rows[1:]}, {"hotel", "car_sharing"})
+
     @patch("recommendations.views.search_places_by_keyword", return_value={"documents": []})
     def test_general_map_search_does_not_match_internal_source_fields(self, mock_kakao):
         internal_only_place = Place.objects.create(

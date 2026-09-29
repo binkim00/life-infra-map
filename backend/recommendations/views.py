@@ -966,7 +966,12 @@ def map_place_names_equivalent(first_name, second_name):
         # English renderings are optional aliases; Korean branch names are not.
         if suffix and any("a" <= char.lower() <= "z" for char in suffix):
             raw = raw.split("(", 1)[0]
-        return normalize_compact(raw.replace("(", "").replace(")", ""))
+        key = normalize_compact(raw.replace("(", "").replace(")", ""))
+        if key.endswith("mall점"):
+            return key[:-5] + "몰점"
+        if key.endswith("mall"):
+            return key[:-4] + "몰"
+        return key
 
     first = canonical(first_name)
     second = canonical(second_name)
