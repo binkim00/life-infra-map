@@ -12,7 +12,7 @@ import {
   View,
 } from "react-native";
 import { boardsApi } from "@/api/boards";
-import { ApiError } from "@/api/client";
+import { ApiError, authStorage } from "@/api/client";
 import { recommendationApi } from "@/api/recommendations";
 import { useAuth, type AuthUser } from "@/auth/auth-context";
 import { INPUT_PLACEHOLDER_COLOR, Screen, ui } from "@/components/screen";
@@ -46,7 +46,7 @@ const LINKS = [
 ] as const;
 
 export default function MypageScreen() {
-  const { user, ready, isLoggedIn, isAdmin, logout, setUser } = useAuth();
+  const { user, token, ready, isLoggedIn, isAdmin, logout, setUser } = useAuth();
   const [nickname, setNickname] = useState(user?.nickname || "");
   const [places, setPlaces] = useState<SavedPlace[]>([]);
   const [profile, setProfile] = useState<MypageData>({});
@@ -55,10 +55,12 @@ export default function MypageScreen() {
   const [imageBusy, setImageBusy] = useState(false);
   const [nicknameEditing, setNicknameEditing] = useState(false);
   const load = async () => {
+    const requestToken = token;
     const [mypage, saved] = await Promise.all([
       boardsApi.mypage(),
       recommendationApi.savedPlaces({ page: 1, page_size: 10 }),
     ]);
+    if (!requestToken || (await authStorage.read()).token !== requestToken) return;
     const next = mypage as MypageData;
     setProfile(next);
     if (next.user) {
@@ -67,7 +69,7 @@ export default function MypageScreen() {
     }
     setPlaces((saved as { results?: SavedPlace[] }).results || []);
   };
-  const { loading, error: loadError, reload } = useResource(load, undefined, ready && isLoggedIn);
+  const { loading, error: loadError, reload } = useResource(load, undefined, ready && isLoggedIn, token || "");
   const saveNickname = async () => {
     try {
       const data = (await boardsApi.updateNickname(nickname)) as {

@@ -165,12 +165,16 @@ export function AuthProvider({ children }: PropsWithChildren) {
         );
         const nextUser = unwrapUser(data);
         if (!nextUser) return;
-        await authStorage.write((await authStorage.read()).token || token, nextUser);
+        const current = await authStorage.read();
+        if (current.token !== token) return;
+        await authStorage.write(token, nextUser);
         setUserState(nextUser);
       },
       setUser: async (nextUser) => {
+        const current = await authStorage.read();
+        if (!token || current.token !== token || !nextUser) return;
+        await authStorage.write(token, nextUser);
         setUserState(nextUser);
-        if (token && nextUser) await authStorage.write((await authStorage.read()).token || token, nextUser);
       },
       requireLogin: () => {
         if (token) return true;

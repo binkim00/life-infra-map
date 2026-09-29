@@ -1,4 +1,5 @@
 import { router, usePathname } from "expo-router";
+import { useRef } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { Palette, Shadow } from "@/constants/theme";
@@ -14,6 +15,7 @@ const ITEMS = [
 
 export function BottomNav() {
   const pathname = usePathname();
+  const nextNavigationAt = useRef(0);
   return (
     <View style={styles.outer} pointerEvents="box-none">
       <View style={styles.nav}>
@@ -30,7 +32,12 @@ export function BottomNav() {
               accessibilityRole="button"
               accessibilityState={{ selected: active }}
               accessibilityLabel={item.label}
-              onPress={() => { if (!active) router.replace(item.path as never); }}
+              onPress={() => {
+                const now = Date.now();
+                if (active || now < nextNavigationAt.current) return;
+                nextNavigationAt.current = now + 500;
+                router.replace(item.path as never);
+              }}
               style={({ pressed }) => [styles.item, pressed && styles.pressed]}
             >
               <AppIcon ios={item.ios} android={item.android} size={21} color={active ? Palette.accent : "#89918D"} />

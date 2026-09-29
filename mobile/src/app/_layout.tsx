@@ -17,7 +17,7 @@ export default function RootLayout() {
           screenOptions={{
             headerShown: false,
             contentStyle: { backgroundColor: "#F7F9F8" },
-            animation: "fade",
+            animation: "none",
           }}
         />
         {TAB_PATHS.has(pathname) ? <BottomNav /> : null}
