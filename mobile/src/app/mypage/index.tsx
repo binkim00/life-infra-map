@@ -56,10 +56,7 @@ export default function MypageScreen() {
   const [nicknameEditing, setNicknameEditing] = useState(false);
   const load = async () => {
     const requestToken = token;
-    const [mypage, saved] = await Promise.all([
-      boardsApi.mypage(),
-      recommendationApi.savedPlaces({ page: 1, page_size: 10 }),
-    ]);
+    const mypage = await boardsApi.mypage();
     if (!requestToken || (await authStorage.read()).token !== requestToken) return;
     const next = mypage as MypageData;
     setProfile(next);
@@ -67,6 +64,8 @@ export default function MypageScreen() {
       await setUser(next.user);
       setNickname(next.user.nickname || "");
     }
+    const saved = await recommendationApi.savedPlaces({ page: 1, page_size: 10 });
+    if ((await authStorage.read()).token !== requestToken) return;
     setPlaces((saved as { results?: SavedPlace[] }).results || []);
   };
   const { loading, error: loadError, reload } = useResource(load, undefined, ready && isLoggedIn, token || "");
