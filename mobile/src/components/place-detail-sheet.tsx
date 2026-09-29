@@ -1,4 +1,4 @@
-import { type ComponentProps, useRef, useState } from "react";
+import { type ComponentProps, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Linking,
@@ -12,33 +12,9 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { WebView } from "react-native-webview";
 
+import { recommendationApi } from "@/api/recommendations";
 import { Palette, Radius, Shadow, Spacing } from "@/constants/theme";
 import type { Place } from "@/types/place";
-
-const WEB_CONTENT_HEIGHT_SCRIPT = `
-  (function () {
-    function reportHeight() {
-      var body = document.body;
-      var root = document.documentElement;
-      var height = Math.max(
-        body ? body.scrollHeight : 0,
-        body ? body.offsetHeight : 0,
-        root ? root.scrollHeight : 0,
-        root ? root.offsetHeight : 0
-      );
-      window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'contentHeight', height: height }));
-    }
-    window.addEventListener('load', reportHeight);
-    window.addEventListener('resize', reportHeight);
-    if (window.ResizeObserver && document.documentElement) {
-      new ResizeObserver(reportHeight).observe(document.documentElement);
-    }
-    setTimeout(reportHeight, 100);
-    setTimeout(reportHeight, 500);
-    setTimeout(reportHeight, 1500);
-  })();
-  true;
-`;
 
 const formatDistance = (distance?: number) => {
   if (distance === undefined || distance === null || distance <= 0)
@@ -71,6 +47,11 @@ const kakaoMapUrl = (place: Place) =>
   place.kakao_place_url ||
   `https://map.kakao.com/link/map/${encodeURIComponent(place.name)},${place.lat},${place.lng}`;
 
+const kakaoSearchUrl = (place: Place) =>
+  `https://map.kakao.com/link/search/${encodeURIComponent(
+    [place.name, place.address || place.detail_location].filter(Boolean).join(" "),
+  )}`;
+
 const hasMapCoordinates = (place: Place) =>
   place.lat !== null &&
   place.lat !== undefined &&
@@ -82,8 +63,9 @@ const hasMapCoordinates = (place: Place) =>
 const kakaoDetailUrl = (place: Place) => {
   const url = place.place_url || place.kakao_place_url || "";
   if (url) return url.replace(/^http:\/\//i, "https://");
-  if (place.kakao_place_id && /^\d{5,20}$/.test(place.kakao_place_id)) {
-    return `https://place.map.kakao.com/${place.kakao_place_id}`;
+  const placeId = place.kakao_place_id || (isKakaoPlace(place) ? place.external_id : "");
+  if (placeId && /^\d{5,20}$/.test(placeId)) {
+    return `https://place.map.kakao.com/${placeId}`;
   }
   return "";
 };
@@ -99,6 +81,12 @@ const isKakaoPlace = (place: Place) => {
     source.includes("kakao") ||
     source.includes("카카오")
   );
+};
+
+const savedDbPlaceId = (place: Place | null) => {
+  if (!place || (place.result_source !== "db" && !String(place.id).startsWith("db:"))) return null;
+  const match = String(place.id).match(/^(?:db:)?(\d+)$/);
+  return match ? Number(match[1]) : null;
 };
 
 export function PlaceDetailSheet(
@@ -121,19 +109,40 @@ function PlaceDetailContent({
   onSave: () => void;
   onReport: () => void;
 }) {
+  const [detailUrl, setDetailUrl] = useState(() => place ? kakaoDetailUrl(place) : "");
   const [showWebDetail, setShowWebDetail] = useState(() => Boolean(place && kakaoDetailUrl(place) && isKakaoPlace(place)));
+  const [resolvingDetail, setResolvingDetail] = useState(
+    () => Boolean(place && !kakaoDetailUrl(place) && savedDbPlaceId(place)),
+  );
   const [webDetailError, setWebDetailError] = useState(false);
   const [externalError, setExternalError] = useState("");
   const webViewRef = useRef<WebView>(null);
   const [canGoBack, setCanGoBack] = useState(false);
-  const [webContentHeight, setWebContentHeight] = useState(720);
   const [webReloadKey, setWebReloadKey] = useState(0);
   const insets = useSafeAreaInsets();
 
+  useEffect(() => {
+    if (!place || kakaoDetailUrl(place)) return;
+    const placeId = savedDbPlaceId(place);
+    if (!placeId) return;
+    const controller = new AbortController();
+    recommendationApi.kakaoDetailLink(placeId, controller.signal)
+      .then((result) => {
+        if (!controller.signal.aborted && result.url) {
+          setDetailUrl(result.url);
+          setShowWebDetail(true);
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!controller.signal.aborted) setResolvingDetail(false);
+      });
+    return () => controller.abort();
+  }, [place]);
+
   if (!place) return null;
 
-  const detailUrl = kakaoDetailUrl(place);
-  const kakaoSource = isKakaoPlace(place);
+  const kakaoSource = isKakaoPlace(place) || detailUrl.includes("place.map.kakao.com");
   const detailSourceName = kakaoSource ? "카카오 장소 정보" : "원문 상세정보";
   const tags = place.tags?.slice(0, 8) || [];
   const smoking = place.smoking;
@@ -291,7 +300,7 @@ function PlaceDetailContent({
               <Text style={styles.notice}>
                 {detailUrl
                   ? `아직 등록된 상세 특징이 적습니다. ${detailSourceName}에서 영업시간과 최신 정보를 확인해 주세요.`
-                  : "사진·영업시간을 확인할 외부 장소 링크가 없습니다. 확인되지 않은 정보는 표시하지 않습니다."}
+                  : "등록된 장소 상세 링크가 없습니다. 카카오맵 검색 결과에서 장소 이름과 주소를 확인해 주세요."}
               </Text>
             )}
 
@@ -310,6 +319,18 @@ function PlaceDetailContent({
                   <Text style={styles.primaryButtonCaption}>
                     {detailSourceName}가 앱 안에서 열립니다
                   </Text>
+                </Pressable>
+              ) : null}
+              {!detailUrl && resolvingDetail ? (
+                <ActivityIndicator color={Palette.accent} accessibilityLabel="카카오 장소 정보 확인 중" />
+              ) : null}
+              {!detailUrl ? (
+                <Pressable
+                  onPress={() => void openExternal(kakaoSearchUrl(place))}
+                  style={styles.primaryButton}
+                >
+                  <Text style={styles.primaryButtonText}>카카오맵에서 장소 검색</Text>
+                  <Text style={styles.primaryButtonCaption}>검색 결과에서 이름과 주소를 확인해 주세요</Text>
                 </Pressable>
               ) : null}
               {place.kakao_place_url || hasMapCoordinates(place) ? (
@@ -337,7 +358,7 @@ function PlaceDetailContent({
               {webDetailError ? (
                 <View style={styles.webDetailFallback}>
                   <Text style={styles.webDetailFallbackTitle}>장소 정보를 불러오지 못했습니다.</Text>
-                  <Pressable accessibilityRole="button" onPress={() => { setCanGoBack(false); setWebDetailError(false); setWebContentHeight(720); setWebReloadKey((value) => value + 1); }} style={styles.primaryButton}>
+                  <Pressable accessibilityRole="button" onPress={() => { setCanGoBack(false); setWebDetailError(false); setWebReloadKey((value) => value + 1); }} style={styles.primaryButton}>
                     <Text style={styles.primaryButtonText}>다시 시도</Text>
                   </Pressable>
                   <Pressable accessibilityRole="button" onPress={() => void openExternal(detailUrl)} style={styles.secondaryButton}>
@@ -349,25 +370,12 @@ function PlaceDetailContent({
                   key={webReloadKey}
                   ref={webViewRef}
                   source={{ uri: detailUrl }}
-                  style={[styles.webDetail, { height: webContentHeight }]}
+                  style={styles.webDetail}
                   javaScriptEnabled
                   domStorageEnabled
                   startInLoadingState
-                  scrollEnabled={false}
-                  nestedScrollEnabled={false}
-                  injectedJavaScript={WEB_CONTENT_HEIGHT_SCRIPT}
-                  onLoadEnd={() => webViewRef.current?.injectJavaScript(WEB_CONTENT_HEIGHT_SCRIPT)}
-                  onMessage={(event) => {
-                    try {
-                      const message = JSON.parse(event.nativeEvent.data);
-                      if (message.type !== "contentHeight") return;
-                      const height = Number(message.height);
-                      if (Number.isFinite(height) && height > 0)
-                        setWebContentHeight(Math.min(Math.max(Math.ceil(height), 560), 12000));
-                    } catch {
-                      // Ignore messages not emitted by the height bridge.
-                    }
-                  }}
+                  scrollEnabled
+                  nestedScrollEnabled
                   onNavigationStateChange={(state) => setCanGoBack(state.canGoBack)}
                   onShouldStartLoadWithRequest={(request) => {
                     if (/^https?:\/\//i.test(request.url) || request.url === "about:blank") return true;
@@ -554,7 +562,7 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "700",
   },
-  webDetail: { width: "100%", backgroundColor: "#FFFFFF" },
+  webDetail: { width: "100%", height: 480, backgroundColor: "#FFFFFF" },
   webDetailLoading: {
     position: "absolute",
     inset: 0,

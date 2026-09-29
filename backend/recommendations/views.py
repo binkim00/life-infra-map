@@ -1,6 +1,7 @@
 import hashlib
 import logging
 import math
+import requests
 from statistics import median
 from django.conf import settings
 from django.core.cache import cache
@@ -1000,6 +1001,66 @@ def map_place_address_core(address):
             core = short + core[len(full):]
             break
     return normalize_compact(core)
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+@throttle_classes([ExternalSearchRateThrottle])
+def place_kakao_detail_link(request, place_id):
+    """Resolve a saved place to a Kakao detail only when identity is unambiguous."""
+    place = get_object_or_404(Place, pk=place_id)
+    stored_url = get_kakao_place_url(place)
+    if stored_url:
+        return Response({"url": stored_url, "status": "stored"})
+
+    cache_key = f"place-kakao-detail:{place.pk}:{place.updated_at.timestamp():.0f}"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return Response(cached)
+
+    try:
+        group_codes = KAKAO_CATEGORY_GROUPS.get(place.category, set())
+        result = search_places_by_keyword(
+            keyword=place.name,
+            lat=place.lat,
+            lng=place.lng,
+            radius=700,
+            size=15,
+            category_group_code=next(iter(group_codes)) if len(group_codes) == 1 else None,
+        )
+    except (requests.RequestException, ValueError):
+        logger.warning("Kakao place detail lookup failed for place %s", place.pk)
+        return Response({"url": "", "status": "unavailable"})
+
+    matches = []
+    for candidate in result.get("documents", []):
+        candidate_id = str(candidate.get("id") or "")
+        if not candidate_id.isdigit() or not map_place_names_equivalent(place.name, candidate.get("place_name")):
+            continue
+        candidate_group = candidate.get("category_group_code") or ""
+        if group_codes and candidate_group and candidate_group not in group_codes:
+            continue
+        try:
+            distance = calculate_distance_m(
+                place.lat, place.lng, float(candidate["y"]), float(candidate["x"]),
+            )
+        except (KeyError, TypeError, ValueError):
+            continue
+        candidate_address = candidate.get("road_address_name") or candidate.get("address_name") or ""
+        same_address = bool(
+            place.address and candidate_address
+            and map_place_address_core(place.address) == map_place_address_core(candidate_address)
+        )
+        if distance <= 60 or (distance <= 200 and same_address):
+            matches.append(candidate_id)
+
+    unique_ids = set(matches)
+    payload = (
+        {"url": f"https://place.map.kakao.com/{matches[0]}", "status": "matched"}
+        if len(unique_ids) == 1 else {"url": "", "status": "unmatched"}
+    )
+    cache.set(cache_key, payload, timeout=3600 if payload["url"] else 600)
+    return Response(payload)
 
 
 def merge_map_place_results(results, *, max_distance_m=40):

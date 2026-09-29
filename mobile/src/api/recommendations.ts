@@ -23,6 +23,11 @@ export const recommendationApi = {
       auth: false,
       onRetry,
     }),
+  kakaoDetailLink: (placeId: number, signal?: AbortSignal) =>
+    apiRequest<{ url: string; status: string }>(
+      `/recommendations/places/${placeId}/kakao-detail/`,
+      { auth: false, signal },
+    ),
   aiSearch: (body: unknown) =>
     apiRequest<Record<string, unknown>>("/recommendations/ai-search/", {
       method: "POST",
