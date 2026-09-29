@@ -16,9 +16,18 @@ if [[ "$(docker inspect -f '{{.State.Running}}' "$API_CONTAINER" 2>/dev/null || 
   echo 'Django API container is not running' >&2
   exit 1
 fi
-"$CODEX_BIN" login status >/dev/null
 mkdir -p "$RUNTIME_DIR"
 chmod 700 "$RUNTIME_DIR"
+run_id="$(date -u +%Y%m%dT%H%M%SZ)"
+# Expired holds are historical only. Archive them before spending model tokens,
+# while keeping their source and expiry unchanged and a durable review preimage.
+if [[ "$APPLY" == 1 ]]; then
+  docker exec "$API_CONTAINER" python manage.py archive_expired_pending_evidence \
+    --apply --backup "/codex-content-review/expired-${run_id}.json"
+else
+  docker exec "$API_CONTAINER" python manage.py archive_expired_pending_evidence
+fi
+"$CODEX_BIN" login status >/dev/null
 if [[ "$APPLY" == 1 ]]; then
   review_day="$(TZ=Asia/Seoul date +%Y%m%d)"
   shopt -s nullglob
@@ -35,7 +44,6 @@ if [[ "$APPLY" == 1 ]]; then
     LIMIT="$((5 - daily_used))"
   fi
 fi
-run_id="$(date -u +%Y%m%dT%H%M%SZ)"
 seed="seed-${run_id}.json"
 result="result-${run_id}.json"
 backup="backup-${run_id}.json"
