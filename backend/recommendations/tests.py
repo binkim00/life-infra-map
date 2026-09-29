@@ -3538,6 +3538,47 @@ class RecommendationSearchTests(TestCase):
         self.assertIn(real_cafe.name, candidate_names)
         self.assertNotIn(tag_only_place.name, candidate_names)
 
+    def test_confirmed_quiet_cafe_survives_dense_nearest_window(self):
+        from recommendations.services.ai_search_orchestrator import collect_db_candidates
+
+        for index in range(65):
+            self._create_place(
+                name=f"서면 일반 카페 {index}",
+                category="cafe",
+                external_id=f"dense-cafe-{index}",
+                lat=35.1579 + index * 0.000001,
+                lng=129.0592,
+            )
+        confirmed = self._create_place(
+            name="서면 조용함 확인 카페",
+            category="cafe",
+            external_id="dense-confirmed-quiet-cafe",
+            lat=35.1597,
+            lng=129.0592,
+        )
+        self._add_tag(confirmed, "조용함")
+
+        candidates = collect_db_candidates(
+            {
+                "target_objects": ["카페"],
+                "result_match_terms": ["카페"],
+                "candidate_place_types": ["카페"],
+                "candidate_category_codes": ["cafe"],
+                "constraints": ["조용함"],
+                "structured_conditions": [
+                    {"type": "ambience", "label": "조용함", "required": True},
+                ],
+                "required_features": ["조용함"],
+            },
+            lat=35.1579,
+            lng=129.0592,
+            limit=5,
+            radius=3000,
+        )
+
+        self.assertIn(confirmed.id, [int(row["id"].split(":")[-1]) for row in candidates])
+        self.assertIn("조용함", next(row for row in candidates if row["id"] == f"db:{confirmed.id}")["verified_tags"])
+
     def test_collect_db_candidates_uses_smoking_frame_terms_without_outdoor_cafe_bleed(self):
         from recommendations.services.ai_search_orchestrator import collect_db_candidates
 

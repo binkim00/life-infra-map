@@ -11,7 +11,7 @@ from django.db.models import Q
 from django.db.models.expressions import RawSQL
 from django.db.models.fields.json import KeyTextTransform
 
-from recommendations.models import Place
+from recommendations.models import Place, PlaceTag
 from recommendations.services.ai_candidate_reranker import _hybrid_score, semantic_rerank_candidates
 from recommendations.services.ai_intent_planner import (
     build_ai_intent_plan,
@@ -2683,6 +2683,38 @@ def _merge_expanded_candidates(nearby, expanded, *, original_radius, limit):
     return merged
 
 
+def _verified_required_place_ids(frame, category_codes, bounds, lat, lng, limit):
+    """Keep nearby confirmed answers beyond the nearest-place scan window."""
+    if not category_codes or not bounds or lat is None or lng is None:
+        return []
+    tag_names = {
+        canonical_tag_name(condition)
+        for condition in _required_evidence_conditions(frame)
+    } - {""}
+    if not tag_names:
+        return []
+    tagged_places = PlaceTag.objects.filter(
+        tag__name__in=tag_names,
+        place__category__in=category_codes,
+    ).filter(
+        Q(is_verified=True)
+        | Q(source__in=VERIFIED_TAG_SOURCES, status="confirmed")
+    ).values("place_id")
+    nearby = Place.objects.filter(
+        id__in=tagged_places,
+        lat__gte=bounds["lat_min"],
+        lat__lte=bounds["lat_max"],
+        lng__gte=bounds["lng_min"],
+        lng__lte=bounds["lng_max"],
+    )
+    count = max(_as_int(limit, 50), 10)
+    if supports_postgis():
+        return list(_order_by_distance(nearby, lat, lng).values_list("id", flat=True)[:count])
+    coordinate_rows = list(nearby.values_list("id", "lat", "lng"))
+    coordinate_rows.sort(key=lambda row: _distance(lat, lng, row[1], row[2]))
+    return [row[0] for row in coordinate_rows[:count]]
+
+
 def collect_db_candidates(
     frame,
     *,
@@ -2897,6 +2929,22 @@ def collect_db_candidates(
             detail_queryset(queryset), lat, lng
         )
         candidate_places = queryset[:candidate_limit]
+
+    verified_ids = _verified_required_place_ids(
+        frame, direct_category_codes, bounds, lat, lng, limit,
+    )
+    if verified_ids:
+        existing_ids = {place.id for place in candidate_places}
+        extra_ids = [place_id for place_id in verified_ids if place_id not in existing_ids]
+        if extra_ids:
+            extra_places = {
+                place.id: place
+                for place in detail_queryset(Place.objects.filter(id__in=extra_ids))
+            }
+            candidate_places = [
+                *candidate_places,
+                *(extra_places[place_id] for place_id in extra_ids if place_id in extra_places),
+            ]
 
     from recommendations.services.place_evidence_completeness import quality_profiles_for_places
 
