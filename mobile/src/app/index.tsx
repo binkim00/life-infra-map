@@ -5,7 +5,6 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, 
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { searchMapPlaces } from "@/api/recommendations";
-import { BottomNav } from "@/components/bottom-nav";
 import { AppIcon } from "@/components/app-icon";
 import { PlacePhoto } from "@/components/place-photo";
 import { BottomTabInset, Palette, Radius, Shadow } from "@/constants/theme";
@@ -170,7 +169,6 @@ export default function HomeScreen() {
           </View>
         </ScrollView>
       </SafeAreaView>
-      <BottomNav />
     </View>
   );
 }

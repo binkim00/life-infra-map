@@ -3,7 +3,6 @@ import { router, useLocalSearchParams } from "expo-router";
 import { PlaceDetailSheet } from "@/components/place-detail-sheet";
 import type { Place } from "@/types/place";
 import { useAuth } from "@/auth/auth-context";
-import { BottomNav } from "@/components/bottom-nav";
 import { LoadState } from "@/components/load-state";
 import { INPUT_PLACEHOLDER_COLOR, Screen, ui } from "@/components/screen";
 import { useResource } from "@/hooks/use-resource";
@@ -287,7 +286,6 @@ export default function SavedPlacesScreen() {
           lat: Number.isFinite(selected.lat) ? String(selected.lat) : undefined,
           lng: Number.isFinite(selected.lng) ? String(selected.lng) : undefined,
         } }); }} />
-      <BottomNav />
     </View>
   );
 }

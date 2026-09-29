@@ -15,7 +15,6 @@ import { boardsApi } from "@/api/boards";
 import { ApiError } from "@/api/client";
 import { recommendationApi } from "@/api/recommendations";
 import { useAuth, type AuthUser } from "@/auth/auth-context";
-import { BottomNav } from "@/components/bottom-nav";
 import { INPUT_PLACEHOLDER_COLOR, Screen, ui } from "@/components/screen";
 import { Palette, Radius } from "@/constants/theme";
 
@@ -271,7 +270,6 @@ export default function MypageScreen() {
           </>
         )}
       </Screen>
-      <BottomNav />
     </View>
   );
 }

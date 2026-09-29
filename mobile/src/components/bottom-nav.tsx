@@ -30,7 +30,7 @@ export function BottomNav() {
               accessibilityRole="button"
               accessibilityState={{ selected: active }}
               accessibilityLabel={item.label}
-              onPress={() => router.push(item.path as never)}
+              onPress={() => { if (!active) router.replace(item.path as never); }}
               style={({ pressed }) => [styles.item, pressed && styles.pressed]}
             >
               <AppIcon ios={item.ios} android={item.android} size={21} color={active ? Palette.accent : "#89918D"} />

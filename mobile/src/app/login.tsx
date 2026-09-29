@@ -85,10 +85,25 @@ export default function LoginScreen() {
             </View>
             {error ? <Text style={styles.error}>●  {error}</Text> : null}
             <Pressable disabled={loading} onPress={submit} style={({ pressed }) => [styles.loginButton, loading && styles.disabled, pressed && styles.pressed]}><Text style={styles.loginText}>{loading ? "로그인 중…" : "로그인"}</Text></Pressable>
-            {socialProviders.map((provider) => <Pressable key={provider} disabled={loading}
-              onPress={() => void socialLogin(provider)} style={styles.signupButton}>
-              <Text style={styles.signupText}>{({ naver: "네이버", google: "구글", kakao: "카카오" } as Record<string, string>)[provider]}로 계속하기</Text>
-            </Pressable>)}
+            {socialProviders.length > 0 ? <Text style={styles.socialHeading}>간편 로그인</Text> : null}
+            {socialProviders.length > 0 ? <View style={styles.socialRow}>{socialProviders.filter((provider) => ["google", "kakao", "naver"].includes(provider)).map((provider) => {
+              const label = ({ google: "구글", kakao: "카카오", naver: "네이버" } as Record<string, string>)[provider];
+              return <Pressable key={provider} accessibilityRole="button" accessibilityLabel={`${label}로 계속하기`}
+                disabled={loading} onPress={() => void socialLogin(provider)}
+                style={({ pressed }) => [styles.socialButton,
+                  provider === "google" && styles.googleButton,
+                  provider === "kakao" && styles.kakaoButton,
+                  provider === "naver" && styles.naverButton,
+                  loading && styles.disabled, pressed && styles.pressed]}>
+                <View style={styles.socialMark}><Text style={[styles.socialMarkText,
+                  provider === "google" && styles.googleMark,
+                  provider === "kakao" && styles.kakaoMark,
+                  provider === "naver" && styles.naverMark]}>
+                  {provider === "google" ? "G" : provider === "kakao" ? "K" : "N"}
+                </Text></View>
+                <Text style={[styles.socialButtonText, provider === "naver" && styles.naverButtonText]}>{label}</Text>
+              </Pressable>;
+            })}</View> : null}
             <Pressable onPress={() => router.push("/signup")} style={styles.signupButton}><Text style={styles.signupText}>회원가입</Text></Pressable>
             <View style={styles.orRow}><View style={styles.orLine} /><Text style={styles.orText}>또는</Text><View style={styles.orLine} /></View>
             <Pressable onPress={() => router.replace("/explore")} style={styles.guestButton}><Text style={styles.guestText}>로그인 없이 둘러보기</Text></Pressable>
@@ -112,6 +127,15 @@ const styles = StyleSheet.create({
   brandTitle: { marginTop: 15, color: "#FFFFFF", fontSize: 32, fontWeight: "900", letterSpacing: -1.3 }, brandTagline: { marginTop: 4, color: "#DAECE8", fontSize: 13, letterSpacing: 2 },
   form: { width: "100%", maxWidth: 440, alignSelf: "center", gap: 11 }, inputWrap: { height: 52, paddingHorizontal: 15, flexDirection: "row", alignItems: "center", gap: 10, borderRadius: 10, backgroundColor: "#FDFDFC" }, inputIcon: { width: 21, color: "#385E58", fontSize: 19, textAlign: "center" }, input: { minWidth: 0, flex: 1, color: Palette.ink, fontSize: 14 }, passwordToggle: { width: 38, height: 38, alignItems: "center", justifyContent: "center" }, passwordToggleText: { color: "#5B746F", fontSize: 19 }, error: { color: "#FF9A87", fontSize: 11.5, fontWeight: "700" },
   loginButton: { height: 52, alignItems: "center", justifyContent: "center", borderRadius: 10, backgroundColor: Palette.coral }, loginText: { color: "#FFFFFF", fontSize: 16, fontWeight: "900" }, signupButton: { height: 36, alignItems: "center", justifyContent: "center" }, signupText: { color: "#FFFFFF", fontSize: 14, fontWeight: "800" },
+  socialHeading: { marginTop: 5, color: "#CDE7E2", fontSize: 12, fontWeight: "700", textAlign: "center" },
+  socialRow: { flexDirection: "row", gap: 8 },
+  socialButton: { flex: 1, minWidth: 0, height: 54, borderRadius: 10, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5 },
+  googleButton: { backgroundColor: "#FFFFFF", borderColor: "#DADCE0", borderWidth: 1 },
+  kakaoButton: { backgroundColor: "#FEE500" }, naverButton: { backgroundColor: "#03C75A" },
+  socialMark: { width: 20, height: 20, alignItems: "center", justifyContent: "center" },
+  socialMarkText: { fontSize: 16, fontWeight: "900" }, googleMark: { color: "#4285F4" },
+  kakaoMark: { color: "#191919" }, naverMark: { color: "#FFFFFF" },
+  socialButtonText: { color: "#222B29", fontSize: 13, fontWeight: "800" }, naverButtonText: { color: "#FFFFFF" },
   orRow: { flexDirection: "row", alignItems: "center", gap: 14 }, orLine: { height: StyleSheet.hairlineWidth, flex: 1, backgroundColor: "rgba(255,255,255,0.55)" }, orText: { color: "#D2E5E1", fontSize: 12 }, guestButton: { height: 50, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "rgba(255,255,255,0.82)", borderRadius: 12 }, guestText: { color: "#FFFFFF", fontSize: 14, fontWeight: "800" },
   footerArt: { minHeight: 180, marginTop: 29, position: "relative", overflow: "hidden" }, footerCopy: { zIndex: 3, marginLeft: 22, color: "#FFFFFF", fontSize: 15, lineHeight: 23, fontWeight: "700", transform: [{ rotate: "-6deg" }] }, moon: { position: "absolute", right: 52, top: 13, width: 16, height: 16, borderRadius: 8, backgroundColor: "#C8E7DF" }, hillBack: { position: "absolute", left: -70, right: 80, bottom: -105, height: 220, borderRadius: 120, backgroundColor: "#4C9A90", transform: [{ rotate: "8deg" }] }, hillFront: { position: "absolute", left: 95, right: -100, bottom: -118, height: 235, borderRadius: 130, backgroundColor: "#81BDB5", transform: [{ rotate: "-8deg" }] }, tower: { position: "absolute", right: 45, bottom: 24, width: 9, height: 62, backgroundColor: "#F1F5F1" }, towerTop: { position: "absolute", left: -5, top: -10, width: 19, height: 12, borderRadius: 6, backgroundColor: "#F1F5F1" },
   disabled: { opacity: 0.55 }, pressed: { opacity: 0.72, transform: [{ scale: 0.99 }] },

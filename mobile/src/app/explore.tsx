@@ -14,7 +14,6 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { recommendationApi, searchMapPlaces } from "@/api/recommendations";
 import { useAuth } from "@/auth/auth-context";
-import { BottomNav } from "@/components/bottom-nav";
 import { PlacePhoto } from "@/components/place-photo";
 import { PlaceDetailSheet } from "@/components/place-detail-sheet";
 import { PlaceMap } from "@/components/place-map";
@@ -704,7 +703,6 @@ export default function ExploreScreen() {
         onSave={saveSelectedPlace}
         onReport={reportSelectedPlace}
       />
-      <BottomNav />
     </View>
   );
 }
