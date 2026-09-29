@@ -62,7 +62,12 @@ def record_search_coverage_demand(response, *, user=None, session_key="", search
     if not isinstance(response, dict):
         return None
     action = response.get("decision_action") or response.get("decisionAction")
-    if action != "search":
+    post_gate_reason = (response.get("debug_pipeline") or {}).get("post_gate_reason")
+    verified_condition_gap = (
+        action == "ask_clarification"
+        and post_gate_reason == "required_conditions_unverified"
+    )
+    if action != "search" and not verified_condition_gap:
         return None
 
     frame = response.get("place_intent_frame") or response.get("placeIntentFrame") or {}
@@ -70,7 +75,7 @@ def record_search_coverage_demand(response, *, user=None, session_key="", search
     result_count = int(response.get("result_count") or response.get("count") or 0)
     quality_gap_tags, top_five_fallback_count = _quality_gap_tags(response)
     sparse = result_count < LOW_RESULT_THRESHOLD
-    quality_gap = bool(quality_gap_tags or top_five_fallback_count)
+    quality_gap = bool(quality_gap_tags or top_five_fallback_count or verified_condition_gap)
     if not sparse and not quality_gap:
         return None
 
@@ -111,7 +116,10 @@ def record_search_coverage_demand(response, *, user=None, session_key="", search
             "result_count": result_count,
             "top_five_fallback_count": top_five_fallback_count,
             "quality_gap_tags": quality_gap_tags,
-            "signal_reason": "sparse_results" if sparse else "top_five_quality_gap",
+            "signal_reason": (
+                "required_conditions_unverified" if verified_condition_gap else
+                "sparse_results" if sparse else "top_five_quality_gap"
+            ),
             "demand_weight": (
                 3 if result_count == 0 else
                 2 if sparse or top_five_fallback_count >= 3 else
