@@ -8627,11 +8627,18 @@ class RecommendationSearchTests(TestCase):
                 lat=lat, lng=lng, source=source, external_id=f"seoul-station-{index}",
             )
         mock_kakao.side_effect = [
-            {"documents": [{
-                "id": "station-shop", "place_name": "서울역 커피점",
-                "category_name": "음식점 > 카페", "address_name": "서울 용산구",
-                "x": "126.9698", "y": "37.5545",
-            }]},
+            {"documents": [
+                {
+                    "id": "station-shop", "place_name": "서울역 커피점",
+                    "category_name": "음식점 > 카페", "address_name": "서울 용산구",
+                    "x": "126.9698", "y": "37.5545",
+                },
+                {
+                    "id": "station-shop-2", "place_name": "서울역 빵집",
+                    "category_name": "음식점 > 제과,베이커리", "address_name": "서울 용산구",
+                    "x": "126.9699", "y": "37.5544",
+                },
+            ]},
             {"documents": [{
                 "id": "station-main", "place_name": "서울역",
                 "category_name": "교통,수송 > 기차,철도 > 기차역",

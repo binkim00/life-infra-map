@@ -1414,7 +1414,11 @@ def map_place_search(request):
                 and not category_query
                 and not matched_basic_categories
                 and resolved_anchor.get("status") == "resolved"
-                and not has_strong_nearby_match
+                and not any(
+                    kakao_place_name_match_rank(place, name_query) == 0
+                    and any(token in str(place.get("category_name", "")) for token in ("기차,철도", "지하철,전철"))
+                    for place in kakao_data.get("documents", [])
+                )
             ):
                 # A busy station's nearby keyword page is often filled with
                 # shops. Ask for the rail facility before a nationwide page.
