@@ -959,9 +959,16 @@ def serialize_kakao_map_place(place, *, lat=None, lng=None):
 
 def map_place_names_equivalent(first_name, second_name):
     """Treat a provider's optional branch suffix as the same nearby place."""
-    # Parentheses commonly contain an English rendering of the same name.
-    first = normalize_compact(str(first_name or "").split("(", 1)[0])
-    second = normalize_compact(str(second_name or "").split("(", 1)[0])
+    def canonical(name):
+        raw = str(name or "")
+        suffix = raw.split("(", 1)[1] if "(" in raw else ""
+        # English renderings are optional aliases; Korean branch names are not.
+        if suffix and any("a" <= char.lower() <= "z" for char in suffix):
+            raw = raw.split("(", 1)[0]
+        return normalize_compact(raw.replace("(", "").replace(")", ""))
+
+    first = canonical(first_name)
+    second = canonical(second_name)
     if not first or not second:
         return False
     if first == second:
@@ -975,7 +982,7 @@ def map_place_names_equivalent(first_name, second_name):
 
 def map_place_address_core(address):
     """Ignore unit/floor notes appended to the same road address."""
-    core = str(address or "").split("(", 1)[0].split("（", 1)[0].strip()
+    core = str(address or "").split("(", 1)[0].split("（", 1)[0].split(",", 1)[0].strip()
     for full, short in (
         ("서울특별시", "서울"), ("부산광역시", "부산"), ("대구광역시", "대구"),
         ("인천광역시", "인천"), ("광주광역시", "광주"), ("대전광역시", "대전"),
@@ -1002,8 +1009,6 @@ def merge_map_place_results(results, *, max_distance_m=40):
                 existing_lng = parse_optional_float(existing.get("lng"))
                 if existing_lat is None or existing_lng is None:
                     continue
-                if not map_place_names_equivalent(existing.get("name"), candidate.get("name")):
-                    continue
                 distance = calculate_distance_m(
                     existing_lat, existing_lng, candidate_lat, candidate_lng,
                 )
@@ -1012,7 +1017,22 @@ def merge_map_place_results(results, *, max_distance_m=40):
                     len(existing_address) >= 8
                     and existing_address == map_place_address_core(candidate.get("address"))
                 )
-                if distance <= max_distance_m or (same_address and distance <= 120):
+                name_match = map_place_names_equivalent(existing.get("name"), candidate.get("name"))
+                if not name_match and same_address:
+                    first_key = normalize_compact(str(existing.get("name") or "").replace("(", "").replace(")", ""))
+                    second_key = normalize_compact(str(candidate.get("name") or "").replace("(", "").replace(")", ""))
+                    if first_key.startswith("이디야커피"):
+                        first_key = "이디야" + first_key[len("이디야커피"):]
+                    if second_key.startswith("이디야커피"):
+                        second_key = "이디야" + second_key[len("이디야커피"):]
+                    for city in ("서울", "부산", "대구", "인천", "광주", "대전", "울산", "서면"):
+                        first_key = first_key.replace(city, "", 1) if first_key.find(city) >= 3 else first_key
+                        second_key = second_key.replace(city, "", 1) if second_key.find(city) >= 3 else second_key
+                    name_match = first_key == second_key or (
+                        distance <= 25 and min(len(first_key), len(second_key)) >= 5
+                        and (first_key.startswith(second_key) or second_key.startswith(first_key))
+                    )
+                if name_match and (distance <= max_distance_m or (same_address and distance <= 120)):
                     duplicate_index = index
                     break
 
@@ -1159,15 +1179,21 @@ def map_place_search(request):
         name_query = name_query or keyword
     # 명시된 지점/지역은 후보 수집 전에 양쪽 공급자의 기준 위치로 확정한다.
     if is_separated_place_search and center_mode != "map" and not anchor_location and name_query:
-        from .services.area_gazetteer import resolve_area_coordinates_by_token
+        from .services.area_gazetteer import resolve_area_coordinates, resolve_area_coordinates_by_token
         branch = split_branch_qualified_query(keyword)
         region_hint = branch.get("branch_location", "")
         if not region_hint:
             tokens, _ = tokenize_query(keyword)
-            if len(tokens) > 1 and resolve_area_coordinates_by_token(" ".join(tokens[:-1])):
+            if len(tokens) > 1 and resolve_area_coordinates(tokens[-1]):
+                region_hint = tokens[-1]
+                name_query = " ".join(tokens[:-1])
+                provider_keyword = name_query
+            elif len(tokens) > 1 and resolve_area_coordinates_by_token(" ".join(tokens[:-1])):
                 region_hint = " ".join(tokens[:-1])
         if region_hint:
-            explicit_anchor = _resolve_anchor_location(region_hint, address_first=True)
+            explicit_anchor = _resolve_anchor_location(
+                region_hint, address_first=not bool(resolve_area_coordinates(region_hint))
+            )
             if explicit_anchor.get("status") == "resolved":
                 anchor_location = region_hint
                 resolved_anchor = explicit_anchor
@@ -1184,7 +1210,7 @@ def map_place_search(request):
     if (
         not search_radius
         and center_mode != "map"
-        and category_query
+        and (category_query or (anchor_location and name_query))
         and resolved_anchor.get("status") == "resolved"
     ):
         search_radius = 5000
@@ -1290,7 +1316,9 @@ def map_place_search(request):
             prefiltered=bool(is_separated_place_search and name_query),
             nearest_first=is_separated_place_search,
         )
-        if use_prefix and len(db_results) < limit:
+        if use_prefix and len(db_results) < limit and not (
+            source == "all" and resolved_anchor.get("status") == "resolved" and db_results
+        ):
             db_results, db_total_count, query_info = search_saved_map_places(
                 keyword=category_query or keyword,
                 lat=search_lat,
@@ -1430,7 +1458,9 @@ def map_place_search(request):
                 if (
                     not is_separated_place_search
                     or matched_basic_categories
-                    or kakao_place_matches_keyword(place, keyword)
+                    or kakao_place_matches_keyword(
+                        place, name_query if anchor_location and resolved_anchor.get("status") == "resolved" else keyword
+                    )
                 )
                 if str(place.get("id")) not in db_external_ids
             ]

@@ -32,6 +32,57 @@ class MapPlaceDeduplicationTests(SimpleTestCase):
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0]["duplicate_count"], 3)
 
+    def test_parenthesized_korean_branch_and_floor_note_collapse(self):
+        results = merge_map_place_results([
+            {"id": 1, "name": "투썸플레이스서면지오플레이스점", "address": "부산광역시 부산진구 동천로 4", "lat": 35.1494319, "lng": 129.0639733},
+            {"id": 2, "name": "투썸플레이스(서면지오플레이스점)", "address": "부산광역시 부산진구 동천로 4, 1층 1015호 (전포동)", "lat": 35.1495263, "lng": 129.0648619},
+        ])
+        self.assertEqual(len(results), 1)
+
+    def test_different_parenthesized_korean_branches_remain_separate(self):
+        results = merge_map_place_results([
+            {"id": 1, "name": "투썸플레이스(서면점)", "address": "부산 부산진구 중앙대로 1", "lat": 35.15, "lng": 129.06},
+            {"id": 2, "name": "투썸플레이스(전포점)", "address": "부산 부산진구 중앙대로 1", "lat": 35.15, "lng": 129.06},
+        ])
+        self.assertEqual(len(results), 2)
+
+    def test_optional_city_and_branch_at_same_address_collapse(self):
+        results = merge_map_place_results([
+            {"id": 1, "name": "투썸플레이스문현금융단지점", "address": "부산광역시 부산진구 중앙번영로 31, 1-3층", "lat": 35.1451209, "lng": 129.0627095},
+            {"id": 2, "name": "투썸플레이스 부산문현금융단지점", "address": "부산 부산진구 중앙번영로 31", "lat": 35.1450871, "lng": 129.0627170},
+        ])
+        self.assertEqual(len(results), 1)
+
+    def test_short_brand_and_branch_at_identical_address_collapse(self):
+        results = merge_map_place_results([
+            {"id": 1, "name": "투썸플레이스", "address": "부산광역시 남구 전포대로 26", "lat": 35.1393063, "lng": 129.0679961},
+            {"id": 2, "name": "투썸플레이스 부산문현점", "address": "부산 남구 전포대로 26", "lat": 35.1392124, "lng": 129.0679542},
+        ])
+        self.assertEqual(len(results), 1)
+
+    def test_brand_alias_and_optional_area_at_same_address_collapse(self):
+        results = merge_map_place_results([
+            {"id": 1, "name": "이디야커피 부산서면롯데후문점", "address": "부산 부산진구 부전로66번길 22", "lat": 35.1558054, "lng": 129.0558850},
+            {"id": 2, "name": "이디야롯데후문점", "address": "부산광역시 부산진구 부전로66번길 22, 지상1층", "lat": 35.1557777, "lng": 129.0558787},
+        ])
+        self.assertEqual(len(results), 1)
+
+    @patch("recommendations.views.search_saved_map_places", return_value=([], 0, {}))
+    @patch("recommendations.views._resolve_anchor_location", return_value={
+        "status": "resolved", "source": "area_gazetteer", "lat": 35.156790,
+        "lng": 129.056416, "label": "서면",
+    })
+    def test_brand_and_known_area_use_area_center_and_radius(self, resolve_anchor, search_places):
+        response = self.client.get(
+            "/api/recommendations/place-search/",
+            {"q": "투썸플레이스 서면", "source": "db", "limit": 10},
+        )
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(response.json()["filters"]["effective_radius"], 5000)
+        self.assertEqual(search_places.call_args.kwargs["lat"], 35.156790)
+        self.assertEqual(search_places.call_args.kwargs["lng"], 129.056416)
+        resolve_anchor.assert_called_with("서면", address_first=False)
+
 
 class PrefilteredNameSearchTests(TestCase):
     def test_name_search_without_explicit_radius_uses_one_db_radius_pass(self):
