@@ -25,7 +25,7 @@ module.exports = ({ config }) => {
   const allowHttpApi = djangoApi.startsWith("http://");
   const nextConfig = {
     ...config,
-    name: isProduction ? "생활 인프라 지도" : "생활 인프라 지도 (테스트)",
+    name: isProduction ? "여기일지도" : "여기일지도 (테스트)",
     android: {
       ...config.android,
       package: isProduction

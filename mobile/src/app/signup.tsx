@@ -78,7 +78,7 @@ export default function SignupScreen() {
   };
 
   return (
-    <Screen title="회원가입" subtitle="생활 인프라 지도를 시작합니다." back>
+    <Screen title="회원가입" subtitle="여기일지도를 시작합니다." back>
       <View style={styles.form}>
         <Pressable onPress={pickImage} style={styles.picker}>
           {image ? (
