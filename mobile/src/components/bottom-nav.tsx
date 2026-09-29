@@ -1,5 +1,4 @@
 import { router, usePathname } from "expo-router";
-import { useRef } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { Palette, Shadow } from "@/constants/theme";
@@ -9,13 +8,12 @@ const ITEMS = [
   { label: "홈", ios: "house.fill", android: "home", path: "/" as const },
   { label: "검색", ios: "magnifyingglass", android: "search", path: "/explore" as const },
   { label: "추천", ios: "sparkles", android: "auto_awesome", path: "/recommend" as const },
-  { label: "저장", ios: "bookmark.fill", android: "bookmark", path: "/mypage/saved-places" as const },
+  { label: "저장", ios: "bookmark.fill", android: "bookmark", path: "/saved" as const },
   { label: "MY", ios: "person.fill", android: "person", path: "/mypage" as const },
 ] as const;
 
 export function BottomNav() {
   const pathname = usePathname();
-  const nextNavigationAt = useRef(0);
   return (
     <View style={styles.outer} pointerEvents="box-none">
       <View style={styles.nav}>
@@ -25,7 +23,9 @@ export function BottomNav() {
               ? pathname === "/"
               : item.path === "/mypage"
                 ? pathname.startsWith("/mypage") && !pathname.startsWith("/mypage/saved-places")
-                : pathname.startsWith(item.path);
+                : item.path === "/saved"
+                  ? pathname === "/saved" || pathname.startsWith("/mypage/saved-places")
+                  : pathname.startsWith(item.path);
           return (
             <Pressable
               key={item.path}
@@ -33,10 +33,7 @@ export function BottomNav() {
               accessibilityState={{ selected: active }}
               accessibilityLabel={item.label}
               onPress={() => {
-                const now = Date.now();
-                if (active || now < nextNavigationAt.current) return;
-                nextNavigationAt.current = now + 500;
-                router.replace(item.path as never);
+                if (!active) router.navigate(item.path as never);
               }}
               style={({ pressed }) => [styles.item, pressed && styles.pressed]}
             >
@@ -54,12 +51,10 @@ export function BottomNav() {
 
 const styles = StyleSheet.create({
   outer: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 8,
+    height: 84,
     alignItems: "center",
     paddingHorizontal: 12,
+    paddingBottom: 8,
   },
   nav: {
     width: "100%",
