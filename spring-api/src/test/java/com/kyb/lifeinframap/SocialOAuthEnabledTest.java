@@ -3,11 +3,18 @@ package com.kyb.lifeinframap;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 
+import com.kyb.lifeinframap.account.domain.User;
 import com.kyb.lifeinframap.support.ApiTestBase;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.mock.web.MockHttpSession;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContext;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.test.web.servlet.MvcResult;
 
 @SpringBootTest(properties = {
@@ -17,6 +24,24 @@ import org.springframework.test.web.servlet.MvcResult;
         "app.social.kakao-client-id=test-kakao", "app.social.kakao-client-secret=test-secret"
 })
 class SocialOAuthEnabledTest extends ApiTestBase {
+    @Test
+    void apiBearerOverridesOldOAuthSessionAndSessionAloneCannotAuthenticate() throws Exception {
+        User oldUser = createUser();
+        User currentUser = createUser();
+        MockHttpSession session = new MockHttpSession();
+        SecurityContext oldContext = SecurityContextHolder.createEmptyContext();
+        oldContext.setAuthentication(new UsernamePasswordAuthenticationToken(
+                String.valueOf(oldUser.getId()), null, List.of()));
+        session.setAttribute(HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY, oldContext);
+
+        mockMvc.perform(get("/api/accounts/me").session(session)
+                        .header("Authorization", bearer(currentUser)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(currentUser.getId()));
+        mockMvc.perform(get("/api/accounts/me").session(session))
+                .andExpect(status().isUnauthorized());
+    }
+
     @Test
     void startStoresSessionAndUsesFixedExternalCallback() throws Exception {
         mockMvc.perform(get("/api/auth/social/providers"))
