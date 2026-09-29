@@ -707,7 +707,8 @@ def annotate_tag_match(queryset, tokens):
 
 def collect_scored_candidates(queryset, *, include_tokens, normalized_query,
                               matched_categories, attribute_query=False,
-                              lat=None, lng=None, radius=0, db_distance=False):
+                              lat=None, lng=None, radius=0, db_distance=False,
+                              nearest_first=False):
     """
     후보의 관련도 점수와 거리를 계산해 정렬 가능한 목록으로 만든다.
 
@@ -715,21 +716,25 @@ def collect_scored_candidates(queryset, *, include_tokens, normalized_query,
     태그로 맞았는지 여부는 `Exists` 서브쿼리로 같은 쿼리 안에서 함께 읽는다.
     `db_distance` 가 참이면 거리는 PostGIS 가 이미 계산했으므로 그대로 쓴다.
     """
-    fields = ["id", "name", "address", "detail_location", "category", "lat", "lng", "has_tag_match"]
+    fields = ["id", "name", "address", "detail_location", "category", "lat", "lng"]
+    if not nearest_first:
+        fields.append("has_tag_match")
     if db_distance:
         fields.append("db_distance")
 
-    candidate_fields = annotate_tag_match(queryset, include_tokens).values_list(*fields)
+    candidate_fields = (
+        queryset if nearest_first else annotate_tag_match(queryset, include_tokens)
+    ).values_list(*fields)
 
     candidates = []
 
     for row in candidate_fields.iterator(chunk_size=2000):
-        (place_id, name, address, detail_location, category,
-         place_lat, place_lng, has_tag_match) = row[:8]
+        place_id, name, address, detail_location, category, place_lat, place_lng = row[:7]
+        has_tag_match = False if nearest_first else row[7]
         distance = None
 
         if db_distance:
-            distance = int(round(row[8]))
+            distance = int(round(row[-1]))
         elif lat is not None and lng is not None:
             distance = calculate_distance_m(lat, lng, place_lat, place_lng)
 
@@ -742,7 +747,7 @@ def collect_scored_candidates(queryset, *, include_tokens, normalized_query,
             "lat": place_lat,
             "lng": place_lng,
             "distance": distance,
-            "score": calculate_relevance_score(
+            "score": 0 if nearest_first else calculate_relevance_score(
                 name=name,
                 address=address,
                 detail_location=detail_location,
@@ -941,6 +946,7 @@ def run_search_pass(*, source_queryset, include_tokens, exclude_tokens, matched_
             lng=lng,
             radius=attempt_radius or 0,
             db_distance=db_distance,
+            nearest_first=nearest_first,
         )
         ordered = sort_candidates(candidates, has_location=True)
         if nearest_first:

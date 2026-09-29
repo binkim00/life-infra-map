@@ -8387,6 +8387,22 @@ class RecommendationSearchTests(TestCase):
             result_names.index(far_named_place.name),
         )
 
+    @patch("recommendations.services.map_search.annotate_tag_match")
+    def test_nearest_map_search_skips_unused_tag_scoring(self, mock_annotate):
+        from recommendations.services.map_search import search_saved_places
+
+        self._create_place("가까운 카페", "cafe", "nearest-score-near", lat=35.1557, lng=129.0642)
+        self._create_place("먼 카페", "cafe", "nearest-score-far", lat=35.1657, lng=129.0742)
+        rows, _, _ = search_saved_places(
+            keyword="카페", lat=35.1556, lng=129.0641,
+            radius=5000, limit=10,
+            queryset=Place.objects.filter(external_id__in=["nearest-score-near", "nearest-score-far"]),
+            prefiltered=True, nearest_first=True,
+        )
+
+        self.assertEqual([row["name"] for row in rows], ["가까운 카페", "먼 카페"])
+        mock_annotate.assert_not_called()
+
     @patch("recommendations.views.search_places_by_keyword", return_value={"documents": []})
     def test_general_map_search_does_not_match_internal_source_fields(self, mock_kakao):
         internal_only_place = Place.objects.create(
