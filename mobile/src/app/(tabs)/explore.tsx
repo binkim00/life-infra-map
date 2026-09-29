@@ -409,7 +409,7 @@ export default function ExploreScreen() {
           place={selectedPlace}
           places={places}
           displayMode="overview"
-          focusSelected={!usesNearbyRadius && !searchCenterOverride}
+          focusSelected={false}
           onSelectPlace={setSelectedPlace}
           onCenterChange={setMapCenter}
           currentLocation={deviceLocation}
@@ -753,7 +753,7 @@ const styles = StyleSheet.create({
     position: "absolute",
     left: 12,
     right: 12,
-    bottom: 96,
+    bottom: 8,
     maxWidth: 736,
     alignSelf: "center",
     paddingTop: 8,
