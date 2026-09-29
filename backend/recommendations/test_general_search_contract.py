@@ -196,7 +196,7 @@ class GeneralSearchContractTests(TestCase):
         })
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["results"][0]["name"], "테스트브랜드 경성대부경대점")
-        resolve.assert_called_once_with("경성대", address_first=True)
+        resolve.assert_called_once_with("경성대", address_first=False)
         self.assertEqual(search.call_args_list[0].kwargs["lat"], 35.14)
         self.assertEqual(response.json()["location_context"]["lat"], 35.14)
         self.assertEqual(search.call_args_list[-1].kwargs["keyword"], "테스트브랜드")
