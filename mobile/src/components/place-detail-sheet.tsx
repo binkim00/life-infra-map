@@ -48,9 +48,7 @@ const kakaoMapUrl = (place: Place) =>
   `https://map.kakao.com/link/map/${encodeURIComponent(place.name)},${place.lat},${place.lng}`;
 
 const kakaoSearchUrl = (place: Place) =>
-  `https://map.kakao.com/link/search/${encodeURIComponent(
-    [place.name, place.address || place.detail_location].filter(Boolean).join(" "),
-  )}`;
+  `https://map.kakao.com/link/search/${encodeURIComponent(place.name.trim())}`;
 
 const hasMapCoordinates = (place: Place) =>
   place.lat !== null &&
