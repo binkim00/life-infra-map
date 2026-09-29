@@ -1316,15 +1316,22 @@ def map_place_search(request):
             db_queryset = Place.objects.filter(category__in=usable_db_categories)
     # 업종 substring으로 고유명사를 완화하지 않고 저장 DB도 항상 병합한다.
     if is_separated_place_search and name_query:
-        db_queryset = Place.objects.annotate(
-            search_name=Replace("name", Value(" "), Value("")),
-            search_address=Replace("address", Value(" "), Value("")),
-        )
-        for token in tokenize_query(name_query)[0]:
-            compact_token = normalize_compact(token)
-            db_queryset = db_queryset.filter(
-                Q(search_name__icontains=compact_token) | Q(search_address__icontains=compact_token)
+        if name_query.endswith("역") and len(tokenize_query(name_query)[0]) == 1 and resolved_anchor.get("status") == "resolved":
+            # Station names are already compact. Avoid a full-table REPLACE
+            # on both text columns for this common landmark lookup.
+            db_queryset = Place.objects.filter(
+                Q(name__icontains=name_query) | Q(address__icontains=name_query)
             )
+        else:
+            db_queryset = Place.objects.annotate(
+                search_name=Replace("name", Value(" "), Value("")),
+                search_address=Replace("address", Value(" "), Value("")),
+            )
+            for token in tokenize_query(name_query)[0]:
+                compact_token = normalize_compact(token)
+                db_queryset = db_queryset.filter(
+                    Q(search_name__icontains=compact_token) | Q(search_address__icontains=compact_token)
+                )
         from .services.map_search import apply_keyword_filter
         db_queryset = apply_keyword_filter(db_queryset, [], tokenize_query(keyword)[1])
 
@@ -1402,6 +1409,36 @@ def map_place_search(request):
                 0 in nearby_name_ranks
                 or nearby_name_ranks.count(1) >= 2
             )
+            if (
+                name_query.endswith("역")
+                and not category_query
+                and not matched_basic_categories
+                and resolved_anchor.get("status") == "resolved"
+                and not has_strong_nearby_match
+            ):
+                # A busy station's nearby keyword page is often filled with
+                # shops. Ask for the rail facility before a nationwide page.
+                station_data = search_places_by_keyword(
+                    keyword=f"{name_query} 기차역",
+                    lat=search_lat,
+                    lng=search_lng,
+                    radius=search_radius or None,
+                    size=min(limit, 15),
+                )
+                if not station_data.get("documents"):
+                    station_data = search_places_by_keyword(
+                        keyword=name_query,
+                        lat=search_lat,
+                        lng=search_lng,
+                        radius=search_radius or None,
+                        size=min(limit, 15),
+                        category_group_code="SW8",
+                    )
+                kakao_data = merge_kakao_search_documents(kakao_data, station_data)
+                has_strong_nearby_match = any(
+                    kakao_place_name_match_rank(place, name_query) == 0
+                    for place in station_data.get("documents", [])
+                )
             if (
                 name_query
                 and search_lat is not None
@@ -1598,6 +1635,8 @@ def map_place_search(request):
     }
     if search_lat is not None and search_lng is not None:
         combined_results.sort(key=lambda p: (
+            bool(name_query.endswith("역") and not category_query and not matched_basic_categories)
+            and not any(token in str(p.get("category", "")) for token in ("기차,철도", "지하철,전철", "transport")),
             bool(exact_categories) and map_place_category_key(p) not in exact_categories
             and kakao_place_name_match_rank(p, name_query) != 0,
             p.get("distance") is None,

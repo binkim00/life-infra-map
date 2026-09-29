@@ -8626,11 +8626,18 @@ class RecommendationSearchTests(TestCase):
                 name="서울역", category="cafe" if index else "smoking_area",
                 lat=lat, lng=lng, source=source, external_id=f"seoul-station-{index}",
             )
-        mock_kakao.return_value = {"documents": [{
-            "id": "station-main", "place_name": "서울역",
-            "category_name": "교통,수송 > 기차,철도 > 기차역", "category_group_code": "SW8",
-            "address_name": "서울 용산구", "x": "126.9701", "y": "37.5546",
-        }]}
+        mock_kakao.side_effect = [
+            {"documents": [{
+                "id": "station-shop", "place_name": "서울역 커피점",
+                "category_name": "음식점 > 카페", "address_name": "서울 용산구",
+                "x": "126.9698", "y": "37.5545",
+            }]},
+            {"documents": [{
+                "id": "station-main", "place_name": "서울역",
+                "category_name": "교통,수송 > 기차,철도 > 기차역",
+                "address_name": "서울 용산구", "x": "126.9701", "y": "37.5546",
+            }]},
+        ]
 
         response = self.client.get(
             "/api/recommendations/place-search/",
@@ -8644,6 +8651,8 @@ class RecommendationSearchTests(TestCase):
         self.assertTrue(data["results"])
         self.assertTrue(all(float(row["lat"]) > 37 for row in data["results"]))
         self.assertTrue(all(call.kwargs["lat"] > 37 for call in mock_kakao.call_args_list))
+        self.assertEqual(mock_kakao.call_args_list[1].kwargs["keyword"], "서울역 기차역")
+        self.assertEqual(data["results"][0]["category"], "교통,수송 > 기차,철도 > 기차역")
 
         Place.objects.create(
             name="갈라진역", category="cafe", lat=35.1, lng=129.0,
