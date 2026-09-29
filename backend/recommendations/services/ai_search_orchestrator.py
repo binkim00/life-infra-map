@@ -4479,7 +4479,7 @@ def _allows_unverified_result_relaxation(query):
 
 
 def _enforce_required_result_policy(results, frame, query, *, allow_unverified=False):
-    """Never silently fill a mandatory-condition request with unknown candidates."""
+    """Show evidenced partial matches while labeling every unmet condition."""
     results = list(results or [])
     required = _required_evidence_conditions(frame)
     if not required or allow_unverified or _allows_unverified_result_relaxation(query):
@@ -4487,6 +4487,9 @@ def _enforce_required_result_policy(results, frame, query, *, allow_unverified=F
     confirmed = [result for result in results if not (result.get("missing_conditions") or [])]
     if confirmed:
         return confirmed, required, False
+    partial = [result for result in results if result.get("matched_conditions")]
+    if partial:
+        return partial, required, False
     return [], required, bool(results)
 
 

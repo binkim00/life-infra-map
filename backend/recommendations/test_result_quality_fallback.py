@@ -178,6 +178,25 @@ class ResultQualityFallbackTests(SimpleTestCase):
         self.assertEqual(relaxed, unknown)
         self.assertFalse(needs_question)
 
+    def test_partially_verified_conditions_are_shown_with_missing_conditions(self):
+        frame = {
+            "candidate_category_codes": ["cafe"],
+            "required_features": ["조용함", "콘센트있음", "장기체류좋음"],
+        }
+        partial = {
+            "id": "db:1", "matched_conditions": ["조용함", "콘센트있음"],
+            "missing_conditions": ["장기체류좋음"],
+        }
+        unknown = {"id": "db:2", "matched_conditions": [], "missing_conditions": ["조용함", "콘센트있음", "장기체류좋음"]}
+
+        results, required, needs_question = _enforce_required_result_policy(
+            [partial, unknown], frame, "조용하고 콘센트 있고 오래 머물기 좋은 카페",
+        )
+
+        self.assertEqual(results, [partial])
+        self.assertEqual(required, ["조용함", "콘센트있음", "장기체류좋음"])
+        self.assertFalse(needs_question)
+
 
 class DerivedShoppingCandidateTests(TestCase):
     def test_groups_tenant_rows_into_their_parent_shopping_venue(self):
