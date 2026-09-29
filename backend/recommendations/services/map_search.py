@@ -585,10 +585,11 @@ def apply_radius_filter(queryset, lat, lng, radius_m):
 
 
 def build_bounding_box(lat, lng, radius_m):
-    """반경을 감싸는 위경도 범위를 만든다. SQL에서 먼저 후보를 줄이는 용도다."""
-    lat_delta = radius_m / METERS_PER_LAT_DEGREE
+    """반경을 감싸는 위경도 범위를 만든다. 타원체 오차만큼 넉넉히 잡는다."""
+    padded_radius = radius_m * 1.02
+    lat_delta = padded_radius / METERS_PER_LAT_DEGREE
     cos_lat = math.cos(math.radians(lat))
-    lng_delta = radius_m / (METERS_PER_LAT_DEGREE * max(abs(cos_lat), 0.01))
+    lng_delta = padded_radius / (METERS_PER_LAT_DEGREE * max(abs(cos_lat), 0.01))
 
     return {
         "lat__gte": lat - lat_delta,

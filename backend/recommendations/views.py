@@ -36,6 +36,7 @@ from .services.kakao_local import search_places_by_keyword
 from .services.naver_search_provider import get_naver_search_result
 from .services.map_search import (
     KAKAO_CATEGORY_GROUPS,
+    build_bounding_box,
     build_kakao_keyword_variants,
     category_only_fallback_keyword,
     get_matching_categories,
@@ -1350,6 +1351,12 @@ def map_place_search(request):
         # The parsed category is already a precise DB predicate. Repeating
         # broad keyword/tag matching scans unrelated nearby places.
         db_queryset = Place.objects.filter(category=matched_basic_categories[0])
+        if search_radius and search_lat is not None and search_lng is not None:
+            # Use the category/coordinate index before the exact PostGIS
+            # circle. Padding preserves places at the geodesic boundary.
+            db_queryset = db_queryset.filter(**build_bounding_box(
+                search_lat, search_lng, search_radius,
+            ))
 
     if source in {"all", "db"} and not basic_db_skipped:
         name_tokens = tokenize_query(name_query)[0] if is_separated_place_search and name_query else []

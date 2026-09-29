@@ -8647,6 +8647,22 @@ class RecommendationSearchTests(TestCase):
             mock_keyword_filter.assert_not_called()
         mock_address.assert_not_called()
 
+    @patch("recommendations.views.search_places_by_keyword", return_value={"documents": []})
+    def test_known_area_category_search_preserves_circle_edge_result(self, mock_kakao):
+        edge = self._create_place(
+            name="서면 경계 카페", category="cafe", external_id="area-cafe-edge",
+            lat=35.20174, lng=129.056416,
+        )
+
+        response = self.client.get(
+            "/api/recommendations/place-search/",
+            {"q": "서면 카페", "source": "all", "lat": 35.1579, "lng": 129.0592, "center_mode": "auto"},
+            HTTP_HOST="localhost",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(edge.name, [row["name"] for row in response.json()["results"]])
+
     @patch("recommendations.views.search_places_by_keyword")
     def test_distant_station_search_uses_consistent_saved_landmark_center(self, mock_kakao):
         from recommendations.views import saved_landmark_center
