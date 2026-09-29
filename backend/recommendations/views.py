@@ -1,6 +1,7 @@
 import hashlib
 import logging
 import math
+from statistics import median
 from django.conf import settings
 from django.core.cache import cache
 from django.db import IntegrityError, transaction
@@ -1122,6 +1123,23 @@ def kakao_place_name_match_rank(place, name_query):
     return 3
 
 
+def saved_landmark_center(name):
+    """Use clustered, independent saved records to locate a named transit hub."""
+    if not name.endswith(("역", "공항", "터미널")):
+        return None
+    rows = list(Place.objects.filter(name=name).values_list("lat", "lng", "source")[:21])
+    if not 2 <= len(rows) <= 20 or len({row[2] for row in rows}) < 2:
+        return None
+    center_lat = median(row[0] for row in rows)
+    center_lng = median(row[1] for row in rows)
+    if any(
+        calculate_distance_m(center_lat, center_lng, row[0], row[1]) > 2000
+        for row in rows
+    ):
+        return None
+    return center_lat, center_lng
+
+
 @api_view(["GET"])
 def map_place_search(request):
     keyword = request.GET.get("q", "").strip()
@@ -1180,6 +1198,18 @@ def map_place_search(request):
     # 명시된 지점/지역은 후보 수집 전에 양쪽 공급자의 기준 위치로 확정한다.
     if is_separated_place_search and center_mode != "map" and not anchor_location and name_query:
         from .services.area_gazetteer import resolve_area_coordinates, resolve_area_coordinates_by_token
+        known_area = resolve_area_coordinates(name_query)
+        saved_center = None if known_area else saved_landmark_center(name_query)
+        if known_area or saved_center:
+            search_lat, search_lng = (known_area or saved_center)[:2]
+            anchor_location = name_query
+            resolved_anchor = {
+                "status": "resolved",
+                "lat": search_lat,
+                "lng": search_lng,
+                "label": name_query,
+                "source": "area_gazetteer" if known_area else "saved_landmark_consensus",
+            }
         branch = split_branch_qualified_query(keyword)
         region_hint = branch.get("branch_location", "")
         if not region_hint:

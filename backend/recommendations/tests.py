@@ -8614,6 +8614,47 @@ class RecommendationSearchTests(TestCase):
                 self.assertTrue(all(row["category"] == category for row in data["results"]))
         mock_address.assert_not_called()
 
+    @patch("recommendations.views.search_places_by_keyword")
+    def test_distant_station_search_uses_consistent_saved_landmark_center(self, mock_kakao):
+        from recommendations.views import saved_landmark_center
+
+        for index, (source, lat, lng) in enumerate((
+            ("station-facility", 37.5549, 126.9684),
+            ("station-shop", 37.5538, 126.9697),
+        )):
+            Place.objects.create(
+                name="서울역", category="cafe" if index else "smoking_area",
+                lat=lat, lng=lng, source=source, external_id=f"seoul-station-{index}",
+            )
+        mock_kakao.return_value = {"documents": [{
+            "id": "station-main", "place_name": "서울역",
+            "category_name": "교통,수송 > 기차,철도 > 기차역", "category_group_code": "SW8",
+            "address_name": "서울 용산구", "x": "126.9701", "y": "37.5546",
+        }]}
+
+        response = self.client.get(
+            "/api/recommendations/place-search/",
+            {"q": "서울역", "source": "all", "lat": 35.1579, "lng": 129.0592, "center_mode": "auto"},
+            HTTP_HOST="localhost",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["location_context"]["center_source"], "saved_landmark_consensus")
+        self.assertTrue(data["results"])
+        self.assertTrue(all(float(row["lat"]) > 37 for row in data["results"]))
+        self.assertTrue(all(call.kwargs["lat"] > 37 for call in mock_kakao.call_args_list))
+
+        Place.objects.create(
+            name="갈라진역", category="cafe", lat=35.1, lng=129.0,
+            source="far-a", external_id="far-a",
+        )
+        Place.objects.create(
+            name="갈라진역", category="cafe", lat=37.5, lng=127.0,
+            source="far-b", external_id="far-b",
+        )
+        self.assertIsNone(saved_landmark_center("갈라진역"))
+
     @patch("recommendations.views.search_places_by_keyword", return_value={"documents": []})
     def test_general_map_search_without_radius_does_not_apply_default_radius(self, mock_kakao):
         far_place = Place.objects.create(
