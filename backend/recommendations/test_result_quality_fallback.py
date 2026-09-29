@@ -197,6 +197,13 @@ class ResultQualityFallbackTests(SimpleTestCase):
         self.assertEqual(required, ["조용함", "콘센트있음", "장기체류좋음"])
         self.assertFalse(needs_question)
 
+        complete = {"id": "db:3", "matched_conditions": ["조용함", "콘센트있음", "장기체류좋음"], "missing_conditions": []}
+        results, _, needs_question = _enforce_required_result_policy(
+            [partial, unknown, complete], frame, "조용하고 콘센트 있고 오래 머물기 좋은 카페",
+        )
+        self.assertEqual(results, [complete, partial])
+        self.assertFalse(needs_question)
+
 
 class DerivedShoppingCandidateTests(TestCase):
     def test_groups_tenant_rows_into_their_parent_shopping_venue(self):

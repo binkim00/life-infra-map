@@ -4485,11 +4485,12 @@ def _enforce_required_result_policy(results, frame, query, *, allow_unverified=F
     if not required or allow_unverified or _allows_unverified_result_relaxation(query):
         return results, required, False
     confirmed = [result for result in results if not (result.get("missing_conditions") or [])]
-    if confirmed:
-        return confirmed, required, False
-    partial = [result for result in results if result.get("matched_conditions")]
-    if partial:
-        return partial, required, False
+    partial = [
+        result for result in results
+        if result.get("missing_conditions") and result.get("matched_conditions")
+    ]
+    if confirmed or partial:
+        return [*confirmed, *partial], required, False
     return [], required, bool(results)
 
 
