@@ -1317,11 +1317,9 @@ def map_place_search(request):
     # 업종 substring으로 고유명사를 완화하지 않고 저장 DB도 항상 병합한다.
     if is_separated_place_search and name_query:
         if name_query.endswith("역") and len(tokenize_query(name_query)[0]) == 1 and resolved_anchor.get("status") == "resolved":
-            # Station names are already compact. Avoid a full-table REPLACE
-            # on both text columns for this common landmark lookup.
-            db_queryset = Place.objects.filter(
-                Q(name__icontains=name_query) | Q(address__icontains=name_query)
-            )
+            # The provider supplies nearby businesses. Broad name/address
+            # substring matching scans hundreds of thousands of station shops.
+            db_queryset = Place.objects.filter(name=name_query)
         else:
             db_queryset = Place.objects.annotate(
                 search_name=Replace("name", Value(" "), Value("")),
@@ -1644,6 +1642,19 @@ def map_place_search(request):
     if search_radius and search_lat is not None and search_lng is not None:
         combined_results = [p for p in combined_results if p.get("distance") is not None and p["distance"] <= search_radius]
     combined_results = merge_map_place_results(combined_results)
+    if name_query.endswith("역") and not category_query and not matched_basic_categories:
+        transport_tokens = ("기차,철도", "지하철,전철", "transport")
+        has_exact_station = any(
+            kakao_place_name_match_rank(p, name_query) == 0
+            and any(token in str(p.get("category", "")) for token in transport_tokens)
+            for p in combined_results
+        )
+        if has_exact_station:
+            combined_results = [
+                p for p in combined_results
+                if kakao_place_name_match_rank(p, name_query) != 0
+                or any(token in str(p.get("category", "")) for token in transport_tokens)
+            ]
     # 정확한 장소가 수집됐다면 이름에 검색어만 포함된 다른 업종은 후순위다.
     # 같은 상호와 지점은 같은 그룹에서 거리순으로 비교한다.
     exact_categories = {

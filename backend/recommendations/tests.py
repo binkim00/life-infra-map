@@ -8678,6 +8678,7 @@ class RecommendationSearchTests(TestCase):
         self.assertTrue(all(call.kwargs["lat"] > 37 for call in mock_kakao.call_args_list))
         self.assertEqual(mock_kakao.call_args_list[1].kwargs["keyword"], "서울역 기차역")
         self.assertEqual(data["results"][0]["category"], "교통,수송 > 기차,철도 > 기차역")
+        self.assertFalse(any(row["name"] == "서울역" and row["category"] == "smoking_area" for row in data["results"]))
 
         Place.objects.create(
             name="갈라진역", category="cafe", lat=35.1, lng=129.0,
