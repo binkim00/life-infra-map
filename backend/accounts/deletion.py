@@ -10,7 +10,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from accounts.models import UserProfile
-from boards.models import Comment, Post
+from boards.models import Comment, Notification, Post
 from recommendations.models import PlaceInteractionEvent, PlaceReportImage, PlaceTagEvidence
 
 
@@ -68,6 +68,7 @@ def delete_my_account(request):
         Post.objects.filter(author=user).update(author=author, image=None)
         Comment.objects.filter(author=user).update(author=author)
         # These references use SET_NULL, which would otherwise retain user activity.
+        Notification.objects.filter(sender=user).delete()
         PlaceTagEvidence.objects.filter(user=user).delete()
         PlaceInteractionEvent.objects.filter(user=user).delete()
         user.delete()

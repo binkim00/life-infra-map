@@ -34,9 +34,10 @@ address cannot be verified; the filter then uses the TCP peer. Recheck this
 address after recreating the gateway container. Do not trust the entire Docker
 subnet, because another container could forge the header.
 
-The gateway must have `TRUSTED_EDGE_IP` set to the exact host bridge address
+The gateway's public port 3001 must have `TRUSTED_EDGE_IP` set to the exact host bridge address
 seen by Nginx for the host-network Caddy connection. Confirm both addresses
 with `docker inspect` on the server before changing the containers. Test two
 separate client IPs, a forged `X-Forwarded-For` request, and direct private
-access before calling this effective in production. Rollback is the previous
+access through port 3000, which must never trust forwarded headers, before
+calling this effective in production. Rollback is the previous
 gateway image and Spring image plus their saved environment files.

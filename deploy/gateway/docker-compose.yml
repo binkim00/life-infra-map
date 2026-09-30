@@ -14,6 +14,7 @@ services:
       TRUSTED_EDGE_IP: ${TRUSTED_EDGE_IP:-127.0.0.1}
     ports:
       - "127.0.0.1:${GATEWAY_PORT:-3000}:3000"
+      - "127.0.0.1:${PUBLIC_GATEWAY_PORT:-3001}:3001"
     networks:
       - runtime-db
     mem_limit: ${GATEWAY_MEMORY_LIMIT:-128m}

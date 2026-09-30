@@ -7,7 +7,7 @@ import tempfile
 from rest_framework.test import APIClient
 
 from accounts.models import UserProfile
-from boards.models import Comment, Inquiry, Post
+from boards.models import Comment, Inquiry, Notification, Post
 
 
 class AccountDeletionTests(TestCase):
@@ -21,6 +21,10 @@ class AccountDeletionTests(TestCase):
         post = Post.objects.create(author=self.user, title="제목", content="본문")
         comment = Comment.objects.create(author=self.user, post=post, content="댓글")
         inquiry = Inquiry.objects.create(author=self.user, title="문의", content="비공개 내용")
+        recipient = User.objects.create_user(username="recipient", password="test-password")
+        sent_notification = Notification.objects.create(
+            sender=self.user, recipient=recipient, title="개인 메시지", message="개인 정보"
+        )
 
         response = self.client.post("/api/account-deletion/", {
             "username": "leaving", "confirmation": "계정 삭제",
@@ -35,6 +39,7 @@ class AccountDeletionTests(TestCase):
         self.assertFalse(post.author.is_active)
         self.assertFalse(post.author.has_usable_password())
         self.assertFalse(Inquiry.objects.filter(pk=inquiry.pk).exists())
+        self.assertFalse(Notification.objects.filter(pk=sent_notification.pk).exists())
 
     def test_requires_exact_confirmation(self):
         response = self.client.post("/api/account-deletion/", {
