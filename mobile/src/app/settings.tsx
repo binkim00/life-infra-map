@@ -1,8 +1,10 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useState } from "react";
+import { router } from "expo-router";
 import { useResource } from "@/hooks/use-resource";
 import { LoadState } from "@/components/load-state";
-import { StyleSheet, Switch, Text, View } from "react-native";
+import { Linking, Pressable, StyleSheet, Switch, Text, View } from "react-native";
+import { useAuth } from "@/auth/auth-context";
 import { Screen, ui } from "@/components/screen";
 import { Palette } from "@/constants/theme";
 const KEY = "lifeInfraSettings";
@@ -12,6 +14,7 @@ const DEFAULTS = {
   compactMode: false,
 };
 export default function SettingsScreen() {
+  const { isLoggedIn } = useAuth();
   const [settings, setSettings] = useState(DEFAULTS);
   const [saveError, setSaveError] = useState("");
   const { loading, error, reload } = useResource(async () => {
@@ -71,6 +74,18 @@ export default function SettingsScreen() {
           </View>
         ))}
       </View>
+      {isLoggedIn ? (
+        <Pressable style={[ui.card, styles.row]} onPress={() => router.push("/account-deletion")}>
+          <Text style={styles.title}>계정 삭제</Text>
+          <Text style={ui.muted}>계정과 연관 데이터를 삭제합니다.</Text>
+        </Pressable>
+      ) : null}
+      <Pressable style={[ui.card, styles.row]} onPress={() => void Linking.openURL("https://yeogiljido.com/privacy.html")}>
+        <Text style={styles.title}>개인정보처리방침</Text>
+      </Pressable>
+      <Pressable style={[ui.card, styles.row]} onPress={() => void Linking.openURL("https://yeogiljido.com/support.html")}>
+        <Text style={styles.title}>고객 지원</Text>
+      </Pressable>
     </Screen>
   );
 }

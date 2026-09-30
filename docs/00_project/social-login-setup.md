@@ -2,12 +2,12 @@
 
 코드는 기본적으로 비활성화되어 있다. 공급자 앱 설정과 실제 인증 왕복을 확인한 뒤에만 켠다.
 
-현재 공개 서비스 주소가 `https://life-infra-map-db.taile29cc8.ts.net`인 동안 세 공급자의 웹 로그인 리다이렉트 URI는 다음과 같다.
+공개 도메인으로 전환할 때 세 공급자 콘솔에 아래 리다이렉트 URI를 추가하고 실제 왕복을 확인한다. 기존 내부 주소는 기존 앱 검증이 끝나기 전까지 제거하지 않는다.
 
 ```
-https://life-infra-map-db.taile29cc8.ts.net/spring/api/login/oauth2/code/google
-https://life-infra-map-db.taile29cc8.ts.net/spring/api/login/oauth2/code/naver
-https://life-infra-map-db.taile29cc8.ts.net/spring/api/login/oauth2/code/kakao
+https://yeogiljido.com/spring/api/login/oauth2/code/google
+https://yeogiljido.com/spring/api/login/oauth2/code/naver
+https://yeogiljido.com/spring/api/login/oauth2/code/kakao
 ```
 
 Google OAuth 클라이언트는 웹 애플리케이션 유형으로 만들고 승인된 리다이렉트 URI를 등록한다. Kakao는 카카오 로그인과 이메일 동의 항목을 확인한다. Naver 앱은 네이버 로그인 API를 켠다. Naver는 이메일 검증 플래그가 없어 이메일이 제공되더라도 기존 계정에 자동 연결하지 않는다. 이 주소는 공개 도메인이 바뀌면 공급자 콘솔과 서버를 함께 수정해야 한다.
@@ -20,7 +20,7 @@ Google OAuth 클라이언트는 웹 애플리케이션 유형으로 만들고 �
 
 ```
 SOCIAL_LOGIN_ENABLED=true
-SOCIAL_PUBLIC_BASE_URL=https://life-infra-map-db.taile29cc8.ts.net
+SOCIAL_PUBLIC_BASE_URL=https://yeogiljido.com
 SOCIAL_GOOGLE_CLIENT_ID=...
 SOCIAL_GOOGLE_CLIENT_SECRET=...
 SOCIAL_NAVER_CLIENT_ID=...
