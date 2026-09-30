@@ -17,6 +17,7 @@ import { PlaceDetailSheet } from "@/components/place-detail-sheet";
 import { PlaceMap } from "@/components/place-map";
 import { INPUT_PLACEHOLDER_COLOR, Screen, ui } from "@/components/screen";
 import type { Place } from "@/types/place";
+import { savedPlacePayload } from "@/utils/saved-place-payload";
 
 type AiPlace = Place & {
   source?: string;
@@ -435,23 +436,7 @@ export default function RecommendScreen() {
     if (!selected || actionBusy || !requireLogin()) return;
     try {
       setActionBusy("save");
-      await recommendationApi.savePlace({
-        placeKey: `${selected.source || "db"}:${selected.external_id || selected.place_id || selected.id}`,
-        placeId:
-          selected.place_id ||
-          Number(String(selected.id).replace("db:", "")) ||
-          null,
-        externalId: selected.external_id || "",
-        source: selected.source || "db",
-        name: selected.name,
-        category: selected.category,
-        address: selected.address,
-        lat: selected.lat,
-        lng: selected.lng,
-        detailUrl: selected.place_url || "",
-        kakaoPlaceUrl: selected.kakao_place_url || "",
-        raw: {},
-      });
+      await recommendationApi.savePlace(savedPlacePayload(selected));
       setMessage("장소를 저장했습니다.");
     } catch {
       setMessage("장소를 저장하지 못했습니다. 다시 시도해 주세요.");

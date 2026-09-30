@@ -25,6 +25,7 @@ import {
   Spacing,
 } from "@/constants/theme";
 import type { Place } from "@/types/place";
+import { savedPlacePayload } from "@/utils/saved-place-payload";
 
 type SearchRequestBasis = {
   query: string;
@@ -367,20 +368,7 @@ export default function ExploreScreen() {
     if (!target || saveBusy || !requireLogin()) return;
     try {
       setSaveBusy(true);
-      await recommendationApi.savePlace({
-        placeKey: `${target.result_source || "db"}:${target.external_id || target.id}`,
-        placeId: target.result_source === "db" ? target.id : null,
-        externalId: target.external_id || "",
-        source: target.result_source || "db",
-        name: target.name,
-        category: target.category,
-        address: target.address,
-        lat: target.lat,
-        lng: target.lng,
-        detailUrl: target.place_url || "",
-        kakaoPlaceUrl: target.kakao_place_url || "",
-        raw: {},
-      });
+      await recommendationApi.savePlace(savedPlacePayload(target));
       setMessage("장소를 저장했습니다.");
       setDetailVisible(false);
     } catch (error) {
