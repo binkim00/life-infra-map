@@ -17,7 +17,7 @@ class AccountDeletionTests(TestCase):
         self.client = APIClient()
         self.client.force_authenticate(user=self.user)
 
-    def test_deletes_account_and_private_data_but_anonymizes_public_content(self):
+    def test_deletes_account_comments_and_private_data_but_anonymizes_posts(self):
         post = Post.objects.create(author=self.user, title="제목", content="본문")
         comment = Comment.objects.create(author=self.user, post=post, content="댓글")
         inquiry = Inquiry.objects.create(author=self.user, title="문의", content="비공개 내용")
@@ -33,8 +33,7 @@ class AccountDeletionTests(TestCase):
         self.assertEqual(response.status_code, 204)
         self.assertFalse(User.objects.filter(pk=self.user.pk).exists())
         post.refresh_from_db()
-        comment.refresh_from_db()
-        self.assertEqual(post.author_id, comment.author_id)
+        self.assertFalse(Comment.objects.filter(pk=comment.pk).exists())
         self.assertEqual(post.author.profile.nickname, "탈퇴한 사용자 (시스템)")
         self.assertFalse(post.author.is_active)
         self.assertFalse(post.author.has_usable_password())

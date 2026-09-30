@@ -66,7 +66,7 @@ def delete_my_account(request):
             if report_image.image:
                 files.append((report_image.image.storage, report_image.image.name))
         Post.objects.filter(author=user).update(author=author, image=None)
-        Comment.objects.filter(author=user).update(author=author)
+        Comment.objects.filter(author=user).delete()
         # These references use SET_NULL, which would otherwise retain user activity.
         Notification.objects.filter(sender=user).delete()
         PlaceTagEvidence.objects.filter(user=user).delete()

@@ -35,7 +35,7 @@ export default function AccountDeletionScreen() {
 
   const confirmDeletion = () => Alert.alert(
     "계정을 삭제할까요?",
-    "계정·저장·문의·제보 정보가 삭제됩니다. 게시글과 댓글은 작성자 표시가 익명화되고, 백업은 30일 후 만료됩니다. 이 작업은 되돌릴 수 없습니다.",
+    "계정·댓글·저장·문의·제보 정보가 삭제됩니다. 게시글은 작성자 표시가 익명화되고, 백업은 30일 후 만료됩니다. 이 작업은 되돌릴 수 없습니다.",
     [
       { text: "취소", style: "cancel" },
       { text: "삭제", style: "destructive", onPress: () => void removeAccount() },
