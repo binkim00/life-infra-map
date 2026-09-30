@@ -229,7 +229,7 @@ class Report(models.Model):
                 condition=(
                     models.Q(post__isnull=False, comment__isnull=True)
                     | models.Q(post__isnull=True, comment__isnull=False)
-                    | models.Q(status="penalized", post__isnull=True, comment__isnull=True)
+                    | models.Q(status__in=["passed", "penalized"], post__isnull=True, comment__isnull=True)
                 ),
                 name="report_has_exactly_one_target",
             )

@@ -191,7 +191,7 @@ export default function BoardDetailScreen() {
             ) : (
               <Text style={styles.comment}>{item.content}</Text>
             )}
-            <View style={ui.row}>
+            <View style={[ui.row, styles.commentActions]}>
               <Pressable
                 disabled={interaction.busy}
                 onPress={() => interaction.run(async () => {
@@ -234,6 +234,8 @@ export default function BoardDetailScreen() {
                   </Pressable>
                 </>
               ) : null}
+            </View>
+            <View style={[ui.row, styles.commentReport]}>
               <TextInput
                 value={commentReportDrafts[item.id] || ""}
                 onChangeText={(value) => setCommentReportDrafts((current) => ({ ...current, [item.id]: value }))}
@@ -314,6 +316,8 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   action: { color: "#0F766E", fontSize: 11, fontWeight: "800" },
+  commentActions: { flexWrap: "wrap" },
+  commentReport: { marginTop: 10 },
   replyBox: { marginTop: 10 },
   reply: {
     marginTop: 10,

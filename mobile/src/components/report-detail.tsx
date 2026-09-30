@@ -135,7 +135,7 @@ export function ReportDetail({
           {reportPlace ? (
             <View style={styles.mapCard}>
               <Text style={styles.sectionTitle}>제보 위치</Text>
-              <PlaceMap place={reportPlace} displayMode="selected" focusSelected fitBoundsKey={`report-detail:${id}`} />
+              <PlaceMap place={reportPlace} displayMode="selected" focusSelected fitBoundsKey={`report-detail:${id}`} height={220} />
             </View>
           ) : (
             <Text style={ui.muted}>지도에 표시할 위치가 없습니다.</Text>
@@ -144,16 +144,19 @@ export function ReportDetail({
             <Text style={ui.success}>검토 메모: {data.admin_note}</Text>
           ) : null}
           {data.images?.length ? (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              {data.images.map((image) => (
-                <Image
-                  key={image.id}
-                  source={{ uri: image.image_url }}
-                  style={{ width: 180, height: 140, marginRight: 8 }}
-                  resizeMode="cover"
-                />
-              ))}
-            </ScrollView>
+            <View style={styles.photos}>
+              <Text style={styles.sectionTitle}>첨부 사진 {data.images.length}장</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                {data.images.map((image) => (
+                  <Image
+                    key={image.id}
+                    source={{ uri: image.image_url }}
+                    style={styles.photo}
+                    resizeMode="cover"
+                  />
+                ))}
+              </ScrollView>
+            </View>
           ) : (
             <Text style={ui.muted}>첨부 사진 없음</Text>
           )}
@@ -213,6 +216,8 @@ const styles = StyleSheet.create({
   receiptIcon: { width: 38, height: 38, paddingTop: 7, borderRadius: 19, overflow: "hidden", backgroundColor: "#16875B", color: "#FFFFFF", fontSize: 18, fontWeight: "900", textAlign: "center" },
   receiptTitle: { color: "#116B49", fontSize: 15, fontWeight: "900" },
   mapCard: { gap: 10 },
+  photos: { gap: 10 },
+  photo: { width: 180, height: 140, marginRight: 8, borderRadius: 12, backgroundColor: "#E9ECEA" },
   sectionTitle: { color: "#17201D", fontSize: 16, fontWeight: "900" },
   footerActions: { flexDirection: "row", gap: 8 },
   footerButton: { flex: 1 },

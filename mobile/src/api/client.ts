@@ -1,5 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as SecureStore from "expo-secure-store";
+import { fetch as expoFetch } from "expo/fetch";
 import { Platform } from "react-native";
 
 import {
@@ -263,7 +264,8 @@ export async function apiRequest<T>(
           requestController.abort();
         }, timeoutMs);
         try {
-          return await fetch(url, {
+          const requestFetch = formData ? expoFetch : fetch;
+          return await requestFetch(url, {
             ...requestOptions,
             headers,
             signal: requestController.signal,

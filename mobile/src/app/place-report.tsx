@@ -1,4 +1,5 @@
 import * as ImagePicker from "expo-image-picker";
+import { File } from "expo-file-system";
 import { searchLocation } from "@/utils/location";
 import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
@@ -181,7 +182,7 @@ function PlaceReportForm({ params }: { params: ReportParams }) {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ["images"],
         allowsMultipleSelection: true,
-        selectionLimit: 5,
+        selectionLimit: 3,
         quality: 0.8,
       });
       if (!result.canceled) {
@@ -211,13 +212,10 @@ function PlaceReportForm({ params }: { params: ReportParams }) {
     body.append("suggested_lng", lng);
     body.append("description", description);
     body.append("suggested_tags", JSON.stringify(tags));
-    images.forEach((image) =>
-      body.append("images", {
-        uri: image.uri,
-        name: image.fileName || "report.jpg",
-        type: image.mimeType || "image/jpeg",
-      } as unknown as Blob),
-    );
+    images.forEach((image) => {
+      const file = new File(image.uri);
+      body.append("images", file, image.fileName || file.name);
+    });
     try {
       setLoading(true);
       const receipt = await recommendationApi.createPlaceReport(body);
@@ -345,6 +343,7 @@ function PlaceReportForm({ params }: { params: ReportParams }) {
       <PlaceMap
         place={pickedPlace}
         displayMode="selected"
+        height={240}
         onMapPress={chooseMapCoordinate}
         onRequestCurrentLocation={locate}
         currentLocation={deviceLocation}
@@ -379,7 +378,7 @@ function PlaceReportForm({ params }: { params: ReportParams }) {
       />
       <Pressable accessibilityRole="button" onPress={pick} style={ui.buttonSecondary}>
         <Text style={ui.buttonSecondaryText}>
-          사진 선택 ({images.length}/5)
+          사진 선택 ({images.length}/3)
         </Text>
       </Pressable>
       <View style={styles.images}>

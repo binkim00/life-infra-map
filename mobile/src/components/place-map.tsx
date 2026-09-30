@@ -36,6 +36,7 @@ export function PlaceMap({
   displayMode = "overview",
   focusSelected = false,
   expanded = false,
+  height,
   currentLocation = null,
   fitBoundsKey,
 }: {
@@ -48,6 +49,7 @@ export function PlaceMap({
   displayMode?: "overview" | "selected";
   focusSelected?: boolean;
   expanded?: boolean;
+  height?: number;
   currentLocation?: { lat: number; lng: number } | null;
   fitBoundsKey?: string | number;
 }) {
@@ -227,7 +229,7 @@ export function PlaceMap({
   }, [sendState]);
 
   return (
-    <View style={[styles.map, expanded && styles.expandedMap]}>
+    <View style={[styles.map, expanded && styles.expandedMap, height != null && { height }]}>
       <WebView
         key={reloadKey}
         ref={webViewRef}

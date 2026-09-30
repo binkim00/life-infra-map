@@ -7364,6 +7364,18 @@ class RecommendationSearchTests(TestCase):
         self.assertEqual(report.place, self.place)
         self.assertEqual(report.suggested_tags, ["와이파이"])
 
+    def test_new_place_report_requires_name_and_coordinates(self):
+        response = self.client.post(
+            "/api/recommendations/place-reports/",
+            {"report_type": "new_place", "description": "사진만 첨부된 제보"},
+            **self._auth_headers(),
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("suggested_name", response.json())
+        self.assertIn("location", response.json())
+        self.assertFalse(PlaceReport.objects.exists())
+
     def test_anonymous_user_cannot_create_place_report(self):
         response = self.client.post(
             "/api/recommendations/place-reports/",
@@ -7564,6 +7576,28 @@ class RecommendationSearchTests(TestCase):
                 is_verified=True,
             ).exists()
         )
+
+    def test_tag_suggestion_approval_maps_mobile_label_to_canonical_tag(self):
+        tag = Tag.objects.create(name="주차가능", tag_type="recommendation")
+        report = PlaceReport.objects.create(
+            user=self.user,
+            place=self.place,
+            report_type="tag_suggestion",
+            suggested_tags=["주차 가능"],
+            description="앱에서 고른 태그",
+        )
+
+        response = self.client.post(
+            f"/api/recommendations/admin/place-reports/{report.id}/approve/",
+            data=json.dumps({"admin_note": "확인했습니다."}, ensure_ascii=False),
+            content_type="application/json",
+            **self._staff_headers(),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["created_place_tags"], 1)
+        self.assertEqual(response.json()["skipped_tags"], [])
+        self.assertTrue(PlaceTag.objects.filter(place=self.place, tag=tag).exists())
 
     @patch("recommendations.views.search_places_by_keyword", return_value={"documents": []})
     def test_tag_suggestion_approval_makes_tag_searchable_on_general_map(self, mock_kakao):
@@ -8164,6 +8198,26 @@ class RecommendationSearchTests(TestCase):
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0]["kakao_place_id"], "20046338")
         self.assertEqual(results[0]["duplicate_count"], 2)
+
+    def test_map_place_merge_same_shop_and_road_address_with_offset_coordinates(self):
+        rows = merge_map_place_results([
+            {
+                "id": 914347, "name": "컴포즈커피 삼성전기 부산사업장점",
+                "address": "부산광역시 강서구 녹산산업중로 333, 14호동 2층 일부 (송정동)",
+                "lat": 35.0957064, "lng": 128.8559863,
+                "category": "cafe", "result_source": "db",
+            },
+            {
+                "id": 1694712, "name": "컴포즈커피삼성전기부산사업장점",
+                "address": "부산광역시 강서구 녹산산업중로 333",
+                "lat": 35.0961028, "lng": 128.8577476,
+                "category": "cafe", "result_source": "db",
+            },
+        ])
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["id"], 914347)
+        self.assertEqual(rows[0]["duplicate_count"], 2)
 
     @patch("recommendations.views.search_places_by_keyword", return_value={"documents": []})
     def test_general_map_search_matches_all_tokens_in_multi_word_query(self, mock_kakao):

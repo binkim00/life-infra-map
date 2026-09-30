@@ -6,6 +6,7 @@ import { useState } from "react";
 import { Alert, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { boardsApi } from "@/api/boards";
 import { INPUT_PLACEHOLDER_COLOR, Screen, ui } from "@/components/screen";
+import { tierDisplay } from "@/utils/tier-display";
 type UserData = {
   id?: number;
   username?: string;
@@ -14,6 +15,8 @@ type UserData = {
   role?: string;
   contribution?: number;
   contribution_score?: number;
+  tier?: string;
+  tier_label?: string;
   penalties?: unknown[];
   posts?: unknown[];
   comments?: unknown[];
@@ -85,7 +88,9 @@ export default function AdminUserDetailScreen() {
   return (
     <Screen
       title={data.nickname || data.username || "회원 상세"}
-      subtitle={`${data.email || ""} · 기여도 ${data.contribution ?? data.contribution_score ?? 0}`}
+      subtitle={data.id
+        ? `${data.email ? `${data.email} · ` : ""}${tierDisplay(data).label} · 기여도 ${data.contribution ?? data.contribution_score ?? 0}`
+        : "회원 정보를 불러오는 중입니다."}
       back
     >
       <LoadState loading={loading} error={error} retry={load} />

@@ -23,6 +23,14 @@ type Preference = {
   preference_type?: string;
 };
 
+const readableTag = (value?: string) => {
+  const label = String(value || "").trim()
+    .replace(/^24시간(?=운영|개방)/, "24시간 ")
+    .replace(/^CCTV(?=있음)/, "CCTV ")
+    .replace(/후보$/, " (확인 필요)");
+  return label;
+};
+
 export default function PreferencesScreen() {
   const [message, setMessage] = useState("");
   const action = useAction();
@@ -110,7 +118,7 @@ export default function PreferencesScreen() {
                   <Text
                     style={[styles.tagText, active && styles.tagTextActive]}
                   >
-                    {tag.display_name || tag.name || tag.label}
+                    {readableTag(tag.display_name || tag.name || tag.label)}
                   </Text>
                 </Pressable>
               );
@@ -120,7 +128,7 @@ export default function PreferencesScreen() {
       ))}
       <View style={ui.card}>
         <Text style={styles.group}>검색 기반 자동 선호</Text>
-        <View style={styles.autoTags}>{preferences.filter((item) => item.source !== "direct").map((item) => <Text key={item.id} style={styles.autoTag}>{item.label || item.key}</Text>)}</View>
+        <View style={styles.autoTags}>{preferences.filter((item) => item.source !== "direct").map((item) => <Text key={item.id} style={styles.autoTag}>{readableTag(item.label || item.key)}</Text>)}</View>
       </View>
       <Pressable
         accessibilityRole="button"

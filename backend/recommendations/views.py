@@ -86,6 +86,7 @@ from .services.smoking_area_data import (
 )
 from .services.smoking_metadata import derive_smoking_metadata, matches_smoking_filters
 from .services.tag_utils import get_category_display_name, normalize_place_category
+from .services.canonical_tag_policy import canonical_tag_name
 from .services.user_preferences import (
     USER_SELECTED_SOURCE,
     create_or_update_user_selected_preference,
@@ -639,6 +640,10 @@ def attach_report_tags_to_place(report, place, *, create_missing_tags=False):
 
     for tag_label in unique_valid_labels(report.suggested_tags):
         tag = Tag.objects.filter(name=tag_label).first()
+        if not tag:
+            canonical_name = canonical_tag_name(tag_label)
+            if canonical_name:
+                tag = Tag.objects.filter(name=canonical_name).first()
         if not tag and create_missing_tags:
             tag = Tag.objects.create(name=tag_label, tag_type="recommendation")
         if not tag:
@@ -1100,7 +1105,7 @@ def merge_map_place_results(results, *, max_distance_m=40):
                         distance <= 25 and min(len(first_key), len(second_key)) >= 5
                         and (first_key.startswith(second_key) or second_key.startswith(first_key))
                     )
-                if name_match and (distance <= max_distance_m or (same_address and distance <= 120)):
+                if name_match and (distance <= max_distance_m or (same_address and distance <= 200)):
                     duplicate_index = index
                     break
 
