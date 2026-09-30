@@ -30,7 +30,7 @@ const penaltyOptions = [
   ["suspend_7_days", "7일 정지", 7],
   ["suspend_30_days", "30일 정지", 30],
   ["suspend_1_year", "1년 정지", 365],
-  ["permanent_ban", "영구밴", 0],
+  ["permanent_ban", "영구 이용 제한", 0],
 ] as const;
 export default function AdminUserDetailScreen() {
   const action = useAction();

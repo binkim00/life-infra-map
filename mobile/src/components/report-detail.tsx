@@ -12,6 +12,7 @@ import {
 } from "@/constants/place-categories";
 import { PlaceMap } from "./place-map";
 import type { Place } from "@/types/place";
+import { placeReportStatusLabel, placeReportTypeLabel } from "@/utils/place-report-labels";
 
 type ReportData = {
   id?: number;
@@ -58,6 +59,7 @@ export function ReportDetail({
     reviewCategory || normalizePlaceCategory(data.suggested_category);
   const pendingAdmin = admin && Boolean(data.id) && !["approved", "rejected"].includes(data.status || "");
   const reportPlace: Place | null =
+    data.suggested_lat != null && data.suggested_lng != null &&
     Number.isFinite(Number(data.suggested_lat)) && Number.isFinite(Number(data.suggested_lng))
       ? {
           id: `report:${data.id || id}`,
@@ -102,7 +104,7 @@ export function ReportDetail({
         <View style={styles.receiptBanner}>
           <Text style={styles.receiptIcon}>✓</Text>
           <View style={ui.grow}>
-            <Text style={styles.receiptTitle}>안전하게 접수되었습니다</Text>
+            <Text style={styles.receiptTitle}>제보가 접수되었습니다</Text>
             <Text style={ui.muted}>검토 결과는 제보 내역과 알림에서 확인할 수 있어요.</Text>
           </View>
         </View>
@@ -115,8 +117,8 @@ export function ReportDetail({
               {data.suggested_name || data.place_name}
             </Text>
             <Text style={ui.muted}>
-              #{data.id} · {data.status_label || data.status} ·{" "}
-              {data.report_type_label}
+              #{data.id} · {placeReportStatusLabel(data.status, data.status_label)} ·{" "}
+              {placeReportTypeLabel(data.report_type, data.report_type_label)}
             </Text>
             <Text style={ui.muted}>
               {data.created_at

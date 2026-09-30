@@ -13,6 +13,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { recommendationApi, searchMapPlaces } from "@/api/recommendations";
+import { placeCategoryLabel } from "@/constants/place-categories";
 import { useAuth } from "@/auth/auth-context";
 import { PlacePhoto } from "@/components/place-photo";
 import { PlaceDetailSheet } from "@/components/place-detail-sheet";
@@ -101,8 +102,10 @@ export default function ExploreScreen() {
     placeId?: string;
     lat?: string;
     lng?: string;
+    searchRequest?: string;
   }>();
   const initialQuery = typeof params.q === "string" ? params.q : "";
+  const lastRouteRequestRef = useRef(JSON.stringify([params.q, params.placeId, params.lat, params.lng, params.searchRequest]));
   const initialLat = Number(params.lat);
   const initialLng = Number(params.lng);
   const hasInitialCenter =
@@ -228,6 +231,24 @@ export default function ExploreScreen() {
     },
     [query],
   );
+
+  useEffect(() => {
+    const routeRequest = JSON.stringify([params.q, params.placeId, params.lat, params.lng, params.searchRequest]);
+    if (lastRouteRequestRef.current === routeRequest) return;
+    const routeQuery = params.q?.trim();
+    if (!routeQuery) return;
+    const timer = setTimeout(() => {
+      lastRouteRequestRef.current = routeRequest;
+      const routeLat = Number(params.lat);
+      const routeLng = Number(params.lng);
+      if (params.lat && params.lng && Number.isFinite(routeLat) && Number.isFinite(routeLng)) {
+        setCenter({ lat: routeLat, lng: routeLng, label: "검색 위치" });
+        setLocationStatus("ready");
+      }
+      runSearch(routeQuery);
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [params.q, params.placeId, params.lat, params.lng, params.searchRequest, runSearch]);
 
   const resetSearch = () => {
     setQuery("");
@@ -666,11 +687,11 @@ export default function ExploreScreen() {
                       </Text>
                     </View>
                     <Text numberOfLines={1} style={styles.resultMeta}>
-                      {place.category_label || place.category} ·{" "}
+                      {placeCategoryLabel(place.category_label || place.category)} ·{" "}
                       {place.source_label ||
                         (place.result_source === "kakao"
                           ? "카카오 장소"
-                          : "LifeMap 저장 장소")}
+                          : "여기일지도에 저장된 장소")}
                     </Text>
                     {listVisible ? (
                       <Text numberOfLines={2} style={styles.resultMeta}>

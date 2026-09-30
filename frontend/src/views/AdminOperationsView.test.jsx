@@ -39,11 +39,12 @@ describe('AdminOperationsView', () => {
   it('renders admin KPIs and strategy efficiency', async () => {
     render(<MemoryRouter><AdminOperationsView /></MemoryRouter>)
     expect(await screen.findByText('장소 데이터 운영 현황')).toBeInTheDocument()
-    expect(await screen.findByText('candidate_hint')).toBeInTheDocument()
+    expect(await screen.findByText('후보 단서')).toBeInTheDocument()
     expect(screen.getAllByText('12').length).toBeGreaterThan(0)
-    expect(screen.getAllByText('NOT_MEASURED').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('집계 없음').length).toBeGreaterThan(0)
+    expect(screen.getByText('검색 응답 시간 집계가 없습니다.')).toBeInTheDocument()
     expect(screen.getByText('text-embedding-3-small')).toBeInTheDocument()
-    expect(screen.getByText(/ISOLATED_NOT_OPERATING/)).toBeInTheDocument()
+    expect(screen.getByText(/별도 시험 환경/)).toBeInTheDocument()
   })
 
   it('sends selected filters to the backend', async () => {

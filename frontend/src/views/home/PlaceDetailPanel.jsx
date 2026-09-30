@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 
 import { getFeedbackTagOptions } from '@/hooks/usePlaceInteractionTracking'
+import { placeCategoryLabel } from '@/utils/placeCategoryLabel'
 
 import {
   getPlaceSourceClass,
@@ -212,7 +213,7 @@ const PlaceDetailPanel = ({
           ) : null}
 
           {place.category ? (
-            <div className="info-row"><span>분류</span><p>{place.category}</p></div>
+            <div className="info-row"><span>분류</span><p>{placeCategoryLabel(place)}</p></div>
           ) : null}
 
           {place.address ? (

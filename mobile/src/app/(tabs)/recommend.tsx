@@ -79,7 +79,7 @@ const sourceLabel = (place: AiPlace) => {
   const source = String(place.source_name || place.source || place.result_source || "");
   if (source.includes("kakao")) return "카카오 장소";
   if (source.includes("web")) return "웹 조사 후보";
-  return "LifeMap 저장 장소";
+  return "여기일지도에 저장된 장소";
 };
 
 const optionValue = (
@@ -138,6 +138,7 @@ export default function RecommendScreen() {
     lat?: string;
     lng?: string;
     selectedFilters?: string;
+    searchRequest?: string;
   }>();
   const { requireLogin, isLoggedIn } = useAuth();
   const initialLat = Number(params.lat);
@@ -176,7 +177,7 @@ export default function RecommendScreen() {
     NonNullable<AiResponse["clarification_options"]>
   >([]);
   const sessionRef = useRef<ConversationSession | null>(null);
-  const initialQuerySentRef = useRef(false);
+  const lastRouteRequestRef = useRef("");
   const needsWebFallback =
     results.length < 5 ||
     results
@@ -306,25 +307,29 @@ export default function RecommendScreen() {
   const search = (next = query) => void submitTurn(next);
 
   useEffect(() => {
-    void createSession()
-      .then(() => {
-        if (params.q && !initialQuerySentRef.current) {
-          initialQuerySentRef.current = true;
-          let selectedFilters;
-          try {
-            selectedFilters = params.selectedFilters ? JSON.parse(params.selectedFilters) : undefined;
-          } catch {
-            selectedFilters = undefined;
-          }
-          void submitTurn(params.q, undefined, selectedFilters);
-        }
-      })
-      .catch(() =>
-        setMessage("대화 준비에 실패했습니다. 검색을 누르면 다시 연결합니다."),
-      );
-    // 새 화면마다 독립된 대화를 시작합니다.
+    const routeQuery = params.q?.trim();
+    if (!routeQuery || loading) return;
+    const routeRequest = JSON.stringify([routeQuery, params.selectedFilters, params.searchRequest]);
+    if (lastRouteRequestRef.current === routeRequest) return;
+    lastRouteRequestRef.current = routeRequest;
+    const previous = sessionRef.current;
+    sessionRef.current = null;
+    if (previous) void recommendationApi.closeConversationSession(previous.id, previous.token).catch(() => undefined);
+    setResults([]);
+    setSelected(null);
+    setSearchPlan(null);
+    setWebResults([]);
+    setCanSearchWeb(false);
+    setChatMessages([{ id: `greeting-${Date.now()}`, role: "assistant", text: GREETING }]);
+    let selectedFilters;
+    try {
+      selectedFilters = params.selectedFilters ? JSON.parse(params.selectedFilters) : undefined;
+    } catch {
+      selectedFilters = undefined;
+    }
+    void submitTurn(routeQuery, undefined, selectedFilters);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [params.q, params.selectedFilters, params.searchRequest, loading]);
 
   const resetConversation = async () => {
     const previous = sessionRef.current;

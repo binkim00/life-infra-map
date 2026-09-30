@@ -37,6 +37,7 @@ export default function HomeScreen() {
       pathname: "/explore",
       params: {
         q: trimmed || undefined,
+        searchRequest: String(Date.now()),
         lat: nearbyCenter ? String(nearbyCenter.lat) : undefined,
         lng: nearbyCenter ? String(nearbyCenter.lng) : undefined,
       },
@@ -72,6 +73,7 @@ export default function HomeScreen() {
     pathname: "/explore",
     params: {
       q: "공원",
+      searchRequest: String(Date.now()),
       placeId: place ? String(place.id) : undefined,
       lat: nearbyCenter ? String(nearbyCenter.lat) : undefined,
       lng: nearbyCenter ? String(nearbyCenter.lng) : undefined,

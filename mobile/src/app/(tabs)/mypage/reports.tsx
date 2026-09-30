@@ -17,6 +17,7 @@ type Report = {
   id: number;
   place_name?: string;
   report_type?: string;
+  suggested_category?: string;
   status?: string;
   description?: string;
   created_at?: string;
@@ -77,7 +78,7 @@ export default function MyReportsScreen() {
             style={({ pressed }) => [ui.card, styles.report, pressed && styles.pressed]}
           >
             <View style={ui.row}>
-              <PlacePhoto category={report.report_type === "new_place" ? "cafe" : undefined} fallback={report.id} width={58} height={58} style={styles.reportPhoto} />
+              <PlacePhoto category={report.suggested_category} fallback={report.id} width={58} height={58} style={styles.reportPhoto} />
               <View style={ui.grow}>
                 <Text style={styles.receipt}>제보 #{report.id}</Text>
                 <Text style={styles.name}>{report.place_name || "장소 이름 확인 중"}</Text>

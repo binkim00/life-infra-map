@@ -229,7 +229,7 @@ function PlaceDetailContent({
                 <Text style={styles.infoValue}>
                   {place.source_label ||
                     place.source_name ||
-                    "LifeMap 장소 데이터"}
+                    "여기일지도 장소 정보"}
                 </Text>
               </View>
               {smoking?.facility_type ? (

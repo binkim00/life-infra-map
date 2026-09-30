@@ -90,7 +90,7 @@ const LoginView = () => {
             <div className={styles.penaltyBox}>
               <strong>
                 {penaltyInfo.is_permanent_ban
-                  ? '현재 계정은 영구밴 상태입니다.'
+                  ? '현재 계정은 영구 이용 제한 상태입니다.'
                   : '현재 계정은 활동정지 상태입니다.'}
               </strong>
               {penaltyInfo.reason ? <p>사유: {penaltyInfo.reason}</p> : null}

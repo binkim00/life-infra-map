@@ -7,13 +7,16 @@ import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { boardsApi } from "@/api/boards";
 import { INPUT_PLACEHOLDER_COLOR, Screen, ui } from "@/components/screen";
 import { Palette, Radius } from "@/constants/theme";
+import { tierDisplay } from "@/utils/tier-display";
 type User = {
   id: number;
   username?: string;
   nickname?: string;
   email?: string;
   role?: string;
+  is_staff?: boolean;
   tier?: string;
+  tier_label?: string;
   contribution?: number;
   contribution_score?: number;
   is_active?: boolean;
@@ -62,8 +65,10 @@ export default function AdminUsersScreen() {
                   {user.username} · {user.email || "이메일 없음"}
                 </Text>
               </View>
-              <Text style={[styles.role, user.role === "ADMIN" && styles.roleAdmin]}>
-                {user.role || user.tier || "USER"}
+              <Text style={[styles.role, (user.is_staff || user.role === "ADMIN" || user.role === "ROLE_ADMIN") && styles.roleAdmin]}>
+                {user.is_staff || user.role === "ADMIN" || user.role === "ROLE_ADMIN"
+                  ? "관리자"
+                  : user.tier ? tierDisplay(user).label : "일반 회원"}
               </Text>
               <Text style={styles.chevron}>›</Text>
             </View>
