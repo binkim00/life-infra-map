@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { Palette, Shadow } from "@/constants/theme";
 import { AppIcon } from "@/components/app-icon";
+import { useAuth } from "@/auth/auth-context";
 
 const ITEMS = [
   { label: "홈", ios: "house.fill", android: "home", path: "/" as const },
@@ -14,10 +15,11 @@ const ITEMS = [
 
 export function BottomNav() {
   const pathname = usePathname();
+  const { isLoggedIn } = useAuth();
   return (
     <View style={styles.outer} pointerEvents="box-none">
       <View style={styles.nav}>
-        {ITEMS.map((item) => {
+        {ITEMS.filter((item) => item.path !== "/saved" || isLoggedIn).map((item) => {
           const active =
             item.path === "/"
               ? pathname === "/"
@@ -33,7 +35,11 @@ export function BottomNav() {
               accessibilityState={{ selected: active }}
               accessibilityLabel={item.label}
               onPress={() => {
-                if (!active) router.navigate(item.path as never);
+                if (item.path === "/mypage" && !isLoggedIn) {
+                  router.push("/login");
+                } else if (!active) {
+                  router.navigate(item.path as never);
+                }
               }}
               style={({ pressed }) => [styles.item, pressed && styles.pressed]}
             >

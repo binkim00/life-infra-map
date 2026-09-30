@@ -30,7 +30,7 @@ type AuthContextValue = {
   isAdmin: boolean;
   login: (username: string, password: string) => Promise<void>;
   exchangeSocialTicket: (ticket: string) => Promise<void>;
-  signup: (payload: FormData) => Promise<void>;
+  signup: (payload: FormData | Record<string, string>) => Promise<void>;
   logout: () => Promise<void>;
   refreshMe: () => Promise<void>;
   setUser: (user: AuthUser | null) => Promise<void>;

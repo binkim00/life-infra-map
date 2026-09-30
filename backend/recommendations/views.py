@@ -1381,6 +1381,10 @@ def map_place_search(request):
             )
         ):
             db_queryset = Place.objects.filter(category__in=usable_db_categories)
+        elif is_category_only_query(keyword) and matched_basic_categories == ["cafe"]:
+            # A cafe name in a restaurant row is not evidence that its saved
+            # category is cafe. Keep category-only results in the requested type.
+            db_queryset = Place.objects.filter(category="cafe")
     # 업종 substring으로 고유명사를 완화하지 않고 저장 DB도 항상 병합한다.
     if is_separated_place_search and name_query:
         if name_query.endswith("역") and len(tokenize_query(name_query)[0]) == 1 and resolved_anchor.get("status") == "resolved":
@@ -1402,11 +1406,12 @@ def map_place_search(request):
 
     category_prefiltered = bool(
         is_separated_place_search
-        and anchor_location
-        and category_query
         and len(matched_basic_categories) == 1
         and not name_query
-        and resolved_anchor.get("status") == "resolved"
+        and (
+            (anchor_location and category_query and resolved_anchor.get("status") == "resolved")
+            or (is_category_only_query(keyword) and db_queryset is not None)
+        )
     )
     if category_prefiltered:
         # The parsed category is already a precise DB predicate. Repeating

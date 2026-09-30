@@ -48,18 +48,26 @@ export default function SignupScreen() {
       return setError("아이디, 닉네임, 비밀번호를 입력해주세요.");
     if (form.password !== form.passwordConfirm)
       return setError("비밀번호가 일치하지 않습니다.");
-    const body = new FormData();
-    body.append("username", form.username);
-    body.append("nickname", form.nickname);
-    body.append("email", form.email);
-    body.append("password", form.password);
-    body.append("password_confirm", form.passwordConfirm);
-    if (image)
+    let body: FormData | Record<string, string> = {
+      username: form.username,
+      nickname: form.nickname,
+      email: form.email,
+      password: form.password,
+      password_confirm: form.passwordConfirm,
+    };
+    if (image) {
+      body = new FormData();
+      body.append("username", form.username);
+      body.append("nickname", form.nickname);
+      body.append("email", form.email);
+      body.append("password", form.password);
+      body.append("password_confirm", form.passwordConfirm);
       body.append("profile_image", {
         uri: image.uri,
         name: image.fileName || "profile.jpg",
         type: image.mimeType || "image/jpeg",
       } as unknown as Blob);
+    }
     try {
       setLoading(true);
       setError("");
