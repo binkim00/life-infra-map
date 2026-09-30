@@ -15,6 +15,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
+import org.springframework.security.web.util.matcher.IpAddressMatcher;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 /** 로그인·회원가입 무차별 요청을 인스턴스별로 제한합니다. */
@@ -24,12 +25,15 @@ public class PublicWriteRateLimitFilter extends OncePerRequestFilter {
     private final Map<String, Deque<Long>> attempts = new ConcurrentHashMap<>();
     private final int loginLimit;
     private final int signupLimit;
+    private final IpAddressMatcher trustedGateway;
 
     public PublicWriteRateLimitFilter(
             @Value("${app.rate-limit.login-per-minute:20}") int loginLimit,
-            @Value("${app.rate-limit.signup-per-minute:5}") int signupLimit) {
+            @Value("${app.rate-limit.signup-per-minute:5}") int signupLimit,
+            @Value("${app.rate-limit.trusted-gateway-cidr:}") String trustedGatewayCidr) {
         this.loginLimit = loginLimit;
         this.signupLimit = signupLimit;
+        this.trustedGateway = trustedGatewayCidr.isBlank() ? null : new IpAddressMatcher(trustedGatewayCidr);
     }
 
     @Override
@@ -48,7 +52,7 @@ public class PublicWriteRateLimitFilter extends OncePerRequestFilter {
             throws ServletException, IOException {
         String path = request.getRequestURI();
         int limit = "/api/accounts/signup".equals(path) ? signupLimit : loginLimit;
-        String key = path + ":" + request.getRemoteAddr();
+        String key = path + ":" + clientAddress(request);
         long now = Instant.now().toEpochMilli();
         long cutoff = now - 60_000;
         Deque<Long> timestamps = attempts.computeIfAbsent(key, ignored -> new ArrayDeque<>());
@@ -70,5 +74,15 @@ public class PublicWriteRateLimitFilter extends OncePerRequestFilter {
             return;
         }
         chain.doFilter(request, response);
+    }
+
+    private String clientAddress(HttpServletRequest request) {
+        String forwarded = request.getHeader("X-Real-IP");
+        if (trustedGateway != null && trustedGateway.matches(request.getRemoteAddr())
+                && forwarded != null && forwarded.length() <= 45
+                && forwarded.matches("[0-9a-fA-F:.]+")) {
+            return forwarded;
+        }
+        return request.getRemoteAddr();
     }
 }

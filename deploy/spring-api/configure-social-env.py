@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 ENV_PATH = Path(__file__).with_name(".env")
-PUBLIC_BASE_URL = "https://life-infra-map-db.taile29cc8.ts.net"
+PUBLIC_BASE_URL = "https://yeogiljido.com"
 PROVIDERS = ("GOOGLE", "NAVER", "KAKAO")
 
 

@@ -15,7 +15,7 @@ RUN npm run build
 
 FROM nginx:1.27-alpine
 
-COPY deploy/gateway/nginx.conf /etc/nginx/conf.d/default.conf
+COPY deploy/gateway/nginx.conf /etc/nginx/templates/default.conf.template
 COPY --from=frontend-builder /app/dist /usr/share/nginx/html
 
 EXPOSE 3000

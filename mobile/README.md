@@ -91,3 +91,8 @@ Keychain에 보관합니다. 기존 개발 빌드의 AsyncStorage 토큰은 최�
 - `EXPO_PUBLIC_KAKAO_MAP_EMBED_URL`
 
 현재 Tailscale HTTP 주소는 로컬 개발용이며 스토어 배포 주소로 사용하지 않습니다.
+
+`preview`와 `production` EAS 프로필은 현재 공개 주소 `https://yeogiljido.com`을
+사용합니다. 출시 빌드는 세 API/임베드 환경변수가 정확히 이 주소를 가리키지
+않으면 설정 단계에서 실패합니다. 이 설정만으로 실제 빌드, 실기기 동작,
+스토어 제출을 검증한 것은 아닙니다.

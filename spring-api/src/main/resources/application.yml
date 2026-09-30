@@ -33,6 +33,7 @@ app:
   rate-limit:
     login-per-minute: ${LOGIN_RATE_LIMIT_PER_MINUTE:20}
     signup-per-minute: ${SIGNUP_RATE_LIMIT_PER_MINUTE:5}
+    trusted-gateway-cidr: ${TRUSTED_GATEWAY_CIDR:}
   storage:
     # Django 와 같은 버킷을 씁니다. 값도 backend/.env 와 맞춰야 합니다.
     endpoint: ${S3_ENDPOINT_URL:http://127.0.0.1:9000}

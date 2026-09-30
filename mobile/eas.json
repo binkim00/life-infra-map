@@ -12,9 +12,9 @@
       "distribution": "internal",
       "environment": "preview",
       "env": {
-        "EXPO_PUBLIC_DJANGO_API_BASE_URL": "https://life-infra-map-db.taile29cc8.ts.net/django/api",
-        "EXPO_PUBLIC_SPRING_API_BASE_URL": "https://life-infra-map-db.taile29cc8.ts.net/spring/api",
-        "EXPO_PUBLIC_KAKAO_MAP_EMBED_URL": "https://life-infra-map-db.taile29cc8.ts.net/kakao-map-embed.html"
+        "EXPO_PUBLIC_DJANGO_API_BASE_URL": "https://yeogiljido.com/django/api",
+        "EXPO_PUBLIC_SPRING_API_BASE_URL": "https://yeogiljido.com/spring/api",
+        "EXPO_PUBLIC_KAKAO_MAP_EMBED_URL": "https://yeogiljido.com/kakao-map-embed.html"
       },
       "android": {
         "buildType": "apk"
@@ -24,9 +24,9 @@
       "autoIncrement": true,
       "environment": "production",
       "env": {
-        "EXPO_PUBLIC_DJANGO_API_BASE_URL": "https://life-infra-map-db.taile29cc8.ts.net/django/api",
-        "EXPO_PUBLIC_SPRING_API_BASE_URL": "https://life-infra-map-db.taile29cc8.ts.net/spring/api",
-        "EXPO_PUBLIC_KAKAO_MAP_EMBED_URL": "https://life-infra-map-db.taile29cc8.ts.net/kakao-map-embed.html"
+        "EXPO_PUBLIC_DJANGO_API_BASE_URL": "https://yeogiljido.com/django/api",
+        "EXPO_PUBLIC_SPRING_API_BASE_URL": "https://yeogiljido.com/spring/api",
+        "EXPO_PUBLIC_KAKAO_MAP_EMBED_URL": "https://yeogiljido.com/kakao-map-embed.html"
       }
     }
   },

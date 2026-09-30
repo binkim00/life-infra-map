@@ -1,21 +1,20 @@
 const DEFAULT_DJANGO_API =
   "https://life-infra-map-db.taile29cc8.ts.net/django/api";
-const PUBLIC_API_ENV_NAMES = [
-  "EXPO_PUBLIC_DJANGO_API_BASE_URL",
-  "EXPO_PUBLIC_SPRING_API_BASE_URL",
-  "EXPO_PUBLIC_KAKAO_MAP_EMBED_URL",
-];
+const PRODUCTION_ENDPOINTS = {
+  EXPO_PUBLIC_DJANGO_API_BASE_URL: "https://yeogiljido.com/django/api",
+  EXPO_PUBLIC_SPRING_API_BASE_URL: "https://yeogiljido.com/spring/api",
+  EXPO_PUBLIC_KAKAO_MAP_EMBED_URL: "https://yeogiljido.com/kakao-map-embed.html",
+};
 
 module.exports = ({ config }) => {
   const isProduction = process.env.EAS_BUILD_PROFILE === "production";
   if (isProduction) {
-    const invalidNames = PUBLIC_API_ENV_NAMES.filter((name) => {
-      const value = process.env[name] || "";
-      return !value.startsWith("https://");
-    });
+    const invalidNames = Object.entries(PRODUCTION_ENDPOINTS)
+      .filter(([name, expected]) => process.env[name] !== expected)
+      .map(([name]) => name);
     if (invalidNames.length) {
       throw new Error(
-        `Production builds require HTTPS values for: ${invalidNames.join(", ")}`,
+        `Production builds require public endpoints for: ${invalidNames.join(", ")}`,
       );
     }
   }
