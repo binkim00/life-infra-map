@@ -656,7 +656,7 @@ const MypageView = () => {
                 {data.penalty.is_suspended ? (
                   <div className={styles.penaltyDetail}>
                     <strong>
-                      {data.penalty.is_permanent_ban ? '영구밴 상태입니다.' : '활동정지 상태입니다.'}
+                      {data.penalty.is_permanent_ban ? '영구 이용 제한 상태입니다.' : '활동정지 상태입니다.'}
                     </strong>
                     {data.penalty.reason ? <p>사유 {data.penalty.reason}</p> : null}
                     {data.penalty.suspended_until ? (

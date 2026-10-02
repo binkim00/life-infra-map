@@ -23,6 +23,29 @@ class GeneralSearchContractTests(TestCase):
     def setUp(self):
         cache.clear()
 
+    @patch("recommendations.views.search_places_by_keyword", return_value={"documents": []})
+    def test_category_only_cafe_excludes_restaurants_with_cafe_in_name(self, _kakao):
+        from recommendations.models import Place
+
+        Place.objects.create(name="카페라는 이름의 음식점", external_id="restaurant-cafe", category="restaurant", lat=35.1544, lng=129.0606)
+        Place.objects.create(name="실제 카페", external_id="cafe", category="cafe", lat=35.1545, lng=129.0606)
+        response = self.client.get(self.url, {
+            "q": "카페", "source": "all", "lat": 35.1544, "lng": 129.0606,
+            "radius": 3000, "limit": 30, "detail_level": "summary",
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([place["category"] for place in response.json()["results"]], ["cafe"])
+
+    @patch("recommendations.views.search_places_by_keyword", return_value={"documents": []})
+    @patch("recommendations.views.search_saved_map_places", return_value=([], 0, {}))
+    def test_category_only_park_uses_precise_prefilter(self, db_search, _kakao):
+        self.client.get(self.url, {
+            "q": "공원", "source": "all", "lat": 35.1544, "lng": 129.0606,
+            "radius": 3000, "limit": 30,
+        })
+        self.assertTrue(db_search.call_args.kwargs["prefiltered"])
+        self.assertIn("city_park", str(db_search.call_args.kwargs["queryset"].query))
+
     def test_db_nearby_order_is_applied_before_result_limit(self):
         from recommendations.models import Place
         from recommendations.services.map_search import search_saved_places

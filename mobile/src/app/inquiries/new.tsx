@@ -1,22 +1,27 @@
 import { router } from "expo-router";
 import { useState } from "react";
+import { useFormDraft } from "@/hooks/use-form-draft";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { boardsApi } from "@/api/boards";
 import { INPUT_PLACEHOLDER_COLOR, Screen, ui } from "@/components/screen";
 import { Palette, Radius } from "@/constants/theme";
 const CATEGORIES = [["general", "일반 문의"], ["service_issue", "서비스 불편"], ["bug", "오류 신고"]] as const;
 export default function InquiryCreateScreen() {
-  const [category, setCategory] = useState<(typeof CATEGORIES)[number][0]>("general");
-  const [title, setTitle] = useState("");
-  const [content, setContent] = useState("");
+  const draft = useFormDraft("inquiry:new", { category: "general" as (typeof CATEGORIES)[number][0], title: "", content: "" });
+  const { category, title, content } = draft.value;
+  const setCategory = (value: (typeof CATEGORIES)[number][0]) => draft.update("category", value);
+  const setTitle = (value: string) => draft.update("title", value);
+  const setContent = (value: string) => draft.update("content", value);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const submit = async () => {
     if (!title.trim() || content.trim().length < 5)
       return setError("제목과 5자 이상의 내용을 입력해주세요.");
     try {
+      setError("");
       setLoading(true);
       await boardsApi.createInquiry({ title, content, category });
+      await draft.clear();
       router.replace("/inquiries/my");
     } catch {
       setError("문의 등록에 실패했습니다.");
@@ -31,11 +36,13 @@ export default function InquiryCreateScreen() {
       back
     >
       <View style={styles.notice}><Text style={styles.noticeIcon}>?</Text><View style={ui.grow}><Text style={styles.noticeTitle}>문의 전 확인해 주세요</Text><Text style={styles.noticeCopy}>장소 제보나 정보 수정은 장소 제보 메뉴를 이용하면 더 빠르게 처리됩니다.</Text></View></View>
+      {draft.error ? <Text style={ui.error}>{draft.error}</Text> : null}
       <View style={styles.form}>
         <Text style={ui.label}>문의 유형</Text>
         <View style={styles.categories}>{CATEGORIES.map(([value, label]) => <Pressable key={value} onPress={() => setCategory(value)} style={[styles.category, category === value && styles.categorySelected]}><Text style={category === value ? styles.categorySelectedText : styles.categoryText}>{label}</Text></Pressable>)}</View>
         <Text style={ui.label}>문의 제목</Text>
         <TextInput
+          editable={draft.ready}
           value={title}
           onChangeText={setTitle}
           placeholder="문의 제목"
@@ -44,6 +51,7 @@ export default function InquiryCreateScreen() {
         />
         <Text style={ui.label}>문의 내용</Text>
         <TextInput
+          editable={draft.ready}
           value={content}
           onChangeText={setContent}
           placeholder="문의 내용"
@@ -52,7 +60,7 @@ export default function InquiryCreateScreen() {
           style={ui.textarea}
         />
         {error ? <Text style={ui.error}>{error}</Text> : null}
-        <Pressable disabled={loading} onPress={submit} style={ui.button}>
+        <Pressable disabled={!draft.ready || loading} onPress={submit} style={ui.button}>
           <Text style={ui.buttonText}>
             {loading ? "등록 중..." : "문의 등록"}
           </Text>

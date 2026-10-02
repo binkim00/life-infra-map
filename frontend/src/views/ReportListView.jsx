@@ -12,7 +12,7 @@ const PENALTY_OPTIONS = [
   ['suspend_7_days', '7일 정지'],
   ['suspend_30_days', '30일 정지'],
   ['suspend_1_year', '1년 정지'],
-  ['permanent_ban', '영구밴'],
+  ['permanent_ban', '영구 이용 제한'],
 ]
 
 const REPORT_STATUS_OPTIONS = [

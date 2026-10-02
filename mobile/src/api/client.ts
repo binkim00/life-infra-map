@@ -1,5 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as SecureStore from "expo-secure-store";
+import { fetch as expoFetch } from "expo/fetch";
 import { Platform } from "react-native";
 
 import {
@@ -157,10 +158,24 @@ const renewAccess = async () => {
     refreshInFlight = (async () => {
       const stored = await authStorage.read();
       if (!stored.refreshToken) return false;
-      const response = await fetch(`${SPRING_API}/auth/refresh`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refresh_token: stored.refreshToken }),
-      });
+      const controller = new AbortController();
+      let didTimeout = false;
+      const timeout = setTimeout(() => { didTimeout = true; controller.abort(); }, DEFAULT_TIMEOUT_MS);
+      let response: Response;
+      try {
+        response = await fetch(`${SPRING_API}/auth/refresh`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ refresh_token: stored.refreshToken }),
+          signal: controller.signal,
+        });
+      } catch (error) {
+        if (didTimeout) throw new ApiError(408, null, TIMEOUT_ERROR_MESSAGE, "timeout");
+        throw error;
+      } finally {
+        clearTimeout(timeout);
+      }
+      if (response.status >= 500)
+        throw new ApiError(response.status, null, httpErrorMessage(response.status, null), "server");
       if (!response.ok) {
         if (response.status === 401 && (await authStorage.read()).refreshToken === stored.refreshToken)
           await authStorage.clear();
@@ -263,7 +278,8 @@ export async function apiRequest<T>(
           requestController.abort();
         }, timeoutMs);
         try {
-          return await fetch(url, {
+          const requestFetch = formData ? expoFetch : fetch;
+          return await requestFetch(url, {
             ...requestOptions,
             headers,
             signal: requestController.signal,
@@ -303,8 +319,9 @@ export async function apiRequest<T>(
       try {
         if ((current.token && current.token !== requestToken) || await renewAccess())
           return apiRequest<T>(path, { ...options, authRetried: true });
-      } catch {
+      } catch (error) {
         // A network failure during renewal does not prove the session expired.
+        if (error instanceof ApiError) throw error;
         throw new ApiError(0, null, CONNECTION_ERROR_MESSAGE, "connection");
       }
     }

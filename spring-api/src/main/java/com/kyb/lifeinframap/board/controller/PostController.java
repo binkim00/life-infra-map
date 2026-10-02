@@ -271,7 +271,7 @@ public class PostController {
                     .body(Map.of("detail", "본인이 작성한 글만 삭제할 수 있습니다."));
         }
         // 신고 기록은 삭제하지 않는다. 대상 없이 유지할 수 없는 상태는 명확히 안내한다.
-        Integer reports = jdbc.queryForObject("SELECT COUNT(*) FROM boards_report WHERE status <> 'penalized' AND (post_id = ? OR comment_id IN (SELECT id FROM boards_comment WHERE post_id = ?))", Integer.class, postId, postId);
+        Integer reports = jdbc.queryForObject("SELECT COUNT(*) FROM boards_report WHERE status = 'pending' AND (post_id = ? OR comment_id IN (SELECT id FROM boards_comment WHERE post_id = ?))", Integer.class, postId, postId);
         if (reports != null && reports > 0) {
             return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("detail", "신고 기록이 연결된 게시글입니다. 관리자에게 삭제 검토를 요청해 주세요."));
         }

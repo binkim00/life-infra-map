@@ -48,6 +48,7 @@ class SocialOAuthEnabledTest extends ApiTestBase {
                 .andExpect(status().isOk());
         String nonce = "123456789012345678901234";
         MvcResult start = mockMvc.perform(get("/api/auth/social/google/start")
+                        .with(request -> { request.setServerName("example.test"); return request; })
                         .param("client", "web").param("nonce", nonce))
                 .andExpect(status().isFound()).andReturn();
         assertThat(start.getResponse().getRedirectedUrl()).isEqualTo(
@@ -60,5 +61,18 @@ class SocialOAuthEnabledTest extends ApiTestBase {
         assertThat(redirect).startsWith("https://accounts.google.com/o/oauth2/v2/auth?");
         assertThat(redirect).contains("redirect_uri=https://example.test/spring/api/login/oauth2/code/google");
         assertThat(redirect).contains("state=");
+    }
+
+    @Test
+    void startOnAnotherHostRedirectsBeforeCreatingSession() throws Exception {
+        String nonce = "123456789012345678901234";
+        MvcResult start = mockMvc.perform(get("/api/auth/social/google/start")
+                        .with(request -> { request.setServerName("internal.test"); return request; })
+                        .param("client", "mobile").param("nonce", nonce))
+                .andExpect(status().isFound()).andReturn();
+
+        assertThat(start.getResponse().getRedirectedUrl()).isEqualTo(
+                "https://example.test/spring/api/auth/social/google/start?client=mobile&nonce=" + nonce);
+        assertThat(start.getRequest().getSession(false)).isNull();
     }
 }

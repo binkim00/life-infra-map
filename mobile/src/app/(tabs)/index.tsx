@@ -37,6 +37,7 @@ export default function HomeScreen() {
       pathname: "/explore",
       params: {
         q: trimmed || undefined,
+        searchRequest: String(Date.now()),
         lat: nearbyCenter ? String(nearbyCenter.lat) : undefined,
         lng: nearbyCenter ? String(nearbyCenter.lng) : undefined,
       },
@@ -72,6 +73,7 @@ export default function HomeScreen() {
     pathname: "/explore",
     params: {
       q: "공원",
+      searchRequest: String(Date.now()),
       placeId: place ? String(place.id) : undefined,
       lat: nearbyCenter ? String(nearbyCenter.lat) : undefined,
       lng: nearbyCenter ? String(nearbyCenter.lng) : undefined,
@@ -85,7 +87,7 @@ export default function HomeScreen() {
           <View style={styles.header}>
             <View style={styles.brandRow}>
               <View style={styles.pinLogo}><View style={styles.pinDot} /></View>
-              <View><Text style={styles.brand}>여기일지도</Text><Text style={styles.brandCaption}>LIFE MAP</Text></View>
+              <View><Text style={styles.brand}>여기일지도</Text><Text style={styles.brandCaption}>생활 장소 추천</Text></View>
             </View>
             <Pressable accessibilityLabel="알림 보기" onPress={() => router.push("/notifications")} style={styles.iconButton}>
               <AppIcon ios="bell.fill" android="notifications" size={25} color={Palette.ink} /><View style={styles.alertDot} />

@@ -33,6 +33,7 @@ export default function FilterSearchScreen() {
     const query = `${location.trim()}에서 ${situation ? `${situation} ` : ""}${categoryLabel} 추천해줘${requirementLabels.length ? `. ${requirementLabels.join(", ")} 필수` : ""}`;
     router.push({ pathname: "/recommend", params: {
       q: query,
+      searchRequest: String(Date.now()),
       selectedFilters: JSON.stringify({ location: location.trim(), category, required }),
     } });
   };

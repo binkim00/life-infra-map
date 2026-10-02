@@ -107,7 +107,7 @@ def evidence_review(request, evidence_id):
         return Response(serialize(get_object_or_404(PlaceTagEvidence.objects.select_related("place", "tag", "review"), pk=evidence_id, source__in=WEB_EVIDENCE_SOURCES)))
     decision = request.data.get("status")
     note = str(request.data.get("note") or "").strip()
-    if decision not in {"approved", "approved_limited", "rejected", "research"} or not note:
+    if decision not in {"pending", "approved", "approved_limited", "rejected", "research"} or not note:
         return Response({"detail": "검토 결과와 근거 메모를 입력해 주세요."}, status=400)
     with transaction.atomic():
         row = get_object_or_404(PlaceTagEvidence.objects.select_for_update(), pk=evidence_id, source__in=WEB_EVIDENCE_SOURCES)

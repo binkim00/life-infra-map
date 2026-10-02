@@ -62,6 +62,10 @@ export const boardsApi = {
     apiRequest<Record<string, unknown>>(`/admin/users/${id}/`),
   createPenalty: (id: string | number, body: unknown) =>
     apiRequest(`/admin/users/${id}/penalties/`, { method: "POST", body }),
+  releasePenalty: (id: string | number, penaltyId: number, reason: string) =>
+    apiRequest(`/admin/users/${id}/penalties/${penaltyId}/release/`, {
+      method: "POST", body: { reason },
+    }),
   notifyUser: (id: string | number, body: unknown) =>
     apiRequest(`/admin/users/${id}/notifications/`, { method: "POST", body }),
 };

@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.util.UriComponentsBuilder;
 
 @RestController
 @RequestMapping("/api/auth/social")
@@ -44,6 +45,16 @@ public class SocialAuthController {
         if (!settings.available(provider) || (!"web".equals(client) && !"mobile".equals(client))
                 || !nonce.matches("[A-Za-z0-9_-]{20,100}")) {
             return ResponseEntity.badRequest().body(Map.of("detail", "소셜 로그인 요청이 올바르지 않습니다."));
+        }
+        // The OAuth callback uses the public host. Move there before creating
+        // the temporary session; browser cookies are scoped to their host.
+        if (!URI.create(settings.publicBaseUrl()).getHost().equalsIgnoreCase(request.getServerName())) {
+            URI canonicalStart = UriComponentsBuilder.fromUriString(settings.publicBaseUrl())
+                    .path("/spring/api/auth/social/{provider}/start")
+                    .queryParam("client", client)
+                    .queryParam("nonce", nonce)
+                    .buildAndExpand(provider).toUri();
+            return ResponseEntity.status(HttpStatus.FOUND).location(canonicalStart).build();
         }
         HttpSession session = request.getSession(true);
         request.changeSessionId();

@@ -1,13 +1,20 @@
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import * as Crypto from "expo-crypto";
 import * as WebBrowser from "expo-web-browser";
-import { useEffect, useState } from "react";
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { useCallback, useEffect, useState } from "react";
+import { BackHandler, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { ApiError, apiRequest, SPRING_API } from "@/api/client";
+import { ApiError, apiRequest } from "@/api/client";
 import { useAuth } from "@/auth/auth-context";
 import { Palette } from "@/constants/theme";
+
+// OAuth uses a browser session. Start it on the same public host used by the
+// provider callback so the temporary session cookie survives every redirect.
+const SOCIAL_AUTH_API = (
+  process.env.EXPO_PUBLIC_SOCIAL_AUTH_API_BASE_URL ||
+  "https://yeogiljido.com/spring/api"
+).replace(/\/$/, "");
 
 export default function LoginScreen() {
   const { login, exchangeSocialTicket } = useAuth();
@@ -17,6 +24,19 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [socialProviders, setSocialProviders] = useState<string[]>([]);
+
+  const goBack = useCallback(() => {
+    if (router.canGoBack()) router.back(); else router.replace("/");
+  }, []);
+
+  useFocusEffect(useCallback(() => {
+    if (Platform.OS !== "android") return undefined;
+    const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
+      goBack();
+      return true;
+    });
+    return () => subscription.remove();
+  }, [goBack]));
 
   useEffect(() => {
     let active = true;
@@ -33,7 +53,7 @@ export default function LoginScreen() {
       const bytes = await Crypto.getRandomBytesAsync(24);
       const nonce = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
       const callback = "lifeinframap://oauth/callback";
-      const start = `${SPRING_API}/auth/social/${provider}/start?client=mobile&nonce=${nonce}`;
+      const start = `${SOCIAL_AUTH_API}/auth/social/${provider}/start?client=mobile&nonce=${nonce}`;
       const result = await WebBrowser.openAuthSessionAsync(start, callback);
       if (result.type !== "success") return;
       const url = new URL(result.url);
@@ -66,14 +86,14 @@ export default function LoginScreen() {
       <SafeAreaView style={styles.safe} edges={["top", "bottom", "left", "right"]}>
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
           <View style={styles.topBar}>
-            <Pressable accessibilityLabel="뒤로 가기" onPress={() => router.canGoBack() ? router.back() : router.replace("/")} style={styles.back}><Text style={styles.backText}>‹</Text></Pressable>
+            <Pressable accessibilityLabel="뒤로 가기" onPress={goBack} style={styles.back}><Text style={styles.backText}>‹</Text></Pressable>
             <Text style={styles.language}>한국어⌄</Text>
           </View>
 
           <View style={styles.brandArea}>
             <View style={styles.brandMark}><View style={styles.brandMountain} /><View style={styles.brandPin}><View style={styles.brandPinDot} /></View></View>
             <Text style={styles.brandTitle}>여기일지도</Text>
-            <Text style={styles.brandTagline}>아쩌면, 여기일지도</Text>
+            <Text style={styles.brandTagline}>어쩌면, 여기일지도</Text>
           </View>
 
           <View style={styles.form}>

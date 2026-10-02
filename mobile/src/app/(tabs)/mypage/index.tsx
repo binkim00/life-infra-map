@@ -1,6 +1,7 @@
 import { useResource } from "@/hooks/use-resource";
 import { LoadState } from "@/components/load-state";
 import * as ImagePicker from "expo-image-picker";
+import { File } from "expo-file-system";
 import { router } from "expo-router";
 import { useState } from "react";
 import {
@@ -17,6 +18,7 @@ import { recommendationApi } from "@/api/recommendations";
 import { useAuth, type AuthUser } from "@/auth/auth-context";
 import { INPUT_PLACEHOLDER_COLOR, Screen, ui } from "@/components/screen";
 import { Palette, Radius } from "@/constants/theme";
+import { tierDisplay, tierColor } from "@/utils/tier-display";
 
 type SavedPlace = {
   id: number;
@@ -42,13 +44,14 @@ const LINKS = [
   ["알림", "/notifications"],
   ["설정", "/settings"],
   ["이용가이드", "/guide"],
-  ["승급가이드", "/upgrade-guide"],
+  ["등급 안내", "/upgrade-guide"],
 ] as const;
 
 export default function MypageScreen() {
   const { user, token, ready, isLoggedIn, isAdmin, logout, setUser } = useAuth();
   const [nickname, setNickname] = useState(user?.nickname || "");
   const [places, setPlaces] = useState<SavedPlace[]>([]);
+  const [savedCount, setSavedCount] = useState(0);
   const [profile, setProfile] = useState<MypageData>({});
   const [memoDrafts, setMemoDrafts] = useState<Record<number, string>>({});
   const [message, setMessage] = useState("");
@@ -66,7 +69,9 @@ export default function MypageScreen() {
     }
     const saved = await recommendationApi.savedPlaces({ page: 1, page_size: 10 });
     if ((await authStorage.read()).token !== requestToken) return;
-    setPlaces((saved as { results?: SavedPlace[] }).results || []);
+    const savedData = saved as { count?: number; results?: SavedPlace[] };
+    setPlaces(savedData.results || []);
+    setSavedCount(savedData.count ?? savedData.results?.length ?? 0);
   };
   const { loading, error: loadError, reload } = useResource(load, undefined, ready && isLoggedIn, token || "");
   const saveNickname = async () => {
@@ -111,11 +116,7 @@ export default function MypageScreen() {
         ? originalName
         : `${originalName}.${extension}`;
       const body = new FormData();
-      body.append("profile_image", {
-        uri: image.uri,
-        name: safeName,
-        type: mimeType,
-      } as unknown as Blob);
+      body.append("profile_image", new File(image.uri), safeName);
       const data = (await boardsApi.updateProfileImage(body)) as {
         user?: AuthUser;
       };
@@ -146,11 +147,13 @@ export default function MypageScreen() {
     try {
       await recommendationApi.deleteSavedPlace(id);
       setPlaces((current) => current.filter((item) => item.id !== id));
+      setSavedCount((current) => Math.max(0, current - 1));
       setMessage("저장한 장소에서 삭제했습니다.");
     } catch {
       setMessage("저장한 장소를 삭제하지 못했습니다.");
     }
   };
+  const currentTier = tierDisplay(user);
   return (
     <View style={styles.root}>
       <Screen title="마이페이지" action={<Pressable accessibilityLabel="설정" onPress={() => router.push("/settings")} style={styles.settingsButton}><Text style={styles.settingsIcon}>⚙</Text></Pressable>}>
@@ -171,9 +174,9 @@ export default function MypageScreen() {
                   <View style={styles.avatarPlaceholder}><Text style={styles.avatarLetter}>{(user?.nickname || user?.username || "MY").slice(0, 1)}</Text></View>
                 )}
                 <View style={styles.profileCopy}>
-                  <Text style={styles.nickname}>{user?.nickname || user?.username || "여기일지도 회원"}</Text>
-                  <View style={styles.tierBadge}><Text style={styles.tierText}>Lv. 3 탐험가</Text></View>
-                  <Text style={styles.profileTagline}>좋은 곳을 발견하는 게 행복해요.</Text>
+                  <Text style={[styles.nickname, { color: tierColor(user) }]}>{user?.nickname || user?.username || "여기일지도 회원"}</Text>
+                  <View style={[styles.tierBadge, { backgroundColor: `${tierColor(user)}18` }]}><Text style={[styles.tierText, { color: tierColor(user) }]}>{currentTier.label}</Text></View>
+                  <Text style={styles.profileTagline}>{currentTier.contribution === null ? "기여도를 확인하고 있어요." : `현재 기여도 ${currentTier.contribution}`}</Text>
                 </View>
               </View>
               <View style={styles.profileActions}>
@@ -197,7 +200,7 @@ export default function MypageScreen() {
               {message ? <Text style={styles.message}>{message}</Text> : null}
             </View>
             <View style={styles.activity}>
-              <View style={styles.activityItem}><Text style={styles.count}>{places.length}</Text><Text style={styles.activityLabel}>저장한 장소</Text></View>
+              <View style={styles.activityItem}><Text style={styles.count}>{savedCount}</Text><Text style={styles.activityLabel}>저장한 장소</Text></View>
               <View style={styles.activityDivider} />
               <View style={styles.activityItem}><Text style={styles.count}>{profile.posts?.length || 0}</Text><Text style={styles.activityLabel}>작성한 글</Text></View>
               <View style={styles.activityDivider} />

@@ -25,7 +25,7 @@ export function Screen({
   footer,
 }: PropsWithChildren<{
   title: string;
-  subtitle?: string;
+  subtitle?: ReactNode;
   back?: boolean;
   action?: ReactNode;
   footer?: ReactNode;
@@ -57,7 +57,7 @@ export function Screen({
               )}
               <View style={styles.brandCopy}>
                 <Text style={styles.brand}>여기일지도</Text>
-                <Text style={styles.brandCaption}>LIFE MAP</Text>
+                <Text style={styles.brandCaption}>생활 장소 추천</Text>
               </View>
               <View style={styles.appBarAction}>{action}</View>
             </View>

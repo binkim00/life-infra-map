@@ -23,7 +23,7 @@ export default function SearchHistoryScreen() {
     () => recommendationApi.searchLogs({ page, page_size: 20 }).then((data) => (data.results || []) as Log[]), [], true, String(page),
   );
   const visibleLogs = logs.filter((log) => mode === "all" || (mode === "recommend" ? log.search_mode === "recommendation_query" : log.search_mode !== "recommendation_query"));
-  const rerun = (log: Log) => router.push({ pathname: log.search_mode === "recommendation_query" ? "/recommend" : "/explore", params: { q: log.query } });
+  const rerun = (log: Log, searchRequest: string) => router.push({ pathname: log.search_mode === "recommendation_query" ? "/recommend" : "/explore", params: { q: log.query, searchRequest } });
   return (
     <Screen
       title="검색 기록"
@@ -50,7 +50,7 @@ export default function SearchHistoryScreen() {
               </View>
             </View>
             <View style={styles.actions}>
-              <Pressable onPress={() => rerun(log)} style={styles.rerun}><Text style={styles.rerunText}>↻  다시 검색</Text></Pressable>
+              <Pressable onPress={() => rerun(log, String(Date.now()))} style={styles.rerun}><Text style={styles.rerunText}>↻  다시 검색</Text></Pressable>
               <Pressable disabled={action.busy} onPress={() => action.run(async () => { await recommendationApi.deleteSearchLog(log.id); load(); })} style={styles.deleteButton}><Text style={styles.delete}>♢  삭제</Text></Pressable>
             </View>
           </View>

@@ -13,6 +13,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { recommendationApi, searchMapPlaces } from "@/api/recommendations";
+import { placeCategoryLabel } from "@/constants/place-categories";
 import { useAuth } from "@/auth/auth-context";
 import { PlacePhoto } from "@/components/place-photo";
 import { PlaceDetailSheet } from "@/components/place-detail-sheet";
@@ -25,6 +26,7 @@ import {
   Spacing,
 } from "@/constants/theme";
 import type { Place } from "@/types/place";
+import { savedPlacePayload } from "@/utils/saved-place-payload";
 
 type SearchRequestBasis = {
   query: string;
@@ -100,8 +102,10 @@ export default function ExploreScreen() {
     placeId?: string;
     lat?: string;
     lng?: string;
+    searchRequest?: string;
   }>();
   const initialQuery = typeof params.q === "string" ? params.q : "";
+  const lastRouteRequestRef = useRef(JSON.stringify([params.q, params.placeId, params.lat, params.lng, params.searchRequest]));
   const initialLat = Number(params.lat);
   const initialLng = Number(params.lng);
   const hasInitialCenter =
@@ -227,6 +231,24 @@ export default function ExploreScreen() {
     },
     [query],
   );
+
+  useEffect(() => {
+    const routeRequest = JSON.stringify([params.q, params.placeId, params.lat, params.lng, params.searchRequest]);
+    if (lastRouteRequestRef.current === routeRequest) return;
+    const routeQuery = params.q?.trim();
+    if (!routeQuery) return;
+    const timer = setTimeout(() => {
+      lastRouteRequestRef.current = routeRequest;
+      const routeLat = Number(params.lat);
+      const routeLng = Number(params.lng);
+      if (params.lat && params.lng && Number.isFinite(routeLat) && Number.isFinite(routeLng)) {
+        setCenter({ lat: routeLat, lng: routeLng, label: "검색 위치" });
+        setLocationStatus("ready");
+      }
+      runSearch(routeQuery);
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [params.q, params.placeId, params.lat, params.lng, params.searchRequest, runSearch]);
 
   const resetSearch = () => {
     setQuery("");
@@ -367,20 +389,7 @@ export default function ExploreScreen() {
     if (!target || saveBusy || !requireLogin()) return;
     try {
       setSaveBusy(true);
-      await recommendationApi.savePlace({
-        placeKey: `${target.result_source || "db"}:${target.external_id || target.id}`,
-        placeId: target.result_source === "db" ? target.id : null,
-        externalId: target.external_id || "",
-        source: target.result_source || "db",
-        name: target.name,
-        category: target.category,
-        address: target.address,
-        lat: target.lat,
-        lng: target.lng,
-        detailUrl: target.place_url || "",
-        kakaoPlaceUrl: target.kakao_place_url || "",
-        raw: {},
-      });
+      await recommendationApi.savePlace(savedPlacePayload(target));
       setMessage("장소를 저장했습니다.");
       setDetailVisible(false);
     } catch (error) {
@@ -678,11 +687,11 @@ export default function ExploreScreen() {
                       </Text>
                     </View>
                     <Text numberOfLines={1} style={styles.resultMeta}>
-                      {place.category_label || place.category} ·{" "}
+                      {placeCategoryLabel(place.category_label || place.category)} ·{" "}
                       {place.source_label ||
                         (place.result_source === "kakao"
                           ? "카카오 장소"
-                          : "LifeMap 저장 장소")}
+                          : "여기일지도에 저장된 장소")}
                     </Text>
                     {listVisible ? (
                       <Text numberOfLines={2} style={styles.resultMeta}>

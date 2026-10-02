@@ -11,6 +11,7 @@ import {
   getRecommendationPreviewLabels,
   isRecommendationPlace,
 } from '@/utils/homePlaceHelpers'
+import { placeCategoryLabel } from '@/utils/placeCategoryLabel'
 
 const PlaceResultList = ({
   places,
@@ -88,7 +89,7 @@ const PlaceResultList = ({
                 </span>
 
                 <span className="place-list-meta">
-                  {place.category ? <small>{place.category}</small> : null}
+                  {place.category ? <small>{placeCategoryLabel(place)}</small> : null}
                   {getDistanceText(place) ? <small>{getDistanceText(place)}</small> : null}
                   {isRecommendation && personalizationBoost > 0 ? (
                     <small>{getPersonalizationBoostText(place)}</small>

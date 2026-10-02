@@ -191,17 +191,20 @@ def _active_tags_by_polarity(candidates, now):
     rows = PlaceTagEvidence.objects.filter(
         place_id__in=place_ids,
         polarity__in=("positive", "negative"),
-    ).filter(Q(review__isnull=True) | Q(review__status="approved")).filter(Q(expires_at__isnull=True) | Q(expires_at__gt=now)).values_list(
-        "place_id", "tag__name", "polarity", "source", "source_reference", "context",
+    ).filter(
+        Q(review__status="approved")
+        | (Q(review__isnull=True) & ~Q(source__in=WEB_EVIDENCE_SOURCES))
+    ).filter(Q(expires_at__isnull=True) | Q(expires_at__gt=now)).values_list(
+        "place_id", "tag__name", "polarity", "source", "source_reference", "context", "review__status",
     )
     trusted = set()
     web_references = {}
-    for place_id, tag_name, polarity, source, source_reference, context in rows.iterator(chunk_size=1000):
+    for place_id, tag_name, polarity, source, source_reference, context, review_status in rows.iterator(chunk_size=1000):
         canonical = canonical_tag_name(tag_name) or tag_name
         key = (place_id, canonical, polarity)
         extraction = (context or {}).get("extraction") or {}
         semantic_fallback = extraction.get("method") == "semantic_quote_fallback"
-        if source not in WEB_EVIDENCE_SOURCES or not semantic_fallback:
+        if review_status == "approved" or source not in WEB_EVIDENCE_SOURCES or not semantic_fallback:
             trusted.add(key)
         elif source_reference:
             web_references.setdefault(key, set()).add(source_reference)
