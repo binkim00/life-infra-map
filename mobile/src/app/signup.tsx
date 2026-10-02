@@ -1,4 +1,5 @@
 import * as ImagePicker from "expo-image-picker";
+import { File } from "expo-file-system";
 import { router } from "expo-router";
 import { useState } from "react";
 import {
@@ -62,11 +63,7 @@ export default function SignupScreen() {
       body.append("email", form.email);
       body.append("password", form.password);
       body.append("password_confirm", form.passwordConfirm);
-      body.append("profile_image", {
-        uri: image.uri,
-        name: image.fileName || "profile.jpg",
-        type: image.mimeType || "image/jpeg",
-      } as unknown as Blob);
+      body.append("profile_image", new File(image.uri), image.fileName || new File(image.uri).name);
     }
     try {
       setLoading(true);

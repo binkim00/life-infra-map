@@ -1,6 +1,7 @@
 import { useResource } from "@/hooks/use-resource";
 import { LoadState } from "@/components/load-state";
 import * as ImagePicker from "expo-image-picker";
+import { File } from "expo-file-system";
 import { router } from "expo-router";
 import { useState } from "react";
 import {
@@ -115,11 +116,7 @@ export default function MypageScreen() {
         ? originalName
         : `${originalName}.${extension}`;
       const body = new FormData();
-      body.append("profile_image", {
-        uri: image.uri,
-        name: safeName,
-        type: mimeType,
-      } as unknown as Blob);
+      body.append("profile_image", new File(image.uri), safeName);
       const data = (await boardsApi.updateProfileImage(body)) as {
         user?: AuthUser;
       };

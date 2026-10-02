@@ -1,4 +1,5 @@
 import * as ImagePicker from "expo-image-picker";
+import { File } from "expo-file-system";
 import { router } from "expo-router";
 import { ApiError } from "@/api/client";
 import { useState } from "react";
@@ -66,11 +67,7 @@ export function PostEditor({
     body.append("title", title.trim());
     body.append("content", content.trim());
     if (image)
-      body.append("image", {
-        uri: image.uri,
-        name: image.fileName || "post.jpg",
-        type: image.mimeType || "image/jpeg",
-      } as unknown as Blob);
+      body.append("image", new File(image.uri), image.fileName || new File(image.uri).name);
     try {
       setLoading(true);
       setError("");
