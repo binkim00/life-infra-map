@@ -1,5 +1,6 @@
 import * as ImagePicker from "expo-image-picker";
 import { router } from "expo-router";
+import { ApiError } from "@/api/client";
 import { useState } from "react";
 import { useResource } from "@/hooks/use-resource";
 import { LoadState } from "./load-state";
@@ -69,8 +70,12 @@ export function PostEditor({
       const created = result as { id?: number | string };
       const id = postId || String(created.id);
       router.replace(`/boards/${boardType}/${id}` as never);
-    } catch {
-      setError("게시글을 저장하지 못했습니다.");
+    } catch (cause) {
+      const payload = cause instanceof ApiError
+        ? cause.data as { penalty?: { is_suspended?: boolean } } | null : null;
+      setError(payload?.penalty?.is_suspended
+        ? "활동 정지 중에는 게시글을 작성하거나 수정할 수 없습니다. 해제 후 다시 시도해 주세요."
+        : cause instanceof ApiError ? cause.message : "게시글을 저장하지 못했습니다.");
     } finally {
       setLoading(false);
     }

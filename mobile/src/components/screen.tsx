@@ -25,7 +25,7 @@ export function Screen({
   footer,
 }: PropsWithChildren<{
   title: string;
-  subtitle?: string;
+  subtitle?: ReactNode;
   back?: boolean;
   action?: ReactNode;
   footer?: ReactNode;

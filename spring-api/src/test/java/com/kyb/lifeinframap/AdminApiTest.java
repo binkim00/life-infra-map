@@ -133,6 +133,44 @@ class AdminApiTest extends ApiTestBase {
                 .andExpect(status().isForbidden());
     }
 
+    @Test
+    @DisplayName("제재 해제는 관리자만 해당 회원의 이력에 적용할 수 있다")
+    void penaltyReleaseChecksStaffAndOwner() throws Exception {
+        User staff = createUser(true);
+        User target = createUser(false);
+        User other = createUser(false);
+        MvcResult created = mockMvc.perform(post("/api/admin/users/{id}/penalties", target.getId())
+                .header("Authorization", bearer(staff)).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"penaltyType\":\"suspend\",\"reason\":\"QA\",\"days\":3}"))
+                .andExpect(status().isCreated()).andReturn();
+        long penaltyId = objectMapper.readTree(created.getResponse().getContentAsString()).get("id").asLong();
+        String route = "/api/admin/users/{id}/penalties/{penaltyId}/release";
+        mockMvc.perform(post(route, target.getId(), penaltyId).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"reason\":\"QA release\"}")) .andExpect(status().isUnauthorized());
+        mockMvc.perform(post(route, target.getId(), penaltyId).header("Authorization", bearer(target))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"reason\":\"QA release\"}"))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(post(route, other.getId(), penaltyId).header("Authorization", bearer(staff))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"reason\":\"QA release\"}"))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(post(route, target.getId(), penaltyId).header("Authorization", bearer(staff))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"reason\":\" \"}"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(post("/api/boards/posts").header("Authorization", bearer(target))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"title\":\"QA\",\"content\":\"body\"}"))
+                .andExpect(status().isForbidden());
+        for (int attempt = 0; attempt < 2; attempt++) {
+            mockMvc.perform(post(route, target.getId(), penaltyId).header("Authorization", bearer(staff))
+                    .contentType(MediaType.APPLICATION_JSON).content("{\"reason\":\"QA release\"}"))
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.is_active").value(false));
+        }
+        mockMvc.perform(post("/api/boards/posts").header("Authorization", bearer(target))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"title\":\"QA restored\",\"content\":\"body\"}"))
+                .andExpect(status().isCreated());
+        mockMvc.perform(get("/api/admin/users/{id}", target.getId()).header("Authorization", bearer(staff)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.penalties[0].is_active").value(false));
+    }
+
     // ---------- 관리자 알림 발송 ----------
 
     @Test

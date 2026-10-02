@@ -17,7 +17,7 @@ import { recommendationApi } from "@/api/recommendations";
 import { useAuth, type AuthUser } from "@/auth/auth-context";
 import { INPUT_PLACEHOLDER_COLOR, Screen, ui } from "@/components/screen";
 import { Palette, Radius } from "@/constants/theme";
-import { tierDisplay } from "@/utils/tier-display";
+import { tierDisplay, tierColor } from "@/utils/tier-display";
 
 type SavedPlace = {
   id: number;
@@ -177,8 +177,8 @@ export default function MypageScreen() {
                   <View style={styles.avatarPlaceholder}><Text style={styles.avatarLetter}>{(user?.nickname || user?.username || "MY").slice(0, 1)}</Text></View>
                 )}
                 <View style={styles.profileCopy}>
-                  <Text style={styles.nickname}>{user?.nickname || user?.username || "여기일지도 회원"}</Text>
-                  <View style={styles.tierBadge}><Text style={styles.tierText}>{currentTier.label}</Text></View>
+                  <Text style={[styles.nickname, { color: tierColor(user) }]}>{user?.nickname || user?.username || "여기일지도 회원"}</Text>
+                  <View style={[styles.tierBadge, { backgroundColor: `${tierColor(user)}18` }]}><Text style={[styles.tierText, { color: tierColor(user) }]}>{currentTier.label}</Text></View>
                   <Text style={styles.profileTagline}>{currentTier.contribution === null ? "기여도를 확인하고 있어요." : `현재 기여도 ${currentTier.contribution}`}</Text>
                 </View>
               </View>

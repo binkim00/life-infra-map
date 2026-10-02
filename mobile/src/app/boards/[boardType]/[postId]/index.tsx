@@ -16,8 +16,9 @@ import {
 import { boardsApi } from "@/api/boards";
 import { useAuth } from "@/auth/auth-context";
 import { INPUT_PLACEHOLDER_COLOR, Screen, ui } from "@/components/screen";
+import { authorTierDisplay, type AuthorTierData } from "@/utils/tier-display";
 
-type Comment = {
+type Comment = AuthorTierData & {
   id: number;
   author?: number;
   author_nickname?: string;
@@ -27,7 +28,7 @@ type Comment = {
   dislikes_count?: number;
   replies?: Comment[];
 };
-type Post = {
+type Post = AuthorTierData & {
   id: number;
   author?: number;
   author_nickname?: string;
@@ -81,7 +82,7 @@ export default function BoardDetailScreen() {
   return (
     <Screen
       title={post.title}
-      subtitle={`${post.author_nickname || post.author_username} · 조회 ${post.view_count || 0}`}
+      subtitle={<Text style={{ color: authorTierDisplay(post).color }}>{`${post.author_nickname || post.author_username} · ${authorTierDisplay(post).label} · 조회 ${post.view_count || 0}`}</Text>}
       back
     >
       {deleteAction.error ? <Text style={ui.error}>{deleteAction.error}</Text> : null}
@@ -164,8 +165,8 @@ export default function BoardDetailScreen() {
       <View style={styles.comments}>
         {post.comments?.map((item) => (
           <View key={item.id} style={ui.card}>
-            <Text style={styles.author}>
-              {item.author_nickname || item.author_username}
+            <Text style={[styles.author, { color: authorTierDisplay(item).color }]}>
+              {item.author_nickname || item.author_username} · {authorTierDisplay(item).label}
             </Text>
             {editingId === item.id ? (
               <View style={ui.row}>
@@ -286,8 +287,8 @@ export default function BoardDetailScreen() {
             </View>
             {item.replies?.map((reply) => (
               <View key={reply.id} style={styles.reply}>
-                <Text style={styles.author}>
-                  {reply.author_nickname || reply.author_username}
+                <Text style={[styles.author, { color: authorTierDisplay(reply).color }]}>
+                  {reply.author_nickname || reply.author_username} · {authorTierDisplay(reply).label}
                 </Text>
                 <Text style={styles.comment}>{reply.content}</Text>
               </View>

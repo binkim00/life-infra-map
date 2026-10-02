@@ -6,7 +6,8 @@ import { useState } from "react";
 import { Alert, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { boardsApi } from "@/api/boards";
 import { INPUT_PLACEHOLDER_COLOR, Screen, ui } from "@/components/screen";
-import { tierDisplay } from "@/utils/tier-display";
+import { tierDisplay, tierColor } from "@/utils/tier-display";
+type Penalty = { id: number; penalty_type: string; reason: string; is_active: boolean; end_at?: string | null };
 type UserData = {
   id?: number;
   username?: string;
@@ -17,7 +18,7 @@ type UserData = {
   contribution_score?: number;
   tier?: string;
   tier_label?: string;
-  penalties?: unknown[];
+  penalties?: Penalty[];
   posts?: unknown[];
   comments?: unknown[];
 };
@@ -25,7 +26,7 @@ type AdminUserPayload = UserData & {
   user?: UserData;
   posts?: unknown[];
   comments?: unknown[];
-  penalties?: unknown[];
+  penalties?: Penalty[];
 };
 const penaltyOptions = [
   ["warning", "경고", 0],
@@ -61,6 +62,21 @@ export default function AdminUserDetailScreen() {
     setStatus("제재를 적용했습니다.");
     load();
   };
+  const requestRelease = (item: Penalty) => {
+    if (!reason.trim()) {
+      setStatus("해제 사유를 입력해 주세요.");
+      return;
+    }
+    Alert.alert("제재 해제 확인", "이 제재를 해제할까요? 기존 이력은 보존됩니다.", [
+      { text: "취소", style: "cancel" },
+      { text: "해제", onPress: () => action.run(async () => {
+        await boardsApi.releasePenalty(userId, item.id, reason.trim());
+        setReason("");
+        setStatus("제재를 해제했습니다.");
+        load();
+      }) },
+    ]);
+  };
   const notify = async () => {
     if (!message.trim()) return;
     await boardsApi.notifyUser(userId, { title: "관리자 메시지", message });
@@ -89,7 +105,7 @@ export default function AdminUserDetailScreen() {
     <Screen
       title={data.nickname || data.username || "회원 상세"}
       subtitle={data.id
-        ? `${data.email ? `${data.email} · ` : ""}${tierDisplay(data).label} · 기여도 ${data.contribution ?? data.contribution_score ?? 0}`
+        ? <Text style={{ color: tierColor(data) }}>{`${data.email ? `${data.email} · ` : ""}${tierDisplay(data).label} · 기여도 ${data.contribution ?? data.contribution_score ?? 0}`}</Text>
         : "회원 정보를 불러오는 중입니다."}
       back
     >
@@ -135,6 +151,22 @@ export default function AdminUserDetailScreen() {
           ))}
         </View>
       </View>
+      {Boolean(data.penalties?.length) && <View style={ui.card}>
+        <Text style={ui.label}>제재 이력</Text>
+        {data.penalties?.map((item) => {
+          const effective = item.is_active && item.penalty_type !== "warning"
+            && (!item.end_at || new Date(item.end_at).getTime() > Date.now());
+          const label = penaltyOptions.find(([type]) => type === item.penalty_type)?.[1] || "이용 제한";
+          return <View key={item.id} style={{ gap: 8, marginTop: 12 }}>
+            <Text style={ui.label}>{label} · {effective ? "적용 중" : item.is_active ? "종료" : "해제됨"}</Text>
+            <Text style={ui.muted}>{item.reason}</Text>
+            {effective && <Pressable disabled={action.busy || loading || Boolean(error)}
+              onPress={() => requestRelease(item)} style={ui.buttonSecondary}>
+              <Text style={ui.buttonSecondaryText}>제재 해제</Text>
+            </Pressable>}
+          </View>;
+        })}
+      </View>}
       <View style={ui.card}>
         <Text style={ui.label}>관리자 메시지</Text>
         <TextInput

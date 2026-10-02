@@ -15,6 +15,7 @@ export default function InquiryCreateScreen() {
     if (!title.trim() || content.trim().length < 5)
       return setError("제목과 5자 이상의 내용을 입력해주세요.");
     try {
+      setError("");
       setLoading(true);
       await boardsApi.createInquiry({ title, content, category });
       router.replace("/inquiries/my");
