@@ -104,6 +104,18 @@ class MobileAdminWorkflowTests(TestCase):
         ).data
         self.assertEqual(queue["count"], 1)
 
+    def test_pending_decision_revokes_approval_and_returns_to_queue(self):
+        self.client.force_authenticate(self.admin)
+        url = f"/api/recommendations/admin/evidence/{self.evidence.id}/"
+        self.assertEqual(self.client.post(url, {"status": "approved", "note": "원문 확인"}).status_code, 200)
+        response = self.client.post(url, {"status": "pending", "note": "조건을 추가 확인하기 위해 보류"})
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(active_evidence(self.place, self.tag).exists())
+        detail = self.client.get(url).data
+        self.assertEqual(detail["status"], "pending")
+        self.assertFalse(detail["search_eligible"])
+        self.assertEqual(self.client.get("/api/recommendations/admin/evidence/", {"status": "pending"}).data["count"], 1)
+
     def test_expired_evidence_can_be_content_approved_not_current_verified(self):
         self.evidence.expires_at = timezone.now()-timedelta(days=1)
         self.evidence.save()
