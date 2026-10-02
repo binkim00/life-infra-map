@@ -3,6 +3,7 @@ import { useAction } from "@/hooks/use-action";
 import { LoadState } from "@/components/load-state";
 import { router, useLocalSearchParams } from "expo-router";
 import { useState } from "react";
+import { useFormDraft } from "@/hooks/use-form-draft";
 import {
   Alert,
   Image,
@@ -48,12 +49,14 @@ export default function BoardDetailScreen() {
     postId: string;
   }>();
   const { user, requireLogin } = useAuth();
-  const [comment, setComment] = useState("");
-  const [reportReason, setReportReason] = useState("");
-  const [commentReportDrafts, setCommentReportDrafts] = useState<Record<number, string>>({});
-  const [replyDrafts, setReplyDrafts] = useState<Record<number, string>>({});
-  const [editingId, setEditingId] = useState<number | null>(null);
-  const [editingText, setEditingText] = useState("");
+  const draft = useFormDraft(`post-interaction:${postId}`, { comment: "", reportReason: "", commentReportDrafts: {} as Record<number, string>, replyDrafts: {} as Record<number, string>, editingId: null as number | null, editingText: "" });
+  const { comment, reportReason, commentReportDrafts, replyDrafts, editingId, editingText } = draft.value;
+  const setComment = (value: typeof comment | ((current: typeof comment) => typeof comment)) => draft.update("comment", value);
+  const setReportReason = (value: typeof reportReason | ((current: typeof reportReason) => typeof reportReason)) => draft.update("reportReason", value);
+  const setCommentReportDrafts = (value: typeof commentReportDrafts | ((current: typeof commentReportDrafts) => typeof commentReportDrafts)) => draft.update("commentReportDrafts", value);
+  const setReplyDrafts = (value: typeof replyDrafts | ((current: typeof replyDrafts) => typeof replyDrafts)) => draft.update("replyDrafts", value);
+  const setEditingId = (value: typeof editingId | ((current: typeof editingId) => typeof editingId)) => draft.update("editingId", value);
+  const setEditingText = (value: typeof editingText | ((current: typeof editingText) => typeof editingText)) => draft.update("editingText", value);
   const [error, setError] = useState("");
   const deleteAction = useAction();
   const interaction = useAction();
@@ -85,6 +88,7 @@ export default function BoardDetailScreen() {
       subtitle={<Text style={{ color: authorTierDisplay(post).color }}>{`${post.author_nickname || post.author_username} · ${authorTierDisplay(post).label} · 조회 ${post.view_count || 0}`}</Text>}
       back
     >
+      {draft.error ? <Text style={ui.error}>{draft.error}</Text> : null}
       {deleteAction.error ? <Text style={ui.error}>{deleteAction.error}</Text> : null}
       {interaction.error ? <Text style={ui.error}>{interaction.error}</Text> : null}
       <View style={ui.card}>
@@ -95,7 +99,7 @@ export default function BoardDetailScreen() {
       </View>
       <View style={ui.row}>
         <Pressable
-          disabled={interaction.busy}
+          disabled={!draft.ready || interaction.busy}
           onPress={() => interaction.run(async () => {
             if (!requireLogin()) return;
             await boardsApi.likePost(postId);
@@ -132,7 +136,7 @@ export default function BoardDetailScreen() {
           style={[ui.input, ui.grow]}
         />
         <Pressable
-          disabled={interaction.busy || !reportReason.trim()}
+          disabled={!draft.ready || interaction.busy || !reportReason.trim()}
           onPress={() => interaction.run(async () => {
             if (!requireLogin() || !reportReason.trim()) return;
             await boardsApi.reportPost(postId, { reason: reportReason.trim() });
@@ -158,7 +162,7 @@ export default function BoardDetailScreen() {
           placeholderTextColor={INPUT_PLACEHOLDER_COLOR}
           style={[ui.input, ui.grow]}
         />
-        <Pressable disabled={interaction.busy || !comment.trim()} onPress={addComment} style={[ui.button, !comment.trim() && styles.disabled]}>
+        <Pressable disabled={!draft.ready || interaction.busy || !comment.trim()} onPress={addComment} style={[ui.button, !comment.trim() && styles.disabled]}>
           <Text style={ui.buttonText}>등록</Text>
         </Pressable>
       </View>
@@ -178,7 +182,7 @@ export default function BoardDetailScreen() {
                   style={[ui.input, ui.grow]}
                 />
                 <Pressable
-                  disabled={interaction.busy || !editingText.trim()}
+                  disabled={!draft.ready || interaction.busy || !editingText.trim()}
                   onPress={() => interaction.run(async () => {
                     await boardsApi.updateComment(item.id, { content: editingText.trim() });
                     setEditingId(null);
@@ -194,7 +198,7 @@ export default function BoardDetailScreen() {
             )}
             <View style={[ui.row, styles.commentActions]}>
               <Pressable
-                disabled={interaction.busy}
+                disabled={!draft.ready || interaction.busy}
                 onPress={() => interaction.run(async () => {
                   if (!requireLogin()) return;
                   await boardsApi.likeComment(item.id);
@@ -206,7 +210,7 @@ export default function BoardDetailScreen() {
                 </Text>
               </Pressable>
               <Pressable
-                disabled={interaction.busy}
+                disabled={!draft.ready || interaction.busy}
                 onPress={() => interaction.run(async () => {
                   if (!requireLogin()) return;
                   await boardsApi.dislikeComment(item.id);
@@ -245,7 +249,7 @@ export default function BoardDetailScreen() {
                 style={[ui.input, styles.reportInput]}
               />
               <Pressable
-                disabled={interaction.busy || !commentReportDrafts[item.id]?.trim()}
+                disabled={!draft.ready || interaction.busy || !commentReportDrafts[item.id]?.trim()}
                 onPress={() => interaction.run(async () => {
                   const reason = commentReportDrafts[item.id]?.trim();
                   if (!requireLogin() || !reason) return;
@@ -269,7 +273,7 @@ export default function BoardDetailScreen() {
                 style={[ui.input, ui.grow]}
               />
               <Pressable
-                disabled={interaction.busy || !replyDrafts[item.id]?.trim()}
+                disabled={!draft.ready || interaction.busy || !replyDrafts[item.id]?.trim()}
                 onPress={() => interaction.run(async () => {
                   const content = replyDrafts[item.id]?.trim();
                   if (!requireLogin() || !content) return;
