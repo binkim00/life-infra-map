@@ -15,7 +15,6 @@ export function useFormDraft<T extends object>(scope: string, initial: T) {
   const ready = Boolean(key && state.key === key);
   useEffect(() => {
     let active = true;
-    setError("");
     if (!key) return;
     void queue.current.then(() => AsyncStorage.getItem(key)).then(raw => {
       if (!active) return;
@@ -24,6 +23,7 @@ export function useFormDraft<T extends object>(scope: string, initial: T) {
         try { value = { ...value, ...JSON.parse(raw) }; } catch { /* Ignore malformed local drafts. */ }
       }
       current.current = value;
+      setError("");
       setState({ key, value, stored: Boolean(raw) });
     }).catch(() => {
       if (active) setError("작성 내용을 복원하지 못했습니다. 다시 열어 주세요.");
@@ -46,5 +46,5 @@ export function useFormDraft<T extends object>(scope: string, initial: T) {
     current.current = initialRef.current;
     setState({ key, value: initialRef.current, stored: false });
   }, [key]);
-  return { value: ready ? state.value : initialRef.current, ready, hasDraft: ready && state.stored, update, clear, error };
+  return { value: ready ? state.value : initial, ready, hasDraft: ready && state.stored, update, clear, error: ready ? error : "" };
 }

@@ -1,8 +1,10 @@
-import { router, useLocalSearchParams } from "expo-router";
+import { userText, errorDiagnostic } from "../../../../shared/user-message";
+import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { searchLocation } from "@/utils/location";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Keyboard,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -27,6 +29,8 @@ import {
 } from "@/constants/theme";
 import type { Place } from "@/types/place";
 import { savedPlacePayload } from "@/utils/saved-place-payload";
+import { placeIdentity } from "@/utils/place-identity";
+import { registerBackHandler } from "@/utils/back-navigation";
 
 type SearchRequestBasis = {
   query: string;
@@ -119,10 +123,20 @@ export default function ExploreScreen() {
     lng: number;
   } | null>(null);
   const [places, setPlaces] = useState<Place[]>([]);
-  const [listVisible, setListVisible] = useState(true);
+  const [panelLevel, setPanelLevel] = useState<"collapsed" | "peek" | "expanded">("peek");
+  const listVisible = panelLevel === "expanded";
+  const resultListRef = useRef<ScrollView>(null);
+  const cardPositions = useRef<Record<string, number>>({});
+  const pendingScrollKey = useRef("");
   const [selectedPlace, setSelectedPlace] = useState<Place | null>(null);
   const [detailPlace, setDetailPlace] = useState<Place | null>(null);
   const [detailVisible, setDetailVisible] = useState(false);
+  const keyboardVisibleRef = useRef(false);
+  useEffect(() => {
+    const show = Keyboard.addListener("keyboardDidShow", () => { keyboardVisibleRef.current = true; });
+    const hide = Keyboard.addListener("keyboardDidHide", () => { keyboardVisibleRef.current = false; });
+    return () => { show.remove(); hide.remove(); };
+  }, []);
   const [radius, setRadius] = useState(3000);
   const [mapCenter, setMapCenter] = useState<{
     lat: number;
@@ -152,6 +166,15 @@ export default function ExploreScreen() {
     lng: hasInitialCenter ? initialLng : null,
     label: hasInitialCenter ? "현재 위치" : "위치 확인 중",
   });
+  useFocusEffect(useCallback(() => {
+    return registerBackHandler(() => {
+      if (keyboardVisibleRef.current) { Keyboard.dismiss(); return true; }
+      if (detailVisible) { setDetailVisible(false); return true; }
+      if (panelLevel === "expanded") { setPanelLevel("peek"); return true; }
+      if (panelLevel === "peek") { setPanelLevel("collapsed"); return true; }
+      return false;
+    });
+  }, [detailVisible, panelLevel]));
 
   const requestCurrentLocation = useCallback(
     async (showError = true, cachedOnly = false) => {
@@ -319,9 +342,13 @@ export default function ExploreScreen() {
             ai_web_result_count: 0,
             search_plan_snapshot: {},
           });
-        if (!data.results.length)
+        if (data.kakao_error) {
+          setStatus("error");
+          setSearchFailed(true);
+          setMessage("일부 장소 정보를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.");
+        } else if (!data.results.length)
           setMessage(
-            data.message ||
+            userText(data.message, "") ||
               "조건에 맞는 장소가 없습니다. 다른 검색어를 입력해 보세요.",
           );
       })
@@ -329,9 +356,8 @@ export default function ExploreScreen() {
         if (controller.signal.aborted || error?.name === "AbortError") return;
         setStatus("error");
         setSearchFailed(true);
-        setMessage(
-          error instanceof Error ? error.message : "서버에 연결할 수 없습니다.",
-        );
+        console.warn("Place search failed", errorDiagnostic(error));
+        setMessage("지금 장소 정보를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.");
       });
     return () => controller.abort();
   }, [
@@ -393,9 +419,8 @@ export default function ExploreScreen() {
       setMessage("장소를 저장했습니다.");
       setDetailVisible(false);
     } catch (error) {
-      setMessage(
-        error instanceof Error ? error.message : "장소를 저장하지 못했습니다.",
-      );
+      console.warn("Save place failed", error);
+      setMessage("장소를 저장하지 못했어요. 잠시 후 다시 시도해 주세요.");
     } finally {
       setSaveBusy(false);
     }
@@ -409,6 +434,13 @@ export default function ExploreScreen() {
   );
   const usesNearbyRadius =
     !submittedQuery || isNearbyCategoryQuery(submittedQuery);
+  const selectFromMap = (place: Place) => {
+    setSelectedPlace(place);
+    setPanelLevel("expanded");
+    pendingScrollKey.current = placeIdentity(place);
+    const y = cardPositions.current[pendingScrollKey.current];
+    if (y !== undefined) requestAnimationFrame(() => resultListRef.current?.scrollTo({ y, animated: true }));
+  };
 
   return (
     <View style={styles.screen}>
@@ -419,7 +451,7 @@ export default function ExploreScreen() {
           places={places}
           displayMode="overview"
           focusSelected={false}
-          onSelectPlace={setSelectedPlace}
+          onSelectPlace={selectFromMap}
           onCenterChange={setMapCenter}
           currentLocation={deviceLocation}
           onRequestCurrentLocation={() => void requestCurrentLocation()}
@@ -540,12 +572,12 @@ export default function ExploreScreen() {
 
       <View style={[styles.resultSheet, listVisible && styles.listSheet]}>
         <View style={styles.sheetHandle} />
-        {selectedPlace ? (
+        {selectedPlace && panelLevel !== "collapsed" ? (
           <View style={styles.selectedSummary}>
             <View style={styles.selectedNumber}>
               <Text style={styles.selectedNumberText}>
                 {places.findIndex(
-                  (item) => String(item.id) === String(selectedPlace.id),
+                  (item) => placeIdentity(item) === placeIdentity(selectedPlace),
                 ) + 1}
               </Text>
             </View>
@@ -580,29 +612,30 @@ export default function ExploreScreen() {
           </Text>
           <Pressable
             accessibilityRole="button"
-            onPress={() => setListVisible((value) => !value)}
+            onPress={() => setPanelLevel((value) => value === "collapsed" ? "peek" : value === "peek" ? "expanded" : "collapsed")}
           >
             <Text style={styles.routeButtonLabel}>
-              {listVisible ? "지도 보기" : "목록 보기"}
+              {panelLevel === "collapsed" ? "카드 보기" : panelLevel === "peek" ? "전체 보기" : "접기"}
             </Text>
           </Pressable>
         </View>
-        <Text style={styles.sortCaption}>
+        {panelLevel !== "collapsed" ? <Text style={styles.sortCaption}>
           {center.lat !== null
             ? searchCenterOverride
               ? "현재 지도 중심에서 가까운순"
               : "검색 기준 위치에서 가까운순"
             : "위치 정보 없음 · 검색어 관련순"}
-        </Text>
+        </Text> : null}
 
-        {status === "loading" ? (
+        {places.length && searchFailed ? <View style={[styles.compactStateBox, styles.errorStateBox]}><Text style={styles.stateText}>{message}</Text><Pressable onPress={retryLastSearch} style={styles.retryButton}><Text style={styles.retryButtonText}>다시 시도</Text></Pressable></View> : null}
+        {panelLevel === "collapsed" ? null : status === "loading" && !places.length ? (
           <View style={styles.compactStateBox}>
             <ActivityIndicator color={Palette.accent} />
             <Text style={styles.stateText}>
               {message || "장소를 찾고 있습니다."}
             </Text>
           </View>
-        ) : status === "error" ? (
+        ) : status === "error" && !places.length ? (
           <View style={[styles.compactStateBox, styles.errorStateBox]}>
             <Text style={styles.stateText}>{message}</Text>
             {searchFailed ? (
@@ -615,7 +648,7 @@ export default function ExploreScreen() {
               </Pressable>
             ) : null}
           </View>
-        ) : message ? (
+        ) : message && !places.length ? (
           <View style={styles.compactStateBox}>
             <Text style={styles.stateText}>{message}</Text>
           </View>
@@ -627,6 +660,7 @@ export default function ExploreScreen() {
           </View>
         ) : (
           <ScrollView
+            ref={resultListRef}
             key={listVisible ? "list" : "map"}
             horizontal={!listVisible}
             keyboardShouldPersistTaps="handled"
@@ -636,11 +670,19 @@ export default function ExploreScreen() {
               listVisible ? styles.verticalResults : styles.horizontalResults
             }
           >
-            {places.map((place, index) => {
-              const selected = selectedPlace?.id === place.id;
+            {(panelLevel === "peek" ? (selectedPlace ? [selectedPlace] : places.slice(0, 1)) : places).map((place) => {
+              const index = places.findIndex((item) => placeIdentity(item) === placeIdentity(place));
+              const selected = selectedPlace ? placeIdentity(selectedPlace) === placeIdentity(place) : false;
               return (
                 <Pressable
-                  key={`${place.result_source}-${place.id}`}
+                  key={placeIdentity(place)}
+                  onLayout={(event) => {
+                    cardPositions.current[placeIdentity(place)] = event.nativeEvent.layout.y;
+                    if (pendingScrollKey.current === placeIdentity(place)) {
+                      resultListRef.current?.scrollTo({ y: event.nativeEvent.layout.y, animated: true });
+                      pendingScrollKey.current = "";
+                    }
+                  }}
                   accessibilityRole="button"
                   accessibilityLabel={`${place.name} 상세정보`}
                   onPress={() => openPlaceDetails(place)}

@@ -49,6 +49,7 @@
     "web": "expo start --web",
     "check:server": "node ../scripts/check-server-apis.mjs",
     "test": "node --test tests/*.test.cjs",
+    "test:ux": "node ../frontend/node_modules/vitest/vitest.mjs run --config vitest.ux.config.mjs",
     "lint": "expo lint"
   },
   "private": true

@@ -100,7 +100,7 @@ export function PlaceMap({
     const payload = {
       type: "life-infra-map:set-places",
       places: mapPlaces.map((item, mapIndex) => {
-        const resultIndex = validPlaces.findIndex(
+        const resultIndex = places.findIndex(
           (candidate) => placeIdentity(candidate) === placeIdentity(item),
         );
         return {
@@ -172,7 +172,7 @@ export function PlaceMap({
     onRequestCurrentLocation,
     focusSelected,
     place,
-    validPlaces,
+    places,
   ]);
 
   const receiveMessage = useCallback(

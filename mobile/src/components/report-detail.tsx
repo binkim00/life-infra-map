@@ -12,7 +12,6 @@ import {
 } from "@/constants/place-categories";
 import { PlaceMap } from "./place-map";
 import type { Place } from "@/types/place";
-import { placeReportStatusLabel, placeReportTypeLabel } from "@/utils/place-report-labels";
 
 type ReportData = {
   id?: number;
@@ -23,6 +22,7 @@ type ReportData = {
   description?: string;
   status?: string;
   status_label?: string;
+  processing_result?: string;
   report_type_label?: string;
   report_type?: string;
   suggested_lat?: number;
@@ -86,7 +86,7 @@ export function ReportDetail({
     });
   return (
     <Screen
-      title={receipt ? `제보 접수 #${id}` : admin ? `장소 제보 #${id}` : "제보 상세"}
+      title={receipt ? "제보 접수 완료" : admin ? `장소 제보 #${id}` : "제보 상세"}
       subtitle={admin ? "제출 내용과 위치를 확인한 뒤 처리해 주세요." : "접수 내용과 검토 진행 상태를 확인하세요."}
       back
       footer={pendingAdmin ? (
@@ -109,6 +109,7 @@ export function ReportDetail({
           </View>
         </View>
       ) : null}
+      {!admin && data.processing_result ? <Text style={ui.muted}>{data.processing_result}</Text> : null}
       <LoadState loading={loading} error={error} retry={reload} />
       {data.id ? (
         <>
@@ -117,8 +118,8 @@ export function ReportDetail({
               {data.suggested_name || data.place_name}
             </Text>
             <Text style={ui.muted}>
-              #{data.id} · {placeReportStatusLabel(data.status, data.status_label)} ·{" "}
-              {placeReportTypeLabel(data.report_type, data.report_type_label)}
+              {data.status_label || "처리 상태 확인 중"} ·{" "}
+              {data.report_type_label}
             </Text>
             <Text style={ui.muted}>
               {data.created_at
@@ -140,7 +141,7 @@ export function ReportDetail({
           ) : (
             <Text style={ui.muted}>지도에 표시할 위치가 없습니다.</Text>
           )}
-          {data.admin_note ? (
+          {admin && data.admin_note ? (
             <Text style={ui.success}>검토 메모: {data.admin_note}</Text>
           ) : null}
           {data.images?.length ? (

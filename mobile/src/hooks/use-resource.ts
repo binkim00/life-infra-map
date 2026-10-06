@@ -1,5 +1,6 @@
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { useFocusEffect } from "expo-router";
+import { userErrorMessage } from "../../../shared/user-message";
 
 /** Ignore stale responses and refresh when returning from a child screen. */
 export function useResource<T>(
@@ -25,9 +26,7 @@ export function useResource<T>(
       if (request === generation.current) setData(value);
     } catch (cause) {
       if (request === generation.current)
-        setError(
-          cause instanceof Error ? cause.message : "불러오지 못했습니다.",
-        );
+        setError(userErrorMessage(cause));
     } finally {
       if (request === generation.current) setLoading(false);
     }

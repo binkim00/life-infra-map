@@ -75,7 +75,7 @@ export class ApiError extends Error {
     message?: string,
     kind?: "connection" | "timeout" | "client" | "server",
   ) {
-    super(message || `요청에 실패했습니다. (${status})`);
+    super(message || httpErrorMessage(status, data));
     this.name = "ApiError";
     this.status = status;
     this.data = data;

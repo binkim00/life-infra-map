@@ -2,7 +2,7 @@ import { useResource } from "@/hooks/use-resource";
 import { useAction } from "@/hooks/use-action";
 import { LoadState } from "@/components/load-state";
 import { useLocalSearchParams } from "expo-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Alert, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { boardsApi } from "@/api/boards";
 import { INPUT_PLACEHOLDER_COLOR, Screen, ui } from "@/components/screen";
@@ -42,6 +42,12 @@ export default function AdminUserDetailScreen() {
   const [reason, setReason] = useState("");
   const [message, setMessage] = useState("");
   const [status, setStatus] = useState("");
+  const [now, setNow] = useState(0);
+  useEffect(() => {
+    const firstTick = setTimeout(() => setNow(Date.now()), 0);
+    const interval = setInterval(() => setNow(Date.now()), 60_000);
+    return () => { clearTimeout(firstTick); clearInterval(interval); };
+  }, []);
   const { data, loading, error, reload: load } = useResource<UserData>(
     () => boardsApi.adminUser(userId).then(result => {
       const payload = result as AdminUserPayload;
@@ -155,7 +161,7 @@ export default function AdminUserDetailScreen() {
         <Text style={ui.label}>제재 이력</Text>
         {data.penalties?.map((item) => {
           const effective = item.is_active && item.penalty_type !== "warning"
-            && (!item.end_at || new Date(item.end_at).getTime() > Date.now());
+            && (!item.end_at || now === 0 || new Date(item.end_at).getTime() > now);
           const label = penaltyOptions.find(([type]) => type === item.penalty_type)?.[1] || "이용 제한";
           return <View key={item.id} style={{ gap: 8, marginTop: 12 }}>
             <Text style={ui.label}>{label} · {effective ? "적용 중" : item.is_active ? "종료" : "해제됨"}</Text>

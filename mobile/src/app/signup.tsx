@@ -1,3 +1,4 @@
+import { userErrorMessage, userText } from "../../../shared/user-message";
 import * as ImagePicker from "expo-image-picker";
 import { File } from "expo-file-system";
 import { router } from "expo-router";
@@ -73,9 +74,9 @@ export default function SignupScreen() {
     } catch (cause) {
       if (cause instanceof ApiError && cause.data && typeof cause.data === "object") {
         const first = Object.values(cause.data as Record<string, unknown>)[0];
-        setError(Array.isArray(first) && first[0] ? String(first[0]) : cause.message);
+        setError(userText(Array.isArray(first) ? first[0] : "", "회원가입에 실패했습니다. 입력 내용을 확인해 주세요."));
       } else {
-        setError(cause instanceof Error ? cause.message : "회원가입에 실패했습니다. 입력 내용을 확인해 주세요.");
+        setError(userErrorMessage(cause, "회원가입에 실패했습니다. 입력 내용을 확인해 주세요."));
       }
     } finally {
       setLoading(false);

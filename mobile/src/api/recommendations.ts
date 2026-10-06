@@ -75,6 +75,11 @@ export const recommendationApi = {
     apiRequest<Record<string, unknown>>("/recommendations/places/", {
       params: params as Record<string, string | number>,
     }),
+  nearbyPlaces: (lat: number, lng: number) =>
+    apiRequest<{ results: import("@/types/place").Place[] }>("/recommendations/places/", {
+      params: { lat, lng, radius: 3000, limit: 20 },
+      auth: false,
+    }),
   searchLogs: (params: Record<string, unknown> = {}) =>
     apiRequest<Record<string, unknown>>("/recommendations/search-logs/", {
       params: params as Record<string, string | number>,

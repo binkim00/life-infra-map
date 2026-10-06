@@ -9,16 +9,15 @@ import { recommendationApi } from "@/api/recommendations";
 import { Screen, ui } from "@/components/screen";
 import { Palette, Radius } from "@/constants/theme";
 import { PlacePhoto } from "@/components/place-photo";
-import {
-  placeReportStatusLabel,
-  placeReportTypeLabel,
-} from "@/utils/place-report-labels";
 type Report = {
   id: number;
   place_name?: string;
   report_type?: string;
   suggested_category?: string;
   status?: string;
+  status_label?: string;
+  report_type_label?: string;
+  processing_result?: string;
   description?: string;
   created_at?: string;
   admin_note?: string;
@@ -73,22 +72,22 @@ export default function MyReportsScreen() {
           <Pressable
             key={report.id}
             accessibilityRole="button"
-            accessibilityLabel={`${report.place_name || `제보 ${report.id}`} 상세 보기`}
+            accessibilityLabel={`${report.place_name || "장소 제보"} 상세 보기`}
             onPress={() => router.push({ pathname: "/mypage/report-detail" as never, params: { id: String(report.id) } })}
             style={({ pressed }) => [ui.card, styles.report, pressed && styles.pressed]}
           >
             <View style={ui.row}>
               <PlacePhoto category={report.suggested_category} fallback={report.id} width={58} height={58} style={styles.reportPhoto} />
               <View style={ui.grow}>
-                <Text style={styles.receipt}>제보 #{report.id}</Text>
+                <Text style={styles.receipt}>장소 제보</Text>
                 <Text style={styles.name}>{report.place_name || "장소 이름 확인 중"}</Text>
               </View>
               <Text style={[styles.status, report.status === "approved" && styles.statusApproved, report.status === "rejected" && styles.statusRejected]}>
-                {placeReportStatusLabel(report.status)}
+                {report.status_label || "처리 상태 확인 중"}
               </Text>
             </View>
             <Text style={styles.meta}>
-              {placeReportTypeLabel(report.report_type)} ·{" "}
+              {report.report_type_label || "장소 제보"} ·{" "}
               {report.created_at
                 ? new Date(report.created_at).toLocaleDateString()
                 : ""}
@@ -96,9 +95,7 @@ export default function MyReportsScreen() {
             {report.description ? (
               <Text style={styles.content}>{report.description}</Text>
             ) : null}
-            {report.admin_note ? (
-              <View style={styles.adminNote}><Text style={styles.adminNoteLabel}>검토 메모</Text><Text style={styles.adminNoteText}>{report.admin_note}</Text></View>
-            ) : null}
+            <Text style={styles.content}>{report.processing_result}</Text>
             <Text style={styles.more}>접수 내용과 처리 과정 보기  ›</Text>
           </Pressable>
         ))}

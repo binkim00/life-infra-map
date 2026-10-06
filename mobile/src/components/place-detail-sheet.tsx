@@ -2,6 +2,7 @@ import { type ComponentProps, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Linking,
+  Keyboard,
   Modal,
   Pressable,
   ScrollView,
@@ -40,7 +41,6 @@ const CATEGORY_LABELS: Record<string, string> = {
 const categoryLabel = (place: Place) =>
   place.category_label ||
   CATEGORY_LABELS[place.category] ||
-  place.category ||
   "장소";
 
 const kakaoMapUrl = (place: Place) =>
@@ -157,7 +157,8 @@ function PlaceDetailContent({
 
   const embedded = Boolean(showWebDetail && detailUrl);
   const goBack = () => {
-    if (embedded && canGoBack && !webDetailError) webViewRef.current?.goBack();
+    if (Keyboard.isVisible()) Keyboard.dismiss();
+    else if (embedded && canGoBack && !webDetailError) webViewRef.current?.goBack();
     else onClose();
   };
 

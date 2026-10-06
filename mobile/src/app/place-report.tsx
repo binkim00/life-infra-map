@@ -225,7 +225,9 @@ function PlaceReportForm({ params }: { params: ReportParams }) {
     } catch (error) {
       const details = error instanceof ApiError && error.status === 400 && error.data && typeof error.data === "object"
         ? Object.values(error.data).flat().filter(value => typeof value === "string").join("\n") : "";
-      setMessage(details || (error instanceof Error ? error.message : "제보 접수에 실패했습니다."));
+      console.warn("Place report submission failed", error);
+      setMessage(details && !/(exception|traceback|stack|http|\b\d{3}\b|_[a-z]+|[A-Z_]{4,})/i.test(details)
+        ? details : "제보를 접수하지 못했어요. 입력 내용을 확인하고 다시 시도해 주세요.");
     } finally {
       setLoading(false);
     }

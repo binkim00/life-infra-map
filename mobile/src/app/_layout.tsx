@@ -1,10 +1,17 @@
-import { Stack } from "expo-router";
+import { Stack, usePathname } from "expo-router";
+import { useEffect } from "react";
 import { StatusBar } from "expo-status-bar";
-import { StyleSheet, View } from "react-native";
+import { BackHandler, StyleSheet, View } from "react-native";
+import { handleAppBack } from "@/utils/back-navigation";
 
 import { AuthProvider } from "@/auth/auth-context";
 
 export default function RootLayout() {
+  const pathname = usePathname();
+  useEffect(() => {
+    const listener = BackHandler.addEventListener("hardwareBackPress", () => handleAppBack(pathname));
+    return () => listener.remove();
+  }, [pathname]);
   return (
     <AuthProvider>
       <StatusBar style="dark" />

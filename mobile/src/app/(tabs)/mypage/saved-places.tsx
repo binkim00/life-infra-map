@@ -1,3 +1,4 @@
+import { userErrorMessage } from "../../../../../shared/user-message";
 import { recommendationApi } from "@/api/recommendations";
 import { router, useLocalSearchParams } from "expo-router";
 import { PlaceDetailSheet } from "@/components/place-detail-sheet";
@@ -92,7 +93,7 @@ export default function SavedPlacesScreen() {
     try {
       await action();
     } catch (caught) {
-      setMessage(caught instanceof Error ? caught.message : "요청을 처리하지 못했습니다.");
+      setMessage(userErrorMessage(caught, "요청을 처리하지 못했습니다."));
     } finally {
       setBusyKey("");
     }

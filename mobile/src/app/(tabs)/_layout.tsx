@@ -29,6 +29,7 @@ export default function MainTabs() {
   }, [pathname]);
   return (
     <Tabs
+      backBehavior="history"
       screenOptions={{ headerShown: false, lazy: true, animation: "none" }}
       tabBar={() => MAIN_PATHS.has(pathname) ? <BottomNav /> : null}
     >

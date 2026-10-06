@@ -1,5 +1,6 @@
-import { router } from "expo-router";
-import { PropsWithChildren, ReactNode } from "react";
+import { usePathname } from "expo-router";
+import { handleAppBack } from "@/utils/back-navigation";
+import { PropsWithChildren, ReactNode, type Ref } from "react";
 import {
   KeyboardAvoidingView,
   Platform,
@@ -23,13 +24,16 @@ export function Screen({
   back = false,
   action,
   footer,
+  scrollRef,
 }: PropsWithChildren<{
   title: string;
   subtitle?: ReactNode;
   back?: boolean;
   action?: ReactNode;
   footer?: ReactNode;
+  scrollRef?: Ref<ScrollView>;
 }>) {
+  const pathname = usePathname();
   return (
     <KeyboardAvoidingView
       style={styles.screen}
@@ -37,6 +41,7 @@ export function Screen({
     >
       <SafeAreaView style={styles.safe} edges={["top", "left", "right"]}>
         <ScrollView
+          ref={scrollRef}
           contentContainerStyle={styles.content}
           keyboardShouldPersistTaps="handled"
         >
@@ -47,7 +52,7 @@ export function Screen({
                   accessibilityLabel="뒤로 가기"
                   accessibilityRole="button"
                   hitSlop={10}
-                  onPress={() => router.back()}
+                  onPress={() => handleAppBack(pathname)}
                   style={({ pressed }) => [styles.back, pressed && styles.pressed]}
                 >
                   <AppIcon ios="chevron.left" android="arrow_back" size={22} color={Palette.ink} />

@@ -1,3 +1,4 @@
+import { userErrorMessage } from "../../../shared/user-message";
 import { router, useFocusEffect } from "expo-router";
 import * as Crypto from "expo-crypto";
 import * as WebBrowser from "expo-web-browser";
@@ -5,7 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import { BackHandler, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { ApiError, apiRequest } from "@/api/client";
+import { apiRequest } from "@/api/client";
 import { useAuth } from "@/auth/auth-context";
 import { Palette } from "@/constants/theme";
 
@@ -64,7 +65,7 @@ export default function LoginScreen() {
       await exchangeSocialTicket(url.searchParams.get("ticket")!);
       if (router.canGoBack()) router.back(); else router.replace("/");
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "소셜 로그인을 완료하지 못했습니다.");
+      setError(userErrorMessage(caught, "소셜 로그인을 완료하지 못했습니다."));
     } finally { setLoading(false); }
   };
 
@@ -76,8 +77,7 @@ export default function LoginScreen() {
       await login(username, password);
       if (router.canGoBack()) router.back(); else router.replace("/");
     } catch (caught) {
-      const data = caught instanceof ApiError ? (caught.data as { detail?: string }) : null;
-      setError(data?.detail || (caught instanceof Error ? caught.message : "로그인하지 못했습니다."));
+      setError(userErrorMessage(caught, "로그인하지 못했습니다."));
     } finally { setLoading(false); }
   };
 

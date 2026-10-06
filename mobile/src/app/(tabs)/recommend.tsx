@@ -3,8 +3,10 @@ import { searchLocation } from "@/utils/location";
 import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Linking,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -18,6 +20,8 @@ import { PlaceMap } from "@/components/place-map";
 import { INPUT_PLACEHOLDER_COLOR, Screen, ui } from "@/components/screen";
 import type { Place } from "@/types/place";
 import { savedPlacePayload } from "@/utils/saved-place-payload";
+import { conditionChips as serverConditionChips, keepsPreviousResults, placeKey, referencedPlaceKeys } from "../../../../shared/search-ux";
+import { userText } from "../../../../shared/user-message";
 
 type AiPlace = Place & {
   source?: string;
@@ -52,6 +56,8 @@ type AiResponse = {
   )[];
   decision_action?: string;
   search_plan?: Record<string, unknown>;
+  result_indexes?: number[];
+  referenced_place_keys?: string[];
   result_quality?: {
     returned_count?: number;
     all_conditions_met?: number;
@@ -64,11 +70,13 @@ type ChatMessage = {
   id: string;
   role: "user" | "assistant";
   text: string;
+  placeKeys?: string[];
 };
 
 type ConversationSession = {
   id: string;
   token: string;
+  version?: number;
 };
 
 const GREETING =
@@ -95,8 +103,8 @@ const optionAction = (
 ) => (typeof option === "string" ? undefined : option.action);
 
 const assistantText = (data: AiResponse, count: number) => {
-  if (data.clarification_question) return data.clarification_question;
-  if (data.message) return data.message;
+  if (data.clarification_question) return userText(data.clarification_question, "어떤 조건으로 찾을지 조금 더 알려주세요.");
+  if (data.message) return userText(data.message, "지금 장소 정보를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.");
   if (data.decision_action === "search") {
     if (!count)
       return "말씀한 조건을 모두 확인했지만, 지금 보여드릴 만한 장소를 찾지 못했어요. 지역을 넓히거나 꼭 필요한 조건 하나를 덜어볼까요?";
@@ -176,8 +184,19 @@ export default function RecommendScreen() {
   const [clarificationOptions, setClarificationOptions] = useState<
     NonNullable<AiResponse["clarification_options"]>
   >([]);
+  const conditionChips = serverConditionChips(searchPlan);
+  const scrollRef = useRef<ScrollView>(null);
+  const cardPositions = useRef<Record<string, number>>({});
+  const listPosition = useRef(0);
+  const [highlightedKeys, setHighlightedKeys] = useState<string[]>([]);
+  const turnBusyRef = useRef(false);
+  const [sessionPreparing, setSessionPreparing] = useState(false);
+  const [failedTurn, setFailedTurn] = useState<{ text: string; action?: { type?: "show_unverified" | "relax_constraints"; condition_labels?: string[] }; filters?: { location: string; category: string; required: string[] } } | null>(null);
   const sessionRef = useRef<ConversationSession | null>(null);
   const lastRouteRequestRef = useRef("");
+  const generationRef = useRef(0);
+  const resetConfirmationOpen = useRef(false);
+  const creatingSessionRef = useRef<Promise<ConversationSession> | null>(null);
   const needsWebFallback =
     results.length < 5 ||
     results
@@ -185,15 +204,22 @@ export default function RecommendScreen() {
       .every((place) =>
         ["empty", "thin"].includes(place.evidence_quality_level || "empty"),
       );
-  const createSession = async () => {
-    const raw = await recommendationApi.createConversationSession();
+  const createSession = async (generation = generationRef.current) => {
+    if (creatingSessionRef.current) return creatingSessionRef.current;
+    setSessionPreparing(true);
+    const pending = recommendationApi.createConversationSession().then((raw) => {
     const session = {
       id: String(raw.id || ""),
       token: String(raw.conversation_token || ""),
+      version: Number(raw.version || 0),
     };
     if (!session.id) throw new Error("conversation_session_missing");
-    sessionRef.current = session;
+    if (generation === generationRef.current) sessionRef.current = session;
+    else void recommendationApi.closeConversationSession(session.id, session.token).catch(() => undefined);
     return session;
+    });
+    creatingSessionRef.current = pending;
+    try { return await pending; } finally { if (creatingSessionRef.current === pending) { creatingSessionRef.current = null; setSessionPreparing(false); } }
   };
 
   const submitTurn = async (
@@ -205,17 +231,20 @@ export default function RecommendScreen() {
     selectedFilters?: { location: string; category: string; required: string[] },
   ) => {
     const text = next.trim();
-    if (!text || loading) return;
+    if (!text || turnBusyRef.current || creatingSessionRef.current) return;
+    turnBusyRef.current = true;
+    const generation = generationRef.current;
     setQuery("");
     setMessage("");
     setLoading(true);
-    setClarificationOptions([]);
+    setFailedTurn(null);
     setChatMessages((current) => [
       ...current,
       { id: `user-${Date.now()}`, role: "user", text },
     ]);
     try {
       const session = sessionRef.current || (await createSession());
+      if (generation !== generationRef.current) return;
       // Keep the session even after conflicts; creating a replacement here
       // would silently discard earlier constraints.
       const raw = await recommendationApi.sendConversationTurn(
@@ -228,39 +257,37 @@ export default function RecommendScreen() {
           limit: 10,
           conversation_action: conversationAction,
           selected_filters: selectedFilters,
+          selected_result_key: placeKey(selected),
+          expected_version: session.version ?? 0,
         },
       );
       const data = raw as AiResponse;
+      if (generation !== generationRef.current) return;
+      const responseVersion = Number((raw.conversation as Record<string, unknown> | undefined)?.version || 0);
+      if (responseVersion > 0) sessionRef.current = { ...session, version: responseVersion };
       const receivedPlaces = data.results || [];
-      const supportedPlaces = receivedPlaces.filter(
-        (place) => place.result_tier !== "best_available",
-      );
-      const fallbackPlaces = receivedPlaces.filter(
-        (place) => place.result_tier === "best_available",
-      );
-      const allFallback =
-        receivedPlaces.length > 0 &&
-        data.result_quality?.best_available === receivedPlaces.length;
-      const places = allFallback
-        ? receivedPlaces.slice(0, 5)
-        : supportedPlaces.length >= 3
-          ? supportedPlaces.slice(0, 10)
-          : [
-              ...supportedPlaces,
-              ...fallbackPlaces.slice(
-                0,
-                Math.max(0, 3 - supportedPlaces.length),
-              ),
-            ];
+      const places = receivedPlaces;
       const action = data.decision_action || "";
-      if (action !== "ask_clarification") {
+      if (action === "ai_unavailable") {
+        setQuery(text);
+        setFailedTurn({ text, action: conversationAction, filters: selectedFilters });
+      }
+      const references = keepsPreviousResults(action) ? referencedPlaceKeys(data, results) : [];
+      if (!keepsPreviousResults(action)) {
         setResults(places);
         setSelected(places[0] || null);
         setWebResults([]);
+        setHighlightedKeys([]);
+      } else if (references.length) {
+        setHighlightedKeys(references);
+        const target = results.find((place) => placeKey(place) === references[0]);
+        if (target) setSelected(target);
       }
       setCanSearchWeb(action === "search");
-      setSearchPlan(data.search_plan || null);
-      setLocationBasisLabel(resolvedLocationLabel(data.search_plan));
+      if (data.search_plan) {
+        setSearchPlan(data.search_plan);
+        setLocationBasisLabel(resolvedLocationLabel(data.search_plan));
+      }
       setClarificationOptions(data.clarification_options || []);
       setChatMessages((current) => [
         ...current,
@@ -268,6 +295,7 @@ export default function RecommendScreen() {
           id: `assistant-${Date.now()}`,
           role: "assistant",
           text: assistantText(data, places.length),
+          placeKeys: references,
         },
       ]);
       if (isLoggedIn)
@@ -287,7 +315,9 @@ export default function RecommendScreen() {
           search_plan_snapshot: data.search_plan || {},
         });
     } catch (error) {
+      if (generation !== generationRef.current) return;
       setQuery(text);
+      setFailedTurn({ text, action: conversationAction, filters: selectedFilters });
       setChatMessages((current) => [
         ...current,
         {
@@ -300,7 +330,7 @@ export default function RecommendScreen() {
         },
       ]);
     } finally {
-      setLoading(false);
+      if (generation === generationRef.current) { turnBusyRef.current = false; setLoading(false); }
     }
   };
 
@@ -308,10 +338,17 @@ export default function RecommendScreen() {
 
   useEffect(() => {
     const routeQuery = params.q?.trim();
-    if (!routeQuery || loading) return;
+    if (!routeQuery) {
+      if (!sessionRef.current) {
+        void createSession().catch(() => setMessage("대화 준비에 실패했습니다. 검색을 누르면 다시 연결합니다."));
+      }
+      return;
+    }
     const routeRequest = JSON.stringify([routeQuery, params.selectedFilters, params.searchRequest]);
     if (lastRouteRequestRef.current === routeRequest) return;
     lastRouteRequestRef.current = routeRequest;
+    generationRef.current += 1;
+    turnBusyRef.current = false;
     const previous = sessionRef.current;
     sessionRef.current = null;
     if (previous) void recommendationApi.closeConversationSession(previous.id, previous.token).catch(() => undefined);
@@ -327,15 +364,28 @@ export default function RecommendScreen() {
     } catch {
       selectedFilters = undefined;
     }
-    void submitTurn(routeQuery, undefined, selectedFilters);
+    const pendingSession = creatingSessionRef.current;
+    void (async () => {
+      if (pendingSession) await pendingSession.catch(() => undefined);
+      if (lastRouteRequestRef.current === routeRequest) {
+        await submitTurn(routeQuery, undefined, selectedFilters);
+      }
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [params.q, params.selectedFilters, params.searchRequest, loading]);
+  }, [params.q, params.selectedFilters, params.searchRequest]);
 
   const resetConversation = async () => {
+    if (creatingSessionRef.current) return;
+    generationRef.current += 1;
+    turnBusyRef.current = false;
     const previous = sessionRef.current;
     sessionRef.current = null;
     setResults([]);
     setSelected(null);
+    setDetailVisible(false);
+    setHighlightedKeys([]);
+    setFailedTurn(null);
+    cardPositions.current = {};
     setSearchPlan(null);
     setWebResults([]);
     setCanSearchWeb(false);
@@ -345,6 +395,8 @@ export default function RecommendScreen() {
       { id: `greeting-${Date.now()}`, role: "assistant", text: GREETING },
     ]);
     setMessage("");
+    setLoading(false);
+    setQuery("");
     if (previous)
       void recommendationApi
         .closeConversationSession(previous.id, previous.token)
@@ -356,6 +408,18 @@ export default function RecommendScreen() {
         "새 대화를 준비하지 못했습니다. 첫 메시지를 보내면 다시 시도합니다.",
       );
     }
+  };
+  const requestNewConversation = () => {
+    if (creatingSessionRef.current || resetConfirmationOpen.current) return;
+    if (query.trim() || searchPlan || results.length || chatMessages.length > 1) {
+      resetConfirmationOpen.current = true;
+      Alert.alert("새 대화", "현재 대화와 검색 조건을 지우고 새로 시작할까요?", [
+        { text: "취소", style: "cancel", onPress: () => { resetConfirmationOpen.current = false; } },
+        { text: "새로 시작", onPress: () => { resetConfirmationOpen.current = false; void resetConversation(); } },
+      ], { cancelable: true, onDismiss: () => { resetConfirmationOpen.current = false; } });
+      return;
+    }
+    void resetConversation();
   };
 
   const applyCurrentLocation = async () => {
@@ -400,6 +464,7 @@ export default function RecommendScreen() {
     };
   }, [hasInitialCenter]);
   const searchWeb = async () => {
+    const generation = generationRef.current;
     try {
       setLoading(true);
       const raw = await recommendationApi.aiWebSearch({
@@ -412,6 +477,7 @@ export default function RecommendScreen() {
         condition: {},
         existing_results_summary: { count: results.length },
       });
+      if (generation !== generationRef.current) return;
       const envelope = raw as {
         ai_web_search?: {
           candidates?: AiPlace[];
@@ -426,15 +492,15 @@ export default function RecommendScreen() {
       const next = data.candidates || data.results || [];
       setWebResults(next);
       setMessage(
-        data.error ||
+        (data.error ? userText(data.error) : "") ||
           (next.length
             ? "웹 참고 후보를 불러왔습니다."
             : "추가로 확인된 후보는 없습니다. 현재 결과의 확인 필요 조건을 참고해 주세요."),
       );
     } catch {
-      setMessage("웹 참고 검색에 실패했습니다.");
+      if (generation === generationRef.current) setMessage("지금 참고 정보를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.");
     } finally {
-      setLoading(false);
+      if (generation === generationRef.current) setLoading(false);
     }
   };
   const save = async () => {
@@ -486,14 +552,23 @@ export default function RecommendScreen() {
       },
     });
   };
+  const focusCard = (place: AiPlace) => {
+    setSelected(place);
+    requestAnimationFrame(() => scrollRef.current?.scrollTo({ y: listPosition.current + (cardPositions.current[placeKey(place)] || 0), animated: true }));
+  };
   return (
     <View style={styles.root}>
       <Screen
+        scrollRef={scrollRef}
         title="상황 맞춤 추천"
         subtitle="원하는 상황과 꼭 필요한 조건을 알려주세요. 근거를 구분해 추천합니다."
         back
         footer={
           <>
+            <Pressable accessibilityRole="button" onPress={requestNewConversation} disabled={sessionPreparing} style={styles.newConversationButton}>
+              <Text style={styles.resetText}>＋ 새 대화</Text>
+            </Pressable>
+            {failedTurn ? <Pressable accessibilityRole="button" disabled={loading} onPress={() => void submitTurn(failedTurn.text, failedTurn.action, failedTurn.filters)} style={ui.buttonSecondary}><Text style={ui.buttonSecondaryText}>같은 조건으로 다시 시도</Text></Pressable> : null}
             {clarificationOptions.length ? (
               <View style={styles.optionRow}>
                 {clarificationOptions.map((option, index) => (
@@ -559,10 +634,8 @@ export default function RecommendScreen() {
         </Pressable>
         <View style={styles.chatHeader}>
           <Text style={styles.chatTitle}>대화</Text>
-          <Pressable onPress={resetConversation} disabled={loading}>
-            <Text style={styles.resetText}>새 대화</Text>
-          </Pressable>
         </View>
+        {conditionChips.length ? <View style={styles.optionRow}>{conditionChips.map((chip) => <View key={chip} style={styles.conditionChip}><Text style={styles.conditionText}>{chip}</Text></View>)}</View> : null}
         {chatMessages.length === 1 && !results.length && !loading ? (
           <View style={styles.welcomeCard}>
             <View style={styles.mascotWrap}>
@@ -600,6 +673,7 @@ export default function RecommendScreen() {
               >
                 {item.text}
               </Text>
+              {item.placeKeys?.length ? <View style={styles.optionRow}>{results.filter((place) => item.placeKeys?.includes(placeKey(place))).map((place) => <Pressable key={placeKey(place)} onPress={() => focusCard(place)} style={styles.optionButton}><Text style={styles.optionText}>{place.name} 카드 보기</Text></Pressable>)}</View> : null}
             </View>
           ))}
           {loading ? (
@@ -629,7 +703,7 @@ export default function RecommendScreen() {
                   places={results}
                   currentLocation={deviceLocation}
                   onRequestCurrentLocation={() => void applyCurrentLocation()}
-                  onSelectPlace={setSelected}
+                  onSelectPlace={focusCard}
                 />
                 <View style={styles.mapFooter}>
                   <Pressable
@@ -673,17 +747,18 @@ export default function RecommendScreen() {
                 <Text style={ui.buttonSecondaryText}>부족한 결과 보강하기</Text>
               </Pressable>
             ) : null}
-            <View style={styles.list}>
+            <View style={styles.list} onLayout={(event) => { listPosition.current = event.nativeEvent.layout.y; }}>
               {results.map((place, index) => (
                 <Pressable
-                  key={`${place.source || place.result_source || "place"}:${place.id}`}
+                  key={placeKey(place)}
+                  onLayout={(event) => { cardPositions.current[placeKey(place)] = event.nativeEvent.layout.y; }}
                   accessibilityRole="button"
                   accessibilityLabel={`${place.name} 상세정보`}
                   onPress={() => {
                     setSelected(place);
                     setDetailVisible(true);
                   }}
-                  style={[ui.card, selected?.id === place.id && styles.active]}
+                  style={[ui.card, (placeKey(selected) === placeKey(place) || highlightedKeys.includes(placeKey(place))) && styles.active]}
                 >
                   <View style={ui.row}>
                     <View style={styles.rank}>
@@ -771,6 +846,9 @@ const styles = StyleSheet.create({
   },
   chatTitle: { color: "#222222", fontSize: 16, fontWeight: "900" },
   resetText: { color: "#0F766E", fontSize: 12, fontWeight: "800" },
+  newConversationButton: { minHeight: 44, alignSelf: "flex-end", justifyContent: "center", paddingHorizontal: 16, borderRadius: 12, backgroundColor: "#E7F4EF" },
+  conditionChip: { paddingHorizontal: 10, paddingVertical: 7, borderRadius: 999, backgroundColor: "#E7F4EF" },
+  conditionText: { color: "#0F766E", fontSize: 12, fontWeight: "700" },
   chat: { gap: 8 },
   welcomeCard: { padding: 20, alignItems: "center", borderWidth: 1, borderColor: "#D9E8E3", borderRadius: 22, backgroundColor: "#F5FBF9" },
   mascotWrap: { width: 94, height: 82, position: "relative", alignItems: "center", justifyContent: "flex-end" },

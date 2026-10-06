@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { searchMapPlaces } from "@/api/recommendations";
+import { recommendationApi } from "@/api/recommendations";
+import { useNotifications } from "@/hooks/use-notifications";
 import { AppIcon } from "@/components/app-icon";
 import { PlacePhoto } from "@/components/place-photo";
 import { BottomTabInset, Palette, Radius, Shadow } from "@/constants/theme";
@@ -24,12 +25,27 @@ const formatDistance = (distance?: number) => {
 };
 
 export default function HomeScreen() {
+  const { unreadCount } = useNotifications();
   const [placeQuery, setPlaceQuery] = useState("");
   const [nearbyPlaces, setNearbyPlaces] = useState<Place[]>([]);
   const [loading, setLoading] = useState(true);
   const [nearbyError, setNearbyError] = useState("");
   const [nearbyReloadKey, setNearbyReloadKey] = useState(0);
   const [nearbyCenter, setNearbyCenter] = useState<{ lat: number; lng: number } | null>(null);
+  const nearbyCards = (() => {
+    const chosen: Place[] = [];
+    const categories = new Set<string>();
+    for (const place of nearbyPlaces) {
+      const category = String(place.category || "other");
+      if (!categories.has(category)) { chosen.push(place); categories.add(category); }
+      if (chosen.length === 5) return chosen;
+    }
+    for (const place of nearbyPlaces) {
+      if (!chosen.some((item) => item.id === place.id && item.result_source === place.result_source)) chosen.push(place);
+      if (chosen.length === 5) break;
+    }
+    return chosen;
+  })();
 
   const openPlaceSearch = (nextQuery = placeQuery) => {
     const trimmed = nextQuery.trim();
@@ -47,23 +63,24 @@ export default function HomeScreen() {
   useEffect(() => {
     const controller = new AbortController();
     let active = true;
-    const loadNearbyParks = async () => {
-      const coordinates = await searchLocation({ cachedOnly: true });
-      if (!coordinates) throw new Error("위치 버튼을 누르면 주변 장소를 볼 수 있어요.");
+    let locating = true;
+    const loadNearbyPlaces = async () => {
+      const coordinates = await searchLocation({ cachedOnly: nearbyReloadKey === 0 });
+      if (!coordinates) throw new Error("현재 위치를 확인할 수 없어요. 위치 권한을 확인해 주세요.");
       const nextCenter = { lat: coordinates.latitude, lng: coordinates.longitude };
       if (active) setNearbyCenter(nextCenter);
-      return searchMapPlaces({ query: "공원", lat: nextCenter.lat, lng: nextCenter.lng, limit: 6, signal: controller.signal });
+      locating = false;
+      return recommendationApi.nearbyPlaces(nextCenter.lat, nextCenter.lng);
     };
-    loadNearbyParks()
+    loadNearbyPlaces()
       .then((data) => {
         if (!active) return;
         setNearbyPlaces(data.results);
-        setNearbyError(data.message || "");
+        setNearbyError(data.results.length ? "" : "가까운 장소를 찾지 못했어요. 지역을 선택해 다른 곳도 둘러보세요.");
       })
       .catch((error) => {
         if (!active || error?.name === "AbortError") return;
-        setNearbyPlaces([]);
-        setNearbyError(error instanceof Error ? error.message : "주변 장소를 불러오지 못했습니다.");
+        setNearbyError(locating ? "현재 위치를 확인할 수 없어요. 위치 권한을 확인하거나 지역을 선택해 주세요." : "지금 주변 장소를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.");
       })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; controller.abort(); };
@@ -72,7 +89,7 @@ export default function HomeScreen() {
   const openNearby = (place?: Place) => router.push({
     pathname: "/explore",
     params: {
-      q: "공원",
+      q: place?.name || undefined,
       searchRequest: String(Date.now()),
       placeId: place ? String(place.id) : undefined,
       lat: nearbyCenter ? String(nearbyCenter.lat) : undefined,
@@ -90,7 +107,7 @@ export default function HomeScreen() {
               <View><Text style={styles.brand}>여기일지도</Text><Text style={styles.brandCaption}>생활 장소 추천</Text></View>
             </View>
             <Pressable accessibilityLabel="알림 보기" onPress={() => router.push("/notifications")} style={styles.iconButton}>
-              <AppIcon ios="bell.fill" android="notifications" size={25} color={Palette.ink} /><View style={styles.alertDot} />
+              <AppIcon ios="bell.fill" android="notifications" size={25} color={Palette.ink} />{unreadCount > 0 ? <View style={styles.alertDot} /> : null}
             </Pressable>
           </View>
 
@@ -138,17 +155,18 @@ export default function HomeScreen() {
             <Pressable onPress={() => openNearby()}><Text style={styles.more}>더보기  ›</Text></Pressable>
           </View>
 
+          {nearbyError && nearbyPlaces.length ? <View style={styles.stateCard}><Text style={styles.stateText}>{nearbyError}</Text><Pressable onPress={() => { setLoading(true); setNearbyReloadKey((value) => value + 1); }} style={styles.retryButton}><Text style={styles.retryText}>다시 시도</Text></Pressable></View> : null}
           {loading ? (
             <View style={styles.stateCard}><ActivityIndicator color={Palette.accent} /><Text style={styles.stateText}>주변 장소를 찾고 있어요</Text></View>
           ) : nearbyPlaces.length ? (
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.placesRow}>
-              {nearbyPlaces.slice(0, 5).map((place, index) => (
+              {nearbyCards.map((place) => (
                 <Pressable key={place.id} onPress={() => openNearby(place)} style={({ pressed }) => [styles.placeCard, pressed && styles.pressed]}>
-                  <PlacePhoto category={index % 2 ? "walk" : place.category || "park"} fallback={index} width={164} height={106} style={styles.placeVisual} externalUrl={place.kakao_place_url || place.place_url} source={`${place.result_source || ""} ${place.source_label || ""}`}>
+                  <PlacePhoto category={place.category} width={164} height={106} style={styles.placeVisual} externalUrl={place.kakao_place_url || place.place_url} source={`${place.result_source || ""} ${place.source_label || ""}`}>
                     <View style={styles.distanceBadge}><Text style={styles.distanceBadgeText}>⌖ {formatDistance(place.distance)}</Text></View>
                   </PlacePhoto>
                   <Text numberOfLines={1} style={styles.placeName}>{place.name}</Text>
-                  <Text numberOfLines={1} style={styles.placeMeta}>{place.category_label || "공원 · 산책하기 좋아요"}</Text>
+                  <Text numberOfLines={1} style={styles.placeMeta}>{place.category_label || "장소 종류 확인 필요"}</Text>
                   <View style={styles.placeFoot}><Text style={styles.star}>★</Text><Text style={styles.placeSource}>{place.source_label || "여기일지도"}</Text></View>
                 </Pressable>
               ))}

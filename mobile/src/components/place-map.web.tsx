@@ -1,3 +1,4 @@
+import { placeKey } from "../../../shared/search-ux";
 import {
   useCallback,
   useEffect,
@@ -43,6 +44,7 @@ export function PlaceMap({
   fitBoundsKey,
 }: PlaceMapProps) {
   const frameRef = useRef<HTMLIFrameElement>(null);
+  const lastSelectedKey = useRef<string | null>(null);
   const validPlaces = useMemo(() => {
     const candidates = places.length ? places : place ? [place] : [];
     return candidates.filter(
@@ -57,12 +59,15 @@ export function PlaceMap({
   const mapPlaces = useMemo(() => {
     if (displayMode === "selected") return place ? [place] : [];
     const visible = validPlaces.slice(0, MAX_VISIBLE_MARKERS);
-    if (!place || visible.some((item) => String(item.id) === String(place.id)))
+    if (!place || visible.some((item) => placeKey(item) === placeKey(place)))
       return visible;
     return [...visible.slice(0, MAX_VISIBLE_MARKERS - 1), place];
   }, [displayMode, place, validPlaces]);
 
   const sendState = useCallback(() => {
+    const selectedKey = place ? placeKey(place) : null;
+    const selectionChanged = Boolean(selectedKey && lastSelectedKey.current !== selectedKey);
+    lastSelectedKey.current = selectedKey;
     const placesSignature = mapPlaces
       .map((item) => `${item.id}:${item.lat}:${item.lng}`)
       .join("|");
@@ -70,19 +75,19 @@ export function PlaceMap({
       {
         type: "life-infra-map:set-places",
         places: mapPlaces.map((item) => ({
-          id: String(item.id),
+          id: placeKey(item),
           name: item.name,
           category: item.category_label || item.category || "",
           lat: Number(item.lat),
           lng: Number(item.lng),
           label: String(
-            validPlaces.findIndex(
-              (candidate) => String(candidate.id) === String(item.id),
+            (places.length ? places : validPlaces).findIndex(
+              (candidate) => placeKey(candidate) === placeKey(item),
             ) + 1,
           ),
         })),
-        selectedId: place ? String(place.id) : null,
-        viewportMode: focusSelected ? "selected" : displayMode,
+        selectedId: place ? placeKey(place) : null,
+        viewportMode: focusSelected || selectionChanged ? "selected" : displayMode,
         viewportKey: String(
           fitBoundsKey ??
             `${displayMode}:${placesSignature}:${currentLocation?.lat ?? ""}:${currentLocation?.lng ?? ""}`,
@@ -98,7 +103,7 @@ export function PlaceMap({
       },
       new URL(embedUrl).origin,
     );
-  }, [currentLocation, displayMode, focusSelected, fitBoundsKey, mapPlaces, onMapPress, onRequestCurrentLocation, place, validPlaces]);
+  }, [currentLocation, displayMode, focusSelected, fitBoundsKey, mapPlaces, onMapPress, onRequestCurrentLocation, place, places, validPlaces]);
 
   useEffect(() => {
     const receive = (event: MessageEvent) => {
@@ -124,7 +129,7 @@ export function PlaceMap({
       }
       if (event.data?.type !== "life-infra-map:select-place") return;
       const selected = validPlaces.find(
-        (item) => String(item.id) === String(event.data.id),
+        (item) => placeKey(item) === String(event.data.id),
       );
       if (selected) onSelectPlace?.(selected);
     };

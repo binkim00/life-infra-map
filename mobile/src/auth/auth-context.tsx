@@ -110,7 +110,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
     const nextToken = String(data.access_token || data.token || "");
     const refreshToken = String(data.refresh_token || "") || null;
     const nextUser = (data.user || null) as AuthUser | null;
-    if (!nextToken) throw new Error("서버가 인증 토큰을 반환하지 않았습니다.");
+    if (!nextToken) throw new Error("로그인을 완료하지 못했어요. 다시 시도해 주세요.");
     await authStorage.write(nextToken, nextUser, refreshToken);
     setToken(nextToken);
     setUserState(nextUser);

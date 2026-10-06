@@ -24,8 +24,8 @@ export const isSafeRetryMethod = (method?: string) =>
 
 const isSafeServerDetail = (detail: string) => {
   const normalized = detail.trim();
-  if (!normalized || normalized.length > 240) return false;
-  return !/(https?:\/\/|[a-z0-9.-]+\.ts\.net|exception|stack\s*trace|traceback|\bat\s+[\w.$]+\([^)]*:\d+\)|java\.|org\.|com\.[a-z])/i.test(
+  if (!normalized || normalized.length > 240 || !/[가-힣]/.test(normalized)) return false;
+  return !/(https?:\/\/|[a-z0-9.-]+\.ts\.net|exception|stack\s*trace|traceback|\bHTTP\b|\bAPI\b|django|spring|EXPO_PUBLIC|VITE_|[a-z]+_[a-z_]+|\b[45]\d{2}\b|\bat\s+[\w.$]+\([^)]*:\d+\)|java\.|org\.|com\.[a-z])/i.test(
     normalized,
   );
 };
@@ -35,13 +35,15 @@ export const httpErrorMessage = (status: number, data: unknown) => {
     data && typeof data === "object" && "detail" in data
       ? String((data as { detail?: unknown }).detail)
       : "";
-  if (status < 500 && isSafeServerDetail(detail)) return detail;
   if (status === 401) return "로그인이 필요하거나 인증 정보가 만료되었습니다.";
   if (status === 403) return "이 요청을 수행할 권한이 없습니다.";
   if (status === 404) return "요청한 정보를 찾을 수 없습니다.";
+  if (status === 409) return "처리 상태가 바뀌었어요. 잠시 후 같은 내용으로 다시 시도해 주세요.";
+  if (status === 429) return "요청이 잠시 몰리고 있어요. 잠시 후 다시 시도해 주세요.";
   if (status >= 500)
     return "서버에서 요청을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.";
-  return `요청을 처리하지 못했습니다. (${status})`;
+  if (status < 500 && isSafeServerDetail(detail)) return detail;
+  return "요청을 처리하지 못했어요. 입력 내용을 확인하고 다시 시도해 주세요.";
 };
 
 const createAbortError = (reason?: unknown) => {
