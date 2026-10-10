@@ -253,6 +253,7 @@ def claim_next_job(*, worker_id):
     now = timezone.now()
     with transaction.atomic():
         job = PlaceTagCollectionJob.objects.select_for_update(skip_locked=True).filter(
+            provider=settings.TAG_ENRICHMENT_PROVIDER,
             status__in=("queued", "retry"),
             cycle_date__lte=today,
         ).filter(
@@ -260,6 +261,7 @@ def claim_next_job(*, worker_id):
         ).select_related("place").order_by("-priority", "created_at").first()
         if job is None:
             job = PlaceTagCollectionJob.objects.select_for_update(skip_locked=True).filter(
+                provider=settings.TAG_ENRICHMENT_PROVIDER,
                 status="retry",
                 cycle_date__lte=today,
                 next_attempt_at__lte=now,
@@ -271,7 +273,7 @@ def claim_next_job(*, worker_id):
             usage_date=today,
             defaults={"daily_limit": settings.TAG_COLLECTION_DAILY_API_LIMIT},
         )
-        safe_limit = quota.daily_limit * settings.TAG_COLLECTION_QUOTA_PERCENT // 100
+        safe_limit = min(quota.daily_limit, settings.TAG_COLLECTION_DAILY_API_LIMIT) * settings.TAG_COLLECTION_QUOTA_PERCENT // 100
         if job.result_checkpoint is None and quota.reserved_count + quota.request_count + job.planned_requests > safe_limit:
             return None, "quota_exhausted"
         if job.result_checkpoint is None:

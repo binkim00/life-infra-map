@@ -9,23 +9,37 @@ from datetime import timedelta
 
 from django.conf import settings
 from django.db import DatabaseError
-from django.db.models import Sum
+from django.db.models import Exists, OuterRef, Sum
 from django.utils import timezone
 
 from recommendations.models import (
-    CollectionPlannerState, Place, PlaceTagCollectionJob, ProviderQuotaUsage,
+    CollectionPlannerState,
+    Place,
+    PlaceTagCollectionJob,
+    ProviderQuotaUsage,
     TagEnrichmentRequest,
 )
+from recommendations.services.adaptive_budget import (
+    allocate_by_request_budget,
+    yield_adjusted_weights,
+)
 from recommendations.services.adaptive_tag_collection import adaptive_planned_requests
-from recommendations.services.adaptive_budget import allocate_by_request_budget, yield_adjusted_weights
 from recommendations.services.bootstrap_priority import priority_context
-from recommendations.services.collection_resources import PlannerDeadline, planner_transaction
-from recommendations.services.place_tag_collection import requested_tags_for_category, planned_requests_for_category
+from recommendations.services.collection_resources import (
+    PlannerDeadline,
+    planner_transaction,
+)
+from recommendations.services.place_tag_collection import (
+    planned_requests_for_category,
+    requested_tags_for_category,
+)
 
 
 def plan_bounded_jobs(*, cycle_date, place_limit, provider, mode, categories,
                       regions, dry_run, region_priority_weights=None):
-    from recommendations.management.commands.plan_daily_tag_collection import weighted_region_selection
+    from recommendations.management.commands.plan_daily_tag_collection import (
+        weighted_region_selection,
+    )
 
     result = {"places": 0, "planned_requests": 0, "covered_strata": 0,
               "scanned": 0, "candidates": 0, "deferred": False}
@@ -50,7 +64,8 @@ def plan_bounded_jobs(*, cycle_date, place_limit, provider, mode, categories,
             queued = PlaceTagCollectionJob.objects.filter(
                 provider=provider, status__in=("queued", "retry"),
             ).aggregate(total=Sum("planned_requests"))["total"] or 0
-            safe_limit = math.floor(settings.TAG_COLLECTION_DAILY_API_LIMIT * settings.TAG_COLLECTION_QUOTA_PERCENT / 100)
+            daily_limit = min(settings.TAG_COLLECTION_DAILY_API_LIMIT, usage.daily_limit) if usage else settings.TAG_COLLECTION_DAILY_API_LIMIT
+            safe_limit = math.floor(daily_limit * settings.TAG_COLLECTION_QUOTA_PERCENT / 100)
             budget = max(0, safe_limit - queued - (usage.request_count + usage.reserved_count if usage else 0))
             if not budget:
                 result["deferred"] = True
@@ -60,12 +75,21 @@ def plan_bounded_jobs(*, cycle_date, place_limit, provider, mode, categories,
             )[:max(1, settings.TAG_COLLECTION_SCAN_PAGE)])
             result["scanned"] = len(page)
             # Demand is read as concrete IDs first. No nested Place subquery.
-            demand_ids = list(TagEnrichmentRequest.objects.filter(status="queued").order_by(
+            recent_cutoff = cycle_date - timedelta(days=settings.TAG_COLLECTION_REVISIT_DAYS)
+            recent_demand_job = PlaceTagCollectionJob.objects.filter(
+                provider=provider, place_id=OuterRef("place_id"), cycle_date__gte=recent_cutoff,
+                status__in=("queued", "processing", "completed", "retry"),
+            )
+            raw_demand_ids = list(TagEnrichmentRequest.objects.filter(status="queued").annotate(
+                recently_planned=Exists(recent_demand_job),
+            ).filter(recently_planned=False).order_by(
                 "-priority", "created_at", "id",
-            ).values_list("place_id", flat=True)[:cap])
-            demand = list(Place.objects.filter(id__in=demand_ids).values(
+            ).values_list("place_id", flat=True)[:cap * 3])
+            demand_ids = list(dict.fromkeys(raw_demand_ids))[:cap]
+            demand_by_id = {row["id"]: row for row in Place.objects.filter(id__in=demand_ids).values(
                 "id", "category", "address", "detail_location",
-            ))
+            )}
+            demand = [demand_by_id[place_id] for place_id in demand_ids if place_id in demand_by_id]
             candidates = {}
             daily_contexts = list(PlaceTagCollectionJob.objects.filter(
                 provider=provider, cycle_date=cycle_date,
@@ -89,7 +113,6 @@ def plan_bounded_jobs(*, cycle_date, place_limit, provider, mode, categories,
             category_limit = math.ceil(settings.TAG_COLLECTION_DAILY_PLACE_LIMIT * max(
                 settings.TAG_COLLECTION_BOOTSTRAP_CATEGORY_MAX_SHARE, 100 / max(1, len(categories))) / 100)
             cursor = state.cursor
-            recent_cutoff = cycle_date - timedelta(days=settings.TAG_COLLECTION_REVISIT_DAYS)
             recent = set(PlaceTagCollectionJob.objects.filter(
                 provider=provider, place_id__in=[row["id"] for row in page + demand],
                 cycle_date__gte=recent_cutoff,
@@ -134,7 +157,7 @@ def plan_bounded_jobs(*, cycle_date, place_limit, provider, mode, categories,
                 # projecting only the needed metrics, not whole history JSON.
                 history = {}
                 for bucket, calls, evidence, active in PlaceTagCollectionJob.objects.filter(
-                    context__budget_bucket__isnull=False, status="completed",
+                    provider=provider, context__budget_bucket__isnull=False, status="completed",
                 ).order_by("-id").values_list(
                     "context__budget_bucket", "stats__requests", "stats__evidences", "stats__active_evidences",
                 )[:5000]:
@@ -145,7 +168,7 @@ def plan_bounded_jobs(*, cycle_date, place_limit, provider, mode, categories,
                     row["evidence"] += int(evidence or 0)
                     row["active_evidence"] += int(active or 0)
                 for metrics in PlaceTagCollectionJob.objects.filter(
-                    context__targeted_metrics__isnull=False,
+                    provider=provider, context__targeted_metrics__isnull=False,
                 ).order_by("-id").values_list("context__targeted_metrics", flat=True)[:5000]:
                     for bucket, values in (metrics or {}).items():
                         row = history.setdefault(bucket, {"calls": 0, "evidence": 0, "active_evidence": 0})
@@ -194,9 +217,13 @@ def plan_bounded_jobs(*, cycle_date, place_limit, provider, mode, categories,
                     covered.add((priority["region"], place.category))
                     region_counts[region] += 1
                     category_counts[place.category] += 1
-            if result["places"] < len(candidates):
+            if 0 < result["places"] < len(candidates):
                 # A selection/budget cap must not drop unselected candidate IDs.
                 cursor = state.cursor
+            # When bucket policy selects nothing, advance the bounded scan.
+            # Otherwise a prefix of hard-capped refresh candidates can hide all
+            # discovery candidates forever. Deferred places remain in Place and
+            # are reconsidered when the primary-key scan wraps at the end.
             if time.monotonic() - started >= settings.TAG_COLLECTION_PLANNER_WALL_SECONDS:
                 raise PlannerDeadline()
             result["covered_strata"] = len(covered)
@@ -212,7 +239,7 @@ def plan_bounded_jobs(*, cycle_date, place_limit, provider, mode, categories,
         if isinstance(exc, DatabaseError) and code not in {"57014", "55P03"}:
             raise
         result.update(places=0, planned_requests=0, covered_strata=0, deferred=True)
-        if code != "55P03":
+        if not dry_run and code != "55P03":
             state = CollectionPlannerState.objects.filter(provider=provider).first()
             failures = min(5, int((state.metrics if state else {}).get("consecutive_deferrals", 0)) + 1)
             delay = min(900, settings.TAG_COLLECTION_PLANNER_COOLDOWN_SECONDS * (2 ** (failures - 1)))

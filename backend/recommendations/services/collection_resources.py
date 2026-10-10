@@ -1,6 +1,6 @@
 """Transaction-scoped PostgreSQL limits; never alter the server configuration."""
-from contextlib import contextmanager
 import time
+from contextlib import contextmanager
 
 from django.conf import settings
 from django.db import connection, transaction

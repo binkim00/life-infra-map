@@ -23,7 +23,10 @@
   후보의 발견이 늦어질 수 있으므로 기존의 전체 후보 순서와 같지는 않다.
 - 커서, 다음 실행 시각, 비민감 수치 지표는 CollectionPlannerState에 보관한다.
   계획 작업과 커서 갱신은 함께 커밋한다. 예산·선택 상한으로 미처리 후보가 남으면
-  커서를 보존한다. 재시작해도 이어가며 같은 공급자의 계획기는 행 잠금으로 직렬화한다.
+  일부 생성에 성공한 페이지의 커서를 보존한다. 버킷 정책이 전부 제외해 0건이면
+  다음 페이지로 진행해 discovery가 영구히 가려지지 않게 한다. 제외된 후보는
+  기본키 스캔이 끝에서 순환할 때 다시 검토한다. 재시작해도 이어가며 같은 공급자의
+  계획기는 행 잠금으로 직렬화한다. dry-run 실패는 실제 상태를 변경하지 않는다.
 - PostgreSQL 제한은 해당 트랜잭션에만 적용한다: statement_timeout 2초,
   lock_timeout 200ms, 병렬 gather 작업자 0. 연결이나 DB의 전역 설정은 바꾸지 않는다.
   트랜잭션 작업 예산 5초를 SQL 경계에서 검사한다. 진행 중인 SQL은 최대 2초의
@@ -38,6 +41,7 @@
   6,000개/일이면 약 14.4초다. 실제 처리 시간을 빼고 쉬며 빠른 반복으로 따라잡지 않는다.
 - 예약 날짜를 저장해 자정 이후에도 원래 날짜에 정산한다. 정산 마커로 중복 정산을
   막고, 실제 API 호출 수를 예약 예상치로 잘라 숨기지 않는다.
+  worker는 설정된 공급자 작업만 가져오며 공급자 사용량 행과 설정 중 더 작은 한도를 따른다.
 - 외부 호출 결과와 정산을 먼저 저장한다. 이후 증거 저장에 실패하면 그 결과를
   재사용한다. 복구 시 이미 정산된 예약을 다시 해제하지 않는다.
 - 상태·worker ID·시도 횟수를 확인해 회수된 작업의 이전 작업자가 결과를 쓰지 못하게 한다.
@@ -72,9 +76,29 @@ PostgreSQL 회귀 환경은 현재 모델로 테스트 스키마를 만든다. �
 
 합성 성능 테스트는 장소 20,000개(각 raw에 2KB)를 만들고 ANALYZE 후 실행한다.
 페이지 2,000개, 점수 후보 300개, 작업 100개 및 기본키 인덱스 EXPLAIN을 확인한다.
-최종 bootstrap 모드 PostgreSQL 실행은 81/81개 통과, 13.432초였다. 합성 계획은
-332ms/435개 SQL이었다. SQLite 실행은 74개 통과, PostgreSQL 전용 7개 제외,
-6.455초였다. 모델/마이그레이션 차이 검사, pip check, git diff --check도 통과했다.
+최종 리뷰 수정 후 PostgreSQL 관련 6개 모듈 86/86개 통과, 13.369초였다.
+합성 계획은 288ms/435개 SQL이었다. 동일 범위 SQLite는 79개 통과, PostgreSQL 전용
+7개 제외였다. 전체 recommendations는 943개 중 917개 통과/26개 제외, 전체 backend는
+957개 중 929개 통과/28개 제외였다. 제외는 테스트가 요구하는 DB/실행 환경에 따른다.
+모델/마이그레이션 생성 검사, pip check, git diff --check가 통과했다.
+Ruff 0.17.0으로 backend 전체 E9,F63,F7,F82 검사 및 신규 설정·두 서비스·회귀 테스트
+4개 파일의 기본 정적 검사가 통과했다. Python 3.13 이미지나 frontend/mobile/Spring은
+실행하지 않았다. push/CI 실행 및 운영 부하 테스트도 하지 않았다.
+
+전체 SQLite 테스트는 Windows 임시 파일 권한 때문에 workspace 내부 TEMP/TMP를 사용했다.
+아래 명령은 backend 디렉터리에서 실행한다.
+
+```powershell
+$env:TEMP='C:/Users/k0b03/Documents/Codex/2026-10-11/task/review-test-temp'
+$env:TMP=$env:TEMP
+../.venv/Scripts/python.exe manage.py test recommendations --settings=config.test_settings --noinput --verbosity 1
+../.venv/Scripts/python.exe manage.py test --settings=config.test_settings --noinput --verbosity 1
+```
+
+독립 리뷰의 hard-cap 후보 페이지 고착, dry-run 실패의 상태 변경, demand 우선순위
+유실 3건을 수정했다. 공급자별 이력·claim 격리와 더 낮은 quota 한도 적용도 보강했다.
+독립 재검토 및 신규 회귀 5개가 통과했고 추가 차단 문제는 발견되지 않았다.
+
 격리 DB는 locale C, max_connections 20, shared_buffers 400kB로 초기화됐으며 운영과 다르다.
 운영 125만 건의 부하나
 호스트 CPU 감소율을 재현한 벤치마크는 아니다.
@@ -102,7 +126,42 @@ DB CPU, API 호출 수, 유용한 증거 비율과 지역·카테고리 분포�
 그 구간까지 exactly-once 호출이나 정확한 사용량을 보장하지 않는다. 이미 저장된 결과의
 증거 재처리와 정산에는 중복 방지가 적용된다. 단일 서버에서의 장기 처리량·운영 CPU와
 이 불확실 구간에 대한 운영 정책은 운영 적용 전 확인할 사항이다.
+자정을 넘긴 작업의 정산은 예약일에 귀속된다. 이는 외부 공급자가 실제 호출 시각으로
+계산하는 날짜별 사용량과 같다고 보장하지 않는다. 자정 경계의 작업 drain 정책 또는
+요청별 시간 영수증에 따른 날짜 분할 계측이 추가로 필요할 수 있다.
+
+## dirty 운영 checkout을 보존하는 고정 이미지 적용 경로
+
+운영 checkout에서 reset/clean/pull하거나 그 작업 폴더를 바로 build하지 않는다.
+검토한 최종 커밋의 `backend` 트리만 `git archive <commit>:backend`로 새로운
+독립 build 폴더에 내보내고 그 폴더에서 Dockerfile과 .dockerignore로 이미지를 만든다.
+이렇게 하면 운영의 미커밋 파일·기존 .env·업로드가 build에 섞이지 않는다.
+기존 Dockerfile의 Python 3.13 base 이미지는 검증한 digest로 고정하고 build 기록에 남긴다.
+빌드 결과의 image digest를 기록하고 두 수집 서비스는 같은 digest를 사용한다.
+태그만으로 같은 이미지라고 가정하지 않는다. 현재 KYB에는 Docker가 없어 이미지
+build/실행 검증은 하지 않았고 로컬 Python은 3.14.3이므로 이미지 내 Python 3.13 검증은 남아 있다.
+
+기존 env_file와 runtime-db 네트워크를 유지하는 별도 compose override에
+`tag_scheduler`/`tag_worker`의 `image: <registry>/<image>@sha256:<digest>`와
+두 기능 스위치를 명시한다. 대상은 `life-infra-map-tag-scheduler`와
+`life-infra-map-tag-worker`이며 DB/웹 API 컨테이너는 재생성하지 않는다.
+승인 후 scheduler의 신규 계획을 멈추고 worker의 현재 작업을 drain한 다음,
+새 이미지의 one-off Django 명령으로 0032를 적용한다. metadata ALTER도 잠금이 필요하므로
+짧은 lock/statement timeout으로 실패 시 무리한 대기 대신 중단·재시도한다.
+같은 digest로 수집 컨테이너 두 개만 `--no-build`로 재생성한다.
+수집 작업은 drain+마이그레이션+컨테이너 시작 동안 잠시 멈춘다. 소요 시간은
+실제 진행 중 작업과 DB 잠금에 달려 있으며 고정 중단 시간을 보장하지 않는다.
+웹 API는 유지하되 schema 잠금에 따른 짧은 DB 대기 가능성은 관찰한다.
+본 문서의 경로는 준비안이며 registry 업로드·운영 마이그레이션·설정 변경을 실행하지 않았다.
 
 공식 테스트 런타임 출처:
 [EDB PostgreSQL 바이너리](https://www.enterprisedb.com/download-postgresql-binaries),
 [PostgreSQL 연결/파일 소켓 설정](https://www.postgresql.org/docs/16/runtime-config-connection.html).
+
+## Push 대상 확인
+
+origin은 `https://github.com/binkim00/life-infra-map.git`이다. 현재 로컬 작업 브랜치의
+upstream은 기준 브랜치 `origin/codex/release-foundation`이므로 인자 없는 push를 사용하지
+않는다. 승인 후 대상은 별도 브랜치 `refs/heads/codex/collection-resource-budget`이다.
+제안 명령은 `git push --set-upstream origin HEAD:refs/heads/codex/collection-resource-budget`이며,
+이번 작업에서는 실행하지 않았다.

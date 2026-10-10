@@ -1,16 +1,32 @@
 from datetime import timedelta
 from unittest.mock import Mock, patch
 
-from django.db import connection, transaction
+from django.db import DataError, connection, transaction
 from django.test import TestCase, TransactionTestCase, override_settings
 from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 
-from recommendations.models import CollectionPlannerState, Place, PlaceTagCollectionJob, ProviderQuotaUsage
-from recommendations.management.commands.plan_daily_tag_collection import plan_daily_jobs
-from recommendations.management.commands.process_place_tag_collection_jobs import claim_next_job, process_jobs, settle_quota
-from recommendations.management.commands.recover_tag_collection_jobs import recover_stale_jobs
-from recommendations.management.commands.run_tag_collection_scheduler import scheduler_tick
+from recommendations.management.commands.plan_daily_tag_collection import (
+    plan_daily_jobs,
+)
+from recommendations.management.commands.process_place_tag_collection_jobs import (
+    claim_next_job,
+    process_jobs,
+    settle_quota,
+)
+from recommendations.management.commands.recover_tag_collection_jobs import (
+    recover_stale_jobs,
+)
+from recommendations.management.commands.run_tag_collection_scheduler import (
+    scheduler_tick,
+)
+from recommendations.models import (
+    CollectionPlannerState,
+    Place,
+    PlaceTagCollectionJob,
+    ProviderQuotaUsage,
+    TagEnrichmentRequest,
+)
 from recommendations.services.collection_resources import planner_transaction
 
 
@@ -83,6 +99,34 @@ class CollectionResourceTests(TestCase):
         self.assertEqual(result["scanned"], 0)
         self.assertEqual(CollectionPlannerState.objects.get().cursor, 0)
 
+    def test_provider_record_lower_daily_limit_is_respected(self):
+        self.job()
+        ProviderQuotaUsage.objects.create(provider="naver_search", usage_date=timezone.localdate(), daily_limit=1)
+        self.assertEqual(self.plan()["scanned"], 0)
+        self.assertEqual(claim_next_job(worker_id="one"), (None, "quota_exhausted"))
+
+    def test_worker_leaves_other_provider_jobs_unclaimed(self):
+        other = self.job(1)
+        other.provider = "different_provider"
+        other.priority = 100
+        other.save()
+        intended = self.job(2)
+        claimed, _ = claim_next_job(worker_id="one")
+        self.assertEqual(claimed.pk, intended.pk)
+        other.refresh_from_db()
+        self.assertEqual(other.status, "queued")
+        self.assertFalse(ProviderQuotaUsage.objects.filter(provider="different_provider").exists())
+
+    @override_settings(TAG_COLLECTION_SCAN_PAGE=1)
+    def test_demand_lane_keeps_request_priority_order(self):
+        self.place(0, region="부산광역시")
+        low, high = self.place(1), self.place(2)
+        TagEnrichmentRequest.objects.create(place=low, tag_name="fixture", priority=1)
+        TagEnrichmentRequest.objects.create(place=high, tag_name="fixture", priority=100)
+        self.plan()
+        self.assertTrue(PlaceTagCollectionJob.objects.filter(place=high).exists())
+        self.assertFalse(PlaceTagCollectionJob.objects.filter(place=low).exists())
+
     def test_dry_run_without_quota_does_not_create_checkpoint(self):
         ProviderQuotaUsage.objects.create(provider="naver_search", usage_date=timezone.localdate(), request_count=90)
         self.plan(dry_run=True)
@@ -94,6 +138,16 @@ class CollectionResourceTests(TestCase):
         self.assertTrue(self.plan()["deferred"])
         self.assertFalse(PlaceTagCollectionJob.objects.exists())
         self.assertFalse(CollectionPlannerState.objects.filter(cursor__gt=0).exists())
+
+    @override_settings(TAG_COLLECTION_PLANNER_WALL_SECONDS=-1)
+    def test_dry_run_deadline_preserves_existing_checkpoint(self):
+        state = CollectionPlannerState.objects.create(provider="naver_search", cursor=123,
+                                                       metrics={"keep": True})
+        self.assertTrue(self.plan(dry_run=True)["deferred"])
+        state.refresh_from_db()
+        self.assertEqual(state.cursor, 123)
+        self.assertEqual(state.metrics, {"keep": True})
+        self.assertIsNone(state.next_attempt_at)
 
     @override_settings(TAG_COLLECTION_QUEUE_LOW=2, TAG_COLLECTION_QUEUE_HIGH=4)
     @patch("recommendations.management.commands.run_tag_collection_scheduler.plan_daily_jobs")
@@ -167,17 +221,14 @@ class CollectionResourceTests(TestCase):
         with connection.cursor() as cursor:
             cursor.execute("SHOW statement_timeout")
             before = cursor.fetchone()[0]
-        with planner_transaction():
-            with connection.cursor() as cursor:
-                cursor.execute("SHOW max_parallel_workers_per_gather")
-                self.assertEqual(cursor.fetchone()[0], "0")
+        with planner_transaction(), connection.cursor() as cursor:
+            cursor.execute("SHOW max_parallel_workers_per_gather")
+            self.assertEqual(cursor.fetchone()[0], "0")
         with connection.cursor() as cursor:
             cursor.execute("SHOW statement_timeout")
             self.assertEqual(cursor.fetchone()[0], before)
-        with self.assertRaises(Exception):
-            with planner_transaction():
-                with connection.cursor() as cursor:
-                    cursor.execute("SELECT 1 / 0")
+        with self.assertRaises(DataError), planner_transaction(), connection.cursor() as cursor:
+            cursor.execute("SELECT 1 / 0")
         with connection.cursor() as cursor:
             cursor.execute("SHOW statement_timeout")
             self.assertEqual(cursor.fetchone()[0], before)
@@ -187,10 +238,8 @@ class CollectionResourceTests(TestCase):
         if connection.vendor != "postgresql":
             self.skipTest("requires isolated PostgreSQL")
         from django.db import OperationalError
-        with self.assertRaises(OperationalError):
-            with planner_transaction():
-                with connection.cursor() as cursor:
-                    cursor.execute("SELECT pg_sleep(0.1)")
+        with self.assertRaises(OperationalError), planner_transaction(), connection.cursor() as cursor:
+            cursor.execute("SELECT pg_sleep(0.1)")
         with connection.cursor() as cursor:
             cursor.execute("SELECT 42")
             self.assertEqual(cursor.fetchone()[0], 42)
@@ -250,9 +299,31 @@ class CollectionResourceTests(TestCase):
                 context["budget_bucket"] = bucket
             return result
 
-        with override_settings(TAG_COLLECTION_BUDGET_WEIGHTS={bucket: 1, "discovery": 99}):
-            with patch("recommendations.services.bounded_collection_planner.priority_context", side_effect=contexts):
-                self.assertEqual(self.plan(mode="bootstrap")["places"], 0)
+        with (
+            override_settings(TAG_COLLECTION_BUDGET_WEIGHTS={bucket: 1, "discovery": 99}),
+            patch("recommendations.services.bounded_collection_planner.priority_context", side_effect=contexts),
+        ):
+            self.assertEqual(self.plan(mode="bootstrap")["places"], 0)
+
+    def test_hard_capped_prefix_does_not_hide_later_discovery(self):
+        from recommendations.services.bootstrap_priority import priority_context
+        places = [self.place(i) for i in range(10)]
+        prefix = {place.pk for place in places[:5]}
+
+        def contexts(rows, **kwargs):
+            result = priority_context(rows, **kwargs)
+            for place in rows:
+                result[place.pk]["budget_bucket"] = "stale_refresh" if place.pk in prefix else "cafe_discovery"
+            return result
+
+        with (
+            override_settings(TAG_COLLECTION_BUDGET_WEIGHTS={"stale_refresh": 1, "cafe_discovery": 99}),
+            patch("recommendations.services.bounded_collection_planner.priority_context", side_effect=contexts),
+        ):
+            self.assertEqual(self.plan(mode="bootstrap")["places"], 0)
+            self.assertEqual(CollectionPlannerState.objects.get().cursor, places[4].pk)
+            CollectionPlannerState.objects.update(next_attempt_at=None)
+            self.assertGreater(self.plan(mode="bootstrap")["places"], 0)
 
     @override_settings(TAG_COLLECTION_REFILL_LIMIT=100, TAG_COLLECTION_SCAN_PAGE=2000,
                        TAG_COLLECTION_DAILY_API_LIMIT=25000)
@@ -310,7 +381,10 @@ class CollectionPostgresConcurrencyTests(TransactionTestCase):
         if connection.vendor != "postgresql":
             self.skipTest("requires isolated PostgreSQL")
         import time
-        from recommendations.management.commands.process_place_tag_collection_jobs import claim_heartbeat
+
+        from recommendations.management.commands.process_place_tag_collection_jobs import (
+            claim_heartbeat,
+        )
         place = Place.objects.create(name="heartbeat fixture", category="cafe", lat=37, lng=127,
                                      source="resource_test", external_id="heartbeat")
         PlaceTagCollectionJob.objects.create(place=place, cycle_date=timezone.localdate(), planned_requests=1)
@@ -329,6 +403,7 @@ class CollectionPostgresConcurrencyTests(TransactionTestCase):
         if connection.vendor != "postgresql":
             self.skipTest("requires isolated PostgreSQL")
         from concurrent.futures import ThreadPoolExecutor
+
         from django.db import connections
         places = [Place.objects.create(name=f"lock fixture {i}", category="cafe",
                   lat=37, lng=127, source="resource_test", external_id=f"lock-{i}") for i in range(2)]

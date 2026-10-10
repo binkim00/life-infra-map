@@ -6,7 +6,8 @@ historical PostGIS/search-index migrations are outside this test scope.
 """
 from os import environ
 from pathlib import Path
-from .test_settings import *  # noqa: F403
+
+from .test_settings import *
 
 socket_directory = environ.get("COLLECTION_TEST_SOCKET_DIR", "")
 if socket_directory:
