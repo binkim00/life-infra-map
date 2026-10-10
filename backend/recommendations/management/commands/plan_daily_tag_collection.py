@@ -101,7 +101,20 @@ def plan_daily_jobs(
     *, cycle_date, place_limit, provider="naver_search", mode="balanced",
     categories=None, regions=None, dry_run=False, region_priority_weights=None,
 ):
-    place_limit = max(1, int(place_limit))
+    place_limit = max(0, int(place_limit))
+    if not place_limit:
+        return {"places": 0, "planned_requests": 0, "covered_strata": 0}
+    if getattr(settings, "TAG_COLLECTION_BOUNDED_PLANNER_ENABLED", False):
+        from recommendations.services.bounded_collection_planner import plan_bounded_jobs
+        selected_categories = tuple(categories or COLLECTION_PROFILES)
+        selected_regions = tuple(row for row in REGIONS if not regions or row[0] in regions)
+        if set(selected_categories) - set(COLLECTION_PROFILES) or (regions and set(regions) - {row[0] for row in REGIONS}):
+            raise ValueError("Unknown collection categories or regions")
+        return plan_bounded_jobs(
+            cycle_date=cycle_date, place_limit=place_limit, provider=provider, mode=mode,
+            categories=selected_categories, regions=selected_regions, dry_run=dry_run,
+            region_priority_weights=region_priority_weights,
+        )
     safe_limit = math.floor(
         settings.TAG_COLLECTION_DAILY_API_LIMIT
         * settings.TAG_COLLECTION_QUOTA_PERCENT
@@ -247,9 +260,9 @@ def plan_bootstrap_jobs(
             base = eligible.exclude(
                 id__in=recent_place_ids
             )
-            total_places = Place.objects.filter(location, category=category).count()
+            total_places = 0 if region_priority_weights else Place.objects.filter(location, category=category).count()
             meaningful_tags = meaningful_tags_for_category(category)
-            active_places = PlaceTagEvidence.objects.filter(
+            active_places = 0 if region_priority_weights else PlaceTagEvidence.objects.filter(
                 place__in=Place.objects.filter(location, category=category),
                 tag__name__in=meaningful_tags,
                 polarity__in=("positive", "negative"),
@@ -267,24 +280,24 @@ def plan_bootstrap_jobs(
             active_same_tag = PlaceTagEvidence.objects.filter(
                 place_id=OuterRef("place_id"), tag_id=OuterRef("tag_id"),
             ).filter(Q(expires_at__isnull=True) | Q(expires_at__gt=timezone.now()))
-            candidate_place_ids = PlaceTag.objects.filter(
+            candidate_place_ids = list(PlaceTag.objects.filter(
                 place__in=base,
                 status__in=("candidate", "needs_verification"),
                 tag__name__in=requested_tags_for_category(category),
             ).annotate(has_active=Exists(active_same_tag)).filter(
                 has_active=False,
-            ).order_by("-confidence", "place_id").values_list("place_id", flat=True)[:per_stratum]
+            ).order_by("-confidence", "place_id").values_list("place_id", flat=True)[:per_stratum])
             candidate_rows = Place.objects.filter(id__in=candidate_place_ids)
             discovery_rows = base.order_by("id")[:per_stratum]
             # Search demand still raises priority, but it must not make the
             # unattended daily plan revisit a recently collected place. An
             # explicit one-off recheck belongs in a separate operator flow.
-            demanded_place_ids = TagEnrichmentRequest.objects.filter(
+            demanded_place_ids = list(TagEnrichmentRequest.objects.filter(
                 place__in=eligible,
                 status="queued",
             ).exclude(place_id__in=recent_place_ids).order_by(
                 "-priority", "created_at"
-            ).values_list("place_id", flat=True)[:per_stratum]
+            ).values_list("place_id", flat=True)[:per_stratum])
             demand_rows = Place.objects.filter(id__in=demanded_place_ids)
             for place in list(demand_rows) + list(candidate_rows) + list(discovery_rows):
                 places_by_id[place.id] = place

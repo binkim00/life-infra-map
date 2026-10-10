@@ -26,7 +26,9 @@ class Command(BaseCommand):
                 "Tag scheduler: date={date} planned={planned} recovered={recovered} "
                 "queued={queued} processing={processing} completed={completed} useful={useful_completed} "
                 "insufficient={insufficient_evidence} requests={requests} "
-                "dashboard_snapshot={snapshot_refreshed}".format(**stats)
+                "dashboard_snapshot={snapshot_refreshed} queue_depth={queue_depth} "
+                "planner_scanned={planner_scanned} planner_ms={planner_ms} "
+                "planner_deferred={planner_deferred}".format(**stats)
             )
             if options["once"]:
                 break
@@ -37,8 +39,18 @@ def scheduler_tick():
     today = timezone.localdate()
     recovered = recover_stale_jobs()
     planned = 0
-    existing = PlaceTagCollectionJob.objects.filter(cycle_date=today).count()
+    result = {}
+    existing = PlaceTagCollectionJob.objects.filter(cycle_date=today, provider=settings.TAG_ENRICHMENT_PROVIDER).count()
     remaining = max(0, settings.TAG_COLLECTION_DAILY_PLACE_LIMIT - existing)
+    queue_depth = len(list(PlaceTagCollectionJob.objects.filter(
+        provider=settings.TAG_ENRICHMENT_PROVIDER,
+        status__in=("queued", "retry"),
+    ).values_list("id", flat=True)[:settings.TAG_COLLECTION_QUEUE_HIGH + 1]))
+    if queue_depth >= settings.TAG_COLLECTION_QUEUE_LOW:
+        remaining = 0
+    else:
+        remaining = min(remaining, settings.TAG_COLLECTION_REFILL_LIMIT,
+                        max(0, settings.TAG_COLLECTION_QUEUE_HIGH - queue_depth))
     if remaining:
         focus_regions = tuple(
             getattr(settings, "TAG_COLLECTION_FOCUS_REGIONS", ()) or ()
@@ -77,7 +89,7 @@ def scheduler_tick():
                 region: max(0, targets[region] - int(existing_regions.get(region, 0)))
                 for region in focus_regions
             }
-            if sum(deficits.values()) == remaining:
+            if not getattr(settings, "TAG_COLLECTION_BOUNDED_PLANNER_ENABLED", False) and sum(deficits.values()) == max(0, settings.TAG_COLLECTION_DAILY_PLACE_LIMIT - existing):
                 region_priority_weights = deficits
         focus_categories = tuple(
             getattr(settings, "TAG_COLLECTION_FOCUS_CATEGORIES", ()) or ()
@@ -130,5 +142,9 @@ def scheduler_tick():
         "useful_completed": useful_completed,
         "insufficient_evidence": insufficient_evidence,
         "snapshot_refreshed": snapshot_refreshed,
+        "queue_depth": queue_depth,
+        "planner_scanned": result.get("scanned", 0),
+        "planner_ms": result.get("elapsed_ms", 0),
+        "planner_deferred": result.get("deferred", False),
         **counts,
     }

@@ -22,7 +22,7 @@ def recover_stale_jobs():
     stale_ids = list(PlaceTagCollectionJob.objects.filter(
         status="processing",
         locked_at__lt=cutoff,
-    ).values_list("id", flat=True))
+    ).order_by("id").values_list("id", flat=True)[:settings.TAG_COLLECTION_REFILL_LIMIT])
     for job_id in stale_ids:
         with transaction.atomic():
             job = PlaceTagCollectionJob.objects.select_for_update().get(id=job_id)
@@ -30,13 +30,9 @@ def recover_stale_jobs():
                 continue
             quota = ProviderQuotaUsage.objects.select_for_update().filter(
                 provider=job.provider,
-                usage_date__in={
-                    timezone.localdate(job.locked_at),
-                    timezone.localdate(),
-                    job.cycle_date,
-                },
-            ).order_by("-usage_date").first()
-            if quota:
+                usage_date=job.reservation_date or timezone.localdate(job.locked_at),
+            ).first()
+            if quota and not job.quota_settled_at:
                 quota.reserved_count = max(0, quota.reserved_count - job.planned_requests)
                 quota.save(update_fields=["reserved_count", "updated_at"])
             job.status = "retry"
