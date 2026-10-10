@@ -155,20 +155,22 @@ def plan_bounded_jobs(*, cycle_date, place_limit, provider, mode, categories,
             if mode == "bootstrap" and selected:
                 # Preserve the existing quality/exploration budget policy while
                 # projecting only the needed metrics, not whole history JSON.
+                # Do not filter sparse JSON keys before LIMIT: finding 5,000
+                # matches could otherwise scan every historical job.
                 history = {}
                 for bucket, calls, evidence, active in PlaceTagCollectionJob.objects.filter(
-                    provider=provider, context__budget_bucket__isnull=False, status="completed",
+                    provider=provider, status="completed",
                 ).order_by("-id").values_list(
                     "context__budget_bucket", "stats__requests", "stats__evidences", "stats__active_evidences",
                 )[:5000]:
-                    if active is None:
+                    if not bucket or active is None:
                         continue
                     row = history.setdefault(bucket, {"calls": 0, "evidence": 0, "active_evidence": 0})
                     row["calls"] += int(calls or 0)
                     row["evidence"] += int(evidence or 0)
                     row["active_evidence"] += int(active or 0)
                 for metrics in PlaceTagCollectionJob.objects.filter(
-                    provider=provider, context__targeted_metrics__isnull=False,
+                    provider=provider,
                 ).order_by("-id").values_list("context__targeted_metrics", flat=True)[:5000]:
                     for bucket, values in (metrics or {}).items():
                         row = history.setdefault(bucket, {"calls": 0, "evidence": 0, "active_evidence": 0})

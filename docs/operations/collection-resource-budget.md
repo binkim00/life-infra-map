@@ -165,3 +165,11 @@ upstream은 기준 브랜치 `origin/codex/release-foundation`이므로 인자 �
 않는다. 승인 후 대상은 별도 브랜치 `refs/heads/codex/collection-resource-budget`이다.
 제안 명령은 `git push --set-upstream origin HEAD:refs/heads/codex/collection-resource-budget`이며,
 이번 작업에서는 실행하지 않았다.
+
+## 운영 사전 검증에서 확인한 sparse JSON 이력 조회
+
+2026-10-10 배포 후 다음 주기 dry-run에서 과거 작업 JSON 키 필터가 statement_timeout
+2초에 걸렸다. 필터를 통과한 5,000개를 찾는 방식은 키가 드문 경우 전체 이력을
+훑으므로, 이제 최근 공급자 작업 5,000개(일반 bucket은 완료 작업)를 먼저 읽고
+Python에서 필요한 key/수치를 고른다. 더 오래된 유효 이력보다 최근 bounded sample을
+우선한다. 해당 쿼리 형태의 회귀 검사를 추가했다. dry-run은 queue/API 호출을 변경하지 않는다.

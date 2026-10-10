@@ -264,6 +264,18 @@ class CollectionResourceTests(TestCase):
             self.assertGreater((state.next_attempt_at - timezone.now()).total_seconds(), 50 * failures)
         self.assertFalse(PlaceTagCollectionJob.objects.exists())
 
+    def test_sparse_history_does_not_filter_json_before_bounded_slice(self):
+        self.place(1)
+        with CaptureQueriesContext(connection) as captured:
+            self.plan(mode="bootstrap", dry_run=True)
+        history_sql = [item["sql"] for item in captured.captured_queries
+                       if "LIMIT 5000" in item["sql"]]
+        self.assertEqual(len(history_sql), 2)
+        for sql in history_sql:
+            where = sql.split("WHERE", 1)[1].split("ORDER BY", 1)[0]
+            self.assertNotIn("budget_bucket", where)
+            self.assertNotIn("targeted_metrics", where)
+
     def test_pacing_waits_between_successful_jobs(self):
         self.job()
         with patch("recommendations.management.commands.process_place_tag_collection_jobs.time.sleep") as sleep:
