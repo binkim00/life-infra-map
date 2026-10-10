@@ -17,6 +17,7 @@ from recommendations.models import (
     TagEnrichmentRequest,
 )
 from recommendations.services.adaptive_tag_collection import adaptive_planned_requests
+from recommendations.services.adaptive_budget import allocate_by_request_budget, yield_adjusted_weights
 from recommendations.services.bootstrap_priority import priority_context
 from recommendations.services.collection_resources import PlannerDeadline, planner_transaction
 from recommendations.services.place_tag_collection import requested_tags_for_category, planned_requests_for_category
@@ -127,6 +128,34 @@ def plan_bounded_jobs(*, cycle_date, place_limit, provider, mode, categories,
                 [(place, contexts[place.id]) for place in places], limit=cap,
                 region_weights=region_priority_weights or {region: 1 for region, _ in regions},
             ) if places else []
+            weights = {}
+            if mode == "bootstrap" and selected:
+                # Preserve the existing quality/exploration budget policy while
+                # projecting only the needed metrics, not whole history JSON.
+                history = {}
+                for bucket, calls, evidence, active in PlaceTagCollectionJob.objects.filter(
+                    context__budget_bucket__isnull=False, status="completed",
+                ).order_by("-id").values_list(
+                    "context__budget_bucket", "stats__requests", "stats__evidences", "stats__active_evidences",
+                )[:5000]:
+                    if active is None:
+                        continue
+                    row = history.setdefault(bucket, {"calls": 0, "evidence": 0, "active_evidence": 0})
+                    row["calls"] += int(calls or 0)
+                    row["evidence"] += int(evidence or 0)
+                    row["active_evidence"] += int(active or 0)
+                for metrics in PlaceTagCollectionJob.objects.filter(
+                    context__targeted_metrics__isnull=False,
+                ).order_by("-id").values_list("context__targeted_metrics", flat=True)[:5000]:
+                    for bucket, values in (metrics or {}).items():
+                        row = history.setdefault(bucket, {"calls": 0, "evidence": 0, "active_evidence": 0})
+                        for name in row:
+                            row[name] += int((values or {}).get(name) or 0)
+                weights = yield_adjusted_weights(settings.TAG_COLLECTION_BUDGET_WEIGHTS, history)
+                selected, _ = allocate_by_request_budget(
+                    selected, budget=min(budget, sum(adaptive_planned_requests(context["targeted_tags"]) for _, context in selected)),
+                    weights=weights, request_count=lambda context: adaptive_planned_requests(context["targeted_tags"]),
+                )
             covered = set()
             for place, priority in selected:
                 if time.monotonic() - started >= settings.TAG_COLLECTION_PLANNER_WALL_SECONDS:
@@ -151,6 +180,7 @@ def plan_bounded_jobs(*, cycle_date, place_limit, provider, mode, categories,
                                         "adaptive": mode == "bootstrap",
                                         "targeted_tags": priority["targeted_tags"],
                                         "budget_bucket": priority["budget_bucket"],
+                                        "budget_weights": weights,
                                         "source": "bounded_daily_plan"}}
                 created = True
                 if not dry_run:
