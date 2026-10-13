@@ -1,5 +1,5 @@
 import { router } from "expo-router";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Alert, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { apiRequest, authStorage } from "@/api/client";
 import { useAuth } from "@/auth/auth-context";
@@ -10,25 +10,34 @@ export default function AccountDeletionScreen() {
   const [username, setUsername] = useState("");
   const [confirmation, setConfirmation] = useState("");
   const [busy, setBusy] = useState(false);
+  const deleting = useRef(false);
   const [error, setError] = useState("");
 
   const removeAccount = async () => {
+    if (deleting.current) return;
     if (!user?.username || username !== user.username || confirmation !== "계정 삭제") {
       setError("아이디와 '계정 삭제'를 정확히 입력해 주세요.");
       return;
     }
+    deleting.current = true;
     setBusy(true);
     setError("");
     try {
+      const owner = (await authStorage.read()).user;
+      if (!owner || owner.username !== username) throw new Error("account_changed");
       await apiRequest("/account-deletion/", {
         method: "POST",
         body: { username, confirmation },
       });
-      await authStorage.clear();
-      router.replace("/");
+      const current = (await authStorage.read()).user;
+      if (current?.id === owner.id && current?.username === owner.username) {
+        await authStorage.clear();
+        router.replace("/");
+      }
     } catch {
       setError("계정을 삭제하지 못했습니다. 잠시 후 다시 시도하거나 고객 지원에 문의해 주세요.");
     } finally {
+      deleting.current = false;
       setBusy(false);
     }
   };
