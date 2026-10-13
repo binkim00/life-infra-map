@@ -611,6 +611,9 @@ class PlaceTagCollectionJob(models.Model):
     next_attempt_at = models.DateTimeField(null=True, blank=True)
     locked_at = models.DateTimeField(null=True, blank=True)
     worker_id = models.CharField(max_length=100, blank=True)
+    reservation_date = models.DateField(null=True, blank=True)
+    quota_settled_at = models.DateTimeField(null=True, blank=True)
+    result_checkpoint = models.JSONField(null=True, blank=True)
     error_code = models.CharField(max_length=100, blank=True)
     error_message = models.TextField(blank=True)
     stats = models.JSONField(default=dict, blank=True)
@@ -633,6 +636,15 @@ class PlaceTagCollectionJob(models.Model):
 
     def __str__(self):
         return '{} - {} ({})'.format(self.place.name, self.cycle_date, self.status)
+
+
+class CollectionPlannerState(models.Model):
+    """Durable discovery position and cooldown, shared by scheduler processes."""
+    provider = models.CharField(max_length=50, unique=True)
+    cursor = models.PositiveBigIntegerField(default=0)
+    next_attempt_at = models.DateTimeField(null=True, blank=True)
+    metrics = models.JSONField(default=dict, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
 
 class ProviderQuotaUsage(models.Model):

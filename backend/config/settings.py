@@ -16,10 +16,21 @@ from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
-IS_TESTING = "test" in sys.argv
-
 load_dotenv(BASE_DIR / ".env")
 
+# Opt in after applying the additive collection-resource migration. Disabling
+# the planner switch preserves queued jobs, evidence and durable checkpoints.
+TAG_COLLECTION_BOUNDED_PLANNER_ENABLED = os.getenv("TAG_COLLECTION_BOUNDED_PLANNER_ENABLED", "false").lower() == "true"
+TAG_COLLECTION_QUEUE_LOW = int(os.getenv("TAG_COLLECTION_QUEUE_LOW", "250"))
+TAG_COLLECTION_QUEUE_HIGH = int(os.getenv("TAG_COLLECTION_QUEUE_HIGH", "500"))
+TAG_COLLECTION_REFILL_LIMIT = int(os.getenv("TAG_COLLECTION_REFILL_LIMIT", "100"))
+TAG_COLLECTION_SCAN_PAGE = int(os.getenv("TAG_COLLECTION_SCAN_PAGE", "2000"))
+TAG_COLLECTION_PLANNER_STATEMENT_MS = int(os.getenv("TAG_COLLECTION_PLANNER_STATEMENT_MS", "2000"))
+TAG_COLLECTION_PLANNER_LOCK_MS = int(os.getenv("TAG_COLLECTION_PLANNER_LOCK_MS", "200"))
+TAG_COLLECTION_PLANNER_WALL_SECONDS = float(os.getenv("TAG_COLLECTION_PLANNER_WALL_SECONDS", "5"))
+TAG_COLLECTION_PLANNER_COOLDOWN_SECONDS = int(os.getenv("TAG_COLLECTION_PLANNER_COOLDOWN_SECONDS", "60"))
+TAG_COLLECTION_WORKER_PACING_ENABLED = os.getenv("TAG_COLLECTION_WORKER_PACING_ENABLED", "false").lower() == "true"
+IS_TESTING = "test" in sys.argv
 
 def _env_bool(name, default=False):
     value = os.getenv(name)
