@@ -229,6 +229,7 @@ export default function RecommendScreen() {
       condition_labels?: string[];
     },
     selectedFilters?: { location: string; category: string; required: string[] },
+    freshConversation = false,
   ) => {
     const text = next.trim();
     if (!text || turnBusyRef.current || creatingSessionRef.current) return;
@@ -257,7 +258,7 @@ export default function RecommendScreen() {
           limit: 10,
           conversation_action: conversationAction,
           selected_filters: selectedFilters,
-          selected_result_key: placeKey(selected),
+          selected_result_key: freshConversation ? undefined : placeKey(selected),
           expected_version: session.version ?? 0,
         },
       );
@@ -339,21 +340,31 @@ export default function RecommendScreen() {
   useEffect(() => {
     const routeQuery = params.q?.trim();
     if (!routeQuery) {
+      const generation = generationRef.current;
       if (!sessionRef.current) {
-        void createSession().catch(() => setMessage("대화 준비에 실패했습니다. 검색을 누르면 다시 연결합니다."));
+        void createSession().catch(() => { if (generation === generationRef.current) setMessage("대화 준비에 실패했습니다. 검색을 누르면 다시 연결합니다."); });
       }
       return;
     }
     const routeRequest = JSON.stringify([routeQuery, params.selectedFilters, params.searchRequest]);
     if (lastRouteRequestRef.current === routeRequest) return;
     lastRouteRequestRef.current = routeRequest;
-    generationRef.current += 1;
+    const routeGeneration = ++generationRef.current;
     turnBusyRef.current = false;
     const previous = sessionRef.current;
     sessionRef.current = null;
     if (previous) void recommendationApi.closeConversationSession(previous.id, previous.token).catch(() => undefined);
     setResults([]);
     setSelected(null);
+    setDetailVisible(false);
+    setHighlightedKeys([]);
+    setFailedTurn(null);
+    cardPositions.current = {};
+    setClarificationOptions([]);
+    setLocationBasisLabel(null);
+    setMessage("");
+    setLoading(false);
+    setQuery("");
     setSearchPlan(null);
     setWebResults([]);
     setCanSearchWeb(false);
@@ -367,12 +378,14 @@ export default function RecommendScreen() {
     const pendingSession = creatingSessionRef.current;
     void (async () => {
       if (pendingSession) await pendingSession.catch(() => undefined);
-      if (lastRouteRequestRef.current === routeRequest) {
-        await submitTurn(routeQuery, undefined, selectedFilters);
+      if (lastRouteRequestRef.current === routeRequest && routeGeneration === generationRef.current) {
+        await submitTurn(routeQuery, undefined, selectedFilters, true);
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.q, params.selectedFilters, params.searchRequest]);
+
+  useEffect(() => () => { generationRef.current += 1; }, []);
 
   const resetConversation = async () => {
     if (creatingSessionRef.current) return;

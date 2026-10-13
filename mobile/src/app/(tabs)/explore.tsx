@@ -1,3 +1,4 @@
+import { categoryDisplay } from "../../../../shared/search-ux";
 import { userText, errorDiagnostic } from "../../../../shared/user-message";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { searchLocation } from "@/utils/location";
@@ -15,7 +16,6 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { recommendationApi, searchMapPlaces } from "@/api/recommendations";
-import { placeCategoryLabel } from "@/constants/place-categories";
 import { useAuth } from "@/auth/auth-context";
 import { PlacePhoto } from "@/components/place-photo";
 import { PlaceDetailSheet } from "@/components/place-detail-sheet";
@@ -729,7 +729,7 @@ export default function ExploreScreen() {
                       </Text>
                     </View>
                     <Text numberOfLines={1} style={styles.resultMeta}>
-                      {placeCategoryLabel(place.category_label || place.category)} ·{" "}
+                      {place.category_label || categoryDisplay(place.category)} ·{" "}
                       {place.source_label ||
                         (place.result_source === "kakao"
                           ? "카카오 장소"
