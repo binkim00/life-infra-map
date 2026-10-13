@@ -1,6 +1,6 @@
 from django.test import TestCase
 
-from recommendations.models import Place, PlaceInteractionEvent
+from recommendations.models import Place, PlaceInteractionEvent, PlaceTag, Tag
 from recommendations.services.bootstrap_priority import priority_context
 from recommendations.services.search_coverage_demand import record_search_coverage_demand
 
@@ -132,3 +132,21 @@ class SearchCoverageDemandTests(TestCase):
         self.assertEqual(contexts[other.id]["components"]["search_coverage_demand"], 0)
         self.assertIn("콘센트있음", contexts[self.place.id]["targeted_tags"])
         self.assertEqual(contexts[self.place.id]["adaptive_reason"], "search_coverage_demand")
+
+    def test_fully_confirmed_combination_does_not_boost_same_place(self):
+        for name in ("조용함", "콘센트있음"):
+            tag = Tag.objects.create(name=name)
+            PlaceTag.objects.create(
+                place=self.place, tag=tag, source="checked", status="confirmed",
+                is_verified=True,
+            )
+        record_search_coverage_demand({
+            "decision_action": "search", "result_count": 0,
+            "place_intent_frame": {
+                "anchor_location": "서면", "candidate_category_codes": ["cafe"],
+                "constraints": ["조용함", "콘센트있음"],
+            },
+        })
+        context = priority_context([self.place])[self.place.id]
+        self.assertEqual(context["components"]["search_coverage_demand"], 0)
+        self.assertNotIn("조용함", context["targeted_tags"])

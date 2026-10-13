@@ -27,6 +27,8 @@ from .serializers import (
     PlaceReportCreateSerializer,
     PlaceReportDetailSerializer,
     PlaceReportListSerializer,
+    MyPlaceReportListSerializer,
+    MyPlaceReportDetailSerializer,
     PlaceInteractionEventSerializer,
     UserPreferenceSerializer,
     UserSavedPlaceSerializer,
@@ -502,7 +504,7 @@ def place_reports(request):
             reports = reports.filter(status=report_status)
         return paginated_response(
             reports,
-            PlaceReportListSerializer,
+            MyPlaceReportListSerializer,
             request,
             default_page_size=5,
             max_page_size=20,
@@ -546,7 +548,7 @@ def place_reports(request):
 
 
 def _place_report_receipt(report, *, request, replay):
-    detail_serializer = PlaceReportDetailSerializer(
+    detail_serializer = MyPlaceReportDetailSerializer(
         report,
         context={"request": request},
     )
@@ -594,7 +596,7 @@ def my_place_report_detail(request, report_id):
         PlaceReport.objects.select_related("place", "user", "reviewed_by").prefetch_related("images"),
         pk=report_id, user=request.user,
     )
-    return Response(PlaceReportDetailSerializer(report, context={"request": request}).data)
+    return Response(MyPlaceReportDetailSerializer(report, context={"request": request}).data)
 
 
 @api_view(["GET"])
@@ -1470,6 +1472,7 @@ def map_place_search(request):
         and len(db_results) >= limit
     )
     if keyword and source in {"all", "kakao"} and not complete_db_category:
+        kakao_data = {"documents": []}
         try:
             kakao_category_group = ""
             if len(matched_basic_categories) == 1:
@@ -1631,7 +1634,14 @@ def map_place_search(request):
             ]
         except Exception as exc:
             logger.info("Kakao map search failed.", exc_info=True)
-            kakao_error = str(exc)
+            kakao_error = exc.__class__.__name__
+            db_external_ids = {str(place.get("external_id")) for place in db_results if place.get("source") == "kakao_local" and place.get("external_id")}
+            kakao_results = [serialize_kakao_map_place(place, lat=search_lat, lng=search_lng)
+                             for place in kakao_data.get("documents", [])
+                             if kakao_place_matches_categories(place, matched_basic_categories)
+                             and (not name_query or kakao_place_matches_keyword(place, name_query))
+                             and str(place.get("id")) not in db_external_ids]
+        kakao_error = kakao_error or kakao_data.get("provider_error", "")
 
     # Kakao와 저장 DB가 모두 0건인 고유 장소명은 Naver 로컬/웹 검색을
     # 최후 후보로 사용합니다. 좌표가 검증되지 않은 후보는 지도에 찍지 않고
@@ -1801,6 +1811,7 @@ def map_place_search(request):
             "lng": search_lng,
         },
         "kakao_error": kakao_error,
+        "kakao_status": "partial" if kakao_error and kakao_results else "error" if kakao_error else "ok" if kakao_results else "empty",
         "web_error": web_error,
         "results": combined_results,
     })
@@ -3185,7 +3196,17 @@ def ai_recommendation_search(request):
         timings.get("reranker_latency_ms"),
         len(data.get("results") or []),
     )
-    return Response(data)
+    return Response(_public_search_response(data))
+
+
+def _public_search_response(data):
+    """State is persisted before removing development-only diagnostics."""
+    if settings.DEBUG:
+        return data
+    return {key: value for key, value in data.items() if key not in {
+        "debug_pipeline", "ai_debug", "conversation_trace", "restored_state",
+        "external_candidates", "hidden_weak_candidates",
+    }}
 
 
 def _conversation_session_payload(session, *, include_turns=False):
@@ -3248,11 +3269,15 @@ def conversation_session_turn(request, session_id):
         return Response({"detail": "Conversation session not found."}, status=status.HTTP_404_NOT_FOUND)
     if session.status != "active":
         return Response({"detail": "Conversation session is closed."}, status=status.HTTP_409_CONFLICT)
+    if request.data.get("expected_version") is not None and request.data["expected_version"] != session.version:
+        return Response({"detail": "conversation_version_conflict"}, status=status.HTTP_409_CONFLICT)
     query = str(request.data.get("query") or "").strip()
     if not query:
         return Response({"query": ["This field is required."]}, status=status.HTTP_400_BAD_REQUEST)
 
     payload = dict(request.data)
+    for key in ("previous_context", "previous_search_context", "previousContext", "previous_search_plan", "pending_clarification_frame", "is_clarification_followup", "last_resolved_location_context"):
+        payload.pop(key, None)
     payload["query"] = query
     payload["previous_context"] = build_previous_context(session.state)
     expected_version = session.version
@@ -3278,7 +3303,7 @@ def conversation_session_turn(request, session_id):
         session_key=str(session.id),
         search_id=f"{session.id.hex}:{session.turn_count}",
     )
-    return Response(result)
+    return Response(_public_search_response(result))
 
 
 @api_view(["POST"])
@@ -3293,7 +3318,7 @@ def ai_recommendation_candidates(request):
         timings.get("retrieval_latency_ms"),
         len(data.get("results") or []),
     )
-    return Response(data)
+    return Response(_public_search_response(data))
 
 
 @api_view(["POST"])

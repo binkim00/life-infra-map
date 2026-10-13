@@ -11,7 +11,7 @@ from django.utils import timezone
 
 from recommendations.models import PlaceTagCollectionJob, ProviderQuotaUsage
 from recommendations.services.identity_diagnostics import choose_place_failure
-from recommendations.services.naver_search_provider import _clean_html, _request_channel, _safe_text
+from recommendations.services.naver_search_provider import _clean_html, _request_channel
 from recommendations.services.naver_tag_evidence_provider import SEARCH_KEYWORDS
 from recommendations.services.place_tag_collection import build_collection_query, collection_profile
 from recommendations.services.provider_rate_limit import acquire_provider_slot
@@ -62,11 +62,8 @@ class Command(BaseCommand):
                     title = _clean_html(item.get("title"), 180)
                     summary = _clean_html(item.get("description"), 500)
                     results.append({
-                        "query": query,
-                        "pack": pack_name,
                         "title": title,
                         "summary": summary,
-                        "url": _safe_text(item.get("link"), 500),
                         "text": "{} {}".format(title, summary),
                     })
             outcome = choose_place_failure(job.place, results)
@@ -83,22 +80,13 @@ class Command(BaseCommand):
             best = outcome["best"] or {}
             identity = best.get("identity") or {}
             rows.append({
-                "job_id": job.id,
-                "place_id": job.place_id,
                 "category": job.place.category,
                 "source": job.place.source,
-                "industry_middle": raw.get("industry_middle_name", ""),
-                "industry_minor": raw.get("industry_minor_name", ""),
-                "place_name": job.place.name,
-                "place_address": job.place.address,
                 "reason": outcome["reason"],
                 "identity_score": identity.get("score", 0),
-                "identity_signals": json.dumps(identity.get("signals", {}), ensure_ascii=False),
-                "query": best.get("query", ""),
-                "result_title": best.get("title", ""),
-                "result_summary": best.get("summary", ""),
-                "source_url": best.get("url", ""),
-                "result_regions": ",".join(identity.get("result_regions", [])),
+                "generic_name": identity.get("generic_name", False),
+                "matched_name_part_count": len(identity.get("matched_name_parts", [])),
+                "matched_address_part_count": len(identity.get("address_matches", [])),
             })
         write_csv(options["csv"], rows)
         report = {
@@ -148,7 +136,7 @@ def settle_request(succeeded):
 def write_csv(output, rows):
     path = Path(output).resolve()
     path.parent.mkdir(parents=True, exist_ok=True)
-    fieldnames = list(rows[0]) if rows else ["job_id", "place_id", "reason"]
+    fieldnames = list(rows[0]) if rows else ["category", "source", "reason"]
     with path.open("w", newline="", encoding="utf-8-sig") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()
@@ -161,8 +149,8 @@ def examples_by_reason(rows):
         if len(grouped[row["reason"]]) < 3:
             grouped[row["reason"]].append({
                 key: row[key] for key in (
-                    "place_id", "category", "place_name", "place_address",
-                    "identity_score", "result_title", "source_url",
+                    "category", "source", "identity_score", "generic_name",
+                    "matched_name_part_count", "matched_address_part_count",
                 )
             })
     return dict(grouped)

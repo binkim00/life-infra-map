@@ -5,11 +5,24 @@ from rest_framework.test import APIClient
 
 from recommendations.models import ConversationSession, ConversationTurn
 from recommendations.services.ai_search_orchestrator import run_ai_search
-from recommendations.services.conversation_sessions import resolve_previous_result_action
+from recommendations.services.conversation_sessions import resolve_previous_result_action, state_from_search_response
 from recommendations.services.ai_intent_planner import build_ai_intent_plan
 
 
 class ConversationSessionApiTests(TestCase):
+    def test_clarification_keeps_result_snapshot_and_frame(self):
+        previous = {
+            "search_plan": {"place_intent_frame": {"anchor_location": "서면"}},
+            "place_intent_frame": {"anchor_location": "서면", "required_features": ["주차 가능"]},
+            "previous_results": [{"id": "db:7", "name": "확인된 카페"}],
+        }
+        state = state_from_search_response("너무 멀어", {
+            "decision_action": "ask_clarification", "results": [],
+            "search_plan": {}, "place_intent_frame": {},
+        }, previous)
+        self.assertEqual(state["previous_results"], previous["previous_results"])
+        self.assertEqual(state["place_intent_frame"], previous["place_intent_frame"])
+
     def setUp(self):
         self.client = APIClient()
 
@@ -208,3 +221,21 @@ class ConversationSessionApiTests(TestCase):
 
         self.assertEqual(closed.status_code, 204)
         self.assertEqual(turn.status_code, 409)
+
+    @patch("recommendations.views.run_ai_search")
+    def test_stale_client_version_is_rejected_before_retrieval(self, search):
+        created = self._create_anonymous_session()
+        url = f"/api/recommendations/conversation-sessions/{created['id']}/turns/"
+        response = self.client.post(url, {"query": "주차 필수", "expected_version": 99}, format="json", HTTP_X_CONVERSATION_TOKEN=created["conversation_token"])
+        self.assertEqual(response.status_code, 409)
+        search.assert_not_called()
+        self.assertEqual(ConversationTurn.objects.count(), 0)
+
+    @patch("recommendations.views.run_ai_search", return_value={"decision_action": "search", "results": [], "place_intent_frame": {}})
+    def test_client_legacy_context_cannot_override_session_state(self, search):
+        created = self._create_anonymous_session()
+        url = f"/api/recommendations/conversation-sessions/{created['id']}/turns/"
+        response = self.client.post(url, {"query": "서면 카페", "previous_search_context": {"place_intent_frame": {"anchor_location": "조작된 지역"}}, "previous_search_plan": {"constraints": ["조작"]}}, format="json", HTTP_X_CONVERSATION_TOKEN=created["conversation_token"])
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("previous_search_context", search.call_args.args[0])
+        self.assertEqual(search.call_args.args[0]["previous_context"]["place_intent_frame"], {})

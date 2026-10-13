@@ -5,10 +5,45 @@ from recommendations.services.ai_search_orchestrator import (
     _collect_derived_shopping_candidates,
     _complete_and_order_results,
     _enforce_required_result_policy,
+    _grounded_internal_fallback,
+    _candidate_result_quality,
 )
 
 
 class ResultQualityFallbackTests(SimpleTestCase):
+    def test_gate_evidence_survives_disabled_reranker_without_confirmed_place_tag(self):
+        frame = {"candidate_category_codes": ["cafe"], "required_features": ["조용함", "콘센트있음"]}
+        candidate = {
+            **self._candidate(1), "place_id": 1, "hard_gate_passed": True,
+            "hard_gate_active_tags": ["조용함", "콘센트있음"],
+            "hard_gate_requirements": {"features": [
+                {"code": "quiet", "label": "조용함"},
+                {"code": "outlet", "label": "콘센트있음"},
+            ]},
+        }
+        self.assertTrue(_grounded_internal_fallback(candidate))
+        ranked, _ = _complete_and_order_results(
+            [_candidate_result_quality(candidate, frame)], [candidate], [], [], frame, limit=5,
+        )
+        results, _, _ = _enforce_required_result_policy(ranked, frame, "조용하고 콘센트 있는 카페")
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["result_tier"], "all_conditions_met")
+
+    def test_default_results_keep_only_evidenced_required_matches(self):
+        frame = {
+            "candidate_category_codes": ["cafe"],
+            "required_features": ["주차 가능", "콘센트"],
+        }
+        complete = self._candidate(1, verified=["주차 가능", "콘센트"])
+        partial = self._candidate(2, verified=["주차 가능"])
+        unknown = self._candidate(3)
+        ranked, additions = _complete_and_order_results(
+            [complete, partial], [complete, partial, unknown], [], [], frame, limit=5,
+        )
+        results, _, _ = _enforce_required_result_policy(ranked, frame, "주차와 콘센트 필수")
+        self.assertEqual([row["id"] for row in results], ["db:1"])
+        self.assertEqual(additions, [])
+
     def _candidate(self, index, *, verified=None, violations=None, level="weak"):
         return {
             "id": f"db:{index}",
@@ -39,13 +74,10 @@ class ResultQualityFallbackTests(SimpleTestCase):
             [partial, full], pool, [], [], self._frame(), limit=7,
         )
 
-        self.assertEqual(len(results), 7)
-        self.assertEqual(len(additions), 5)
+        self.assertEqual(len(results), 2)
+        self.assertEqual(len(additions), 0)
         self.assertEqual(results[0]["result_tier"], "all_conditions_met")
         self.assertEqual(results[1]["result_tier"], "partial_match")
-        self.assertTrue(all(
-            row["result_tier"] == "best_available" for row in results[2:]
-        ))
         self.assertIn("확인된 조건은 조용함, 콘센트", results[0]["recommendation_reason"])
         self.assertIn("부족하거나 확인이 필요한 조건은 콘센트", results[1]["recommendation_reason"])
 
@@ -60,6 +92,7 @@ class ResultQualityFallbackTests(SimpleTestCase):
 
         results, _ = _complete_and_order_results(
             [], [far_strong, near_external], [], [], self._frame(), limit=5,
+            allow_unverified=True,
         )
 
         self.assertEqual([row["id"] for row in results], ["kakao:near", "db:30"])
@@ -82,6 +115,7 @@ class ResultQualityFallbackTests(SimpleTestCase):
 
         results, _ = _complete_and_order_results(
             [], [], [unknown, contradicted], [], self._frame(), limit=5,
+            allow_unverified=True,
         )
 
         self.assertEqual([row["id"] for row in results], ["db:1"])
@@ -114,6 +148,7 @@ class ResultQualityFallbackTests(SimpleTestCase):
 
         results, _ = _complete_and_order_results(
             [], [indoor_cafe, excluded_cafe], [], [], self._frame(), limit=5,
+            allow_unverified=True,
         )
 
         self.assertEqual([row["id"] for row in results], ["db:1"])
@@ -137,6 +172,7 @@ class ResultQualityFallbackTests(SimpleTestCase):
 
         results, _ = _complete_and_order_results(
             [], [candidate], [], [], frame, limit=5,
+            allow_unverified=True,
         )
 
         self.assertEqual(results[0]["missing_conditions"], ["주차 가능"])
@@ -155,6 +191,7 @@ class ResultQualityFallbackTests(SimpleTestCase):
 
         results, _ = _complete_and_order_results(
             [], [*dense, *alternatives], [], [], self._frame(), limit=5,
+            allow_unverified=True,
         )
 
         self.assertGreaterEqual(len({row["address"].split()[2] for row in results}), 3)
@@ -174,6 +211,7 @@ class ResultQualityFallbackTests(SimpleTestCase):
 
         relaxed, _, needs_question = _enforce_required_result_policy(
             unknown, frame, "확인되지 않아도 대안도 보여줘",
+            allow_unverified=True,
         )
         self.assertEqual(relaxed, unknown)
         self.assertFalse(needs_question)
@@ -193,15 +231,15 @@ class ResultQualityFallbackTests(SimpleTestCase):
             [partial, unknown], frame, "조용하고 콘센트 있고 오래 머물기 좋은 카페",
         )
 
-        self.assertEqual(results, [partial])
+        self.assertEqual(results, [])
         self.assertEqual(required, ["조용함", "콘센트있음", "장기체류좋음"])
-        self.assertFalse(needs_question)
+        self.assertTrue(needs_question)
 
         complete = {"id": "db:3", "matched_conditions": ["조용함", "콘센트있음", "장기체류좋음"], "missing_conditions": []}
         results, _, needs_question = _enforce_required_result_policy(
             [partial, unknown, complete], frame, "조용하고 콘센트 있고 오래 머물기 좋은 카페",
         )
-        self.assertEqual(results, [complete, partial])
+        self.assertEqual(results, [complete])
         self.assertFalse(needs_question)
 
 

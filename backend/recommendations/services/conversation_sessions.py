@@ -2,6 +2,7 @@ import hashlib
 import hmac
 import re
 import secrets
+from copy import deepcopy
 
 from django.db import transaction
 
@@ -11,6 +12,8 @@ from recommendations.services.area_gazetteer import resolve_area_coordinates_by_
 
 TOKEN_HEADER = "HTTP_X_CONVERSATION_TOKEN"
 RESULT_REF_FIELDS = (
+    "place_key",
+    "identity_aliases",
     "id",
     "place_id",
     "external_id",
@@ -30,7 +33,36 @@ RESULT_REF_FIELDS = (
     "result_tier",
     "matched_conditions",
     "missing_conditions",
+    "matched_evidence",
+    "hard_gate_violations",
 )
+
+
+def place_identity(result):
+    source = str(result.get("candidate_source") or result.get("result_source") or result.get("source") or "db").lower()
+    if "kakao" in source or "kakao" in str(result.get("source") or "").lower():
+        source = "kakao"
+    external = result.get("external_id")
+    internal = result.get("place_id") or result.get("id")
+    if external:
+        return f"{source}:{external}"
+    if internal is not None:
+        value = str(internal)
+        return value if value.startswith(("db:", "kakao:", "web:")) else f"{source}:{value}"
+    return f"{source}:{result.get('name', '')}:{result.get('address', '')}"
+
+
+def identity_aliases(result):
+    aliases = {place_identity(result), str(result.get("place_key") or "")}
+    for key in ("place_id", "id"):
+        value = result.get(key)
+        if value is not None:
+            aliases.add(str(value) if ":" in str(value) else f"db:{value}")
+    for key in ("kakao_place_url", "place_url"):
+        match = re.search(r"place\.map\.kakao\.com/(\d+)", str(result.get(key) or ""))
+        if match:
+            aliases.add(f"kakao:{match.group(1)}")
+    return sorted(aliases - {""})
 
 
 def _token_digest(token):
@@ -66,7 +98,7 @@ def result_references(results, limit=10):
             key: result.get(key)
             for key in RESULT_REF_FIELDS
             if result.get(key) not in (None, "", [])
-        })
+        } | {"place_key": place_identity(result), "identity_aliases": identity_aliases(result)})
     return refs
 
 
@@ -79,7 +111,7 @@ ORDINAL_PATTERNS = (
 )
 
 
-def resolve_previous_result_action(query, previous_context):
+def _legacy_previous_result_action(query, previous_context):
     text = re.sub(r"\s+", " ", str(query or "")).strip()
     compact = text.replace(" ", "")
     previous_context = previous_context if isinstance(previous_context, dict) else {}
@@ -94,7 +126,7 @@ def resolve_previous_result_action(query, previous_context):
 
     indexes = []
     for index, patterns in ORDINAL_PATTERNS:
-        if any(pattern.replace(" ", "") in compact for pattern in patterns):
+        if any(re.search(r"(?<!\d)" + re.escape(pattern.replace(" ", "")), compact) for pattern in patterns):
             indexes.append(index)
     indexes = list(dict.fromkeys(indexes))
     selected = [
@@ -149,6 +181,52 @@ def resolve_previous_result_action(query, previous_context):
     return None
 
 
+def resolve_previous_result_action(query, previous_context):
+    context = previous_context or {}
+    results = context.get("previous_results") or []
+    compact = re.sub(r"\s+", "", str(query or ""))
+    if any(word in compact for word in ("되돌려", "되돌리", "이전조건으로")) or ("취소" in compact and any(word in compact for word in ("방금", "변경", "마지막"))):
+        history = context.get("state_history") or []
+        return {"action": "undo_last_change", "results": (history[-1].get("previous_results") or []) if history else results,
+                "restored_state": history[-1] if history else None,
+                "message": "마지막 조건 변경을 되돌렸어요." if history else "되돌릴 조건 변경이 없어요."}
+    indexes = [index for index, patterns in ORDINAL_PATTERNS if any(re.search(r"(?<!\d)" + re.escape(pattern.replace(" ", "")), compact) for pattern in patterns)]
+    # Numeric ordinals beyond the named first five must never become a new search.
+    indexes += [int(number) - 1 for number in re.findall(r"(?<!\d)(\d+)번", compact) if 1 <= int(number) <= 100]
+    indexes = list(dict.fromkeys(indexes))
+    selected_key = context.get("selected_result_key")
+    pronoun = any(word in compact for word in ("거기", "그곳", "이곳", "그장소"))
+    bare_info = any(word in compact for word in ("몇m", "몇미터", "얼마나멀", "왜추천", "어떤조건"))
+    if not indexes and (pronoun or bare_info):
+        indexes = [i for i, item in enumerate(results) if selected_key in identity_aliases(item)] if selected_key else []
+    selected = [results[index] for index in indexes if 0 <= index < len(results)]
+    exclusions = any(word in compact for word in ("빼줘", "빼고", "제외", "말고다른", "다른곳", "다른데"))
+    if exclusions and (indexes or any(word in compact for word in ("다른곳", "다른데", "이결과", "나온곳"))):
+        removed = selected if indexes else results
+        keys = sorted(set(context.get("excluded_place_keys") or []) | {key for item in removed for key in identity_aliases(item)})
+        return {"action": "exclude_previous_results", "results": [], "excluded_place_keys": keys,
+                "message": "제외한 장소를 빼고 다시 찾았어요.", "result_indexes": indexes}
+    info = bare_info or any(word in compact for word in ("왜", "이유", "추천한", "추천했", "알려", "있어", "가능해", "주차", "콘센트", "와이파이", "조용"))
+    if info and (indexes or pronoun or bare_info):
+        messages = []
+        for item in selected:
+            facts = list(dict.fromkeys([*(item.get("verified_tags") or []), *(item.get("matched_conditions") or [])]))
+            messages.append(f"{item.get('name') or '선택한 장소'}: 확인된 조건은 {', '.join(map(str, facts)) if facts else '없습니다'}. 그 밖의 조건은 확인되지 않았습니다.")
+            if item.get("distance") is not None:
+                messages.append(f"저장된 검색 위치에서 약 {int(round(float(item['distance'])))}m입니다.")
+            if item.get("address"):
+                messages.append(str(item["address"]))
+        return {"action": "explain_previous_result", "results": selected, "result_indexes": indexes,
+                "message": "\n".join(messages) or "어느 장소인지 선택해 주세요. 해당 순번의 결과가 없습니다."}
+    legacy = _legacy_previous_result_action(query, context)
+    if legacy:
+        return legacy
+    if indexes or any(word in compact for word in ("거기", "그곳", "그장소")):
+        return {"action": "explain_previous_result", "results": selected, "result_indexes": indexes,
+                "message": "확인된 장소를 선택해 주세요." if not selected else f"{selected[0].get('name')}의 확인된 정보만 안내할 수 있어요."}
+    return None
+
+
 def build_previous_context(state):
     state = state if isinstance(state, dict) else {}
     frame = state.get("place_intent_frame") or {}
@@ -162,6 +240,10 @@ def build_previous_context(state):
         "previous_user_query": state.get("previous_user_query") or "",
         "previous_results": state.get("previous_results") or [],
         "last_resolved_location_context": state.get("last_resolved_location_context") or {},
+        "selected_result_key": state.get("selected_result_key"),
+        "excluded_place_keys": state.get("excluded_place_keys") or [],
+        "state_history": state.get("state_history") or [],
+        "turn_count": state.get("turn_count") or 0,
     }
 
 
@@ -183,14 +265,30 @@ def state_from_search_response(query, response, previous_state=None):
     previous_frame = previous_state.get("place_intent_frame") or {}
     previous_results = previous_state.get("previous_results") or []
     previous_location = previous_state.get("last_resolved_location_context") or {}
+    if action == "reset_conversation":
+        return {"decision_action": action, "previous_results": [], "place_intent_frame": {}, "search_plan": {}, "turn_count": int(previous_state.get("turn_count") or 0) + 1}
+    if action == "undo_last_change" and response.get("restored_state"):
+        return {**deepcopy(response["restored_state"]), "decision_action": action,
+                "state_history": (previous_state.get("state_history") or [])[:-1], "turn_count": int(previous_state.get("turn_count") or 0) + 1}
+    informational = action in {"compare_previous_results", "select_previous_result", "explain_previous_result", "undo_last_change"}
+    if informational:
+        response_frame = previous_frame
+        response_plan = previous_plan
+    history = list(previous_state.get("state_history") or [])
+    changed = response_frame != previous_frame or response.get("excluded_place_keys", previous_state.get("excluded_place_keys") or []) != (previous_state.get("excluded_place_keys") or [])
+    if previous_frame and changed and action not in {"ai_unavailable", "ask_clarification"} and not informational:
+        history.append(deepcopy({key: value for key, value in previous_state.items() if key != "state_history"}))
+    selected_key = previous_state.get("selected_result_key")
+    if action in {"select_previous_result", "explain_previous_result"} and response.get("results"):
+        selected_key = place_identity(response["results"][0])
 
     # A provider outage must not erase the last usable conversation frame. If
     # the failed turn itself is a known locality answer, retain that deterministic
     # location patch as well so the following turn can continue from it.
-    if action == "ai_unavailable":
+    if action in {"ai_unavailable", "ask_clarification"}:
         response_frame = _nonempty_overlay(previous_frame, response_frame)
         response_plan = _nonempty_overlay(previous_plan, response_plan)
-        resolved_area = resolve_area_coordinates_by_token(query)
+        resolved_area = resolve_area_coordinates_by_token(query) if action == "ai_unavailable" else None
         if resolved_area:
             area_lat, area_lng, area_label = resolved_area
             response_frame.update({
@@ -208,14 +306,27 @@ def state_from_search_response(query, response, previous_state=None):
             }
         response_plan["place_intent_frame"] = response_frame
 
+    if action == "ai_unavailable" and previous_frame and response_frame != previous_frame:
+        # A valid semantic patch is committed even when subsequent retrieval or
+        # ranking fails, so undo restores precisely that patch.
+        history.append(deepcopy({key: value for key, value in previous_state.items() if key != "state_history"}))
+
     return {
         "previous_user_query": str(query or "")[:500],
         "decision_action": action,
         "clarification_question": response.get("clarification_question") or "",
         "search_plan": response_plan,
         "place_intent_frame": response_frame,
-        "previous_results": result_references(response.get("results") or []) or (previous_results if action == "ai_unavailable" else []),
+        "previous_results": (
+            previous_results
+            if action in {"ai_unavailable", "ask_clarification"} or informational
+            else result_references(response.get("results") or [])
+        ),
         "last_resolved_location_context": debug.get("location_resolution") or previous_location,
+        "selected_result_key": response.get("selected_result_key") or selected_key,
+        "excluded_place_keys": response.get("excluded_place_keys", previous_state.get("excluded_place_keys") or []),
+        "state_history": history[-10:],
+        "turn_count": int(previous_state.get("turn_count") or 0) + 1,
     }
 
 

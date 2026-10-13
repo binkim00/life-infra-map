@@ -24,14 +24,14 @@ class TagEvidenceAggregationTests(TestCase):
             source_reference=reference,
             polarity=polarity,
             confidence=70,
-            evidence=f"{source} {polarity}",
+            evidence=f"{source} {polarity} observation {reference.rsplit('/', 1)[-1]}",
             observed_at=self.now,
             expires_at=(self.now + timedelta(days=30)) if expires else (self.now - timedelta(days=1)),
         )
 
     def test_three_web_sources_raise_confidence_but_never_auto_confirm(self):
         for index in range(3):
-            self.add_evidence(source="ai_suggested", reference=f"https://blog/{index}")
+            self.add_evidence(source="ai_suggested", reference=f"https://blog{index}.example/{index}")
         result = aggregate_tag_evidence(self.place, self.tag, now=self.now)
         tag = PlaceTag.objects.get(source="web_evidence")
         self.assertEqual(result["status"], "candidate")
@@ -67,7 +67,7 @@ class TagEvidenceAggregationTests(TestCase):
 
     def test_three_web_sources_plus_explicit_user_confirmation_can_confirm(self):
         for index in range(3):
-            self.add_evidence(source="ai_suggested", reference=f"https://blog/{index}")
+            self.add_evidence(source="ai_suggested", reference=f"https://blog{index}.example/{index}")
         self.add_evidence(source="user_feedback", reference="interaction:1")
         result = aggregate_tag_evidence(self.place, self.tag, now=self.now)
         verified = PlaceTag.objects.get(source="user_verified")
@@ -108,7 +108,7 @@ class TagEvidenceAggregationTests(TestCase):
         for index in range(3):
             self.add_evidence(
                 source="naver_blog_search",
-                reference=f"https://blog/negative-{index}",
+                reference=f"https://blog{index}.example/negative-{index}",
                 polarity="negative",
             )
         result = aggregate_tag_evidence(self.place, self.tag, now=self.now)
@@ -134,7 +134,7 @@ class TagEvidenceAggregationTests(TestCase):
 
     def test_official_negative_overrides_web_positive_candidate(self):
         for index in range(3):
-            self.add_evidence(source="naver_blog_search", reference=f"https://blog/{index}")
+            self.add_evidence(source="naver_blog_search", reference=f"https://blog{index}.example/{index}")
         self.add_evidence(source="field_rule", reference="official:negative", polarity="negative")
         result = aggregate_tag_evidence(self.place, self.tag, now=self.now)
         self.assertEqual(result["status"], "rejected")
@@ -145,7 +145,7 @@ class TagEvidenceAggregationTests(TestCase):
 
     def test_expiry_revokes_only_confirmation_created_by_evidence_aggregation(self):
         web = [
-            self.add_evidence(source="ai_suggested", reference=f"https://blog/{index}")
+            self.add_evidence(source="ai_suggested", reference=f"https://blog{index}.example/{index}")
             for index in range(3)
         ]
         self.add_evidence(source="user_feedback", reference="interaction:1")

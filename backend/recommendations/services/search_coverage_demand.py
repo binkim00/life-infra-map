@@ -7,8 +7,9 @@ from collections import defaultdict
 from datetime import timedelta
 
 from django.utils import timezone
+from django.db.models import Q
 
-from recommendations.models import PlaceInteractionEvent
+from recommendations.models import PlaceInteractionEvent, PlaceTag
 from recommendations.services.tag_enrichment_queue import normalize_subjective_tags
 
 
@@ -93,7 +94,6 @@ def record_search_coverage_demand(response, *, user=None, session_key="", search
         _compact(location_hint),
         ",".join(sorted(categories)),
         ",".join(sorted(requested_tags)),
-        str(result_count),
     ])
     safe_search_id = str(search_id or uuid.uuid4().hex)[:64]
     safe_session_key = (
@@ -156,6 +156,12 @@ def coverage_demand_context(places, *, now=None):
             global_signals.append(row)
 
     result = {}
+    confirmed_by_place = defaultdict(set)
+    place_ids = [place.id for place in places]
+    for place_id, tag_name in PlaceTag.objects.filter(place_id__in=place_ids).filter(
+        Q(is_verified=True) | Q(status="confirmed", source__in=("checked", "user_verified"))
+    ).values_list("place_id", "tag__name").distinct():
+        confirmed_by_place[place_id].add(tag_name)
     for place in places:
         haystack = _compact(" ".join([place.name, place.address, place.detail_location]))
         score = 0
@@ -164,8 +170,11 @@ def coverage_demand_context(places, *, now=None):
             location = signal["location"]
             if location and location not in haystack:
                 continue
+            missing_tags = signal["tags"] - confirmed_by_place[place.id]
+            if not missing_tags:
+                continue
             score += signal["weight"]
-            tags.update(signal["tags"])
+            tags.update(missing_tags)
         result[place.id] = {"score": min(30, score), "targeted_tags": tags}
     return result
 

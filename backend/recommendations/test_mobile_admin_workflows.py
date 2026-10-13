@@ -147,8 +147,14 @@ class MobileAdminWorkflowTests(TestCase):
         self.client.force_authenticate(self.other)
         self.assertEqual(self.client.get(url).status_code, 404)
         self.client.force_authenticate(self.user)
-        self.assertEqual(self.client.get(url).data["description"], report.description)
-        self.assertEqual(self.client.get("/api/recommendations/place-reports/").data["results"][0]["description"], report.description)
+        detail = self.client.get(url).data
+        self.assertEqual(detail["description"], report.description)
+        self.assertIn("processing_result", detail)
+        for field in ("user", "user_username", "reviewed_by", "reviewed_by_username", "admin_note", "client_request_id", "status", "report_type", "place"):
+            self.assertNotIn(field, detail)
+        listing = self.client.get("/api/recommendations/place-reports/").data["results"][0]
+        self.assertEqual(listing["description"], report.description)
+        self.assertNotIn("admin_note", listing)
 
     def test_user_report_list_filters_status_without_exposing_other_users(self):
         PlaceReport.objects.create(

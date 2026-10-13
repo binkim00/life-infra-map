@@ -63,7 +63,8 @@ def _get_max_candidates():
         value = int(getattr(settings, "AI_WEB_SEARCH_MAX_CANDIDATES", 1))
     except (TypeError, ValueError):
         value = 1
-    return min(max(value, 1), 1)
+    ceiling = 3 if getattr(settings, "AI_WEB_SEARCH_SPARSE_PILOT_ENABLED", False) else 1
+    return min(max(value, 1), ceiling)
 
 
 def _get_max_output_tokens():
@@ -438,9 +439,10 @@ def should_execute_ai_web_search(query, condition=None, existing_results_summary
 
 def _build_system_prompt():
     return (
-        "Use web_search. Find at most one real local place for the user request. "
-        "Return JSON only: {\"candidates\":[{\"name\":\"place name\",\"source_url\":\"<source_url>\"}]}. "
+        "Use web_search. Find at most three real local places for the user request. "
+        "Return JSON only: {\"candidates\":[{\"name\":\"place name\",\"address_hint\":\"full address from source\",\"source_url\":\"<source_url>\"}]}. "
         "If no source URL is found, return {\"candidates\":[]}. "
+        "Leave address_hint empty when the source does not state the full address. "
         "Do not invent coordinates, hours, menu availability, quietness, or atmosphere."
     )
 
@@ -464,8 +466,8 @@ def _build_user_prompt(query, lat, lng, condition, existing_results_summary):
         lines.append(f"place_type_keywords: {', '.join(place_type_keywords)}")
 
     lines.extend([
-        "Find one place mentioned in web search results.",
-        'Return JSON only: {"candidates":[{"name":"place name","source_url":"<source_url>"}]}',
+        "Find up to three places mentioned in web search results.",
+        'Return JSON only: {"candidates":[{"name":"place name","address_hint":"full address from source or empty","source_url":"<source_url>"}]}',
         'If no source URL is found, return {"candidates":[]}.',
     ])
     return "\n".join(lines)
@@ -1064,7 +1066,7 @@ def _build_source_reference_candidates(sources, queries=None):
 
 def _build_cache_key(query, lat, lng, condition, existing_results_summary, manual=False):
     cache_payload = {
-        "query": _safe_text(query, 500),
+        "query": re.sub(r"\s+", " ", _safe_text(query, 500)).strip().casefold(),
         "lat": _safe_text(lat, 32),
         "lng": _safe_text(lng, 32),
         "condition": condition or {},

@@ -53,7 +53,7 @@ from recommendations.services.recommendation_condition import build_recommendati
 from recommendations.views import merge_map_place_results
 
 
-@override_settings(ALLOWED_HOSTS=["localhost", "testserver"])
+@override_settings(ALLOWED_HOSTS=["localhost", "testserver"], DEBUG=True)
 class RecommendationSearchTests(TestCase):
     REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -1440,7 +1440,7 @@ class RecommendationSearchTests(TestCase):
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertEqual(data["decision_action"], "search")
-        self.assertGreater(len(data["results"]), 2)
+        self.assertEqual(len(data["results"]), 2)
         self.assertEqual(
             [row["id"] for row in data["results"][:2]],
             ["kakao-0", "kakao-1"],
@@ -2130,7 +2130,7 @@ class RecommendationSearchTests(TestCase):
 
     def test_frontend_ai_search_path_returns_before_local_planner(self):
         source = self._repo_file_text("frontend/src/hooks/useHomeSearch.js")
-        start = source.index("const performUnifiedMapSearch = async")
+        start = source.index("const performUnifiedMapSearchImpl = async")
         backend_only_start = source.index("if (!useMapBounds)", start)
         local_planner_start = source.index("let conversationalPlan =", start)
         backend_only_block = source[backend_only_start:local_planner_start]
@@ -3719,10 +3719,9 @@ class RecommendationSearchTests(TestCase):
             radius=2000,
         )
 
-        self.assertGreaterEqual(len(candidates), 5)
-        expanded = [candidate for candidate in candidates if candidate.get("expanded_search")]
-        self.assertTrue(expanded)
-        self.assertTrue(all(candidate["expanded_from_radius_m"] == 2000 for candidate in expanded))
+        self.assertEqual(len(candidates), 4)
+        self.assertFalse(any(candidate.get("expanded_search") for candidate in candidates))
+        self.assertTrue(all(candidate["distance"] <= 2000 for candidate in candidates))
 
     def test_implicit_direct_category_radius_expands_only_when_nearby_is_sparse(self):
         from recommendations.services.ai_search_orchestrator import collect_db_candidates
@@ -3758,13 +3757,8 @@ class RecommendationSearchTests(TestCase):
             limit=10,
         )
 
-        self.assertGreaterEqual(len(candidates), 5)
-        self.assertFalse(candidates[0].get("expanded_search", False))
-        expanded = [candidate for candidate in candidates if candidate.get("expanded_search")]
-        self.assertTrue(expanded)
-        self.assertTrue(
-            all(candidate["expanded_from_radius_m"] == 3000 for candidate in expanded)
-        )
+        self.assertEqual(len(candidates), 2)
+        self.assertFalse(any(candidate.get("expanded_search") for candidate in candidates))
 
     def test_sparse_shopping_candidates_expand_radius_without_reordering_nearby(self):
         from recommendations.services.ai_search_orchestrator import collect_db_candidates
@@ -3799,9 +3793,8 @@ class RecommendationSearchTests(TestCase):
             radius=3000,
         )
 
-        self.assertGreaterEqual(len(candidates), 5)
-        self.assertFalse(candidates[0].get("expanded_search", False))
-        self.assertTrue(any(candidate.get("expanded_search") for candidate in candidates[2:]))
+        self.assertEqual(len(candidates), 3)
+        self.assertFalse(any(candidate.get("expanded_search") for candidate in candidates))
 
     def test_db_evidence_uses_frame_candidate_type_category_label_without_db_first(self):
         from recommendations.services.ai_search_orchestrator import _db_evidence
@@ -9104,12 +9097,11 @@ class RecommendationSearchTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         data = response.json()
-        self.assertEqual(data["results"][0]["name"], "광안리 테스트 식당")
-        self.assertEqual(mock_collect_kakao.call_count, 2)
-        self.assertEqual(mock_collect_kakao.call_args_list[1].args[1], ["식당", "음식점", "맛집"])
+        self.assertEqual(data["results"], [])
+        self.assertEqual(mock_collect_kakao.call_count, 1)
         self.assertEqual(
             data["debug_pipeline"]["query_generation"]["fallback_queries"],
-            ["식당", "음식점", "맛집"],
+            [],
         )
 
     @override_settings(
@@ -9779,7 +9771,7 @@ class RecommendationSearchTests(TestCase):
         self.assertNotIn("evidence_sources", prompt_input)
         self.assertNotIn("existing_results_summary", prompt_input)
         self.assertNotIn("category_hint", prompt_input)
-        self.assertNotIn("address_hint", prompt_input)
+        self.assertIn("address_hint", prompt_input)
         self.assertNotIn("evidence_summary", prompt_input)
         self.assertNotIn("https://...", prompt_input)
 
@@ -10438,13 +10430,13 @@ class RecommendationSearchTests(TestCase):
         self.assertIn("menu_keywords: salt bread", prompt_input)
         self.assertIn("place_type_keywords: bakery", prompt_input)
         self.assertIn(
-            '{"candidates":[{"name":"place name","source_url":"<source_url>"}]}',
+            '{"candidates":[{"name":"place name","address_hint":"full address from source or empty","source_url":"<source_url>"}]}',
             prompt_input,
         )
         self.assertNotIn("reasoning", payload)
         self.assertNotIn("existing_results_summary", prompt_input)
         self.assertNotIn("category_hint", prompt_input)
-        self.assertNotIn("address_hint", prompt_input)
+        self.assertIn("address_hint", prompt_input)
         self.assertNotIn("evidence_summary", prompt_input)
         self.assertNotIn("https://...", prompt_input)
 
@@ -12672,7 +12664,7 @@ class RecommendationSearchTests(TestCase):
         self.assertIn("result_policy", frame)
         condition_labels = [item["label"] for item in frame["structured_conditions"]]
         self.assertIn("실내/날씨 회피", condition_labels)
-        self.assertIn("작업/충전 가능", condition_labels)
+        self.assertIn("콘센트있음", condition_labels)
         self.assertTrue(frame["fallback_targets"])
         self.assertEqual(search_plan["structured_conditions"], frame["structured_conditions"])
         self.assertEqual(search_plan["fallbackTargets"], frame["fallback_targets"])

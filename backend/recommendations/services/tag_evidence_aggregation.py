@@ -1,3 +1,7 @@
+import hashlib
+import re
+from urllib.parse import urlsplit
+
 from django.db.models import Q
 from django.utils import timezone
 from recommendations.services.historical_evidence import HISTORICAL_PREFIX
@@ -177,15 +181,42 @@ def clear_stale_aggregate_confirmations(place, tag, *, keep_source):
 
 
 def independent_count(queryset):
-    return queryset.exclude(source_reference="").values("source_reference").distinct().count()
+    return len(independent_rows(queryset))
+
+
+def independent_rows(queryset):
+    """Count one publisher and one normalized quote only once per tag.
+
+    Different URLs can mirror one article. Multiple posts by one account are
+    useful context but are not independent corroboration for promotion.
+    """
+    rows = queryset.exclude(source_reference="").order_by("-confidence", "-observed_at")
+    selected = []
+    publishers = set()
+    quotes = set()
+    for row in rows.iterator(chunk_size=200):
+        reference = str(row.source_reference or "").strip()
+        parsed = urlsplit(reference)
+        host = parsed.netloc.lower().removeprefix("www.").removeprefix("m.")
+        path = parsed.path.strip("/").split("/")
+        publisher = (
+            f"{host}/{path[0].lower()}"
+            if host == "blog.naver.com" and path and path[0] else
+            host or reference
+        )
+        quote = re.sub(r"[^0-9a-z가-힣]+", "", str(row.evidence or "").casefold())
+        quote_hash = hashlib.sha256(quote.encode()).hexdigest() if quote else ""
+        if publisher in publishers or (quote_hash and quote_hash in quotes):
+            continue
+        publishers.add(publisher)
+        if quote_hash:
+            quotes.add(quote_hash)
+        selected.append(row)
+    return selected
 
 
 def evidence_metrics(queryset, *, now):
-    rows = list(queryset.exclude(source_reference="").order_by("-confidence", "-observed_at"))
-    independent = {}
-    for row in rows:
-        independent.setdefault(row.source_reference, row)
-    rows = list(independent.values())
+    rows = independent_rows(queryset)
     if not rows:
         return {
             "independent_urls": 0,
