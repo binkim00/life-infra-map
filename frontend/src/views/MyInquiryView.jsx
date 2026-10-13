@@ -1,3 +1,4 @@
+import { userErrorMessage } from '../../../shared/user-message'
 import { Fragment, useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 
@@ -65,7 +66,7 @@ const MyInquiryView = () => {
       } catch (error) {
         if (isStale) return
         console.error(error)
-        setErrorMessage(error.response?.data?.detail || '문의 내역을 불러오지 못했습니다.')
+        setErrorMessage(userErrorMessage(error, '문의 내역을 불러오지 못했습니다.'))
       } finally {
         if (!isStale) {
           setIsLoading(false)

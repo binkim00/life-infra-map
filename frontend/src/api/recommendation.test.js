@@ -44,20 +44,12 @@ describe('conversation search API', () => {
     )
   })
 
-  it('recreates a stale session once', async () => {
-    sessionStorage.setItem('lifeInfraMap.conversationSession.v1', JSON.stringify({
-      id: 'stale-session',
-      token: 'stale-token',
-    }))
-    post
-      .mockRejectedValueOnce({ response: { status: 404 } })
-      .mockResolvedValueOnce({ data: { id: 'session-2', conversation_token: 'secret-2' } })
-      .mockResolvedValueOnce({ data: { result_count: 1 } })
-
-    const result = await aiSearchRecommendations({ query: '다시 찾아줘' })
-
-    expect(result.result_count).toBe(1)
-    expect(post).toHaveBeenCalledTimes(3)
+  it('preserves the conversation on a missing-session error instead of silently resetting', async () => {
+    sessionStorage.setItem('lifeInfraMap.conversationSession.v1', JSON.stringify({ id: 'stale-session', token: 'stale-token' }))
+    post.mockRejectedValueOnce({ response: { status: 404 } })
+    await expect(aiSearchRecommendations({ query: '다시 찾아줘' })).rejects.toMatchObject({ response: { status: 404 } })
+    expect(post).toHaveBeenCalledTimes(1)
+    expect(JSON.parse(sessionStorage.getItem('lifeInfraMap.conversationSession.v1')).id).toBe('stale-session')
   })
 
   it('clears persisted context when a new conversation starts', () => {
@@ -65,6 +57,45 @@ describe('conversation search API', () => {
 
     startNewConversationSession()
 
+    expect(sessionStorage.getItem('lifeInfraMap.conversationSession.v1')).toBeNull()
+  })
+
+  it('does not let a late session creation restore a cleared conversation', async () => {
+    let finishCreation
+    post.mockImplementationOnce(() => new Promise((resolve) => { finishCreation = resolve }))
+    const pending = aiSearchRecommendations({ query: '서면 카페' })
+    startNewConversationSession()
+    finishCreation({ data: { id: 'old-session', conversation_token: 'old-token' } })
+    await expect(pending).rejects.toThrow('conversation_stale')
+    expect(sessionStorage.getItem('lifeInfraMap.conversationSession.v1')).toBeNull()
+  })
+
+  it('does not recreate a session after a version conflict', async () => {
+    sessionStorage.setItem('lifeInfraMap.conversationSession.v1', JSON.stringify({ id: 'session-1', token: 'token' }))
+    post.mockRejectedValueOnce({ response: { status: 409 } })
+    await expect(aiSearchRecommendations({ query: '주차 필수' })).rejects.toMatchObject({ response: { status: 409 } })
+    expect(post).toHaveBeenCalledTimes(1)
+  })
+
+  it('sends and persists the server version', async () => {
+    post.mockResolvedValueOnce({ data: { id: 'session-1', version: 0 } })
+      .mockResolvedValueOnce({ data: { conversation: { version: 1 } } })
+      .mockResolvedValueOnce({ data: { conversation: { version: 2 } } })
+    await aiSearchRecommendations({ query: '서면 카페' })
+    await aiSearchRecommendations({ query: '주차 필수' })
+    expect(post.mock.calls[2][1].expected_version).toBe(1)
+    expect(JSON.parse(sessionStorage.getItem('lifeInfraMap.conversationSession.v1')).version).toBe(2)
+  })
+
+  it('rejects a late turn after a new conversation starts', async () => {
+    sessionStorage.setItem('lifeInfraMap.conversationSession.v1', JSON.stringify({ id: 'A', version: 0 }))
+    let finish
+    post.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve }))
+    const pending = aiSearchRecommendations({ query: '주차 필수' })
+    await Promise.resolve()
+    startNewConversationSession()
+    finish({ data: { conversation: { version: 1 }, results: [{ id: 1 }] } })
+    await expect(pending).rejects.toThrow('conversation_stale')
     expect(sessionStorage.getItem('lifeInfraMap.conversationSession.v1')).toBeNull()
   })
 })

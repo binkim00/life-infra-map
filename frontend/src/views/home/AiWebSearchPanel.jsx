@@ -8,45 +8,6 @@ import {
   isAiWebSourceReference,
 } from '@/utils/aiWebCandidateHelpers'
 
-const IS_DEV = import.meta.env.DEV
-
-const getAiWebSearchDebugText = (result) => {
-  if (!IS_DEV || !result) return ''
-
-  const detail = result?.error_detail
-  const summary = detail?.debug_summary || result?.debug_summary || null
-  if (!detail && !summary) return ''
-
-  const summaryText = summary
-    ? [
-      summary.output_count != null ? `outputs ${summary.output_count}` : '',
-      Array.isArray(summary.output_types) && summary.output_types.length
-        ? `types ${summary.output_types.join('/')}`
-        : '',
-      summary.source_count != null ? `sources ${summary.source_count}` : '',
-      summary.output_url_count != null ? `output urls ${summary.output_url_count}` : '',
-      summary.instruction_url_count != null ? `instruction urls ${summary.instruction_url_count}` : '',
-      summary.annotation_count != null ? `annotations ${summary.annotation_count}` : '',
-      summary.url_citation_count != null ? `citations ${summary.url_citation_count}` : '',
-      summary.message_count != null ? `messages ${summary.message_count}` : '',
-      summary.reasoning_count != null ? `reasoning ${summary.reasoning_count}` : '',
-      summary.web_search_call_count != null ? `web search ${summary.web_search_call_count}` : '',
-      summary.output_text_length != null ? `text ${summary.output_text_length}` : '',
-      Array.isArray(summary.web_search_action_keys) && summary.web_search_action_keys.length
-        ? `action keys ${summary.web_search_action_keys.join('/')}`
-        : '',
-    ].filter(Boolean).join(' · ')
-    : ''
-
-  return [
-    result.reason,
-    detail?.status_code ? `status ${detail.status_code}` : '',
-    detail?.status || '',
-    detail?.type || '',
-    summaryText,
-  ].filter(Boolean).join(' · ')
-}
-
 const AiWebSearchPanel = ({
   status,
   message,
@@ -60,7 +21,6 @@ const AiWebSearchPanel = ({
     ? lastResult.summary
     : null
   const evidenceCandidates = candidates.slice(0, 5)
-  const debugText = getAiWebSearchDebugText(lastResult)
 
   return (
     <section className={`ai-web-search-panel is-${status}`}>
@@ -88,9 +48,6 @@ const AiWebSearchPanel = ({
         <p className="ai-web-search-message">{message}</p>
       ) : null}
 
-      {debugText ? (
-        <p className="ai-web-search-message ai-web-search-debug">{debugText}</p>
-      ) : null}
 
       {candidates.length ? (
         <div className="ai-web-search-candidates">

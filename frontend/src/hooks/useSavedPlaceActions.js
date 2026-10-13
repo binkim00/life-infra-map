@@ -1,3 +1,4 @@
+import { userErrorMessage } from '../../../shared/user-message'
 import { useCallback, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
@@ -76,7 +77,7 @@ export const useSavedPlaceActions = () => {
         : '장소를 저장했습니다.')
       return { status: 'saved', savedPlace }
     } catch (error) {
-      setSaveMessage(error.response?.data?.detail || '장소를 저장하지 못했습니다.')
+      setSaveMessage(userErrorMessage(error, '장소를 저장하지 못했습니다.'))
       return { status: 'failed', error }
     } finally {
       setSavingPlaceId('')

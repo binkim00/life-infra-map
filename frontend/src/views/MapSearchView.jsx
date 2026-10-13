@@ -1,3 +1,6 @@
+import { usePanelHistory } from '@/hooks/usePanelHistory'
+import { categoryDisplay } from '../../../shared/search-ux'
+import { useOverlayHistory } from '@/hooks/useOverlayHistory'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 
@@ -5,6 +8,7 @@ import { searchMapPlaces } from '@/api/recommendation'
 import KakaoMap from '@/components/KakaoMap'
 import { useSavedPlaceActions } from '@/hooks/useSavedPlaceActions'
 import { placeCategoryLabel } from '@/utils/placeCategoryLabel'
+import { userErrorMessage, userText } from '../../../shared/user-message'
 
 import styles from './MapSearchView.module.css'
 
@@ -33,6 +37,7 @@ const SOURCE_META = {
 }
 
 const toNumber = (value) => {
+  if (value === null || value === undefined || value === '') return null
   const numberValue = Number(value)
   return Number.isFinite(numberValue) ? numberValue : null
 }
@@ -145,6 +150,11 @@ const MapSearchView = () => {
   const [selectedPlace, setSelectedPlace] = useState(null)
   const [fitBoundsKey, setFitBoundsKey] = useState(0)
   const [isLoading, setIsLoading] = useState(false)
+  const [searchError, setSearchError] = useState('')
+  const [panelLevel, setPanelLevel] = useState('expanded')
+  const [detailVisible, setDetailVisible] = useState(false)
+  const listItemRefs = useRef({})
+  const searchRevision = useRef(0)
   const [message, setMessage] = useState(
     '장소명, 주소, 업종을 빠르게 검색할 수 있어요.',
   )
@@ -169,7 +179,8 @@ const MapSearchView = () => {
     event?.preventDefault?.()
 
     setIsLoading(true)
-    setSelectedPlace(null)
+    setSearchError('')
+    const revision = ++searchRevision.current
     setMessage('장소 데이터를 찾는 중입니다.')
 
     try {
@@ -180,6 +191,7 @@ const MapSearchView = () => {
         lng: mapCenterRef.current?.lng ?? null,
         limit: 40,
       })
+      if (revision !== searchRevision.current) return
 
       setCounts(data.candidate_counts || { db: 0, kakao: 0, db_total: 0 })
       setLocationContext(data.location_context || {})
@@ -187,10 +199,10 @@ const MapSearchView = () => {
       setExcludedTokens(toArray(data.query_info?.exclude_tokens))
 
       const nextPlaces = toArray(data.results)
-        .filter((place) => toNumber(place.lat) !== null && toNumber(place.lng) !== null)
         .map(normalizePlace)
 
       setPlaces(nextPlaces)
+      setSelectedPlace((current) => nextPlaces.find((place) => place.id === current?.id) || nextPlaces[0] || null)
       setFitBoundsKey((current) => current + 1)
 
       let nextMessage
@@ -200,7 +212,7 @@ const MapSearchView = () => {
           ? `${data.location_context.center_label} 기준으로 ${nextPlaces.length}곳을 찾았어요.`
           : `${nextPlaces.length}곳을 찾았어요.`
       } else if (data.needs_location) {
-        nextMessage = data.message || '지역명과 함께 검색하거나 지도에서 위치를 선택해 주세요.'
+        nextMessage = userText(data.message, '지역명과 함께 검색하거나 지도에서 위치를 선택해 주세요.')
       } else if (!query.trim()) {
         nextMessage = '검색어를 입력하거나 지도 중심 기준으로 저장 장소를 둘러보세요.'
       } else {
@@ -208,20 +220,18 @@ const MapSearchView = () => {
       }
 
       if (data.kakao_error) {
-        nextMessage = `${nextMessage} 카카오 결과는 잠시 불러오지 못했습니다.`
+        nextMessage = nextPlaces.length ? `${nextMessage} 일부 장소 정보는 잠시 불러오지 못했어요.` : '지금 장소 정보를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.'
       }
 
       setMessage(nextMessage)
     } catch (error) {
+      if (revision !== searchRevision.current) return
       console.error(error)
-      setPlaces([])
-      setCounts({ db: 0, kakao: 0, db_total: 0 })
-      setLocationContext({})
-      setDroppedTokens([])
-      setExcludedTokens([])
-      setMessage('지도 검색을 불러오지 못했습니다.')
+      const errorMessage = userErrorMessage(error, '지금 장소 정보를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.')
+      setSearchError(errorMessage)
+      setMessage(errorMessage)
     } finally {
-      setIsLoading(false)
+      if (revision === searchRevision.current) setIsLoading(false)
     }
   }
 
@@ -244,6 +254,22 @@ const MapSearchView = () => {
       lng: center.lng,
     }
   }
+  useEffect(() => () => { searchRevision.current += 1 }, [])
+  useEffect(() => { listItemRefs.current[selectedPlace?.id]?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' }) }, [selectedPlace?.id, panelLevel])
+  const changePanelLevel = usePanelHistory('map-results', Boolean(places.length), setPanelLevel)
+  const detailHistory = useOverlayHistory('map-place', () => setDetailVisible(false))
+  const selectPlace = (place) => { changePanelLevel('expanded'); detailHistory.open(); setSelectedPlace(place); setDetailVisible(true) }
+  useEffect(() => {
+    const back = (event) => {
+      if (event.key !== 'Escape') return
+      if (['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName)) { document.activeElement.blur(); return }
+      if (detailVisible) detailHistory.close()
+      else if (panelLevel === 'expanded') changePanelLevel('peek')
+      else if (panelLevel === 'peek') changePanelLevel('collapsed')
+    }
+    window.addEventListener('keydown', back)
+    return () => window.removeEventListener('keydown', back)
+  }, [detailVisible, panelLevel])
 
   const goToPlaceReport = (place) => {
     const queryParams = new URLSearchParams({
@@ -268,7 +294,7 @@ const MapSearchView = () => {
 
   return (
     <main className={styles.mapSearchPage}>
-      <section className={`${styles.mapSearchShell}${selectedPlace ? ` ${styles.hasDetail}` : ''}`}>
+      <section className={`${styles.mapSearchShell}${selectedPlace && detailVisible ? ` ${styles.hasDetail}` : ''}`}>
         <aside className={styles.mapSearchPanel}>
           <header className={styles.mapSearchHeader}>
             <p>일반 지도 검색</p>
@@ -325,18 +351,23 @@ const MapSearchView = () => {
             ) : null}
           </div>
 
+          {searchError ? <div role="alert"><button type="button" disabled={isLoading} onClick={runSearch}>같은 조건으로 다시 시도</button></div> : null}
+          <div className={styles.panelStages} aria-label="결과 패널 크기">{[['collapsed', '요약'], ['peek', '선택 카드'], ['expanded', '전체 목록']].map(([value, text]) => <button key={value} type="button" aria-pressed={panelLevel === value} onClick={() => changePanelLevel(value)}>{text}</button>)}</div>
+          {panelLevel === 'collapsed' ? <p>{places.length}곳 · 지도와 검색 조건 유지</p> : null}
+
           <div className={styles.mapSourceLegend} aria-label="마커 색상 안내">
             <span><i className={`${styles.legendDot} ${styles.db}`} />저장 장소</span>
             <span><i className={`${styles.legendDot} ${styles.kakao}`} />카카오</span>
           </div>
 
           <section className={styles.mapResultList} aria-label="장소 검색 결과">
-            {places.map((place) => (
+            {(panelLevel === 'collapsed' ? [] : panelLevel === 'peek' ? (selectedPlace ? [selectedPlace] : places.slice(0, 1)) : places).map((place) => (
               <article
                 key={place.id}
+                ref={(node) => { if (node) listItemRefs.current[place.id] = node }}
                 className={`${styles.mapResultItem}${selectedPlace?.id === place.id ? ` ${styles.active}` : ''}`}
               >
-                <button type="button" onClick={() => setSelectedPlace(place)}>
+                <button type="button" onClick={() => selectPlace(place)}>
                   <span className={`${styles.resultMarker} ${styles[getSourceMeta(place).className]}`}>
                     {place.markerLabel}
                   </span>
@@ -381,13 +412,13 @@ const MapSearchView = () => {
             selectedPlaceId={selectedPlace?.id || null}
             selectedPlace={selectedPlace}
             fitBoundsKey={fitBoundsKey}
-            layoutKey={selectedPlace ? 'detail-open' : 'detail-closed'}
-            onSelectPlace={setSelectedPlace}
+            layoutKey={detailVisible ? 'detail-open' : 'detail-closed'}
+            onSelectPlace={selectPlace}
             onCenterChange={handleCenterChange}
           />
         </section>
 
-        {selectedPlace ? (
+        {selectedPlace && detailVisible ? (
           <aside className={styles.mapDetailPanel}>
             <div className={styles.mapDetailTop}>
               <div>
@@ -396,7 +427,7 @@ const MapSearchView = () => {
                 </span>
                 <h2>{selectedPlace.name}</h2>
               </div>
-              <button type="button" onClick={() => setSelectedPlace(null)}>닫기</button>
+              <button type="button" onClick={detailHistory.close}>닫기</button>
             </div>
 
             {selectedPlace.tags.length ? (

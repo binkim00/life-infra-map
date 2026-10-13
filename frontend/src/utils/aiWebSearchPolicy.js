@@ -218,7 +218,7 @@ export const getAiWebSearchStatusMessage = (result = {}) => {
   }
 
   if (result.error === 'missing_credentials') {
-    return '검색 API 설정이 없어 참고 링크를 가져오지 못했습니다.'
+    return '지금 참고 정보를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.'
   }
 
   if (result.reason === 'no_search_result') {
@@ -234,7 +234,7 @@ export const getAiWebSearchStatusMessage = (result = {}) => {
   }
 
   if (result.reason === 'invalid_request') {
-    return 'AI 웹 검색 요청 설정을 확인해야 합니다.'
+    return '지금 참고 정보를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.'
   }
 
   if (result.error === 'api_error') {

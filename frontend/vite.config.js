@@ -13,7 +13,7 @@ export default defineConfig({
       '@': fileURLToPath(new URL('./src', import.meta.url)),
     },
     // 프런트엔드 소스에서 사용하는 모듈 확장자만 명시합니다.
-    extensions: ['.mjs', '.js', '.jsx', '.json'],
+    extensions: ['.mjs', '.js', '.jsx', '.ts', '.json'],
   },
   css: {
     modules: {

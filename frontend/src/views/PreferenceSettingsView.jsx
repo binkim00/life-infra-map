@@ -1,3 +1,4 @@
+import { userErrorMessage } from '../../../shared/user-message'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 
@@ -195,7 +196,7 @@ const PreferenceSettingsView = () => {
 
       await fetchDirectPreferences()
     } catch (error) {
-      setTagMessage(error.response?.data?.detail || '선호 태그를 저장하지 못했습니다.')
+      setTagMessage(userErrorMessage(error, '선호 태그를 저장하지 못했습니다.'))
     } finally {
       setUpdatingTagId(null)
     }
@@ -208,7 +209,7 @@ const PreferenceSettingsView = () => {
       setTagMessage('직접 선택한 선호 태그를 삭제했습니다.')
       await fetchDirectPreferences()
     } catch (error) {
-      setTagMessage(error.response?.data?.detail || '선호 태그를 삭제하지 못했습니다.')
+      setTagMessage(userErrorMessage(error, '선호 태그를 삭제하지 못했습니다.'))
     } finally {
       setDeletingPreferenceId(null)
     }

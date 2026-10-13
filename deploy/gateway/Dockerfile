@@ -5,6 +5,7 @@ COPY frontend/package*.json ./
 RUN npm ci
 
 COPY frontend/ ./
+COPY shared/ /shared/
 ARG VITE_API_BASE_URL=/django/api
 ARG VITE_SPRING_API_BASE_URL=/spring/api
 ARG VITE_KAKAO_JAVASCRIPT_KEY

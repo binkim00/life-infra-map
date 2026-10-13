@@ -1,3 +1,4 @@
+import { userErrorMessage } from '../../../shared/user-message'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 
@@ -349,7 +350,7 @@ const MypageView = () => {
       setSavedPlaceMessage('메모를 저장했습니다.')
       cancelSavedPlaceMemoEdit()
     } catch (error) {
-      setSavedPlaceMessage(error.response?.data?.detail || '메모를 저장하지 못했습니다.')
+      setSavedPlaceMessage(userErrorMessage(error, '메모를 저장하지 못했습니다.'))
     } finally {
       setUpdatingSavedPlaceId(null)
     }
@@ -365,7 +366,7 @@ const MypageView = () => {
       setSavedPlaceCount((current) => Math.max(0, current - 1))
       setSavedPlaceMessage('저장한 장소를 삭제했습니다.')
     } catch (error) {
-      setSavedPlaceMessage(error.response?.data?.detail || '저장한 장소를 삭제하지 못했습니다.')
+      setSavedPlaceMessage(userErrorMessage(error, '저장한 장소를 삭제하지 못했습니다.'))
     } finally {
       setUpdatingSavedPlaceId(null)
     }
@@ -380,7 +381,7 @@ const MypageView = () => {
       await fetchRecentSearchLogs()
       await fetchPreferences()
     } catch (error) {
-      setSearchLogMessage(error.response?.data?.detail || '검색 기록을 삭제하지 못했습니다.')
+      setSearchLogMessage(userErrorMessage(error, '검색 기록을 삭제하지 못했습니다.'))
     }
   }
 
@@ -439,7 +440,7 @@ const MypageView = () => {
       setIsEditingNickname(false)
     } catch (error) {
       console.error(error)
-      setNicknameMessage(error.response?.data?.nickname?.[0] || '닉네임 수정에 실패했습니다.')
+      setNicknameMessage(userErrorMessage(error, '닉네임 수정에 실패했습니다. 입력 내용을 확인해 주세요.'))
     } finally {
       setIsUpdatingNickname(false)
     }
@@ -469,7 +470,7 @@ const MypageView = () => {
     } catch (error) {
       console.error(error)
       setProfileImageMessage(
-        error.response?.data?.profile_image?.[0] || '프로필 사진 수정에 실패했습니다.',
+        userErrorMessage(error, '프로필 사진 수정에 실패했습니다.'),
       )
     } finally {
       setIsUpdatingProfileImage(false)

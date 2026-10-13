@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useReducer, useRef } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
+import { keepsPreviousResults, placeKey, referencedPlaceKeys } from '../../../shared/search-ux'
+import { userErrorMessage, userText, errorDiagnostic } from '../../../shared/user-message'
 
 import {
   aiSearchCandidateRecommendations,
@@ -255,7 +257,10 @@ export const useHomeSearch = ({ initialTab = 'search' } = {}) => {
   const s = stateRef.current
   const isMountedRef = useRef(true)
   const lastRouteAutoSearchKeyRef = useRef('')
+  const conversationGenerationRef = useRef(0)
+  const conversationMessageSequenceRef = useRef(0)
   const placeListItemRefs = useRef({})
+  const lastSearchOptionsRef = useRef({})
 
   const commit = useCallback(() => {
     if (!isMountedRef.current) return
@@ -584,13 +589,7 @@ export const useHomeSearch = ({ initialTab = 'search' } = {}) => {
   }
 
   const setMainSearchError = (message) => {
-    if (displayResults().length > 0) {
-      s.searchResultStatus = 'success'
-      clearMainSearchErrorState()
-      return
-    }
-
-    const fallbackMessage = message || '검색 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.'
+    const fallbackMessage = userText(message, '지금 장소 정보를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.')
     s.searchResultStatus = 'error'
     s.searchErrorMessage = fallbackMessage
     s.aiSearchError = fallbackMessage
@@ -650,6 +649,7 @@ export const useHomeSearch = ({ initialTab = 'search' } = {}) => {
 
     return {
       role,
+      id: `${conversationGenerationRef.current}:${++conversationMessageSequenceRef.current}`,
       type,
       content: text,
       text,
@@ -905,10 +905,7 @@ export const useHomeSearch = ({ initialTab = 'search' } = {}) => {
   }
 
   const beginMainSearch = ({ preserveClarificationThread = false } = {}) => {
-    s.mainResults = []
-    s.fallbackResults = []
-    s.webReferenceResults = []
-    s.preserveBackendResultOrder = false
+    // Keep the last usable result list until the server returns a replacement.
     s.pendingClarification = null
     if (!preserveClarificationThread) {
       s.clarificationThread = []
@@ -922,12 +919,7 @@ export const useHomeSearch = ({ initialTab = 'search' } = {}) => {
   }
 
   const handleKakaoMapLoadError = (error) => {
-    console.error(error)
-    s.baseLocationCandidates = []
-    s.pendingBaseLocationSearch = null
-    s.selectedPlace = null
-    s.showDetailPanel = false
-    s.detailFrameError = false
+    console.error("Map load failed", errorDiagnostic(error))
     s.isSearchingMap = false
     s.loadingMessage = ''
     setMainSearchError(KAKAO_MAP_LOAD_ERROR_MESSAGE)
@@ -1680,8 +1672,8 @@ export const useHomeSearch = ({ initialTab = 'search' } = {}) => {
         sourceLabel: hasTagData ? '카카오+DB' : '카카오',
         tags: makeKakaoResultTags(place, savedTagData),
         tagSource: savedTagData.saved_place_id
-          ? '카카오 API 검색 결과 + DB 저장 태그'
-          : '카카오 API 검색 결과',
+          ? '카카오 장소 정보 · 확인된 태그'
+          : '카카오 장소 정보',
         suggestedTags: savedTagData.suggested_tags || [],
         verifiedTags: savedTagData.verified_tags || [],
         warningTags: savedTagData.warning_tags || [],
@@ -1964,7 +1956,7 @@ export const useHomeSearch = ({ initialTab = 'search' } = {}) => {
         searchSource: 'base_location',
         sourceLabel: '기준',
         tags: [makeTag('검색기준위치', 'category_rule')],
-        tagSource: '카카오 API 장소 검색 결과',
+        tagSource: '카카오 장소 정보',
       },
     ]
 
@@ -2425,6 +2417,8 @@ export const useHomeSearch = ({ initialTab = 'search' } = {}) => {
     parsedIntent = null,
     extraAiPayload = {},
   }) => {
+    const conversationGeneration = conversationGenerationRef.current
+    const previousResults = { main: [...s.mainResults], fallback: [...s.fallbackResults], web: [...s.webReferenceResults], selected: s.selectedPlace, plan: s.activeSearchPlan }
     s.loadingMessage = '상황 해석 중'
     s.isAiReranking = false
     s.sortMode = 'recommendation'
@@ -2448,13 +2442,16 @@ export const useHomeSearch = ({ initialTab = 'search' } = {}) => {
       ranking_policy: getFrameRankingPolicy(parsedIntent || {}),
       ...extraAiPayload,
     }
-    const previewTask = aiSearchCandidateRecommendations(searchPayload)
+    const previewTask = (s.conversationMessages.length > 1 || previousResults.main.length || previousResults.plan
+      ? Promise.resolve({ results: [] })
+      : aiSearchCandidateRecommendations(searchPayload))
       .then((value) => ({ kind: 'preview', value }))
       .catch((error) => ({ kind: 'preview', error }))
     const finalTask = aiSearchRecommendations(searchPayload)
       .then((value) => ({ kind: 'final', value }))
       .catch((error) => ({ kind: 'final', error }))
     const firstOutcome = await Promise.race([previewTask, finalTask])
+    if (conversationGeneration !== conversationGenerationRef.current) return
     let finalOutcome = firstOutcome.kind === 'final' ? firstOutcome : null
 
     if (firstOutcome.kind === 'preview' && !firstOutcome.error) {
@@ -2496,6 +2493,7 @@ export const useHomeSearch = ({ initialTab = 'search' } = {}) => {
     if (!finalOutcome) {
       finalOutcome = await finalTask
     }
+    if (conversationGeneration !== conversationGenerationRef.current) return
     s.isAiReranking = false
     if (finalOutcome.error) {
       throw finalOutcome.error
@@ -2518,11 +2516,12 @@ export const useHomeSearch = ({ initialTab = 'search' } = {}) => {
 
     const backendSearchPlan = data?.search_plan || data?.ai_parse?.search_plan || parsedIntent || {}
     const backendAction = data?.decision_action || data?.decisionAction || data?.ai_parse?.decision_action || ''
+    if (!backendAction || backendAction === 'search') s.highlightedPlaceKeys = []
     const backendIsAiFirst = isBackendAiFirstResponse(data, parsedIntent)
     if (backendIsAiFirst && (!backendAction || backendAction === 'search')) {
       applyBackendAiSearchOrigin(data, center, baseLabel)
     }
-    s.activeSearchPlan = backendSearchPlan
+    s.activeSearchPlan = keepsPreviousResults(backendAction) && !data?.search_plan && !data?.ai_parse?.search_plan ? previousResults.plan : backendSearchPlan
     const resultScenarioLabel = getFrameDisplayLabel(backendSearchPlan)
       || getIntentGroupDisplayLabel(backendSearchPlan?.intentGroup || backendSearchPlan?.intent_group || '')
       || getScenarioDisplayLabel(data?.scenario || recommendationIntent)
@@ -2548,15 +2547,33 @@ export const useHomeSearch = ({ initialTab = 'search' } = {}) => {
     }
 
     if (backendAction && backendAction !== 'search') {
-      clearSearchResults()
-      s.searchResultStatus = backendAction === 'ask_clarification' ? 'idle' : 'error'
-      s.selectedPlace = null
-      s.showDetailPanel = false
-      s.detailFrameError = false
-      s.locationMessage = data.clarification_question
+      if (keepsPreviousResults(backendAction)) {
+        s.mainResults = previousResults.main
+        s.fallbackResults = previousResults.fallback
+        s.webReferenceResults = previousResults.web
+        s.selectedPlace = previousResults.selected
+        syncLegacySearchResults()
+        s.highlightedPlaceKeys = referencedPlaceKeys(data, displayResults())
+        const referenced = displayResults().find((place) => placeKey(place) === s.highlightedPlaceKeys[0])
+        if (referenced) s.selectedPlace = referenced
+      } else if (backendAction === 'reset_conversation') {
+        clearSearchResults()
+        s.selectedPlace = null
+      } else if (backendAction === 'undo_last_change') {
+        const restored = convertRecommendationPlaces(data.results || [], { searchPlan: backendSearchPlan, getKakaoDetailUrl })
+        s.fallbackResults = []
+        s.webReferenceResults = []
+        s.highlightedPlaceKeys = []
+        setMainResults(restored)
+        s.selectedPlace = restored[0] || null
+      }
+      s.searchResultStatus = backendAction === 'ask_clarification' && displayResults().length ? 'success' : backendAction === 'ask_clarification' ? 'idle' : 'error'
+      s.locationMessage = userText(data.clarification_question
         || data.message
         || data.ai_parse?.user_message
-        || '요청하신 목적과 장소 추천을 연결하기 어려웠습니다.'
+        || '요청하신 목적과 장소 추천을 연결하기 어려웠습니다.')
+      if (backendAction === 'ai_unavailable') setMainSearchError(s.locationMessage)
+      else s.searchResultStatus = displayResults().length ? 'success' : 'idle'
       const decisionPlan = {
         ...data,
         action: backendAction,
@@ -2568,6 +2585,9 @@ export const useHomeSearch = ({ initialTab = 'search' } = {}) => {
         setClarificationThread(originalQuery, decisionPlan, s.locationMessage)
       } else {
         setDecisionConversationThread(originalQuery, decisionPlan, s.locationMessage, backendAction)
+        const answer = s.conversationMessages.at(-1)
+        if (answer?.role === 'assistant') answer.placeKeys = s.highlightedPlaceKeys || []
+        syncClarificationThreadFromMessages()
         clearPendingClarification({ preserveMessages: true })
       }
       commit()
@@ -3434,10 +3454,13 @@ export const useHomeSearch = ({ initialTab = 'search' } = {}) => {
     return `${searchedPlaces().length}개를 찾았어요${suffix}`
   }
 
-  const performUnifiedMapSearch = async ({
+  const performUnifiedMapSearchImpl = async ({
     useMapBounds = false,
     allowImplicitCurrentContext = false,
+    conversationAction = null,
   } = {}) => {
+    const generation = conversationGenerationRef.current
+    const stale = () => generation !== conversationGenerationRef.current
     const keyword = s.mapSearchKeyword.trim()
 
     if (!keyword) {
@@ -3470,12 +3493,14 @@ export const useHomeSearch = ({ initialTab = 'search' } = {}) => {
     if (!useMapBounds) {
       try {
         await waitForKakaoServices()
+        if (stale()) return
       } catch (error) {
-        handleKakaoMapLoadError(error)
-        return
+        if (stale()) return
+        throw error
       }
 
-      if (pendingClarificationForFollowUp) {
+      if (stale()) return
+    if (pendingClarificationForFollowUp) {
         appendClarificationAnswerMessage(keyword)
       }
 
@@ -3491,6 +3516,7 @@ export const useHomeSearch = ({ initialTab = 'search' } = {}) => {
           baseLabel: `${explicitLocationQuery} 기준`,
         }
         : await getSearchCenterForRecommendation()
+      if (stale()) return
       const backendOnlyPlan = {
         originalQuery: keyword,
         targetQuery: keyword,
@@ -3517,15 +3543,20 @@ export const useHomeSearch = ({ initialTab = 'search' } = {}) => {
           previous_context: previousContext,
           previous_search_context: previousContext,
           ...clarificationFollowUpPayload,
+          ...(conversationAction ? { conversation_action: conversationAction } : {}),
+          selected_result_key: placeKey(s.selectedPlace),
         },
       })
 
-      if (pendingClarificationForFollowUp && displayResults().length) {
+      if (stale()) return
+      if (pendingClarificationForFollowUp && displayResults().length && !s.pendingClarification) {
         appendSearchSummaryMessage(s.locationMessage || getResultCountText())
       } else if (
         !pendingClarificationForFollowUp
         && !s.pendingClarification
         && ['success', 'empty'].includes(s.searchResultStatus)
+        && !s.highlightedPlaceKeys?.length
+        && s.conversationMessages.at(-1)?.content !== s.locationMessage
       ) {
         setDecisionConversationThread(
           keyword,
@@ -3547,6 +3578,7 @@ export const useHomeSearch = ({ initialTab = 'search' } = {}) => {
       ? null
       : await resolveConversationalSearchPlan(keyword, previousContext, clarificationFollowUpPayload)
 
+    if (stale()) return
     if (pendingClarificationForFollowUp) {
       appendClarificationAnswerMessage(keyword)
     } else if (shouldAskLocationChoiceBeforeSearch({
@@ -3648,8 +3680,10 @@ export const useHomeSearch = ({ initialTab = 'search' } = {}) => {
       if (useMapBounds) {
         try {
           await waitForKakaoServices()
+        if (stale()) return
         } catch (error) {
-          handleKakaoMapLoadError(error)
+          if (stale()) return
+        handleKakaoMapLoadError(error)
           return
         }
 
@@ -3674,7 +3708,8 @@ export const useHomeSearch = ({ initialTab = 'search' } = {}) => {
           },
         })
 
-        if (pendingClarificationForFollowUp) {
+        if (stale()) return
+    if (pendingClarificationForFollowUp) {
           appendSearchSummaryMessage(s.locationMessage || getResultCountText())
         }
 
@@ -3687,7 +3722,8 @@ export const useHomeSearch = ({ initialTab = 'search' } = {}) => {
         return
       }
       await searchAiRecommendationsOnMap(parsedKeyword)
-      if (pendingClarificationForFollowUp) {
+      if (stale()) return
+    if (pendingClarificationForFollowUp) {
         appendSearchSummaryMessage(s.locationMessage || getResultCountText())
       }
       if (!s.baseLocationCandidates.length && s.loadingMessage === '검색 의도 해석 중') {
@@ -3701,6 +3737,7 @@ export const useHomeSearch = ({ initialTab = 'search' } = {}) => {
 
     s.sortMode = 'distance'
     await searchKakaoPlaces({ useMapBounds, searchPlanOverride: parsedKeyword })
+    if (stale()) return
     if (pendingClarificationForFollowUp) {
       appendSearchSummaryMessage(s.locationMessage || getResultCountText())
     }
@@ -3714,7 +3751,27 @@ export const useHomeSearch = ({ initialTab = 'search' } = {}) => {
 
   // ---------------------------------------------------------------- 액션
 
+  const performUnifiedMapSearch = async (options = {}) => {
+    if (s.isSearchingMap) return
+    const generation = conversationGenerationRef.current
+    lastSearchOptionsRef.current = options
+    const previous = { mainResults: [...s.mainResults], fallbackResults: [...s.fallbackResults], webReferenceResults: [...s.webReferenceResults], selectedPlace: s.selectedPlace, activeSearchPlan: s.activeSearchPlan, pendingClarification: s.pendingClarification }
+    try {
+      await performUnifiedMapSearchImpl(options)
+    } catch (error) {
+      if (generation !== conversationGenerationRef.current || error?.code === 'conversation_stale') return
+      console.error('Place conversation failed', errorDiagnostic(error))
+      Object.assign(s, previous)
+      syncLegacySearchResults()
+      setMainSearchError(userErrorMessage(error, '지금 장소 정보를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.'))
+    } finally {
+      if (generation === conversationGenerationRef.current) { s.isSearchingMap = false; s.isAiReranking = false; s.loadingMessage = ''; commit() }
+    }
+  }
+  const retryLastSearch = () => performUnifiedMapSearch(lastSearchOptionsRef.current)
+
   const handleSearch = async () => {
+    const generation = conversationGenerationRef.current
     if (!s.searchKeyword.trim()) {
       alert('검색어를 입력해주세요.')
       return
@@ -3729,8 +3786,10 @@ export const useHomeSearch = ({ initialTab = 'search' } = {}) => {
 
     try {
       await waitForKakaoServices()
+      if (generation !== conversationGenerationRef.current) return
       await performUnifiedMapSearch()
     } catch (error) {
+      if (generation !== conversationGenerationRef.current) return
       handleKakaoMapLoadError(error)
     }
   }
@@ -3756,7 +3815,13 @@ export const useHomeSearch = ({ initialTab = 'search' } = {}) => {
 
     s.followUpInput = answer
     commit()
-    await submitClarificationFollowUp()
+    if (option && typeof option === 'object' && option.action) {
+      s.mapSearchKeyword = answer
+      commit()
+      await performUnifiedMapSearch({ conversationAction: option.action })
+    } else {
+      await submitClarificationFollowUp()
+    }
   }
 
   const runAiPresetSearch = async (query) => {
@@ -3930,6 +3995,7 @@ export const useHomeSearch = ({ initialTab = 'search' } = {}) => {
   }
 
   const startNewConversationSearch = async () => {
+    conversationGenerationRef.current += 1
     startNewConversationSession()
     s.conversationModeStarted = false
     s.searchKeyword = ''
@@ -3944,6 +4010,7 @@ export const useHomeSearch = ({ initialTab = 'search' } = {}) => {
     s.loadingMessage = ''
     s.isSearchingMap = false
     s.selectedPlace = null
+    s.highlightedPlaceKeys = []
     s.hiddenMapMarkerPlaceId = null
     s.showDetailPanel = false
     s.detailFrameError = false
@@ -4245,6 +4312,7 @@ export const useHomeSearch = ({ initialTab = 'search' } = {}) => {
     // 액션
     handleSearch,
     performUnifiedMapSearch,
+    retryLastSearch,
     runAiPresetSearch,
     runLandingPresetSearch,
     submitClarificationFollowUp,
