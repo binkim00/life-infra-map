@@ -1,4 +1,5 @@
 import time
+from recommendations.services.collection_telemetry import observed_sleep, emit_event, elapsed_ms
 from datetime import timedelta
 
 from django.conf import settings
@@ -32,10 +33,11 @@ class Command(BaseCommand):
             )
             if options["once"]:
                 break
-            time.sleep(min(60, max(1, options["poll_seconds"])))
+            observed_sleep(min(60, max(1, options["poll_seconds"])), component="scheduler", reason="poll")
 
 
 def scheduler_tick():
+    started = time.monotonic()
     today = timezone.localdate()
     recovered = recover_stale_jobs()
     planned = 0
@@ -46,6 +48,9 @@ def scheduler_tick():
         provider=settings.TAG_ENRICHMENT_PROVIDER,
         status__in=("queued", "retry"),
     ).values_list("id", flat=True)[:settings.TAG_COLLECTION_QUEUE_HIGH + 1]))
+    emit_event("scheduler_queue", {"cycle_date": today.isoformat(), "queue_depth": queue_depth,
+                                      "queue_backpressure": int(queue_depth >= settings.TAG_COLLECTION_QUEUE_LOW),
+                                      "daily_cap": int(remaining == 0)})
     if queue_depth >= settings.TAG_COLLECTION_QUEUE_LOW:
         remaining = 0
     else:
@@ -134,7 +139,11 @@ def scheduler_tick():
         ):
             refresh_operations_snapshot()
             snapshot_refreshed = True
+    telemetry = {"cycle_date": today.isoformat(), "tick_ms": elapsed_ms(started),
+                 "planner": result.get("telemetry") or {"reason": "queue_or_daily_cap"}}
+    emit_event("scheduler", telemetry)
     return {
+        "telemetry": telemetry,
         "date": today,
         "planned": planned,
         "recovered": recovered,

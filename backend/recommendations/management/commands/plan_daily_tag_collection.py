@@ -26,6 +26,7 @@ from recommendations.services.adaptive_budget import (
     allocate_by_request_budget,
     yield_adjusted_weights,
 )
+from recommendations.services.collection_telemetry import instrument_planner
 
 
 REGIONS = (
@@ -97,6 +98,7 @@ class Command(BaseCommand):
         ))
 
 
+@instrument_planner
 def plan_daily_jobs(
     *, cycle_date, place_limit, provider="naver_search", mode="balanced",
     categories=None, regions=None, dry_run=False, region_priority_weights=None,
@@ -187,6 +189,8 @@ def plan_daily_jobs(
     created = 0
     planned_requests = 0
     covered = set()
+    budget_blocked = 0
+    candidates = sum(len(rows) for _, _, rows in pools)
     while pools and created < place_limit:
         remaining = []
         for region, category, rows in pools:
@@ -195,6 +199,7 @@ def plan_daily_jobs(
             place = rows.pop(0)
             requests = planned_requests_for_category(category)
             if planned_requests + requests > budget:
+                budget_blocked += 1
                 pools = []
                 break
             if not dry_run:
@@ -219,7 +224,11 @@ def plan_daily_jobs(
             if rows:
                 remaining.append((region, category, rows))
         pools = remaining
-    return {"places": created, "planned_requests": planned_requests, "covered_strata": len(covered)}
+    return {"places": created, "planned_requests": planned_requests, "covered_strata": len(covered),
+            "telemetry": {"planner_path": "legacy_balanced", "candidates": candidates,
+                          "budget_blocked": budget_blocked,
+                          "candidate_shortfall": max(0, place_limit - created),
+                          "unmeasured_reasons": ["recent", "category_cap", "region_cap", "deadline"]}}
 
 
 def plan_bootstrap_jobs(
@@ -346,6 +355,7 @@ def plan_bootstrap_jobs(
             row["evidence"] += int((metrics or {}).get("evidence") or 0)
             row["active_evidence"] += int((metrics or {}).get("active_evidence") or 0)
     weights = yield_adjusted_weights(settings.TAG_COLLECTION_BUDGET_WEIGHTS, history)
+    before_budget = len(selected)
     cycle_request_budget = min(
         budget,
         sum(adaptive_planned_requests(context["targeted_tags"]) for _, context in selected),
@@ -392,7 +402,12 @@ def plan_bootstrap_jobs(
         created += 1
         planned_requests += requests
         covered.add((priority["tier"], place.category))
-    return {"places": created, "planned_requests": planned_requests, "covered_strata": len(covered)}
+    return {"places": created, "planned_requests": planned_requests, "covered_strata": len(covered),
+            "telemetry": {"planner_path": "legacy_bootstrap", "candidates": len(candidates),
+                          "selected_before_budget": before_budget, "selected_after_budget": len(selected),
+                          "budget_selection_dropped": before_budget - len(selected),
+                          "candidate_shortfall": max(0, place_limit - created),
+                          "unmeasured_reasons": ["recent", "category_cap", "region_cap", "deadline"]}}
 
 
 def weighted_region_selection(candidates, *, limit, region_weights):

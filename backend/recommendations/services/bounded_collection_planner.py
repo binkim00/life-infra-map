@@ -3,6 +3,7 @@
 Address matching happens only on the page. This avoids unindexed regional
 prefix scans and nested demand/candidate subqueries over the entire registry.
 """
+from collections import Counter
 import math
 import time
 from datetime import timedelta
@@ -35,6 +36,10 @@ from recommendations.services.place_tag_collection import (
 )
 
 
+from recommendations.services.collection_telemetry import instrument_planner
+
+
+@instrument_planner
 def plan_bounded_jobs(*, cycle_date, place_limit, provider, mode, categories,
                       regions, dry_run, region_priority_weights=None):
     from recommendations.management.commands.plan_daily_tag_collection import (
@@ -43,9 +48,12 @@ def plan_bounded_jobs(*, cycle_date, place_limit, provider, mode, categories,
 
     result = {"places": 0, "planned_requests": 0, "covered_strata": 0,
               "scanned": 0, "candidates": 0, "deferred": False}
+    counters = Counter()
+    result["telemetry"] = {"planner_path": "bounded", "reasons": counters}
     started = time.monotonic()
     cap = min(max(0, int(place_limit)), max(1, settings.TAG_COLLECTION_REFILL_LIMIT))
     if not cap:
+        counters["requested_cap"] += 1
         return result
     if not dry_run:
         # Persist a first checkpoint independently of planning rollback so even
@@ -58,6 +66,7 @@ def plan_bounded_jobs(*, cycle_date, place_limit, provider, mode, categories,
             else:
                 state = CollectionPlannerState.objects.select_for_update(nowait=True).get(provider=provider)
             if state.next_attempt_at and state.next_attempt_at > timezone.now():
+                counters["cooldown"] += 1
                 result["deferred"] = True
                 return result
             usage = ProviderQuotaUsage.objects.filter(provider=provider, usage_date=cycle_date).first()
@@ -68,12 +77,14 @@ def plan_bounded_jobs(*, cycle_date, place_limit, provider, mode, categories,
             safe_limit = math.floor(daily_limit * settings.TAG_COLLECTION_QUOTA_PERCENT / 100)
             budget = max(0, safe_limit - queued - (usage.request_count + usage.reserved_count if usage else 0))
             if not budget:
+                counters["quota_budget"] += 1
                 result["deferred"] = True
                 return result
             page = list(Place.objects.filter(id__gt=state.cursor).order_by("id").values(
                 "id", "category", "address", "detail_location",
             )[:max(1, settings.TAG_COLLECTION_SCAN_PAGE)])
             result["scanned"] = len(page)
+            result["telemetry"]["scanned"] = len(page)
             # Demand is read as concrete IDs first. No nested Place subquery.
             recent_cutoff = cycle_date - timedelta(days=settings.TAG_COLLECTION_REVISIT_DAYS)
             recent_demand_job = PlaceTagCollectionJob.objects.filter(
@@ -96,6 +107,7 @@ def plan_bounded_jobs(*, cycle_date, place_limit, provider, mode, categories,
             ).values_list("context__region", "context__category")[:settings.TAG_COLLECTION_DAILY_PLACE_LIMIT + 1])
             cap = min(cap, max(0, settings.TAG_COLLECTION_DAILY_PLACE_LIMIT - len(daily_contexts)))
             if not cap:
+                counters["daily_cap"] += 1
                 return result
             region_counts = {region: sum(row[0] == region for row in daily_contexts)
                              for region, _ in regions}
@@ -120,17 +132,28 @@ def plan_bounded_jobs(*, cycle_date, place_limit, provider, mode, categories,
             ).values_list("place_id", flat=True))
 
             def consider(row):
-                if row["id"] in recent or row["category"] not in categories:
+                counters["considered"] += 1
+                if row["id"] in recent:
+                    counters["recent"] += 1
+                    return
+                if row["category"] not in categories:
+                    counters["category_mismatch"] += 1
                     return
                 if mode == "bootstrap" and category_counts[row["category"]] >= category_limit:
+                    counters["category_cap"] += 1
                     return
+                region_capped = False
                 for region, aliases in regions:
+                    matches = any((row["address"] or "").startswith(alias) or
+                                  (row["detail_location"] or "").startswith(alias) for alias in aliases)
                     if targets and region_counts[region] >= targets[region]:
+                        region_capped = region_capped or matches
                         continue
-                    if any((row["address"] or "").startswith(alias) or
-                           (row["detail_location"] or "").startswith(alias) for alias in aliases):
+                    if matches:
+                        counters["candidate_visits"] += 1
                         candidates[row["id"]] = region
                         return
+                counters["region_cap" if region_capped else "region_mismatch"] += 1
 
             # Reserve half the scoring pool for discovery, even under demand.
             for row in demand[:max(1, cap // 2)]:
@@ -144,6 +167,7 @@ def plan_bounded_jobs(*, cycle_date, place_limit, provider, mode, categories,
                 cursor = 0
             places = list(Place.objects.filter(id__in=candidates).order_by("id"))
             result["candidates"] = len(places)
+            result["telemetry"]["unique_candidates"] = len(places)
             contexts = priority_context(places, category_priorities=settings.TAG_COLLECTION_CATEGORY_PRIORITIES) if places else {}
             for place in places:
                 contexts[place.id]["region"] = candidates[place.id]
@@ -177,10 +201,12 @@ def plan_bounded_jobs(*, cycle_date, place_limit, provider, mode, categories,
                         for name in row:
                             row[name] += int((values or {}).get(name) or 0)
                 weights = yield_adjusted_weights(settings.TAG_COLLECTION_BUDGET_WEIGHTS, history)
+                before_budget = len(selected)
                 selected, _ = allocate_by_request_budget(
                     selected, budget=min(budget, sum(adaptive_planned_requests(context["targeted_tags"]) for _, context in selected)),
                     weights=weights, request_count=lambda context: adaptive_planned_requests(context["targeted_tags"]),
                 )
+                counters["budget_selection_dropped"] += before_budget - len(selected)
             covered = set()
             for place, priority in selected:
                 if time.monotonic() - started >= settings.TAG_COLLECTION_PLANNER_WALL_SECONDS:
@@ -189,11 +215,13 @@ def plan_bounded_jobs(*, cycle_date, place_limit, provider, mode, categories,
                 region = priority["region"]
                 if ((targets and region_counts[region] >= targets[region]) or
                         (mode == "bootstrap" and category_counts[place.category] >= category_limit)):
+                    counters["final_selection_cap"] += 1
                     cursor = state.cursor
                     continue
                 requests = (adaptive_planned_requests(priority["targeted_tags"]) if mode == "bootstrap"
                             else planned_requests_for_category(place.category))
                 if result["planned_requests"] + requests > budget:
+                    counters["request_budget"] += 1
                     # Keep the page position so omitted candidates can be revisited.
                     cursor = state.cursor
                     break
@@ -240,6 +268,7 @@ def plan_bounded_jobs(*, cycle_date, place_limit, provider, mode, categories,
         code = getattr(getattr(exc, "__cause__", None), "sqlstate", None)
         if isinstance(exc, DatabaseError) and code not in {"57014", "55P03"}:
             raise
+        counters["lock_busy" if code == "55P03" else "deadline_or_sql_timeout"] += 1
         result.update(places=0, planned_requests=0, covered_strata=0, deferred=True)
         if not dry_run and code != "55P03":
             state = CollectionPlannerState.objects.filter(provider=provider).first()
