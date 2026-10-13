@@ -40,6 +40,7 @@ export const createHomeSearchState = () => ({
   resultSourceLabel: '검색 결과',
   resultMessageSuffix: '',
   selectedPlace: null,
+  highlightedPlaceKeys: [],
   hiddenMapMarkerPlaceId: null,
   markerChoiceRequestKey: 0,
   resolvedKakaoDetailUrls: {},

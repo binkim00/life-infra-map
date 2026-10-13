@@ -17,6 +17,12 @@ const getNotificationKey = (notification) => (
 
 export const useNotifications = () => {
   const isLoggedIn = useAuthStore((state) => state.isLoggedIn)
+  const user = useAuthStore((state) => state.user)
+  const accountKey = isLoggedIn ? String(user?.id || user?.username || 'account') : ''
+  const accountRef = useRef(accountKey)
+  accountRef.current = accountKey
+  const requestRevisionRef = useRef(0)
+  const [loadedAccount, setLoadedAccount] = useState('')
   const fetchMe = useAuthStore((state) => state.fetchMe)
   // 알림 필터는 설정값에 따라 달라지므로 설정이 바뀌면 다시 계산되게 구독합니다.
   const commentNotifications = useSettingsStore((state) => state.commentNotifications)
@@ -29,6 +35,8 @@ export const useNotifications = () => {
   isLoggedInRef.current = isLoggedIn
 
   const fetchNotifications = useCallback(async () => {
+    const revision = ++requestRevisionRef.current
+    const account = accountRef.current
     if (!isLoggedInRef.current) {
       setNotifications([])
       return
@@ -36,8 +44,10 @@ export const useNotifications = () => {
 
     try {
       const response = await getNotifications()
+      if (revision !== requestRevisionRef.current || account !== accountRef.current || !isLoggedInRef.current) return
       const fetchedNotifications = response.data
       setNotifications(fetchedNotifications)
+      setLoadedAccount(account)
 
       const newTierUpNotifications = fetchedNotifications.filter((notification) => (
         !notification.is_read
@@ -58,9 +68,9 @@ export const useNotifications = () => {
   }, [fetchMe])
 
   const visibleNotifications = useMemo(() => (
-    notifications.filter(isNotificationVisible)
+    loadedAccount === accountKey && accountKey ? notifications.filter(isNotificationVisible) : []
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  ), [notifications, commentNotifications, inquiryNotifications])
+  ), [notifications, commentNotifications, inquiryNotifications, loadedAccount, accountKey])
 
   const unreadNotificationCount = useMemo(() => (
     visibleNotifications.filter((notification) => !notification.is_read).length
@@ -122,6 +132,9 @@ export const useNotifications = () => {
 
   // 로그인 상태가 바뀔 때마다 알림을 다시 받고 폴링을 다시 겁니다.
   useEffect(() => {
+    setNotifications([])
+    setSelectedNotification(null)
+    handledTierUpIdsRef.current.clear()
     if (!isLoggedIn) {
       setNotifications([])
       return undefined
@@ -131,9 +144,10 @@ export const useNotifications = () => {
     const timerId = window.setInterval(fetchNotifications, POLL_INTERVAL_MS)
 
     return () => {
+      requestRevisionRef.current += 1
       window.clearInterval(timerId)
     }
-  }, [isLoggedIn, fetchNotifications])
+  }, [isLoggedIn, accountKey, fetchNotifications])
 
   return {
     notifications,

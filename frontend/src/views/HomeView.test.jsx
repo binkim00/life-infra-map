@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -347,4 +347,81 @@ describe('HomeView', () => {
       expect(screen.getByText('광안리 조용한 식당')).toBeInTheDocument()
     })
   })
+  const cafe = { id: 71, name: '상태 보존 카페', category: '카페', lat: 35.15, lng: 129.06 }
+  const plan = { place_intent_frame: { anchor_location: '서면', candidate_place_types: ['카페'], required_features: ['주차'], radius_m: 1000 } }
+  const response = { results: [cafe], decision_action: 'search', search_plan: plan, frontend_should_preserve_order: true }
+  const send = async (user, text, first = false) => {
+    const input = first ? screen.getByPlaceholderText('지금 어떤 장소가 필요하신가요?') : screen.getByLabelText('상황을 입력해 주세요')
+    await user.clear(input)
+    await user.type(input, text)
+    await user.click(screen.getByRole('button', { name: '검색' }))
+  }
+
+  it('clarification은 기존 카드와 canonical 조건을 유지하고 action/value를 보냅니다', async () => {
+    const action = { type: 'relax_constraints', condition_labels: ['주차'], value: 1000 }
+    aiSearchRecommendations.mockResolvedValueOnce(response).mockResolvedValueOnce({ decision_action: 'ask_clarification', message: '반경을 좁힐까요?', search_plan: plan, clarification_options: [{ label: '1km로 변경', value: '1km', action }] }).mockResolvedValueOnce(response)
+    const user = userEvent.setup(); renderHome()
+    await send(user, '서면 카페', true)
+    await screen.findByText(cafe.name)
+    await send(user, '범위를 바꿔줘')
+    await screen.findByRole('button', { name: '1km로 변경' })
+    expect(screen.getByText(cafe.name)).toBeInTheDocument()
+    expect(screen.getByText('주차 · 필수')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '1km로 변경' }))
+    await waitFor(() => expect(aiSearchRecommendations).toHaveBeenCalledTimes(3))
+    expect(aiSearchRecommendations.mock.calls[2][0].conversation_action).toEqual(action)
+  })
+
+  it('비교 답변은 기존 리스트를 유지하며 서버가 참조한 카드와 연결됩니다', async () => {
+    aiSearchRecommendations.mockResolvedValueOnce({ ...response, results: [cafe, { ...cafe, id: 72, name: '두 번째 카페' }] }).mockResolvedValueOnce({ decision_action: 'compare_previous_results', results: [cafe], result_indexes: [0], message: '첫 번째 장소의 주차는 확인됐어요.' })
+    const user = userEvent.setup(); renderHome()
+    await send(user, '서면 카페', true); await screen.findByText(cafe.name)
+    await send(user, '첫 번째와 두 번째 비교해줘')
+    await screen.findByRole('button', { name: `${cafe.name} 카드 보기` })
+    expect(screen.getByText('두 번째 카페')).toBeInTheDocument()
+    expect(screen.getByText('주차 · 필수')).toBeInTheDocument()
+  })
+
+  it('서버 오류 뒤에도 카드·조건·검색어가 남고 동일 요청으로 재시도합니다', async () => {
+    aiSearchRecommendations.mockResolvedValueOnce(response).mockRejectedValueOnce({ response: { status: 500, data: { detail: 'Django exception HTTP 500' } } }).mockResolvedValueOnce(response)
+    const user = userEvent.setup(); renderHome()
+    await send(user, '서면 카페', true); await screen.findByText(cafe.name)
+    await send(user, '주차도 확인해줘')
+    await screen.findByRole('alert')
+    expect(screen.getByText(cafe.name)).toBeInTheDocument()
+    expect(screen.getByText('주차 · 필수')).toBeInTheDocument()
+    expect(screen.getByLabelText('상황을 입력해 주세요')).toHaveValue('주차도 확인해줘')
+    expect(screen.queryByText(/Django exception/)).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '같은 조건으로 다시 시도' }))
+    await waitFor(() => expect(aiSearchRecommendations).toHaveBeenCalledTimes(3))
+    expect(aiSearchRecommendations.mock.calls[2][0].query).toBe(aiSearchRecommendations.mock.calls[1][0].query)
+  })
+
+  it('새 대화 뒤 도착한 이전 응답은 화면에 적용되지 않습니다', async () => {
+    let resolveOld
+    aiSearchRecommendations.mockReturnValue(new Promise(resolve => { resolveOld = resolve }))
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const user = userEvent.setup(); renderHome()
+    await send(user, '서면 카페', true)
+    await waitFor(() => expect(aiSearchRecommendations).toHaveBeenCalledTimes(1))
+    await user.click(screen.getByRole('button', { name: '새 대화' }))
+    await act(async () => resolveOld(response))
+    expect(screen.queryByText(cafe.name)).not.toBeInTheDocument()
+    expect(screen.getByPlaceholderText('지금 어떤 장소가 필요하신가요?')).toHaveValue('')
+    expect(screen.queryByText('주차 · 필수')).not.toBeInTheDocument()
+  })
+
+  it('되돌리기는 저장된 결과 목록도 복원합니다', async () => {
+    const replacement = { ...cafe, id: 73, name: '변경 후 카페' }
+    aiSearchRecommendations.mockResolvedValueOnce(response)
+      .mockResolvedValueOnce({ ...response, results: [replacement] })
+      .mockResolvedValueOnce({ ...response, decision_action: 'undo_last_change', message: '마지막 변경을 되돌렸어요.' })
+    const user = userEvent.setup(); renderHome()
+    await send(user, '서면 카페', true); await screen.findByText(cafe.name)
+    await send(user, '콘센트 필수'); await screen.findByText(replacement.name)
+    await send(user, '방금 변경 취소')
+    await waitFor(() => expect(screen.getAllByText(cafe.name).length).toBeGreaterThan(0))
+    expect(screen.queryByText(replacement.name)).not.toBeInTheDocument()
+  })
+
 })

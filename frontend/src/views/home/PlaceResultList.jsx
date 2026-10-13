@@ -12,6 +12,7 @@ import {
   isRecommendationPlace,
 } from '@/utils/homePlaceHelpers'
 import { placeCategoryLabel } from '@/utils/placeCategoryLabel'
+import { placeKey } from '../../../../shared/search-ux'
 
 const PlaceResultList = ({
   places,
@@ -24,6 +25,7 @@ const PlaceResultList = ({
   onSelectPlace,
   onDismissPlace,
   onReportPlace,
+  highlightedPlaceKeys = [],
 }) => {
   if (isSearching) {
     return (
@@ -68,7 +70,7 @@ const PlaceResultList = ({
                 placeListItemRefs.current[place.id] = element
               }
             }}
-            className={`place-list-item${selectedPlace && selectedPlace.id === place.id ? ' active' : ''}`}
+            className={`place-list-item${(selectedPlace && selectedPlace.id === place.id) || highlightedPlaceKeys.includes(placeKey(place)) ? ' active' : ''}`}
           >
             <button
               type="button"

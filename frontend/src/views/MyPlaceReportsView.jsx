@@ -12,31 +12,7 @@ const STATUS_LABELS = {
   rejected: '반려',
 }
 
-const REPORT_CONTRIBUTION_REWARDS = {
-  tag_suggestion: 10,
-  wrong_info: 5,
-  edit_place: 5,
-  new_place: 20,
-}
-
-const getReportContributionMessage = (report) => {
-  if (report.status === 'approved') {
-    const contribution = REPORT_CONTRIBUTION_REWARDS[report.report_type] || 0
-    return contribution
-      ? `승인됨 · 기여도 +${contribution} 반영`
-      : '승인됨 · 기여도 반영 대상이 아닙니다.'
-  }
-
-  if (report.status === 'pending') {
-    return '검토 대기 · 승인되면 기여도에 반영됩니다.'
-  }
-
-  if (report.status === 'rejected') {
-    return '반려됨 · 기여도 반영 없음'
-  }
-
-  return ''
-}
+const getReportContributionMessage = (report) => report.processing_result || '처리 결과 확인 중'
 
 const formatDate = (value) => {
   if (!value) return ''
@@ -134,7 +110,7 @@ const MyPlaceReportsView = () => {
                 <article key={report.id} className={styles.reportCard}>
                   <div className={styles.reportTop}>
                     <span className={`${styles.statusBadge} ${styles[report.status] || ''}`}>
-                      {report.status_label || STATUS_LABELS[report.status] || report.status}
+                      {report.status_label || '처리 상태 확인 중'}
                     </span>
                     <time>{formatDate(report.created_at)}</time>
                   </div>
@@ -149,9 +125,6 @@ const MyPlaceReportsView = () => {
                         <span key={tag} className={styles.chip}>{tag}</span>
                       ))}
                     </div>
-                  ) : null}
-                  {report.admin_note ? (
-                    <p className={styles.adminNote}>{report.admin_note}</p>
                   ) : null}
                 </article>
               ))}

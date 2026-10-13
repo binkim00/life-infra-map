@@ -2,6 +2,8 @@ import api from '@/api/axios'
 
 const CONVERSATION_SESSION_KEY = 'lifeInfraMap.conversationSession.v1'
 let conversationSessionPromise = null
+let conversationGeneration = 0
+const staleConversationError = () => Object.assign(new Error('conversation_stale'), { code: 'conversation_stale' })
 
 const readConversationSession = () => {
   if (typeof window === 'undefined') return null
@@ -21,6 +23,7 @@ const storeConversationSession = (value) => {
 }
 
 export const startNewConversationSession = () => {
+  conversationGeneration += 1
   conversationSessionPromise = null
   if (typeof window !== 'undefined') {
     window.sessionStorage.removeItem(CONVERSATION_SESSION_KEY)
@@ -31,33 +34,38 @@ const getOrCreateConversationSession = async () => {
   const stored = readConversationSession()
   if (stored) return stored
   if (!conversationSessionPromise) {
+    const generation = conversationGeneration
     conversationSessionPromise = api
       .post('/recommendations/conversation-sessions/', {})
-      .then(({ data }) => storeConversationSession({
-        id: data.id,
-        token: data.conversation_token || '',
-      }))
+      .then(({ data }) => {
+        if (generation !== conversationGeneration) throw staleConversationError()
+        return storeConversationSession({ id: data.id, token: data.conversation_token || '', version: data.version ?? 0 })
+      })
       .finally(() => {
-        conversationSessionPromise = null
+        if (generation === conversationGeneration) conversationSessionPromise = null
       })
   }
   return conversationSessionPromise
 }
 
-const postConversationTurn = async (payload, { retry = true } = {}) => {
+const postConversationTurn = async (payload) => {
+  const generation = conversationGeneration
   const session = await getOrCreateConversationSession()
+  if (generation !== conversationGeneration) throw staleConversationError()
   try {
     const response = await api.post(
       `/recommendations/conversation-sessions/${session.id}/turns/`,
-      payload,
+      { ...payload, expected_version: session.version ?? 0 },
       session.token ? { headers: { 'X-Conversation-Token': session.token } } : undefined,
     )
+    if (generation !== conversationGeneration) throw staleConversationError()
+    const current = readConversationSession()
+    const version = response.data?.conversation?.version
+    if (current?.id !== session.id || (version !== undefined && version <= (current.version ?? 0))) throw staleConversationError()
+    if (version !== undefined) storeConversationSession({ ...session, version })
     return response.data
   } catch (error) {
-    if (retry && [404, 409].includes(error?.response?.status)) {
-      startNewConversationSession()
-      return postConversationTurn(payload, { retry: false })
-    }
+    if (generation !== conversationGeneration) throw staleConversationError()
     throw error
   }
 }
@@ -78,16 +86,7 @@ export const aiSearchRecommendations = async ({
     radius,
     ...extraPayload,
   }
-  try {
-    return await postConversationTurn(payload)
-  } catch (error) {
-    // Keep older deployments usable while the additive conversation API rolls out.
-    if (!error?.response || [404, 405].includes(error.response.status)) {
-      const response = await api.post('/recommendations/ai-search/', payload)
-      return response.data
-    }
-    throw error
-  }
+  return postConversationTurn(payload)
 }
 
 export const aiSearchCandidateRecommendations = async ({

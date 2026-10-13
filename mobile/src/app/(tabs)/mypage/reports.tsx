@@ -77,7 +77,7 @@ export default function MyReportsScreen() {
             style={({ pressed }) => [ui.card, styles.report, pressed && styles.pressed]}
           >
             <View style={ui.row}>
-              <PlacePhoto category={report.suggested_category} fallback={report.id} width={58} height={58} style={styles.reportPhoto} />
+              <PlacePhoto width={58} height={58} style={styles.reportPhoto} />
               <View style={ui.grow}>
                 <Text style={styles.receipt}>장소 제보</Text>
                 <Text style={styles.name}>{report.place_name || "장소 이름 확인 중"}</Text>

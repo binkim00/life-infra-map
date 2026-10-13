@@ -1,5 +1,9 @@
+import { usePanelHistory } from '@/hooks/usePanelHistory'
+import { useOverlayHistory } from '@/hooks/useOverlayHistory'
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { conditionChips, placeKey } from '../../../shared/search-ux'
+import { userText } from '../../../shared/user-message'
 
 import KakaoMap from '@/components/KakaoMap'
 import {
@@ -26,6 +30,7 @@ import PlaceDetailPanel from './home/PlaceDetailPanel'
 import PlaceResultList from './home/PlaceResultList'
 
 import '@/styles/Homeview.css'
+import '@/styles/SearchUx.css'
 
 const isNoResultLocationMessage = (message = '') => (
   ['찾지 못했습니다', '결과가 없습니다'].some((pattern) => String(message || '').includes(pattern))
@@ -40,7 +45,9 @@ const HomeView = ({ initialTab = 'search' }) => {
   const navigate = useNavigate()
   const home = useHomeSearch({ initialTab })
   const { state: s, setStateValue } = home
+  const detailHistory = useOverlayHistory('home-place', home.dismissPlaceDetailPanel)
   const [placeSearchKeyword, setPlaceSearchKeyword] = useState('')
+  const [resultPanelLevel, setResultPanelLevel] = useState('expanded')
 
   const {
     savingPlaceId,
@@ -61,6 +68,20 @@ const HomeView = ({ initialTab = 'search' }) => {
   const filteredSearchResults = home.filteredSearchResults()
   const searchedPlaces = home.searchedPlaces()
   const mapPlaces = home.mapPlaces()
+  const changePanelLevel = usePanelHistory('home-results', Boolean(displayResults.length), (level) => {
+    setResultPanelLevel(level)
+    setStateValue('isResultListCollapsed', level === 'collapsed')
+  })
+  useEffect(() => {
+    const back = (event) => {
+      if (event.key !== 'Escape') return
+      if (['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName)) { document.activeElement.blur(); return }
+      if (s.selectedPlace && !s.isPlaceDetailDismissed) detailHistory.close()
+      else if (!s.isResultListCollapsed && displayResults.length) changePanelLevel(resultPanelLevel === 'expanded' ? 'peek' : 'collapsed')
+    }
+    window.addEventListener('keydown', back)
+    return () => window.removeEventListener('keydown', back)
+  }, [s.selectedPlace, s.isPlaceDetailDismissed, s.isResultListCollapsed, resultPanelLevel, displayResults.length, detailHistory, changePanelLevel])
   const resultCountText = home.getResultCountText()
   const activeSearchPlan = s.activeSearchPlan || {}
   const interactionQuery = getTextValue(
@@ -85,11 +106,15 @@ const HomeView = ({ initialTab = 'search' }) => {
 
   const handleTrackedPlaceSelect = (place, event) => {
     void placeInteractions.trackPlaceEvent('click', place)
+    detailHistory.open()
     home.selectPlaceFromList(place, event)
   }
 
   const handleTrackedMapPlaceSelect = (place, target) => {
     void placeInteractions.trackPlaceEvent('click', place)
+    if (s.isResultListCollapsed) home.toggleResultListPanel()
+    changePanelLevel('expanded')
+    detailHistory.open()
     home.selectPlace(place, target)
   }
 
@@ -140,7 +165,7 @@ const HomeView = ({ initialTab = 'search' }) => {
     if (!s.selectedPlace?.id) return
 
     const targetElement = home.placeListItemRefs.current[s.selectedPlace.id]
-    targetElement?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    targetElement?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' })
   }, [s.selectedPlace?.id, home.placeListItemRefs])
 
   const hasSearchExperienceContent = Boolean(
@@ -157,7 +182,7 @@ const HomeView = ({ initialTab = 'search' }) => {
     s.aiWebSearchContext && !s.isSearchingMap && !s.isResultListCollapsed && shouldSuggestAiWebSearch,
   )
   const shouldShowResultPanel = Boolean(
-    (!s.isSearchingMap || s.isAiReranking) && (displayResults.length || shouldShowAiWebSearchPanel),
+    displayResults.length || shouldShowAiWebSearchPanel,
   )
   const shouldShowSearchMapContent = Boolean(
     s.activeTab === 'map'
@@ -204,7 +229,7 @@ const HomeView = ({ initialTab = 'search' }) => {
     return explicitLocation ? `${explicitLocation} 기준` : '현재 위치 기준'
   }
 
-  const searchQueryText = s.mapSearchKeyword.trim() || s.searchKeyword.trim()
+  const searchQueryText = s.mapSearchKeyword.trim() || s.searchKeyword.trim() || s.searchKeyword.trim()
 
   const searchConversationTitle = (() => {
     if (s.isAiReranking && displayResults.length) {
@@ -233,6 +258,7 @@ const HomeView = ({ initialTab = 'search' }) => {
   })()
 
   const searchConversationDetail = (() => {
+    if (s.searchErrorMessage) return s.searchErrorMessage
     if (s.isAiReranking && displayResults.length) {
       return s.loadingMessage || 'AI가 적합도 순서를 다듬고 있습니다.'
     }
@@ -287,7 +313,7 @@ const HomeView = ({ initialTab = 'search' }) => {
       chips.push({ label: '결과', value: `${filteredSearchResults.length}개` })
     }
 
-    return chips.slice(0, 4)
+    return [...conditionChips(s.activeSearchPlan).map((value) => ({ label: '적용 조건', value })), ...chips.filter((chip) => chip.label === '결과')]
   })()
 
   const searchConversationNotice = (() => {
@@ -331,6 +357,12 @@ const HomeView = ({ initialTab = 'search' }) => {
   ].join(':')
 
   const hasMoreResults = s.visibleCount < filteredSearchResults.length
+  const requestNewConversation = () => {
+    if ((s.activeSearchPlan || displayResults.length || s.mapSearchKeyword.trim() || s.searchKeyword.trim() || s.followUpInput.trim())
+      && !window.confirm('현재 대화와 검색 조건을 지우고 새 검색을 시작할까요?')) return
+    setResultPanelLevel('expanded')
+    home.startNewConversationSearch()
+  }
 
   const mainClassName = [
     'home-page',
@@ -456,18 +488,18 @@ const HomeView = ({ initialTab = 'search' }) => {
               </div>
             </div>
 
-            {isConversationMode ? (
+            {(
               <div className="conversation-compact-bar">
-                <span>현재 대화형 검색 중</span>
+                <span>{isConversationMode ? "현재 대화형 검색 중" : "대화형 장소 검색"}</span>
                 <button
                   type="button"
-                  disabled={s.isSearchingMap}
-                  onClick={home.startNewConversationSearch}
+                  className="conversation-new-button"
+                  onClick={requestNewConversation}
                 >
-                  새 검색
+                  새 대화
                 </button>
               </div>
-            ) : null}
+            )}
 
             <form
               className={`map-search-box ai-search-box search-panel${isConversationMode ? ' search-panel--compact' : ''}`}
@@ -511,7 +543,7 @@ const HomeView = ({ initialTab = 'search' }) => {
             <div className="conversation-status">
               <div>
                 <strong>{searchConversationTitle}</strong>
-                <p>{searchConversationDetail}</p>
+                <p>{userText(searchConversationDetail)}</p>
               </div>
 
               {s.clarificationThread.length ? (
@@ -522,7 +554,8 @@ const HomeView = ({ initialTab = 'search' }) => {
                       className={`clarification-bubble is-${item.role}`}
                     >
                       <span>{item.label}</span>
-                      <p>{item.text}</p>
+                      <p>{item.role === 'assistant' ? userText(item.text) : item.text}</p>
+                      {item.placeKeys?.length ? <div className="clarification-options">{displayResults.filter((place) => item.placeKeys.includes(placeKey(place))).map((place) => <button key={place.id} type="button" onClick={() => { setResultPanelLevel('expanded'); if (s.isResultListCollapsed) home.toggleResultListPanel(); detailHistory.open(); home.selectPlace(place) }}>{place.name} 카드 보기</button>)}</div> : null}
                     </div>
                   ))}
                 </div>
@@ -573,7 +606,7 @@ const HomeView = ({ initialTab = 'search' }) => {
                 <div className="conversation-chip-list">
                   {searchConversationChips.map((chip) => (
                     <span key={`${chip.label}-${chip.value}`}>
-                      {chip.label}: {chip.value}
+                      {chip.label === "적용 조건" ? chip.value : `${chip.label}: ${chip.value}`}
                     </span>
                   ))}
                 </div>
@@ -583,6 +616,7 @@ const HomeView = ({ initialTab = 'search' }) => {
                 <p className="conversation-notice">{searchConversationNotice}</p>
               ) : null}
             </div>
+            {s.searchErrorMessage ? <div role="alert" className="conversation-error"><p>{userText(s.searchErrorMessage)}</p><button type="button" disabled={s.isSearchingMap} onClick={home.retryLastSearch}>같은 조건으로 다시 시도</button></div> : null}
 
             {s.activeTab === 'search' && shouldShowSearchMapContent && !isClarificationOnlyState ? (
               <div
@@ -676,13 +710,15 @@ const HomeView = ({ initialTab = 'search' }) => {
                     <button
                       type="button"
                       className="panel-toggle-button"
-                      onClick={home.toggleResultListPanel}
+                      onClick={() => {
+                        changePanelLevel(s.isResultListCollapsed ? 'peek' : resultPanelLevel === 'peek' ? 'expanded' : 'collapsed')
+                      }}
                     >
-                      {s.isResultListCollapsed ? '펼치기' : '접기'}
+                      {s.isResultListCollapsed ? '카드 보기' : resultPanelLevel === 'peek' ? '전체 보기' : '접기'}
                     </button>
                   </div>
 
-                  {displayResults.length && (!s.isSearchingMap || s.isAiReranking) && !s.isResultListCollapsed ? (
+                  {displayResults.length && (!s.isSearchingMap || s.isAiReranking) && !s.isResultListCollapsed && resultPanelLevel === 'expanded' ? (
                     <div className="result-controls">
                       <div className="result-filter-buttons" aria-label="결과 필터">
                         {RESULT_FILTER_OPTIONS.map((filterOption) => (
@@ -725,14 +761,15 @@ const HomeView = ({ initialTab = 'search' }) => {
                   ) : null}
 
                   {s.isResultListCollapsed ? (
-                    <div className="collapsed-panel-summary">검색 결과</div>
+                    <div className="collapsed-panel-summary">{displayResults.length}곳 · 지도와 조건 유지</div>
                   ) : (
                     <>
                       <PlaceResultList
-                        places={searchedPlaces}
+                        places={resultPanelLevel === 'peek' ? (s.selectedPlace ? [s.selectedPlace] : searchedPlaces.slice(0, 1)) : searchedPlaces}
                         displayResultCount={displayResults.length}
-                        isSearching={s.isSearchingMap && !s.isAiReranking}
+                        isSearching={s.isSearchingMap && !s.isAiReranking && !searchedPlaces.length}
                         selectedPlace={s.selectedPlace}
+                        highlightedPlaceKeys={s.highlightedPlaceKeys}
                         placeListItemRefs={home.placeListItemRefs}
                         getRecommendationMatchedLabels={home.getRecommendationMatchedLabels}
                         getRecommendationReasonSummary={home.getRecommendationReasonSummary}
@@ -741,7 +778,7 @@ const HomeView = ({ initialTab = 'search' }) => {
                         onReportPlace={home.goToPlaceReport}
                       />
 
-                      {hasMoreResults ? (
+                      {hasMoreResults && resultPanelLevel === 'expanded' ? (
                         <div className="show-more-wrap">
                           <button
                             type="button"
@@ -808,7 +845,7 @@ const HomeView = ({ initialTab = 'search' }) => {
                   getRecommendationReason={home.getRecommendationReason}
                   onCollapse={() => setStateValue('isPlaceDetailCollapsed', true)}
                   onExpand={() => setStateValue('isPlaceDetailCollapsed', false)}
-                  onDismiss={home.dismissPlaceDetailPanel}
+                  onDismiss={detailHistory.close}
                   onSavePlace={handleTrackedPlaceSave}
                   requestedFeedbackTags={placeInteractions.requestedTags}
                   onTagFeedback={placeInteractions.submitTagFeedback}

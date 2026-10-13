@@ -50,6 +50,7 @@ def search_places_by_keyword(
     radius=1000,
     size=5,
     category_group_code=None,
+    max_pages=3,
 ):
     if not settings.KAKAO_REST_API_KEY:
         raise ValueError("KAKAO_REST_API_KEY가 설정되지 않았습니다.")
@@ -60,7 +61,7 @@ def search_places_by_keyword(
 
     params = {
         "query": keyword,
-        "size": size,
+        "size": min(max(int(size), 1), 15),
     }
     if category_group_code:
         params["category_group_code"] = category_group_code
@@ -75,12 +76,25 @@ def search_places_by_keyword(
         if radius:
             params["radius"] = radius
 
-    response = requests.get(
-        KAKAO_KEYWORD_SEARCH_URL,
-        headers=headers,
-        params=params,
-        timeout=5,
-    )
-
-    response.raise_for_status()
-    return response.json()
+    documents, seen, meta = [], set(), {}
+    for page in range(1, min(max(int(max_pages), 1), 3) + 1):
+        try:
+            response = requests.get(KAKAO_KEYWORD_SEARCH_URL, headers=headers,
+                                    params={**params, "page": page}, timeout=5)
+            response.raise_for_status()
+            payload = response.json()
+            rows = payload.get("documents") or []
+            meta = payload.get("meta") or {}
+        except (requests.RequestException, ValueError, TypeError) as exc:
+            if not documents:
+                raise
+            return {"documents": documents, "meta": meta, "provider_status": "partial",
+                    "provider_error": exc.__class__.__name__, "pages_fetched": page - 1}
+        for row in rows:
+            key = str(row.get("id") or (row.get("place_name"), row.get("address_name")))
+            if key not in seen:
+                seen.add(key)
+                documents.append(row)
+        if not rows or meta.get("is_end", True):
+            break
+    return {"documents": documents, "meta": meta, "provider_status": "ok" if documents else "empty", "pages_fetched": page}

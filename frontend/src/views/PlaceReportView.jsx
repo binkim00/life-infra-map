@@ -1,3 +1,4 @@
+import { userErrorMessage } from '../../../shared/user-message'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 
@@ -214,7 +215,7 @@ const PlaceReportView = () => {
       setMapStatusMessage('')
       setManagedTimeout(() => mapRef.current?.relayout(), 80)
     } catch (error) {
-      setMapStatusMessage(error.message || '지도를 불러오지 못했습니다.')
+      setMapStatusMessage(userErrorMessage(error, '지도를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.'))
     }
     // 최초 좌표는 초기화 시점 값만 쓰므로 의존성에 넣지 않습니다.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -419,10 +420,7 @@ const PlaceReportView = () => {
     } catch (error) {
       const data = error.response?.data
       setMessage(
-        data?.detail
-        || data?.non_field_errors?.[0]
-        || Object.values(data || {})?.flat?.()?.[0]
-        || '제보 접수에 실패했습니다.',
+        userErrorMessage(error, '제보 접수에 실패했습니다. 입력 내용을 확인해 주세요.'),
       )
     } finally {
       setIsSubmitting(false)
@@ -430,7 +428,7 @@ const PlaceReportView = () => {
   }
 
   const targetPlaceTitle = suggestedName
-    || (placeId ? `장소 ID ${placeId}` : '제보 대상 장소')
+    || '제보 대상 장소'
 
   return (
     <main className={styles.reportPage}>

@@ -419,3 +419,7 @@
     grid-template-columns: 1fr;
   }
 }
+
+.panelStages { display: flex; gap: 6px; margin: 8px 0; }
+.panelStages button { min-height: 44px; flex: 1; border: 1px solid #d5e3df; border-radius: 8px; background: white; }
+.panelStages button[aria-pressed="true"] { background: #e3f5f0; color: #086e5c; font-weight: 700; }

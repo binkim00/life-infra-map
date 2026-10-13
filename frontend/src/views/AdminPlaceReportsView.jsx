@@ -1,3 +1,4 @@
+import { userErrorMessage } from '../../../shared/user-message'
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 
@@ -136,7 +137,7 @@ const AdminPlaceReportsView = () => {
       setMessage(action === 'approve' ? '제보를 승인했습니다.' : '제보를 반려했습니다.')
       await fetchReports()
     } catch (error) {
-      setMessage(error.response?.data?.detail || '제보 처리에 실패했습니다.')
+      setMessage(userErrorMessage(error, '제보 처리에 실패했습니다.'))
     } finally {
       setIsReviewing(false)
     }

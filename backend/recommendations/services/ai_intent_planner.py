@@ -330,6 +330,9 @@ def _structured_condition(label, condition_type, *, required=True, source="rule"
         "label": label,
         "type": condition_type,
         "required": required,
+        "requirement": "required" if required else "preferred",
+        "polarity": "include",
+        "active": True,
         "source": source,
     }
 
@@ -354,7 +357,7 @@ def _derive_structured_conditions(raw_query, frame):
     if _has_any(text, ["조용", "시끄럽지", "붐비지", "한적"]):
         add("조용함", "ambience")
     if _has_any(text, ["콘센트", "충전", "노트북", "작업", "공부", "와이파이", "wifi"]):
-        add("작업/충전 가능", "facility")
+        add("작업/충전 가능", "facility", required=not _has_any(raw_query, ["있으면 좋", "되면 좋", "선호", "가능하면"]))
     if _has_any(text, ["무료", "돈 안", "저렴", "싼", "가성비"]):
         add("비용 민감", "cost")
     if _has_any(text, ["야간", "밤", "새벽", "24시", "지금 열"]):
@@ -389,6 +392,9 @@ def _dedupe_condition_dicts(items):
             "label": label,
             "type": _clean_text(item.get("type") if isinstance(item, dict) else "", 40) or "condition",
             "required": bool(item.get("required", True)) if isinstance(item, dict) else True,
+            "requirement": "required" if item.get("required", True) else "preferred",
+            "polarity": _clean_text(item.get("polarity"), 20) or "include",
+            "active": bool(item.get("active", True)),
             "source": _clean_text(item.get("source") if isinstance(item, dict) else "", 40) or "rule",
         })
     return result
@@ -920,6 +926,8 @@ def _local_rule_followup_plan(raw_query, previous_context):
     quiet = _has_any(text, ["조용", "시끄럽지", "한적", "붐비지"])
     ambience = _has_any(text, ["분위기", "감성", "예쁜", "멋진"])
     closer = _has_any(text, ["더 가까", "가까운 곳", "가까운 데", "근처"])
+    radius_match = re.search(r"(\d+(?:\.\d+)?)\s*(km|킬로|m|미터)\s*(?:안|이내|내)", text, re.IGNORECASE)
+    radius_patch = min(max(int(float(radius_match.group(1)) * (1000 if radius_match.group(2).lower() in {"km", "킬로"} else 1)), 300), 20000) if radius_match else None
     alternate = _has_any(text, ["다른 곳", "다른 데", "다른곳", "다른데"])
     requested_constraints = []
     constraint_rules = [
@@ -936,6 +944,19 @@ def _local_rule_followup_plan(raw_query, previous_context):
     for keywords, label in constraint_rules:
         if _has_any(text, keywords):
             requested_constraints.append(label)
+
+    compact_text = _compact(text)
+    target_patch = "restaurant" if any(marker in compact_text for marker in ("카페말고식당", "카페대신식당", "카페말고음식점")) else None
+    removed_conditions = set()
+    preferred_conditions = set()
+    for keywords, label in constraint_rules:
+        if label not in requested_constraints:
+            continue
+        if any(re.search(rf"{re.escape(_compact(keyword))}.{{0,12}}(?:대신|조건취소|취소|빼줘|없어도돼|필요없)", compact_text) for keyword in keywords):
+            removed_conditions.add(label)
+        elif any(re.search(rf"{re.escape(_compact(keyword))}.{{0,12}}(?:있으면좋|되면좋|선호)", compact_text) for keyword in keywords):
+            preferred_conditions.add(label)
+    requested_constraints = [item for item in requested_constraints if item not in removed_conditions]
 
     requested_exclusions = []
     if _has_any(text, ["빼줘", "빼고", "제외", "말고", "아닌"]):
@@ -958,15 +979,28 @@ def _local_rule_followup_plan(raw_query, previous_context):
         closer,
         alternate,
         bool(requested_constraints),
+        bool(removed_conditions),
         bool(requested_exclusions),
         add_library,
         allow_unverified,
         bool(location_patch),
+        radius_patch is not None,
+        target_patch is not None,
     ])
     if not recognized:
         return None
 
-    constraints = list(frame.get("constraints") or [])
+    removed_keys = {_compact(item) for item in removed_conditions}
+    constraints = [item for item in frame.get("constraints") or [] if _compact(item) not in removed_keys]
+    required_features = [item for item in frame.get("required_features") or [] if _compact(item) not in removed_keys]
+    preferred_features = [item for item in frame.get("preferred_features") or [] if _compact(item) not in removed_keys]
+    for item in requested_constraints:
+        item_key = _compact(item)
+        required_features = [value for value in required_features if _compact(value) != item_key]
+        preferred_features = [value for value in preferred_features if _compact(value) != item_key]
+        (preferred_features if item in preferred_conditions else required_features).append(item)
+    frame["required_features"] = _dedupe(required_features)
+    frame["preferred_features"] = _dedupe(preferred_features)
     if quiet:
         constraints.append("조용함")
     if ambience:
@@ -981,6 +1015,15 @@ def _local_rule_followup_plan(raw_query, previous_context):
     ])
     if closer:
         frame["ranking_policy"] = "distance_first"
+    if radius_patch is not None:
+        frame["radius_m"] = radius_patch
+        frame["ranking_policy"] = "distance_first"
+    if target_patch == "restaurant":
+        frame["target_objects"] = ["식당"]
+        frame["candidate_place_types"] = ["식당", "음식점"]
+        frame["result_match_terms"] = ["식당", "음식점"]
+        frame["candidate_category_codes"] = ["restaurant"]
+        frame["primary_search_queries"] = ["식당", "음식점"]
     if location_patch:
         frame["location_mode"] = "explicit"
         frame["anchor_location"] = location_patch
@@ -1016,6 +1059,21 @@ def _local_rule_followup_plan(raw_query, previous_context):
         refined_queries.append(primary_type)
     frame["primary_search_queries"] = _dedupe([*refined_queries, *previous_queries])[:6]
     frame = _enrich_frame_policy(frame, raw_query=text, action="search")
+    for label in [*removed_conditions, *preferred_conditions]:
+        keywords = next((words for words, name in constraint_rules if name == label), [])
+        roots = [_compact(word) for word in keywords]
+        def is_target(value):
+            return any(root and root in _compact(value) for root in roots)
+        frame["required_features"] = [value for value in frame.get("required_features") or [] if not is_target(value)]
+        frame["constraints"] = [value for value in frame.get("constraints") or [] if not is_target(value)]
+        frame["structured_conditions"] = [
+            condition for condition in frame.get("structured_conditions") or []
+            if not is_target(condition.get("label", ""))
+        ]
+        if label in preferred_conditions:
+            frame["preferred_features"] = _dedupe([*(frame.get("preferred_features") or []), label])
+            frame["structured_conditions"].append(_structured_condition(label, "facility", required=False))
+        frame["structuredConditions"] = frame["structured_conditions"]
 
     normalized_query = " ".join([
         _clean_text((frame.get("target_objects") or [""])[0], 80),
@@ -2064,6 +2122,18 @@ def _normalize_frame(raw_frame):
     if location_mode not in {"explicit", "current_context", "clarification_required"}:
         location_mode = "current_context"
 
+    structured = raw_frame.get("structured_conditions") or raw_frame.get("structuredConditions") or []
+    required_features = _as_list(raw_frame.get("required_features") or raw_frame.get("requiredFeatures"))
+    preferred_features = _as_list(raw_frame.get("preferred_features") or raw_frame.get("preferredFeatures"))
+    for condition in structured if isinstance(structured, list) else []:
+        if not isinstance(condition, dict) or condition.get("active") is False or condition.get("polarity") == "exclude":
+            continue
+        if condition.get("type") == "distance":
+            continue
+        label = _clean_text(condition.get("label") or condition.get("value"), 80)
+        if label:
+            (required_features if condition.get("required", condition.get("requirement") == "required") else preferred_features).append(label)
+
     return {
         "situation": _clean_text(raw_frame.get("situation"), 50),
         "location_mode": location_mode,
@@ -2076,6 +2146,8 @@ def _normalize_frame(raw_frame):
             raw_frame.get("result_match_terms") or raw_frame.get("resultMatchTerms")
         ),
         "constraints": _as_list(raw_frame.get("constraints")),
+        "required_features": _dedupe(required_features),
+        "preferred_features": _dedupe(preferred_features),
         "exclusions": _as_list(raw_frame.get("exclusions")),
         "candidate_category_codes": _as_list(
             raw_frame.get("candidate_category_codes") or raw_frame.get("candidateCategoryCodes"),
@@ -2083,6 +2155,7 @@ def _normalize_frame(raw_frame):
             max_length=50,
         ),
         "ranking_policy": ranking_policy,
+        "radius_m": raw_frame.get("radius_m") or raw_frame.get("radiusM"),
         "primary_search_queries": _as_list(
             raw_frame.get("primary_search_queries")
             or raw_frame.get("primarySearchQueries")
@@ -2414,6 +2487,28 @@ def _unavailable(reason, retry_count=0, validation_errors=None, call_count=0):
 
 
 def build_ai_intent_plan(query, *, lat=None, lng=None, map_center=None, previous_context=None):
+    from recommendations.services.conversation_patches import patch_frame, previous_frame
+
+    context = previous_context or {}
+    saved = previous_frame(context)
+    fresh = _local_rule_plan_for_known_intent(query) if saved else None
+    fresh_frame = (fresh or {}).get("frame") or {}
+    complete_new_query = bool(fresh_frame.get("anchor_location") and _has_any(query, ["카페", "식당", "음식점", "도서관", "공원", "약국", "병원"]))
+    patched = patch_frame(query, saved, source_turn=int(context.get("turn_count") or 0) + 1) if saved and not complete_new_query else None
+    if patched:
+        frame, actions = patched
+        return {"action": "search", "decision_action": "search", "can_search_now": True,
+                "normalized_query": query, "frame": frame, "confidence": 1.0,
+                "ai_debug": {"planner": {"status": "conversation_patch", "call_count": 0, "patch": actions}}}
+    plan = _build_ai_intent_plan(query, lat=lat, lng=lng, map_center=map_center, previous_context=previous_context)
+    if plan.get("action") == "search" and plan.get("frame"):
+        patched = patch_frame(query, plan["frame"], source_turn=int(context.get("turn_count") or 0) + 1, enhance_queries=False)
+        if patched:
+            plan = {**plan, "frame": patched[0]}
+    return plan
+
+
+def _build_ai_intent_plan(query, *, lat=None, lng=None, map_center=None, previous_context=None):
     raw_query = _clean_text(query, 500)
     if not raw_query:
         return {

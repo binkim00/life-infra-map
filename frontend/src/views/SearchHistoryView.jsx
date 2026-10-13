@@ -1,3 +1,4 @@
+import { userErrorMessage } from '../../../shared/user-message'
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 
@@ -148,7 +149,7 @@ const SearchHistoryView = () => {
         setMessage('검색 기록을 삭제했습니다. 자동 선호도 다시 계산되었습니다.')
       }
     } catch (error) {
-      setMessage(error.response?.data?.detail || '검색 기록을 삭제하지 못했습니다.')
+      setMessage(userErrorMessage(error, '검색 기록을 삭제하지 못했습니다.'))
     } finally {
       setDeletingLogId(null)
     }

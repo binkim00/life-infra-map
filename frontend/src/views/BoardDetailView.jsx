@@ -1,3 +1,4 @@
+import { userErrorMessage } from '../../../shared/user-message'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 
@@ -454,7 +455,7 @@ const BoardDetailView = () => {
       closeReportModal()
     } catch (error) {
       console.error(error)
-      setReportMessage(error.response?.data?.detail || '신고 접수에 실패했습니다.')
+      setReportMessage(userErrorMessage(error, '신고 접수에 실패했습니다.'))
     } finally {
       setIsSubmittingReport(false)
     }

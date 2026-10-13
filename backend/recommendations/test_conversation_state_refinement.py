@@ -8,6 +8,7 @@ from recommendations.services.ai_intent_planner import (
 from recommendations.services.ai_search_orchestrator import (
     _enforce_required_result_policy,
     _required_evidence_conditions,
+    _search_radius_for_frame,
     _structured_conversation_action_plan,
 )
 
@@ -70,6 +71,44 @@ class ConversationStateRefinementTests(SimpleTestCase):
 
         self.assertEqual(plan["frame"]["ranking_policy"], "distance_first")
         self.assertIn("주차 가능", plan["frame"]["constraints"])
+
+    def test_followup_preserves_required_feature_metadata(self):
+        context = self._context()
+        context["search_plan"]["place_intent_frame"].update({
+            "required_features": ["주차 가능"],
+            "structured_conditions": [{"label": "주차 가능", "type": "facility", "required": True}],
+        })
+        plan = build_ai_intent_plan("더 가까운 데", previous_context=context)
+        self.assertIn("주차 가능", _required_evidence_conditions(plan["frame"]))
+
+    def test_followup_can_remove_one_required_condition(self):
+        context = self._context()
+        context["search_plan"]["place_intent_frame"].update({
+            "required_features": ["주차 가능", "반려견 실내동반"],
+            "constraints": ["주차 가능", "반려견 실내동반"],
+        })
+        plan = build_ai_intent_plan("주차 조건 취소", previous_context=context)
+        self.assertNotIn("주차 가능", _required_evidence_conditions(plan["frame"]))
+        self.assertIn("반려견 실내동반", _required_evidence_conditions(plan["frame"]))
+
+    def test_explicit_radius_followup_changes_only_radius(self):
+        context = self._context()
+        context["search_plan"]["place_intent_frame"]["required_features"] = ["주차 가능"]
+        plan = build_ai_intent_plan("1km 안으로", previous_context=context)
+        self.assertEqual(plan["frame"]["anchor_location"], "서면")
+        self.assertEqual(plan["frame"]["target_objects"], ["식당"])
+        self.assertEqual(_search_radius_for_frame(None, plan["frame"], "1km 안으로"), 1000)
+        self.assertIn("주차 가능", _required_evidence_conditions(plan["frame"]))
+
+    def test_target_replacement_keeps_location_and_required_condition(self):
+        context = self._context()
+        frame = context["search_plan"]["place_intent_frame"]
+        frame.update({"target_objects": ["카페"], "candidate_place_types": ["카페"], "candidate_category_codes": ["cafe"], "required_features": ["주차 가능"]})
+        plan = build_ai_intent_plan("카페 말고 식당", previous_context=context)
+        self.assertEqual(plan["frame"]["target_objects"], ["식당"])
+        self.assertEqual(plan["frame"]["candidate_category_codes"], ["restaurant"])
+        self.assertEqual(plan["frame"]["anchor_location"], "서면")
+        self.assertIn("주차 가능", _required_evidence_conditions(plan["frame"]))
 
     def test_general_family_meal_uses_deterministic_restaurant_plan(self):
         plan = build_ai_intent_plan("광안리에서 가족끼리 저녁 먹을 곳")

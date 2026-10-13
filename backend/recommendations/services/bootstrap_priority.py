@@ -108,7 +108,16 @@ def priority_context(places, *, category_priorities=None, now=None):
     active_tag_names = defaultdict(set)
     for place_id, tag_name in PlaceTagEvidence.objects.filter(
         place_id__in=place_ids,
-    ).filter(Q(expires_at__isnull=True) | Q(expires_at__gt=now)).values_list(
+        polarity="positive",
+    ).filter(Q(review__isnull=True) | Q(review__status="approved")).filter(
+        Q(expires_at__isnull=True) | Q(expires_at__gt=now)
+    ).values_list(
+        "place_id", "tag__name",
+    ).distinct():
+        active_tag_names[place_id].add(tag_name)
+    for place_id, tag_name in PlaceTag.objects.filter(
+        place_id__in=place_ids,
+    ).filter(Q(is_verified=True) | Q(status="confirmed", source__in=("checked", "user_verified"))).values_list(
         "place_id", "tag__name",
     ).distinct():
         active_tag_names[place_id].add(tag_name)

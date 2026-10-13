@@ -793,6 +793,26 @@ class PlaceReportDetailSerializer(serializers.ModelSerializer):
         return obj.suggested_name
 
 
+class PublicReportOutcomeMixin:
+    def get_processing_result(self, obj):
+        return {"approved": "제보 검토가 완료되어 반영됐어요.", "rejected": "검토 결과 이번 제보는 반영되지 않았어요.", "pending": "접수한 내용을 검토하고 있어요."}.get(obj.status, "처리 상태를 확인하고 있어요.")
+
+
+class MyPlaceReportListSerializer(PublicReportOutcomeMixin, PlaceReportListSerializer):
+    processing_result = serializers.SerializerMethodField()
+    class Meta(PlaceReportListSerializer.Meta):
+        fields = [field for field in PlaceReportListSerializer.Meta.fields if field not in {"client_request_id", "admin_note", "status", "report_type", "place"}] + ["processing_result"]
+
+
+class MyPlaceReportDetailSerializer(PublicReportOutcomeMixin, PlaceReportDetailSerializer):
+    processing_result = serializers.SerializerMethodField()
+    class Meta(PlaceReportDetailSerializer.Meta):
+        fields = [field for field in PlaceReportDetailSerializer.Meta.fields if field not in {
+            "client_request_id", "user", "user_username", "reviewed_by",
+            "reviewed_by_username", "admin_note", "status", "report_type", "place",
+        }] + ["processing_result"]
+
+
 class PlaceReportAdminReviewSerializer(serializers.Serializer):
     admin_note = serializers.CharField(required=False, allow_blank=True, trim_whitespace=True)
     suggested_category = serializers.CharField(required=False, allow_blank=True, max_length=50)

@@ -1,3 +1,4 @@
+import { userText } from '../../../shared/user-message'
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
@@ -14,12 +15,12 @@ const getInquiryErrorMessage = (error) => {
   }
 
   if (data.detail) {
-    return data.detail
+    return userText(data.detail)
   }
 
   const firstFieldError = Object.values(data).flat().find(Boolean)
 
-  return firstFieldError || '문의 등록에 실패했습니다.'
+  return userText(firstFieldError, '문의 등록에 실패했습니다.')
 }
 
 const InquiryCreateView = () => {

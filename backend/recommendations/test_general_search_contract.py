@@ -355,7 +355,9 @@ class GeneralSearchContractTests(TestCase):
 
     def test_followup_references_keep_details_and_evidence_status(self):
         result = {"id": "kakao:123", "name": "테스트", "place_url": "https://place.map.kakao.com/123", "result_tier": "best_available", "missing_conditions": ["주차"], "phone": "051-000-0000"}
-        self.assertEqual(result_references([result]), [result])
+        reference = result_references([result])[0]
+        self.assertEqual({key: reference[key] for key in result}, result)
+        self.assertEqual(reference["place_key"], "kakao:123")
 
     @patch("recommendations.views.search_places_by_keyword")
     @patch("recommendations.views.search_saved_map_places")

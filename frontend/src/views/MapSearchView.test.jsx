@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useEffect } from 'react'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, useNavigate } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import MapSearchView from './MapSearchView'
@@ -23,7 +23,7 @@ vi.mock('@/hooks/useSavedPlaceActions', () => ({
 }))
 
 vi.mock('@/components/KakaoMap', () => ({
-  default: ({ places, layoutKey, onCenterChange, onSelectPlace }) => {
+  default: ({ places, selectedPlaceId, layoutKey, onCenterChange, onSelectPlace }) => {
     useEffect(() => {
       onCenterChange({ center: { lat: 36.35, lng: 127.8 } })
       // KakaoMap emits its initial viewport once after SDK initialization.
@@ -31,7 +31,7 @@ vi.mock('@/components/KakaoMap', () => ({
     }, [])
 
     return (
-      <div data-testid="map" data-layout-key={layoutKey}>
+      <div data-testid="map" data-layout-key={layoutKey} data-selected={selectedPlaceId}>
         <button
           type="button"
           onClick={() => onCenterChange({ center: { lat: 35.2, lng: 129.1 } })}
@@ -97,4 +97,26 @@ describe('MapSearchView', () => {
     expect(screen.getByText('사상역 4번 출구 밖')).toBeInTheDocument()
     expect(screen.getByTestId('map')).toHaveAttribute('data-layout-key', 'detail-open')
   })
+  const HistoryBack = () => { const navigate = useNavigate(); return <button onClick={() => navigate(-1)}>브라우저 뒤로</button> }
+  it('검색 → 상세 → 브라우저 뒤로 뒤에도 결과와 선택 마커가 유지됩니다', async () => {
+    const user = userEvent.setup()
+    render(<MemoryRouter initialEntries={['/map?q=사상역']}><MapSearchView/><HistoryBack/></MemoryRouter>)
+    await screen.findByRole('button', {name:'첫 마커'})
+    await user.click(screen.getByRole('button',{name:'첫 마커'}))
+    expect(screen.getByRole('button',{name:'닫기'})).toBeInTheDocument()
+    const selected = screen.getByTestId('map').dataset.selected
+    await user.click(screen.getByRole('button',{name:'브라우저 뒤로'}))
+    await waitFor(()=>expect(screen.queryByRole('button',{name:'닫기'})).not.toBeInTheDocument())
+    expect(screen.getByText('사상역 4번 출구 흡연구역')).toBeInTheDocument()
+    expect(screen.getByTestId('map').dataset.selected).toBe(selected)
+    expect(searchMapPlaces).toHaveBeenCalledTimes(1)
+    await user.click(screen.getByRole('button',{name:'브라우저 뒤로'}))
+    await waitFor(()=>expect(screen.getByRole('button',{name:'선택 카드'})).toHaveAttribute('aria-pressed','true'))
+    await user.click(screen.getByRole('button',{name:'브라우저 뒤로'}))
+    await waitFor(()=>expect(screen.getByRole('button',{name:'요약'})).toHaveAttribute('aria-pressed','true'))
+    expect(screen.getByTestId('map').dataset.selected).toBe(selected)
+    await user.click(screen.getByRole('button',{name:'선택 카드'}))
+    expect(screen.getByText('사상역 4번 출구 흡연구역')).toBeInTheDocument()
+  })
+
 })

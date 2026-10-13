@@ -485,7 +485,7 @@ export const SOURCE_LABEL_TEXT = {
   '웹 근거 후보': '웹 참고',
   '웹 검색 근거 후보, 세부 정보 확인 필요': '웹 참고',
   '카카오 검색 근거 후보, 세부 정보 확인 필요': '카카오 참고',
-  '카카오+DB': '카카오+DB',
+  '카카오+DB': '카카오 · 저장 정보',
 }
 
 export const getPlaceSourceText = (place) => {
@@ -1025,6 +1025,7 @@ export const getClarificationOptionItems = (value = []) => {
       return {
         label,
         value: optionValue || label,
+        ...(item.action && typeof item.action === 'object' ? { action: item.action } : {}),
       }
     }
     const text = getPlannerText(item)

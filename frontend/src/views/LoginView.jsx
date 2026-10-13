@@ -1,3 +1,4 @@
+import { userErrorMessage } from '../../../shared/user-message'
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 
@@ -52,10 +53,10 @@ const LoginView = () => {
     } catch (error) {
       console.error(error)
       if (error.response?.data?.penalty) {
-        setErrorMessage(error.response.data.detail)
+        setErrorMessage(userErrorMessage(error))
         setPenaltyInfo(error.response.data.penalty)
       } else {
-        setErrorMessage('아이디 또는 비밀번호가 올바르지 않습니다.')
+        setErrorMessage([400, 401].includes(error.response?.status) ? '아이디 또는 비밀번호를 확인해 주세요.' : userErrorMessage(error, '지금 로그인하지 못했어요. 잠시 후 다시 시도해 주세요.'))
       }
     } finally {
       setIsLoading(false)

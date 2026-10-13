@@ -7,11 +7,12 @@ import unicodedata
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from django.conf import settings
-from django.db.models import Q
+from django.db.models import Count, Q
+from django.utils import timezone
 from django.db.models.expressions import RawSQL
 from django.db.models.fields.json import KeyTextTransform
 
-from recommendations.models import Place, PlaceTag
+from recommendations.models import Place, PlaceTag, PlaceTagEvidence
 from recommendations.services.ai_candidate_reranker import _hybrid_score, semantic_rerank_candidates
 from recommendations.services.ai_intent_planner import (
     build_ai_intent_plan,
@@ -40,8 +41,11 @@ from recommendations.services.tag_utils import get_category_display_name
 from recommendations.services.semantic_retrieval import attach_semantic_scores, retrieve_semantic_places
 from recommendations.services.canonical_tag_policy import canonical_tag_name
 from recommendations.services.commercial_place_registry import normalize_address, normalize_name
-from recommendations.services.conversation_sessions import resolve_previous_result_action
+from recommendations.services.conversation_sessions import resolve_previous_result_action, place_identity, identity_aliases, build_previous_context
 from recommendations.services.search_hard_gate import apply_common_hard_gate
+from recommendations.services.search_candidate_trace import log_candidate_trace
+from recommendations.services.external_place_identity import lookup_internal_place
+from recommendations.services.search_pipeline_metrics import log_search_metrics
 
 
 logger = logging.getLogger(__name__)
@@ -1039,6 +1043,9 @@ def _evidence_terms(frame):
 def _search_radius_for_frame(request_radius, frame, raw_query):
     if request_radius not in (None, ""):
         return _radius(request_radius)
+    frame_radius = frame.get("radius_m") or frame.get("radiusM") if isinstance(frame, dict) else None
+    if frame_radius not in (None, ""):
+        return _radius(frame_radius)
 
     text = _compact(" ".join([
         raw_query or "",
@@ -2716,6 +2723,40 @@ def _verified_required_place_ids(frame, category_codes, bounds, lat, lng, limit)
     return [row[0] for row in coordinate_rows[:count]]
 
 
+def _evidenced_required_place_ids(frame, category_codes, bounds, lat, lng, limit):
+    """Include nearby places with active raw evidence beyond the nearest scan."""
+    if not category_codes or not bounds or lat is None or lng is None:
+        return []
+    tag_names = {
+        canonical_tag_name(condition)
+        for condition in _required_evidence_conditions(frame)
+    } - {""}
+    if not tag_names:
+        return []
+    now = timezone.now()
+    evidenced_ids = PlaceTagEvidence.objects.filter(
+        tag__name__in=tag_names,
+        polarity="positive",
+        place__category__in=category_codes,
+        place__lat__gte=bounds["lat_min"],
+        place__lat__lte=bounds["lat_max"],
+        place__lng__gte=bounds["lng_min"],
+        place__lng__lte=bounds["lng_max"],
+    ).filter(
+        Q(expires_at__isnull=True) | Q(expires_at__gt=now),
+        Q(review__isnull=True) | Q(review__status="approved"),
+    ).values("place_id").annotate(
+        tag_count=Count("tag_id", distinct=True),
+    ).filter(tag_count=len(tag_names)).values("place_id")
+    nearby = Place.objects.filter(id__in=evidenced_ids)
+    count = max(_as_int(limit, 50), 10)
+    if supports_postgis():
+        return list(_order_by_distance(nearby, lat, lng).values_list("id", flat=True)[:count])
+    coordinate_rows = list(nearby.values_list("id", "lat", "lng"))
+    coordinate_rows.sort(key=lambda row: _distance(lat, lng, row[1], row[2]))
+    return [row[0] for row in coordinate_rows[:count]]
+
+
 def collect_db_candidates(
     frame,
     *,
@@ -2723,7 +2764,7 @@ def collect_db_candidates(
     lng=None,
     limit=50,
     radius=None,
-    _allow_sparse_expansion=True,
+    _allow_sparse_expansion=False,
 ):
     implicit_radius = radius in (None, "")
     terms = _db_evidence_terms(frame)
@@ -2934,6 +2975,10 @@ def collect_db_candidates(
     verified_ids = _verified_required_place_ids(
         frame, direct_category_codes, bounds, lat, lng, limit,
     )
+    evidenced_ids = _evidenced_required_place_ids(
+        frame, direct_category_codes, bounds, lat, lng, limit,
+    )
+    verified_ids = list(dict.fromkeys([*verified_ids, *evidenced_ids]))
     if verified_ids:
         existing_ids = {place.id for place in candidate_places}
         extra_ids = [place_id for place_id in verified_ids if place_id not in existing_ids]
@@ -3372,6 +3417,7 @@ def collect_kakao_candidates(frame, queries, *, lat=None, lng=None, radius=None)
     selected_queries = list(queries[:max_queries])
 
     def fetch_query(query):
+        documents = []
         try:
             response = search_places_by_keyword(
                 keyword=query,
@@ -3425,8 +3471,8 @@ def collect_kakao_candidates(frame, queries, *, lat=None, lng=None, radius=None)
                             documents = branch_documents
         except Exception as exc:
             logger.info("Kakao candidate collection failed. query=%s", query, exc_info=True)
-            return query, [], {"query": query, "count": 0, "error": exc.__class__.__name__}
-        return query, documents, {"query": query, "count": len(documents)}
+            return query, documents, {"query": query, "count": len(documents), "status": "partial" if documents else "error", "error": exc.__class__.__name__}
+        return query, documents, {"query": query, "count": len(documents), "status": response.get("provider_status") or ("ok" if documents else "empty"), "error": response.get("provider_error") or ""}
 
     fetched = []
     if len(selected_queries) <= 1:
@@ -3522,6 +3568,8 @@ def collect_web_candidates(frame, queries, *, lat=None, lng=None, existing_count
     candidates = []
     max_queries = _as_int(getattr(settings, "AI_SEARCH_WEB_MAX_QUERIES", 1), 1)
     max_queries = min(max(max_queries, 1), 3)
+    if getattr(settings, "AI_WEB_SEARCH_SPARSE_PILOT_ENABLED", False):
+        max_queries = 1
     for query in queries[:max_queries]:
         try:
             response = get_ai_web_search_result(
@@ -3540,7 +3588,7 @@ def collect_web_candidates(frame, queries, *, lat=None, lng=None, existing_count
                 manual=True,
             )
         except Exception:
-            logger.info("Web candidate collection failed. query=%s", query, exc_info=True)
+            logger.info("Web candidate collection failed.", exc_info=True)
             continue
         for index, item in enumerate(response.get("candidates") or []):
             if not isinstance(item, dict):
@@ -3610,7 +3658,49 @@ def collect_web_candidates(frame, queries, *, lat=None, lng=None, existing_count
     return candidates
 
 
+def attach_internal_place_identity(candidates, frame):
+    """Join external candidates to our Place/Evidence without altering dedupe."""
+    joined = []
+    statuses = {}
+    for candidate in candidates:
+        place, status = lookup_internal_place(candidate)
+        statuses[status] = statuses.get(status, 0) + 1
+        if place is None:
+            joined.append({**candidate, "identity_lookup_status": status})
+            continue
+        tags = _db_tag_lists(place)
+        level, matched, policy_unmet, policy_verification_needed = _db_evidence(place, tags, frame)
+        joined.append({
+            **candidate,
+            "place_id": place.id,
+            "identity_lookup_status": status,
+            "verified_tags": tags["verified"],
+            "verified_tag_labels": tags["verified"],
+            "candidate_tags": tags["candidate"],
+            "suggested_tags": tags["suggested"],
+            "historical_tags": tags.get("historical", []),
+            "warning_tags": tags["warning"],
+            "matched_evidence": matched,
+            "matched_tags": [item["value"] for item in matched],
+            "matched_tag_labels": [item["value"] for item in matched],
+            "pre_ai_evidence_level": level,
+            "evidence_level": level,
+            "pre_ai_unmet_constraints": policy_unmet,
+            "policy_verification_needed": policy_verification_needed,
+        })
+    return joined, statuses
+
+
+def should_collect_sparse_web(verified_count, *, expand_requested=False):
+    return verified_count <= 1 or (verified_count == 2 and expand_requested)
+
+
 def _same_place_identity(left, right):
+    if getattr(settings, "EXTERNAL_PLACE_IDENTITY_ENABLED", False):
+        left_id = left.get("place_id")
+        right_id = right.get("place_id")
+        if (left_id or right_id) and left_id != right_id:
+            return False
     left_name = normalize_name(left.get('name'))
     right_name = normalize_name(right.get('name'))
     if not left_name or left_name != right_name:
@@ -3934,6 +4024,16 @@ def _blocking_unmet_constraints(candidate):
     ]
 
 
+def _grounded_internal_fallback(candidate):
+    """A disabled reranker must not drop a gate-passed internal Evidence hit."""
+    return bool(
+        candidate.get("place_id")
+        and candidate.get("hard_gate_passed")
+        and candidate.get("hard_gate_active_tags")
+        and not _blocking_unmet_constraints(candidate)
+    )
+
+
 def _minimum_result_count(limit):
     configured = _as_int(getattr(settings, "AI_SEARCH_MIN_RESULTS", 10), 10)
     return min(max(configured, 1), max(_as_int(limit, 15), 1), 20)
@@ -4254,7 +4354,7 @@ def _can_use_as_best_available(candidate, frame):
 def _requested_result_conditions(frame):
     conditions = []
     seen_keys = set()
-    for value in _frame_terms(frame, "constraints"):
+    for value in [*_frame_terms(frame, "constraints"), *_required_evidence_conditions(frame)]:
         value = _clean_text(value, 80)
         value_key = _compact(value)
         if (
@@ -4276,7 +4376,7 @@ def _condition_supported(condition, values):
         value_key = _compact(value)
         if not value_key:
             continue
-        if condition_key in value_key or value_key in condition_key:
+        if condition_key == value_key:
             return True
     return False
 
@@ -4312,7 +4412,6 @@ def _candidate_result_quality(candidate, frame, *, best_available=False):
     verified_values = [
         *_as_list(candidate.get("hard_gate_active_tags"), max_items=50),
         *_as_list(candidate.get("verified_tags"), max_items=50),
-        *_as_list(candidate.get("policy_matched_constraints"), max_items=30),
     ]
     violated_feature_codes = {
         _clean_text(violation.get("required"), 80)
@@ -4325,6 +4424,7 @@ def _candidate_result_quality(candidate, frame, *, best_available=False):
         if _clean_text(requirement.get("code"), 80) not in violated_feature_codes
     )
     provisional_values = [
+        *_as_list(candidate.get("policy_matched_constraints"), max_items=30),
         *_as_list(candidate.get("suggested_tags"), max_items=50),
         *_as_list(candidate.get("candidate_tags"), max_items=50),
     ]
@@ -4452,7 +4552,9 @@ def _required_evidence_conditions(frame):
     seen = set()
     structured = frame.get("structured_conditions") or frame.get("structuredConditions") or []
     for condition in structured if isinstance(structured, list) else []:
-        if not isinstance(condition, dict) or not condition.get("required"):
+        if not isinstance(condition, dict) or not condition.get("required") or not condition.get("active", True):
+            continue
+        if condition.get("polarity") == "exclude":
             continue
         if _clean_text(condition.get("type")) == "distance":
             continue
@@ -4467,7 +4569,7 @@ def _required_evidence_conditions(frame):
         if label and key not in seen:
             required.append(label)
             seen.add(key)
-    return required[:8]
+    return required
 
 
 def _allows_unverified_result_relaxation(query):
@@ -4479,19 +4581,19 @@ def _allows_unverified_result_relaxation(query):
 
 
 def _enforce_required_result_policy(results, frame, query, *, allow_unverified=False):
-    """Show evidenced partial matches while labeling every unmet condition."""
+    """Only affirmatively evidenced required conditions qualify by default."""
     results = list(results or [])
     required = _required_evidence_conditions(frame)
-    if not required or allow_unverified or _allows_unverified_result_relaxation(query):
+    if not required or allow_unverified:
         return results, required, False
-    confirmed = [result for result in results if not (result.get("missing_conditions") or [])]
-    partial = [
+    confirmed = [
         result for result in results
-        if result.get("missing_conditions") and result.get("matched_conditions")
+        if not any(_condition_supported(condition, result.get("missing_conditions") or []) for condition in required)
+        and not result.get("hard_gate_violations")
+        and not any(_condition_supported(condition, result.get("hard_gate_negative_tags") or []) for condition in required)
+        and all(_condition_supported(condition, result.get("matched_conditions") or []) for condition in required)
     ]
-    if confirmed or partial:
-        return [*confirmed, *partial], required, False
-    return [], required, bool(results)
+    return confirmed, required, bool(results) and not confirmed
 
 
 RESULT_DIVERSITY_CATEGORY_CODES = frozenset({
@@ -4759,8 +4861,9 @@ def _complete_and_order_results(
     frame,
     *,
     limit,
+    allow_unverified=False,
 ):
-    """Keep strict matches first, then fill the requested window with honest alternatives."""
+    """Keep strict matches; alternatives require an explicit conversation action."""
     limit = max(_as_int(limit, 15), 1)
     strict = list(ranked_candidates or [])
     strict_ids = {
@@ -4782,7 +4885,7 @@ def _complete_and_order_results(
     pools = [
         list(candidate_pool or []),
         list(feature_removed_candidates or []),
-    ]
+    ] if allow_unverified else []
     for pool in pools:
         for candidate in sorted(pool, key=_candidate_sort_key):
             candidate_id = _clean_text(candidate.get("id"))
@@ -4969,6 +5072,12 @@ def _debug_pipeline(
             "kakao": _as_int(candidate_counts.get("kakao"), 0),
             "web": _as_int(candidate_counts.get("web"), 0),
             "semantic": _as_int(candidate_counts.get("semantic"), 0),
+            "identity_attempts": _as_int(candidate_counts.get("identity_attempts"), 0),
+            "identity_matches": _as_int(candidate_counts.get("identity_matches"), 0),
+            "verified_before_web": _as_int(candidate_counts.get("verified_before_web"), 0),
+            "web_verified_top_five": _as_int(candidate_counts.get("web_verified_top_five"), 0),
+            "evidence_join_success": _as_int(candidate_counts.get("evidence_join_success"), 0),
+            "confirmed_candidates": _as_int(candidate_counts.get("confirmed_candidates"), 0),
             "top_results": _as_int(candidate_counts.get("top_results"), len(top_results)),
             "hidden_weak": _as_int(candidate_counts.get("hidden_weak"), len(hidden_weak)),
             "removed_incompatible": _as_int(candidate_counts.get("removed_incompatible"), len(hidden_weak)),
@@ -5129,6 +5238,8 @@ def _previous_result_action_response(action_data, previous_context, timings):
         "relevant_result_count": len(results),
         "message": action_data.get("message") or "",
         "result_indexes": action_data.get("result_indexes") or [],
+        "referenced_place_keys": [item.get("place_key") or place_identity(item) for item in results],
+        "restored_state": action_data.get("restored_state"),
         "search_plan": search_plan,
         "place_intent_frame": frame,
         "execution_policy": {"run_search": False},
@@ -5419,6 +5530,9 @@ def run_ai_search_candidates(request_data, *, user=None):
             "preview_rank": index + 1,
         })
 
+    for item in results:
+        item.update(_candidate_result_quality(item, frame))
+    results, _, _ = _enforce_required_result_policy(results, frame, query)
     total_latency_ms = round((time.perf_counter() - total_started) * 1000, 2)
     timings = {
         "planner_latency_ms": 0.0,
@@ -5518,6 +5632,63 @@ def apply_selected_filters(frame, selected):
 
 
 def run_ai_search(request_data, *, user=None):
+    from copy import deepcopy
+    data = dict(request_data)
+    data.pop("_skip_result_action", None)
+    data.pop("_intent_plan_override", None)
+    context = deepcopy(_previous_context_from_request(data))
+    selected_key = data.get("selected_result_key")
+    if selected_key and any(selected_key in identity_aliases(item) for item in context.get("previous_results") or []):
+        context["selected_result_key"] = selected_key
+    data["previous_context"] = context
+    action = resolve_previous_result_action(data.get("query"), context)
+    excluded = context.get("excluded_place_keys") or []
+    if action and action["action"] == "exclude_previous_results":
+        excluded = action["excluded_place_keys"]
+        frame = context.get("place_intent_frame") or {}
+        data["_skip_result_action"] = True
+        from recommendations.services.conversation_patches import plain_frame
+        data["_intent_plan_override"] = {"action": "search", "decision_action": "search", "frame": plain_frame(frame), "normalized_query": data.get("query"), "ai_debug": {}}
+    if action and action["action"] == "undo_last_change":
+        restored = action.get("restored_state")
+        response = _previous_result_action_response(action, build_previous_context(restored) if restored else context, {})
+    else:
+        response = _run_ai_search(data, user=user)
+    results = response.get("results") or []
+    if response.get("decision_action") == "search":
+        results = [item for item in results if not set(identity_aliases(item)).intersection(excluded)]
+        radius = (response.get("place_intent_frame") or {}).get("radius_m")
+        if radius:
+            results = [item for item in results if item.get("distance") is not None and float(item["distance"]) <= float(radius)]
+    for item in results:
+        item["place_key"] = place_identity(item)
+        item["identity_aliases"] = identity_aliases(item)
+    response.update(results=results, markers=_markers(results), count=len(results), result_count=len(results), relevant_result_count=len(results))
+    response["excluded_place_keys"] = excluded
+    if response.get("decision_action") == "search":
+        negative_conditions = [item for item in (response.get("place_intent_frame") or {}).get("structured_conditions") or []
+                               if isinstance(item, dict) and item.get("active", True) and item.get("polarity") == "exclude" and item.get("required")]
+        if negative_conditions:
+            # Absence of a positive tag does not prove a negative requirement.
+            results = [item for item in results if all(f"{condition.get('value')}없음" in (item.get("verified_tags") or []) for condition in negative_conditions)]
+            response.update(results=results, markers=_markers(results), count=len(results), result_count=len(results), relevant_result_count=len(results))
+    if context.get("selected_result_key") and response.get("decision_action") not in {"select_previous_result", "explain_previous_result"}:
+        response["selected_result_key"] = context["selected_result_key"]
+    if settings.DEBUG:
+        before, after = context.get("place_intent_frame") or {}, response.get("place_intent_frame") or {}
+        response["conversation_trace"] = {"previous_state": before, "user_utterance": data.get("query"),
+            "patch": after.get("conversation_patch") or [{"type": response.get("decision_action")}], "new_state": after,
+            "retained_fields": [key for key in before if before[key] == after.get(key)],
+            "removed_fields": [key for key in before if key not in after],
+            "changed_fields": [key for key in after if before.get(key) != after[key]],
+            "excluded_place_keys": excluded, "selected_result_key": context.get("selected_result_key"),
+            "referenced_place_keys": response.get("referenced_place_keys") or [], "clarification_state": response.get("clarification_question") or ""}
+    if getattr(settings, "SEARCH_PIPELINE_METRICS_ENABLED", False):
+        log_search_metrics(response)
+    return response
+
+
+def _run_ai_search(request_data, *, user=None):
     total_started = time.perf_counter()
     timings = {
         "planner_latency_ms": None,
@@ -5556,7 +5727,7 @@ def run_ai_search(request_data, *, user=None):
     force_map_center = request_data.get("search_location_mode") == "map_center"
     previous_context = _previous_context_from_request(request_data)
 
-    previous_result_action = resolve_previous_result_action(query, previous_context)
+    previous_result_action = None if request_data.get("_skip_result_action") else resolve_previous_result_action(query, previous_context)
     if previous_result_action:
         return _previous_result_action_response(
             previous_result_action,
@@ -5570,6 +5741,8 @@ def run_ai_search(request_data, *, user=None):
         previous_context,
         query,
     )
+    if request_data.get("_intent_plan_override"):
+        intent_plan = request_data["_intent_plan_override"]
     if intent_plan is None:
         intent_plan = build_ai_intent_plan(
             query,
@@ -5848,7 +6021,7 @@ def run_ai_search(request_data, *, user=None):
         and not _blocking_unmet_constraints(candidate)
     )
     deterministic_fallback_queries = []
-    if min_strong_medium_candidates > 0 and strong_medium_count < min_strong_medium_candidates:
+    if conversation_action_type == "show_unverified" and min_strong_medium_candidates > 0 and strong_medium_count < min_strong_medium_candidates:
         fallback_targets = frame.get("fallback_targets") or frame.get("fallbackTargets") or []
         fallback_query_values = []
         for fallback_target in fallback_targets:
@@ -5943,9 +6116,27 @@ def run_ai_search(request_data, *, user=None):
             candidate_counts["kakao"] = len(kakao_candidates)
             initial_candidates = _dedupe_candidates([*db_candidates, *kakao_candidates])
 
+    identity_counts = {}
+    if getattr(settings, "EXTERNAL_PLACE_IDENTITY_ENABLED", False):
+        kakao_candidates, identity_counts = attach_internal_place_identity(kakao_candidates, frame)
+        initial_candidates = _dedupe_candidates([*db_candidates, *kakao_candidates])
+
     web_candidates = []
     external_verification_requested = _explicit_external_verification_requested(original_query or query, frame)
-    should_collect_web = external_verification_requested
+    sparse_pilot = bool(
+        getattr(settings, "AI_WEB_SEARCH_SPARSE_PILOT_ENABLED", False)
+        and getattr(settings, "AI_WEB_SEARCH_AVAILABLE", False)
+        and getattr(settings, "AI_WEB_SEARCH_PROVIDER", "") in {"openai", "gms"}
+    )
+    verified_before_web = 0
+    if sparse_pilot:
+        verified_before_web = len(apply_common_hard_gate(
+            initial_candidates, original_query or query, frame,
+        )[0])
+    should_collect_web = (
+        should_collect_sparse_web(verified_before_web, expand_requested=external_verification_requested)
+        if sparse_pilot else external_verification_requested
+    )
     if should_collect_web:
         web_started = time.perf_counter()
         web_candidates = collect_web_candidates(
@@ -5961,6 +6152,16 @@ def run_ai_search(request_data, *, user=None):
         )
         timings["web_latency_ms"] = round((time.perf_counter() - web_started) * 1000, 2)
         candidate_counts["web"] = len(web_candidates)
+        if web_candidates and getattr(settings, "EXTERNAL_PLACE_IDENTITY_ENABLED", False):
+            web_candidates, web_identity_counts = attach_internal_place_identity(web_candidates, frame)
+            for status, count in web_identity_counts.items():
+                identity_counts[status] = identity_counts.get(status, 0) + count
+    candidate_counts["identity_attempts"] = sum(identity_counts.values())
+    candidate_counts["identity_matches"] = sum(
+        count for status, count in identity_counts.items()
+        if status.startswith("exact_")
+    )
+    candidate_counts["verified_before_web"] = verified_before_web
 
     semantic_candidates = []
     semantic_debug = {"status": "disabled", "results": []}
@@ -6027,6 +6228,10 @@ def run_ai_search(request_data, *, user=None):
         frame,
     )
     candidate_counts["removed_common_hard_gate"] = len(common_hard_gate_removed)
+    candidate_counts["evidence_join_success"] = sum(
+        bool(candidate.get("hard_gate_active_tags")) for candidate in candidate_pool
+    )
+    candidate_counts["confirmed_candidates"] = len(candidate_pool)
     retrieval_only_candidates = [
         candidate
         for candidate in candidate_pool
@@ -6122,16 +6327,18 @@ def run_ai_search(request_data, *, user=None):
     ranking_fallback_candidates = []
     if not reranker_available:
         # AI 후보 평가가 실패해도 수집한 후보를 버리지 않고 사전 근거/거리 순서로 보여준다.
-        ranking_fallback_candidates, _ = _top_up_ranked_candidates(
-            [],
-            candidate_pool,
-            [],
-            limit=limit,
-            semantic_required=semantic_activation.get(
-                'top_up_requires_semantic_support',
-                semantic_activation.get('semantic_required', False),
-            ),
-        )
+        # Require direct target/category evidence as well as all mandatory
+        # features; a retrieval query alone cannot qualify an unresolved row.
+        evidenced = [
+            _candidate_result_quality(candidate, frame) for candidate in candidate_pool
+            if _grounded_internal_fallback(candidate) or (
+                _external_pre_ai_evidence(candidate, frame)[0] in {"strong", "medium"}
+                and any(item.get("type") in {"target_direct", "target_context", "candidate_type"}
+                        for item in _external_pre_ai_evidence(candidate, frame)[1])
+            )
+        ]
+        evidenced, _, _ = _enforce_required_result_policy(evidenced, frame, query)
+        ranking_fallback_candidates = sorted(evidenced, key=_candidate_sort_key)[:limit]
 
     planner_status = str(
         ((intent_plan.get("ai_debug") or {}).get("planner") or {}).get("status") or ""
@@ -6139,7 +6346,7 @@ def run_ai_search(request_data, *, user=None):
     if (
         not reranker_available
         and not ranking_fallback_candidates
-        and planner_status.startswith("local_")
+        and (planner_status.startswith("local_") or planner_status == "conversation_patch")
     ):
         # A deterministic intent was understood successfully. An empty result
         # set is a data coverage outcome, not an AI availability failure.
@@ -6229,16 +6436,18 @@ def run_ai_search(request_data, *, user=None):
                 for candidate in policy_conflict_candidates
             ],
         }
-    ranked_candidates, top_up_candidates = _top_up_ranked_candidates(
-        ranked_candidates,
-        candidate_pool,
-        hidden_weak,
-        limit=limit,
-        semantic_required=semantic_activation.get(
-            'top_up_requires_semantic_support',
-            semantic_activation.get('semantic_required', False),
-        ),
-    )
+    top_up_candidates = []
+    if conversation_action_type == "show_unverified":
+        ranked_candidates, top_up_candidates = _top_up_ranked_candidates(
+            ranked_candidates,
+            candidate_pool,
+            hidden_weak,
+            limit=limit,
+            semantic_required=semantic_activation.get(
+                'top_up_requires_semantic_support',
+                semantic_activation.get('semantic_required', False),
+            ),
+        )
     if top_up_candidates:
         reranker_debug = {
             **reranker_debug,
@@ -6254,6 +6463,7 @@ def run_ai_search(request_data, *, user=None):
         hidden_weak,
         frame,
         limit=limit,
+        allow_unverified=conversation_action_type == "show_unverified",
     )
     ranked_candidates, required_conditions, needs_relaxation_question = _enforce_required_result_policy(
         ranked_candidates,
@@ -6262,6 +6472,12 @@ def run_ai_search(request_data, *, user=None):
         allow_unverified=conversation_action_type == "show_unverified",
     )
     if needs_relaxation_question:
+        if getattr(settings, "SEARCH_CANDIDATE_TRACE_ENABLED", False):
+            log_candidate_trace(
+                db=db_candidates, kakao=kakao_candidates, web=web_candidates,
+                gate_kept=candidate_pool, gate_removed=common_hard_gate_removed,
+                ranked=ranked_candidates, results=[],
+            )
         condition_text = ", ".join(required_conditions[:3])
         question = (
             f"요청한 지역에서 {condition_text} 조건이 확인된 후보를 찾지 못했어요. "
@@ -6313,12 +6529,27 @@ def run_ai_search(request_data, *, user=None):
         if candidate in ranked_candidates
     ]
     results = ranked_candidates[:limit]
+    if getattr(settings, "SEARCH_CANDIDATE_TRACE_ENABLED", False):
+        log_candidate_trace(
+            db=db_candidates, kakao=kakao_candidates, web=web_candidates,
+            gate_kept=candidate_pool, gate_removed=common_hard_gate_removed,
+            ranked=ranked_candidates, results=results,
+        )
     timings["ranking_latency_ms"] = round(
         max(0.0, (time.perf_counter() - ranking_started) * 1000 - (timings["reranker_latency_ms"] or 0)),
         2,
     )
     candidate_counts.update({
         "top_results": len(results),
+        "web_verified_top_five": sum(
+            bool(
+                candidate.get("place_id")
+                and candidate.get("result_tier") == "all_conditions_met"
+                and ({candidate.get("id"), *(candidate.get("duplicate_candidate_ids") or [])}
+                     & {web_candidate.get("id") for web_candidate in web_candidates})
+            )
+            for candidate in results[:5]
+        ),
         "hidden_weak": len(hidden_weak),
         "removed_incompatible": len(hidden_weak),
         "unresolved": len(unresolved_candidates),

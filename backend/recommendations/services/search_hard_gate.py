@@ -50,13 +50,14 @@ def explicit_query_categories(query):
 def _required_condition_text(frame):
     values = []
     for condition in frame.get("structured_conditions") or frame.get("structuredConditions") or []:
-        if isinstance(condition, dict) and condition.get("required"):
+        if isinstance(condition, dict) and condition.get("required") and condition.get("active", True) and condition.get("polarity", "include") == "include":
             values.append(condition.get("label") or condition.get("value") or "")
     return " ".join(values)
 
 
 def objective_feature_requirements(query, frame):
-    raw = " ".join([str(query or ""), _required_condition_text(frame)])
+    structured = frame.get("structured_conditions") or frame.get("structuredConditions") or []
+    raw = " ".join([str(query or "") if not structured else "", _required_condition_text(frame)])
     text = compact(raw)
     requirements = []
 
@@ -237,12 +238,13 @@ def apply_common_hard_gate(candidates, query, frame, *, now=None):
         tags = _candidate_tags(candidate, active_tags["positive"])
         negative_tags = _candidate_tags(candidate, active_tags["negative"])
         for requirement in requirements["features"]:
-            if not (tags.intersection(requirement["tags"]) or categories.intersection(requirement["categories"])):
+            conflict = bool(tags.intersection(requirement["tags"]) and negative_tags.intersection(requirement["tags"]))
+            if conflict or not (tags.intersection(requirement["tags"]) or categories.intersection(requirement["categories"])):
                 contradicted = bool(negative_tags.intersection(requirement["tags"]))
                 violations.append({
                     "type": "feature", "required": requirement["code"],
                     "label": requirement["label"], "actual_tags": sorted(tags),
-                    "evidence_status": "contradicted" if contradicted else "unknown",
+                    "evidence_status": "conflicted" if conflict else "contradicted" if contradicted else "unknown",
                 })
         enriched = {
             **candidate,

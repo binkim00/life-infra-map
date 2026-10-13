@@ -57,7 +57,8 @@ Join our community of developers creating universal apps.
 
 ## 백엔드 연결
 
-휴대폰 또는 개발 PC가 EC2와 같은 Tailscale 네트워크에 연결돼 있어야 합니다.
+스토어용 `production`과 내부 APK용 `preview`는 `eas.json`의 공개 HTTPS 주소를 사용합니다.
+로컬 실행의 기본 주소는 Tailscale HTTPS이므로 실제 환경과 구분하세요.
 
 ```bash
 npm run start
@@ -67,8 +68,8 @@ npm run web
 ```
 
 기본 설정으로 검색·추천은
-Django `http://100.71.169.91:8000/api`, 로그인·게시판·저장 장소는 Spring
-`http://100.71.169.91:8081/api`를 사용합니다.
+Django `https://life-infra-map-db.taile29cc8.ts.net/django/api`, 로그인·게시판·저장 장소는 Spring
+`https://life-infra-map-db.taile29cc8.ts.net/spring/api`를 사용합니다.
 
 다른 백엔드를 사용할 때만 `EXPO_PUBLIC_DJANGO_API_BASE_URL`과
 `EXPO_PUBLIC_SPRING_API_BASE_URL` 환경변수로 주소를 덮어씁니다. API 주소가
@@ -84,15 +85,17 @@ Keychain에 보관합니다. 기존 개발 빌드의 AsyncStorage 토큰은 최�
 이관됩니다. 웹 빌드는 브라우저 저장소를 계속 사용합니다.
 
 `eas.json`에는 개발, 내부 테스트 APK, 스토어 배포 프로필이 준비돼 있습니다. 공개
-빌드 전 EAS의 `preview`와 `production` 환경에 아래 값을 HTTPS 주소로 등록해야 합니다.
+빌드는 `eas.json`의 `preview`와 `production`에 지정한 아래 공개 주소를 사용합니다.
 
-- `EXPO_PUBLIC_DJANGO_API_BASE_URL`
-- `EXPO_PUBLIC_SPRING_API_BASE_URL`
-- `EXPO_PUBLIC_KAKAO_MAP_EMBED_URL`
+- `EXPO_PUBLIC_DJANGO_API_BASE_URL=https://yeogiljido.com/django/api`
+- `EXPO_PUBLIC_SPRING_API_BASE_URL=https://yeogiljido.com/spring/api`
+- `EXPO_PUBLIC_KAKAO_MAP_EMBED_URL=https://yeogiljido.com/kakao-map-embed.html`
 
 현재 Tailscale HTTP 주소는 로컬 개발용이며 스토어 배포 주소로 사용하지 않습니다.
 
-`preview`와 `production` EAS 프로필은 현재 공개 주소 `https://yeogiljido.com`을
-사용합니다. 출시 빌드는 세 API/임베드 환경변수가 정확히 이 주소를 가리키지
-않으면 설정 단계에서 실패합니다. 이 설정만으로 실제 빌드, 실기기 동작,
-스토어 제출을 검증한 것은 아닙니다.
+`production` 설정은 위 세 주소와 정확히 일치하지 않으면 실패합니다. 버전 코드는
+EAS remote가 관리하므로 `app.json`의 코드 4를 최신 스토어 코드로 해석하지 마세요.
+공유 UI helper는 `metro.config.js`에서 프로젝트 밖 `shared/`를 포함합니다.
+검사는 `npm test`, `npm run test:ux`, `npx tsc --noEmit`, `npm run lint`입니다.
+출시 기준과 절차는 [출시 준비 체크리스트](../docs/RELEASE_READINESS.md)를 참고하세요.
+최신 빌드·기기·스토어 결과는 별도 검증 기록과 함께 확인합니다.

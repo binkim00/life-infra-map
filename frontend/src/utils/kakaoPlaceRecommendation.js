@@ -358,7 +358,7 @@ export const calculateKakaoTagRecommendation = ({
   } else if (matchedTags.length) {
     reasonParts.push(`저장된 태그(${matchedTags.slice(0, 3).join(', ')})가 검색 조건과 연결됩니다.`)
   } else {
-    reasonParts.push('DB에 저장된 장소 태그가 확인된 카카오 결과입니다.')
+    reasonParts.push('저장된 장소 태그가 확인된 카카오 결과입니다.')
   }
   if (preferredTags.length && preferredMatchCount === 0) {
     reasonParts.push('작업 선호 태그와 직접 일치하는 정보는 부족해 후순위로 반영했습니다.')

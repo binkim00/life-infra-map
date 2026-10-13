@@ -1,3 +1,4 @@
+import { userErrorMessage } from '../../../shared/user-message'
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 
@@ -76,7 +77,7 @@ const BoardCreateView = () => {
       navigate(`/boards/${response.data.board_type}/${response.data.id}`)
     } catch (error) {
       console.error(error)
-      setErrorMessage(error.response?.data?.detail || '게시글 작성에 실패했습니다.')
+      setErrorMessage(userErrorMessage(error, '게시글 작성에 실패했습니다.'))
     } finally {
       setIsLoading(false)
     }

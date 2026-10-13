@@ -1,3 +1,4 @@
+import { placeKey } from '../../../shared/search-ux'
 import {
   isKakaoPlaceId,
   getTextValue,
@@ -81,7 +82,7 @@ export const convertDbPlaces = (places, {
     return mergeRequestedConditionReview({
       id: `db-${place.id}`,
       savedPlaceId: place.id,
-      source: place.source,
+      source: place.result_source || place.source || (isExternalCandidate ? 'kakao' : 'db'),
       sourceName,
       externalId,
       kakaoPlaceId,
@@ -295,9 +296,10 @@ export const convertRecommendationPlaces = (
     )
 
     return mergeRequestedConditionReview({
-      id: `recommendation-${place.id}`,
+      id: `recommendation-${placeKey(place)}`,
+      placeKey: placeKey(place),
       savedPlaceId: isExternalCandidate ? null : place.id,
-      source: place.source,
+      source: place.result_source || place.source || (isExternalCandidate ? 'kakao' : 'db'),
       sourceName,
       externalId,
       kakaoPlaceId,
