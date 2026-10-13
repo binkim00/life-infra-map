@@ -7,6 +7,7 @@
     "@react-native-async-storage/async-storage": "2.2.0",
     "expo": "~57.0.14",
     "expo-constants": "~57.0.12",
+    "expo-crypto": "~57.0.3",
     "expo-device": "~57.0.1",
     "expo-file-system": "~57.0.6",
     "expo-font": "~57.0.1",
@@ -48,6 +49,7 @@
     "web": "expo start --web",
     "check:server": "node ../scripts/check-server-apis.mjs",
     "test": "node --test tests/*.test.cjs",
+    "test:ux": "node ../frontend/node_modules/vitest/vitest.mjs run --config vitest.ux.config.mjs",
     "lint": "expo lint"
   },
   "private": true

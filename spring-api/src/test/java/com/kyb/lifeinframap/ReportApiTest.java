@@ -1,11 +1,16 @@
 package com.kyb.lifeinframap;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.hamcrest.Matchers.hasItem;
 
 import com.kyb.lifeinframap.account.domain.User;
 import com.kyb.lifeinframap.support.ApiTestBase;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
@@ -18,6 +23,9 @@ import org.springframework.test.web.servlet.MvcResult;
  * Django 쪽 테스트가 `@skip` 으로 넘어가 있어 여기가 유일한 안전망입니다.
  */
 class ReportApiTest extends ApiTestBase {
+
+    @PersistenceContext
+    private EntityManager entityManager;
 
     private long createPost(User author) throws Exception {
         MvcResult result = mockMvc.perform(post("/api/boards/posts")
@@ -53,6 +61,39 @@ class ReportApiTest extends ApiTestBase {
                 .andExpect(status().isCreated())
                 .andReturn();
         return objectMapper.readTree(result.getResponse().getContentAsString()).get("id").asLong();
+    }
+
+    @Test
+    @DisplayName("처리된 댓글 신고 기록을 보존하면서 작성자가 댓글을 삭제할 수 있다")
+    void deletesCommentAfterReportIsProcessed() throws Exception {
+        User author = createUser();
+        User reporter = createUser();
+        User staff = createUser(true);
+        long postId = createPost(author);
+        long commentId = createComment(author, postId);
+        MvcResult reported = mockMvc.perform(post("/api/boards/comments/{id}/report", commentId)
+                        .header("Authorization", bearer(reporter))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"reason\":\"검토 요청\"}"))
+                .andExpect(status().isCreated()).andReturn();
+        long reportId = objectMapper.readTree(reported.getResponse().getContentAsString()).get("id").asLong();
+
+        mockMvc.perform(delete("/api/boards/comments/{id}", commentId)
+                        .header("Authorization", bearer(author)))
+                .andExpect(status().isConflict());
+        mockMvc.perform(post("/api/boards/reports/{id}/process", reportId)
+                        .header("Authorization", bearer(staff))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"passed\",\"adminMemo\":\"기각\"}"))
+                .andExpect(status().isOk());
+        entityManager.flush();
+        entityManager.clear();
+        mockMvc.perform(delete("/api/boards/comments/{id}", commentId)
+                        .header("Authorization", bearer(author)))
+                .andExpect(status().isNoContent());
+        mockMvc.perform(get("/api/boards/reports").header("Authorization", bearer(staff)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.id == " + reportId + ")].target_type").value(hasItem("deleted")));
     }
 
     // ---------- 게시글 신고 ----------

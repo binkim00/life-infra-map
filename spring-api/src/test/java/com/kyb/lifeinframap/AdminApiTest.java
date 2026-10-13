@@ -133,6 +133,44 @@ class AdminApiTest extends ApiTestBase {
                 .andExpect(status().isForbidden());
     }
 
+    @Test
+    @DisplayName("제재 해제는 관리자만 해당 회원의 이력에 적용할 수 있다")
+    void penaltyReleaseChecksStaffAndOwner() throws Exception {
+        User staff = createUser(true);
+        User target = createUser(false);
+        User other = createUser(false);
+        MvcResult created = mockMvc.perform(post("/api/admin/users/{id}/penalties", target.getId())
+                .header("Authorization", bearer(staff)).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"penaltyType\":\"suspend\",\"reason\":\"QA\",\"days\":3}"))
+                .andExpect(status().isCreated()).andReturn();
+        long penaltyId = objectMapper.readTree(created.getResponse().getContentAsString()).get("id").asLong();
+        String route = "/api/admin/users/{id}/penalties/{penaltyId}/release";
+        mockMvc.perform(post(route, target.getId(), penaltyId).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"reason\":\"QA release\"}")) .andExpect(status().isUnauthorized());
+        mockMvc.perform(post(route, target.getId(), penaltyId).header("Authorization", bearer(target))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"reason\":\"QA release\"}"))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(post(route, other.getId(), penaltyId).header("Authorization", bearer(staff))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"reason\":\"QA release\"}"))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(post(route, target.getId(), penaltyId).header("Authorization", bearer(staff))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"reason\":\" \"}"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(post("/api/boards/posts").header("Authorization", bearer(target))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"title\":\"QA\",\"content\":\"body\"}"))
+                .andExpect(status().isForbidden());
+        for (int attempt = 0; attempt < 2; attempt++) {
+            mockMvc.perform(post(route, target.getId(), penaltyId).header("Authorization", bearer(staff))
+                    .contentType(MediaType.APPLICATION_JSON).content("{\"reason\":\"QA release\"}"))
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.is_active").value(false));
+        }
+        mockMvc.perform(post("/api/boards/posts").header("Authorization", bearer(target))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"title\":\"QA restored\",\"content\":\"body\"}"))
+                .andExpect(status().isCreated());
+        mockMvc.perform(get("/api/admin/users/{id}", target.getId()).header("Authorization", bearer(staff)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.penalties[0].is_active").value(false));
+    }
+
     // ---------- 관리자 알림 발송 ----------
 
     @Test
@@ -202,7 +240,25 @@ class AdminApiTest extends ApiTestBase {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$").isArray())
                 .andExpect(jsonPath("$[0].title").value("문의 제목"))
+                .andExpect(jsonPath("$[0].category").value("general"))
                 .andExpect(jsonPath("$.results").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("서비스 불편 문의는 유형을 보존하고 잘못된 유형은 거부한다")
+    void inquiryCategoryIsValidated() throws Exception {
+        User author = createUser(false);
+        mockMvc.perform(post("/api/inquiries")
+                        .header("Authorization", bearer(author))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\"불편 사항\",\"content\":\"검색이 느립니다\",\"category\":\"service_issue\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.category").value("service_issue"));
+        mockMvc.perform(post("/api/inquiries")
+                        .header("Authorization", bearer(author))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\"불편 사항\",\"content\":\"검색이 느립니다\",\"category\":\"unknown\"}"))
+                .andExpect(status().isBadRequest());
     }
 
     @Test

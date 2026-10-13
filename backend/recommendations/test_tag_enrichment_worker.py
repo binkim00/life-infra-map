@@ -6,7 +6,7 @@ from django.test import TestCase
 from django.utils import timezone
 
 from recommendations.management.commands.process_tag_enrichment_queue import process_queue
-from recommendations.models import Place, PlaceTag, PlaceTagEvidence, TagEnrichmentRequest
+from recommendations.models import EvidenceReview, Place, PlaceTag, PlaceTagEvidence, TagEnrichmentRequest
 
 
 class TagEnrichmentWorkerTests(TestCase):
@@ -33,13 +33,11 @@ class TagEnrichmentWorkerTests(TestCase):
         stats = process_queue(limit=1, evidence_provider=provider)
 
         self.request.refresh_from_db()
-        candidate = PlaceTag.objects.get()
         evidence = PlaceTagEvidence.objects.get()
         self.assertEqual(stats['candidates'], 1)
         self.assertEqual(self.request.status, 'completed')
-        self.assertEqual(candidate.status, 'needs_verification')
-        self.assertEqual(candidate.source, 'web_evidence')
-        self.assertFalse(candidate.is_verified)
+        self.assertFalse(PlaceTag.objects.exists())
+        self.assertEqual(EvidenceReview.objects.get(evidence=evidence).status, 'pending')
         self.assertEqual(evidence.source_reference, 'https://example.com/place-review')
         self.assertIsNotNone(evidence.expires_at)
 
@@ -55,8 +53,7 @@ class TagEnrichmentWorkerTests(TestCase):
         stats = process_queue(limit=1, evidence_provider=provider)
 
         self.assertEqual(stats['negative'], 1)
-        aggregate = PlaceTag.objects.get()
-        self.assertEqual(aggregate.status, 'needs_verification')
+        self.assertFalse(PlaceTag.objects.exists())
         self.assertEqual(PlaceTagEvidence.objects.get().polarity, 'negative')
 
     def test_rejects_result_without_source(self):
@@ -95,7 +92,8 @@ class TagEnrichmentWorkerTests(TestCase):
         )
 
         self.assertEqual(PlaceTagEvidence.objects.count(), 4)
-        self.assertEqual(PlaceTag.objects.get().confidence, 66)
+        self.assertFalse(PlaceTag.objects.exists())
+        self.assertEqual(EvidenceReview.objects.filter(status='pending').count(), 4)
 
     def test_reconciliation_closes_request_with_active_evidence(self):
         tag = self._create_active_evidence()

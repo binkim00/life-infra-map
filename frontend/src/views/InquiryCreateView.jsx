@@ -27,6 +27,7 @@ const InquiryCreateView = () => {
   const isLoggedIn = useAuthStore((state) => state.isLoggedIn)
 
   const [title, setTitle] = useState('')
+  const [category, setCategory] = useState('general')
   const [content, setContent] = useState('')
   const [errorMessage, setErrorMessage] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -61,7 +62,7 @@ const InquiryCreateView = () => {
     try {
       setIsSubmitting(true)
       setErrorMessage('')
-      await createInquiry({ title, content })
+      await createInquiry({ title, content, category })
       navigate('/mypage')
     } catch (error) {
       console.error(error)
@@ -76,6 +77,12 @@ const InquiryCreateView = () => {
       <form className={styles.formCard} onSubmit={submitInquiry}>
         <p className={styles.eyebrow}>INQUIRY</p>
         <h1>문의하기</h1>
+        <label htmlFor="inquiry-category">문의 유형</label>
+        <select id="inquiry-category" value={category} onChange={(event) => setCategory(event.target.value)}>
+          <option value="general">일반 문의</option>
+          <option value="service_issue">서비스 불편</option>
+          <option value="bug">오류 신고</option>
+        </select>
         <input
           value={title}
           onChange={(event) => setTitle(event.target.value)}

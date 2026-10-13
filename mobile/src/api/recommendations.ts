@@ -23,6 +23,11 @@ export const recommendationApi = {
       auth: false,
       onRetry,
     }),
+  kakaoDetailLink: (placeId: number, signal?: AbortSignal) =>
+    apiRequest<{ url: string; status: string }>(
+      `/recommendations/places/${placeId}/kakao-detail/`,
+      { auth: false, signal },
+    ),
   aiSearch: (body: unknown) =>
     apiRequest<Record<string, unknown>>("/recommendations/ai-search/", {
       method: "POST",
@@ -69,6 +74,11 @@ export const recommendationApi = {
   places: (params: Record<string, unknown> = {}) =>
     apiRequest<Record<string, unknown>>("/recommendations/places/", {
       params: params as Record<string, string | number>,
+    }),
+  nearbyPlaces: (lat: number, lng: number) =>
+    apiRequest<{ results: import("@/types/place").Place[] }>("/recommendations/places/", {
+      params: { lat, lng, radius: 3000, limit: 20 },
+      auth: false,
     }),
   searchLogs: (params: Record<string, unknown> = {}) =>
     apiRequest<Record<string, unknown>>("/recommendations/search-logs/", {

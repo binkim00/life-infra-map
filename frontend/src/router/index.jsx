@@ -14,6 +14,7 @@ import GuideView from '@/views/GuideView'
 import HomeView from '@/views/HomeView'
 import InquiryCreateView from '@/views/InquiryCreateView'
 import LoginView from '@/views/LoginView'
+import SocialCallbackView from '@/views/SocialCallbackView'
 import MapSearchView from '@/views/MapSearchView'
 import MyInquiryView from '@/views/MyInquiryView'
 import MypageView from '@/views/MypageView'
@@ -59,6 +60,7 @@ const router = createBrowserRouter([
       { path: 'map', element: <MapSearchView /> },
       { path: 'recommendation-test', element: <Navigate to="/map" replace /> },
       { path: 'login', element: <LoginView /> },
+      { path: 'oauth/callback', element: <SocialCallbackView /> },
       { path: 'signup', element: <SignupView /> },
     ],
   },

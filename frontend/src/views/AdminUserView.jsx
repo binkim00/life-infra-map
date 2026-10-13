@@ -11,7 +11,7 @@ const PENALTIES = [
   ['suspend_7_days', '7일 활동정지'],
   ['suspend_30_days', '30일 활동정지'],
   ['suspend_1_year', '1년 사용정지'],
-  ['permanent_ban', '영구밴'],
+  ['permanent_ban', '영구 이용 제한'],
 ]
 
 const PENALTY_LABELS = {
@@ -20,7 +20,7 @@ const PENALTY_LABELS = {
   suspend_7_days: '7일 정지',
   suspend_30_days: '30일 정지',
   suspend_1_year: '1년 정지',
-  permanent_ban: '영구밴',
+  permanent_ban: '영구 이용 제한',
 }
 
 const formatUserName = (user) => {

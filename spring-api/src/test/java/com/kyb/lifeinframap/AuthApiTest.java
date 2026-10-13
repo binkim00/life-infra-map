@@ -64,6 +64,33 @@ class AuthApiTest extends ApiTestBase {
     }
 
     @Test
+    @DisplayName("갱신 토큰은 한 번만 사용하고 로그아웃 후에는 재사용할 수 없다")
+    void refreshRotatesAndLogoutRevokes() throws Exception {
+        String username = "refresh_" + System.nanoTime();
+        User user = userRepository.save(User.create(username, username + "@test.dev", passwordEncoder.encode("testpass1234")));
+        profileRepository.save(new com.kyb.lifeinframap.account.domain.UserProfile(user, "갱신테스트"));
+        MvcResult login = mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"username\":\"" + username + "\",\"password\":\"testpass1234\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.refresh_token").isString())
+                .andReturn();
+        String first = objectMapper.readTree(login.getResponse().getContentAsString()).get("refresh_token").asText();
+        String firstBody = "{\"refresh_token\":\"" + first + "\"}";
+        MvcResult refreshed = mockMvc.perform(post("/api/auth/refresh").contentType(MediaType.APPLICATION_JSON).content(firstBody))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.access_token").isString()).andReturn();
+        String second = objectMapper.readTree(refreshed.getResponse().getContentAsString()).get("refresh_token").asText();
+        assertThat(second).isNotEqualTo(first);
+        mockMvc.perform(post("/api/auth/refresh").contentType(MediaType.APPLICATION_JSON).content(firstBody))
+                .andExpect(status().isUnauthorized());
+        String secondBody = "{\"refresh_token\":\"" + second + "\"}";
+        mockMvc.perform(post("/api/auth/logout").contentType(MediaType.APPLICATION_JSON).content(secondBody))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/auth/refresh").contentType(MediaType.APPLICATION_JSON).content(secondBody))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
     @DisplayName("비밀번호가 틀리면 401 이고 토큰을 주지 않는다")
     void loginRejectsWrongPassword() throws Exception {
         String username = "loginfail_" + System.nanoTime();

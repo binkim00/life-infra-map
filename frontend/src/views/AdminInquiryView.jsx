@@ -288,6 +288,7 @@ const AdminInquiryView = () => {
                                       {formatStatus(inquiry.status)}
                                     </span>
                                     <strong>#{inquiry.id} {inquiry.title}</strong>
+                                    <span>{({ general: '일반 문의', service_issue: '서비스 불편', bug: '오류 신고' })[inquiry.category || 'general'] || '기타 문의'}</span>
                                   </div>
                                   <span className={styles.inquiryDate}>
                                     {formatDateTime(inquiry.created_at)}

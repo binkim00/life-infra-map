@@ -1,0 +1,11 @@
+[Unit]
+Description=Prune disposable Docker build cache weekly
+
+[Timer]
+OnCalendar=Mon *-*-* 04:15:00 UTC
+RandomizedDelaySec=10min
+Persistent=true
+Unit=life-infra-map-build-cache-cleanup.service
+
+[Install]
+WantedBy=timers.target

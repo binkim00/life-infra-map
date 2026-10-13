@@ -2,7 +2,9 @@ import json
 import os
 import hashlib
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from urllib.parse import quote
 
+from django.conf import settings
 from rest_framework import serializers
 
 from .models import (
@@ -612,6 +614,14 @@ class PlaceReportImageSerializer(serializers.ModelSerializer):
         if not obj.image:
             return ""
 
+        if request and getattr(settings, "FILE_STORAGE_BACKEND", "local") == "s3":
+            bucket = settings.AWS_STORAGE_BUCKET_NAME.strip("/")
+            image_path = quote(obj.image.name.lstrip("/"), safe="/")
+            public_base = os.getenv("PUBLIC_MEDIA_BASE_URL", "").strip()
+            if public_base:
+                return f"{public_base.rstrip('/')}/{bucket}/{image_path}"
+            return request.build_absolute_uri(f"/media/{bucket}/{image_path}")
+
         url = obj.image.url
         return request.build_absolute_uri(url) if request else url
 
@@ -671,6 +681,14 @@ class PlaceReportCreateSerializer(serializers.ModelSerializer):
         request = self.context.get("request")
         files = request.FILES.getlist("images") if request else []
         validate_report_images(files)
+        if attrs.get("report_type") == "new_place":
+            missing = {}
+            if not str(attrs.get("suggested_name") or "").strip():
+                missing["suggested_name"] = "새 장소의 이름을 입력해주세요."
+            if attrs.get("suggested_lat") is None or attrs.get("suggested_lng") is None:
+                missing["location"] = "새 장소의 위치를 입력해주세요."
+            if missing:
+                raise serializers.ValidationError(missing)
         attrs["suggested_tags"] = unique_valid_labels(attrs.get("suggested_tags", []))
         if attrs.get("suggested_category"):
             category = normalize_place_category(attrs["suggested_category"])

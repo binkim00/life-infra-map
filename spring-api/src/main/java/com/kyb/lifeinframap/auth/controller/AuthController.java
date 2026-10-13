@@ -5,6 +5,8 @@ import com.kyb.lifeinframap.auth.dto.*;
 import com.kyb.lifeinframap.account.domain.User;
 import com.kyb.lifeinframap.account.repository.UserRepository;
 import com.kyb.lifeinframap.security.JwtService;
+import com.kyb.lifeinframap.auth.service.RefreshTokenService;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import java.time.OffsetDateTime;
@@ -26,11 +28,14 @@ public class AuthController {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
+    private final RefreshTokenService refreshTokens;
 
-    public AuthController(UserRepository userRepository, PasswordEncoder passwordEncoder, JwtService jwtService) {
+    public AuthController(UserRepository userRepository, PasswordEncoder passwordEncoder, JwtService jwtService,
+            RefreshTokenService refreshTokens) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
+        this.refreshTokens = refreshTokens;
     }
 
 
@@ -53,6 +58,7 @@ public class AuthController {
 
         return ResponseEntity.ok(Map.of(
                 "access_token", jwtService.issueAccessToken(user.getId(), user.getUsername()),
+                "refresh_token", refreshTokens.issue(user),
                 "token_type", "Bearer",
                 "expires_in", jwtService.getAccessTokenSeconds(),
                 "user", Map.of(
@@ -60,5 +66,28 @@ public class AuthController {
                         "username", user.getUsername(),
                         "email", user.getEmail(),
                         "is_staff", user.isStaff())));
+    }
+
+    public record RefreshRequest(@JsonProperty("refresh_token") String refreshToken) {}
+
+    @PostMapping("/auth/refresh")
+    public ResponseEntity<?> refresh(@RequestBody RefreshRequest request) {
+        RefreshTokenService.RotatedToken rotated = refreshTokens.rotate(request.refreshToken());
+        if (rotated == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("detail", "다시 로그인해 주세요."));
+        }
+        User user = rotated.user();
+        return ResponseEntity.ok(Map.of(
+                "access_token", jwtService.issueAccessToken(user.getId(), user.getUsername()),
+                "refresh_token", rotated.refreshToken(),
+                "token_type", "Bearer", "expires_in", jwtService.getAccessTokenSeconds(),
+                "user", Map.of("id", user.getId(), "username", user.getUsername(),
+                        "email", user.getEmail(), "is_staff", user.isStaff())));
+    }
+
+    @PostMapping("/auth/logout")
+    public ResponseEntity<?> logout(@RequestBody RefreshRequest request) {
+        refreshTokens.revoke(request.refreshToken());
+        return ResponseEntity.ok(Map.of("message", "로그아웃했습니다."));
     }
 }

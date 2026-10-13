@@ -48,7 +48,12 @@ public class InquiryController {
         if (user == null) {
             return unauthorized();
         }
-        Inquiry inquiry = inquiryRepository.save(Inquiry.create(user, request.title(), request.content()));
+        String category = request.category() == null || request.category().isBlank()
+                ? "general" : request.category();
+        if (!List.of("general", "service_issue", "bug").contains(category)) {
+            return ResponseEntity.badRequest().body(Map.of("category", List.of("문의 유형을 확인해 주세요.")));
+        }
+        Inquiry inquiry = inquiryRepository.save(Inquiry.create(user, request.title(), request.content(), category));
         return ResponseEntity.status(HttpStatus.CREATED).body(serialize(inquiry));
     }
 
@@ -170,6 +175,7 @@ public class InquiryController {
         body.put("author", inquiry.getAuthor().getId());
         body.put("author_username", inquiry.getAuthor().getUsername());
         body.put("title", inquiry.getTitle());
+        body.put("category", inquiry.getCategory());
         body.put("content", inquiry.getContent());
         body.put("status", inquiry.getStatus());
         body.put("admin_reply", inquiry.getAdminReply());

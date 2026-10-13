@@ -17,8 +17,9 @@ import { BottomNav } from "@/components/bottom-nav";
 import { INPUT_PLACEHOLDER_COLOR, Screen, ui } from "@/components/screen";
 import { Palette, Radius } from "@/constants/theme";
 import { PlacePhoto } from "@/components/place-photo";
+import { authorTierDisplay, type AuthorTierData } from "@/utils/tier-display";
 
-type Post = {
+type Post = AuthorTierData & {
   id: number;
   board_type: string;
   title: string;
@@ -109,8 +110,8 @@ export default function BoardListScreen() {
                   <Text numberOfLines={1} style={styles.title}>
                     {post.title}
                   </Text>
-                  <Text style={styles.meta}>
-                    {post.author_nickname || post.author_username} ·{" "}
+                  <Text style={[styles.meta, { color: authorTierDisplay(post).color }]}>
+                    {post.author_nickname || post.author_username} · {authorTierDisplay(post).label} ·{" "}
                     {post.created_at
                       ? new Date(post.created_at).toLocaleDateString()
                       : ""}

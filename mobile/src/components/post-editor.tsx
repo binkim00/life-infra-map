@@ -1,6 +1,10 @@
 import * as ImagePicker from "expo-image-picker";
+import { File } from "expo-file-system";
 import { router } from "expo-router";
+import { ApiError } from "@/api/client";
 import { useState } from "react";
+import { useFormDraft } from "@/hooks/use-form-draft";
+import { persistDraftImages, removeDraftImages, createReportRequestId } from "@/utils/place-report-draft";
 import { useResource } from "@/hooks/use-resource";
 import { LoadState } from "./load-state";
 import {
@@ -23,18 +27,20 @@ export function PostEditor({
   boardType: string;
   postId?: string;
 }) {
-  const [title, setTitle] = useState("");
-  const [content, setContent] = useState("");
-  const [image, setImage] = useState<ImagePicker.ImagePickerAsset | null>(null);
+  const draft = useFormDraft(`post:${boardType}:${postId || "new"}`, { title: "", content: "", image: null as ImagePicker.ImagePickerAsset | null });
+  const { title, content, image } = draft.value;
+  const setTitle = (value: string) => draft.update("title", value);
+  const setContent = (value: string) => draft.update("content", value);
+  const setImage = (value: ImagePicker.ImagePickerAsset | null) => draft.update("image", value);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const { loading: fetching, error: loadError, reload } = useResource(async () => {
-    if (postId) {
+    if (postId && !draft.hasDraft) {
       const post = await boardsApi.post(postId);
         setTitle(String(post.title || ""));
         setContent(String(post.content || ""));
     }
-  }, undefined, Boolean(postId), postId || "new");
+  }, undefined, Boolean(postId) && draft.ready, postId || "new");
   const pick = async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
@@ -45,7 +51,13 @@ export function PostEditor({
       mediaTypes: ["images"],
       quality: 0.85,
     });
-    if (!result.canceled) setImage(result.assets[0]);
+    if (!result.canceled) {
+      try {
+        const [saved] = await persistDraftImages([result.assets[0]], createReportRequestId());
+        setImage({ ...result.assets[0], ...saved });
+        if (image) await removeDraftImages([image]);
+      } catch { setError("사진을 보관하지 못했습니다. 다시 선택해 주세요."); }
+    }
   };
   const submit = async () => {
     if (!title.trim() || !content.trim())
@@ -55,11 +67,7 @@ export function PostEditor({
     body.append("title", title.trim());
     body.append("content", content.trim());
     if (image)
-      body.append("image", {
-        uri: image.uri,
-        name: image.fileName || "post.jpg",
-        type: image.mimeType || "image/jpeg",
-      } as unknown as Blob);
+      body.append("image", new File(image.uri), image.fileName || new File(image.uri).name);
     try {
       setLoading(true);
       setError("");
@@ -68,9 +76,15 @@ export function PostEditor({
         : await boardsApi.createPost(body);
       const created = result as { id?: number | string };
       const id = postId || String(created.id);
+      await draft.clear();
+      if (image) await removeDraftImages([image]);
       router.replace(`/boards/${boardType}/${id}` as never);
-    } catch {
-      setError("게시글을 저장하지 못했습니다.");
+    } catch (cause) {
+      const payload = cause instanceof ApiError
+        ? cause.data as { penalty?: { is_suspended?: boolean } } | null : null;
+      setError(payload?.penalty?.is_suspended
+        ? "활동 정지 중에는 게시글을 작성하거나 수정할 수 없습니다. 해제 후 다시 시도해 주세요."
+        : cause instanceof ApiError ? cause.message : "게시글을 저장하지 못했습니다.");
     } finally {
       setLoading(false);
     }
@@ -79,9 +93,11 @@ export function PostEditor({
     <Screen title={postId ? "게시글 수정" : "새 게시글"} subtitle="이웃에게 도움이 되는 장소 정보와 경험을 나눠주세요." back>
       {postId ? <LoadState loading={fetching} error={loadError} retry={reload} /> : null}
       <View style={styles.guide}><Text style={styles.guideMark}>✦</Text><Text style={styles.guideText}>개인정보나 광고성 내용은 숨김 처리될 수 있어요.</Text></View>
+      {draft.error ? <Text style={ui.error}>{draft.error}</Text> : null}
       <View style={styles.form}>
         <Text style={ui.label}>제목</Text>
         <TextInput
+          editable={draft.ready}
           value={title}
           onChangeText={setTitle}
           placeholder="제목"
@@ -90,6 +106,7 @@ export function PostEditor({
         />
         <Text style={ui.label}>내용</Text>
         <TextInput
+          editable={draft.ready}
           value={content}
           onChangeText={setContent}
           placeholder="내용"
@@ -109,7 +126,7 @@ export function PostEditor({
           </View>
         ) : null}
         {error ? <Text style={ui.error}>{error}</Text> : null}
-        <Pressable disabled={loading || Boolean(postId && (fetching || loadError))} onPress={submit} style={ui.button}>
+        <Pressable disabled={!draft.ready || loading || Boolean(postId && (fetching || loadError))} onPress={submit} style={ui.button}>
           <Text style={ui.buttonText}>{loading ? "저장 중..." : "저장"}</Text>
         </Pressable>
       </View>

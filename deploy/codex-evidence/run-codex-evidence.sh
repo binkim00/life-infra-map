@@ -35,8 +35,19 @@ validation_file="${RUNTIME_DIR}/${validation_name}"
 container_seed="/tmp/${seed_name}"
 container_result="/tmp/${result_name}"
 container_seed_csv="${container_seed%.json}.csv"
+run_key="${result_name}"
+stage="prepare"
+progress_started=0
+
+record_progress() {
+  docker exec "$API_CONTAINER" python manage.py record_codex_run "$run_key" "$1" "$stage" >/dev/null
+}
 
 cleanup() {
+  local exit_code=$?
+  if [ "$exit_code" -ne 0 ] && [ "$progress_started" -eq 1 ]; then
+    record_progress failed || true
+  fi
   docker exec "$API_CONTAINER" rm -f -- "$container_seed" "$container_seed_csv" "$container_result" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
@@ -54,12 +65,16 @@ exclude_ids="$(
     | xargs -0 -r jq -r '.results[]?.place_id // empty' 2>/dev/null \
     | sort -nu | paste -sd, - || true
 )"
+record_progress running
+progress_started=1
 docker exec "$API_CONTAINER" python manage.py prepare_codex_web_research \
   --cafe "$CAFE_LIMIT" --restaurant "$RESTAURANT_LIMIT" \
   --corroboration "$CORROBORATION_LIMIT" \
   --exclude-place-ids "$exclude_ids" --preflight-source-hints --output "$container_seed"
 docker cp "${API_CONTAINER}:${container_seed}" "$seed_file"
 
+stage="research"
+record_progress running
 "$CODEX_BIN" --search --ask-for-approval never exec \
   --ephemeral \
   --ignore-user-config \
@@ -72,6 +87,8 @@ docker cp "${API_CONTAINER}:${container_seed}" "$seed_file"
   "$(<"$DEPLOY_DIR/research-prompt.txt")" < "$seed_file" >/dev/null
 
 jq -e '.results | type == "array"' "$result_file" >/dev/null
+stage="verify"
+record_progress running
 docker cp "$result_file" "${API_CONTAINER}:${container_result}"
 docker exec "$API_CONTAINER" python manage.py validate_codex_web_evidence \
   "$container_result" --live-verify --apply | tee "$validation_file"

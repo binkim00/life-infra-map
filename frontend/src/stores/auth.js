@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-import api, { setUnauthorizedHandler } from '@/api/axios'
+import api, { setUnauthorizedHandler, setSessionRenewedHandler } from '@/api/axios'
 
 const readStoredToken = () => {
   try {
@@ -21,15 +21,17 @@ const readStoredUser = () => {
 const removeStoredAuth = () => {
   try {
     localStorage.removeItem('authToken')
+    localStorage.removeItem('refreshToken')
     localStorage.removeItem('authUser')
   } catch (error) {
     // localStorage can be unavailable in restricted browser contexts.
   }
 }
 
-const persistAuth = (token, user) => {
+const persistAuth = (token, user, refreshToken) => {
   try {
     localStorage.setItem('authToken', token)
+    if (refreshToken) localStorage.setItem('refreshToken', refreshToken)
     localStorage.setItem('authUser', JSON.stringify(user))
   } catch (error) {
     // localStorage can be unavailable in restricted browser contexts.
@@ -70,7 +72,7 @@ export const useAuthStore = create((set, get) => ({
     const token = response.data.access_token || response.data.token
     const user = response.data.user
 
-    persistAuth(token, user)
+    persistAuth(token, user, response.data.refresh_token)
     set({ token, user, isLoggedIn: true })
 
     return response.data
@@ -82,17 +84,24 @@ export const useAuthStore = create((set, get) => ({
     const token = response.data.access_token || response.data.token
     const user = response.data.user
 
-    persistAuth(token, user)
+    persistAuth(token, user, response.data.refresh_token)
     set({ token, user, isLoggedIn: true })
 
     return response.data
   },
 
+  exchangeSocialTicket: async (ticket) => {
+    const response = await api.post('/auth/social/exchange', { ticket })
+    const { access_token: token, refresh_token: refreshToken, user } = response.data
+    persistAuth(token, user, refreshToken)
+    set({ token, user, isLoggedIn: true })
+    return response.data
+  },
+
   logout: async () => {
     try {
-      if (get().token) {
-        await api.post('/accounts/logout/')
-      }
+      const refreshToken = localStorage.getItem('refreshToken')
+      if (refreshToken) await api.post('/auth/logout', { refresh_token: refreshToken })
     } catch (error) {
       console.error(error)
     }
@@ -121,4 +130,7 @@ export const useAuthStore = create((set, get) => ({
 // 401 응답을 받으면 저장된 인증 상태를 지웁니다.
 setUnauthorizedHandler(() => {
   useAuthStore.getState().clearAuthState()
+})
+setSessionRenewedHandler((data) => {
+  useAuthStore.setState({ token: data.access_token, user: data.user, isLoggedIn: true })
 })

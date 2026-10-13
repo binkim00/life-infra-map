@@ -86,7 +86,7 @@ const UpgradeGuideView = () => {
         <header className={styles.upgradeHero}>
           <div>
             <p className={styles.eyebrow}>TIER GUIDE</p>
-            <h1>승급가이드</h1>
+            <h1>등급 안내</h1>
             <p className={styles.heroDescription}>
               게시글, 댓글, 승인된 장소 제보 기여도를 기준으로 티어가 자동 계산됩니다.
               기여도 반영 기준과 승급 조건은 추후 서비스 운영 기준에 맞춰 조정될 수 있습니다.
@@ -99,7 +99,7 @@ const UpgradeGuideView = () => {
             <span className={styles.ruleIcon} aria-hidden="true">✦</span>
             <div>
               <h2>기여도 반영 기준</h2>
-              <p>현재 임시 기준입니다. 추후 활동 종류가 추가되면 기여도 기준도 함께 변경할 수 있습니다.</p>
+              <p>게시글·댓글 활동과 승인된 장소 제보에 현재 적용되는 기준입니다.</p>
             </div>
           </div>
 
@@ -151,7 +151,7 @@ const UpgradeGuideView = () => {
         </section>
 
         <p className={styles.upgradeUpdateNotice}>
-          적극이용자와 티어별 승급 혜택은 추후 업데이트 예정입니다.
+          등급은 기여도에 따라 자동으로 계산됩니다.
         </p>
       </section>
     </main>

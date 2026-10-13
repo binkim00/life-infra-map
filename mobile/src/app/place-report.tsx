@@ -1,4 +1,5 @@
 import * as ImagePicker from "expo-image-picker";
+import { File } from "expo-file-system";
 import { searchLocation } from "@/utils/location";
 import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
@@ -181,7 +182,7 @@ function PlaceReportForm({ params }: { params: ReportParams }) {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ["images"],
         allowsMultipleSelection: true,
-        selectionLimit: 5,
+        selectionLimit: 3,
         quality: 0.8,
       });
       if (!result.canceled) {
@@ -211,13 +212,10 @@ function PlaceReportForm({ params }: { params: ReportParams }) {
     body.append("suggested_lng", lng);
     body.append("description", description);
     body.append("suggested_tags", JSON.stringify(tags));
-    images.forEach((image) =>
-      body.append("images", {
-        uri: image.uri,
-        name: image.fileName || "report.jpg",
-        type: image.mimeType || "image/jpeg",
-      } as unknown as Blob),
-    );
+    images.forEach((image) => {
+      const file = new File(image.uri);
+      body.append("images", file, image.fileName || file.name);
+    });
     try {
       setLoading(true);
       const receipt = await recommendationApi.createPlaceReport(body);
@@ -227,7 +225,9 @@ function PlaceReportForm({ params }: { params: ReportParams }) {
     } catch (error) {
       const details = error instanceof ApiError && error.status === 400 && error.data && typeof error.data === "object"
         ? Object.values(error.data).flat().filter(value => typeof value === "string").join("\n") : "";
-      setMessage(details || (error instanceof Error ? error.message : "제보 접수에 실패했습니다."));
+      console.warn("Place report submission failed", error);
+      setMessage(details && !/(exception|traceback|stack|http|\b\d{3}\b|_[a-z]+|[A-Z_]{4,})/i.test(details)
+        ? details : "제보를 접수하지 못했어요. 입력 내용을 확인하고 다시 시도해 주세요.");
     } finally {
       setLoading(false);
     }
@@ -345,6 +345,7 @@ function PlaceReportForm({ params }: { params: ReportParams }) {
       <PlaceMap
         place={pickedPlace}
         displayMode="selected"
+        height={240}
         onMapPress={chooseMapCoordinate}
         onRequestCurrentLocation={locate}
         currentLocation={deviceLocation}
@@ -379,7 +380,7 @@ function PlaceReportForm({ params }: { params: ReportParams }) {
       />
       <Pressable accessibilityRole="button" onPress={pick} style={ui.buttonSecondary}>
         <Text style={ui.buttonSecondaryText}>
-          사진 선택 ({images.length}/5)
+          사진 선택 ({images.length}/3)
         </Text>
       </Pressable>
       <View style={styles.images}>

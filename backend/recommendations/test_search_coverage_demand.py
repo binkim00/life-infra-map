@@ -48,6 +48,40 @@ class SearchCoverageDemandTests(TestCase):
         self.assertIsNone(result)
         self.assertFalse(PlaceInteractionEvent.objects.exists())
 
+    def test_unverified_required_conditions_record_collection_demand(self):
+        event = record_search_coverage_demand({
+            "decision_action": "ask_clarification",
+            "debug_pipeline": {"post_gate_reason": "required_conditions_unverified"},
+            "place_intent_frame": {
+                "anchor_location": "서면",
+                "candidate_category_codes": ["cafe"],
+                "constraints": ["조용함", "콘센트있음"],
+            },
+        })
+
+        self.assertIsNotNone(event)
+        self.assertEqual(event.context["signal_reason"], "required_conditions_unverified")
+        self.assertEqual(event.context["category_codes"], ["cafe"])
+        self.assertIn("조용함", event.requested_tags)
+        self.assertIn("콘센트있음", event.requested_tags)
+        self.assertEqual(
+            priority_context([self.place])[self.place.id]["components"]["search_coverage_demand"],
+            3,
+        )
+
+    def test_clarification_before_candidate_review_does_not_record_demand(self):
+        result = record_search_coverage_demand({
+            "decision_action": "ask_clarification",
+            "place_intent_frame": {
+                "anchor_location": "서면",
+                "candidate_category_codes": ["cafe"],
+                "constraints": ["조용함"],
+            },
+        })
+
+        self.assertIsNone(result)
+        self.assertFalse(PlaceInteractionEvent.objects.exists())
+
     def test_abundant_but_weak_top_five_records_missing_tag_demand(self):
         event = record_search_coverage_demand({
             "decision_action": "search",

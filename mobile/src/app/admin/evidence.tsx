@@ -15,6 +15,11 @@ type Evidence = {
   quote: string;
   source: string;
   source_url: string;
+  source_title?: string;
+  created_at?: string;
+  observed_at?: string | null;
+  expires_at?: string | null;
+  history?: { mode?: string; policy?: string; reason?: string; at?: string }[];
   status: string;
   polarity: string;
   note: string;
@@ -112,10 +117,14 @@ export default function EvidenceQueueScreen() {
             {item.place_name} · {item.tag}
           </Text>
           <Text style={ui.muted}>{item.address}</Text>
+          {item.source_title ? <Text style={styles.sourceTitle}>원문 제목: {item.source_title}</Text> : null}
           <Text style={ui.muted}>
             {({ web_search: "웹 조사", naver_blog_search: "네이버 블로그", user_report: "사용자 제보" } as Record<string, string>)[item.source] || "외부 수집"} · {({ positive: "조건 뒷받침", negative: "조건 불일치", neutral: "중립" } as Record<string, string>)[item.polarity] || "판정 확인 필요"} · 수집 점수 {item.confidence}
           </Text>
           <Text>{item.quote || "인용문 없음"}</Text>
+          <Text style={ui.muted}>수집: {item.created_at ? new Date(item.created_at).toLocaleString() : "기록 없음"} · 관찰: {item.observed_at ? new Date(item.observed_at).toLocaleDateString() : "원문 날짜 미확인"}</Text>
+          <Text style={ui.muted}>만료: {item.expires_at ? new Date(item.expires_at).toLocaleDateString() : "만료일 없음"}</Text>
+          {item.history?.at(-1)?.reason ? <Text style={ui.muted}>자동 판정: {item.history.at(-1)?.reason} ({item.history.at(-1)?.policy || "기준 미상"})</Text> : null}
           {item.freshness_label ? <Text style={ui.muted}>{item.freshness_label}{item.search_eligible ? " · 검색 사용" : item.usage_scope === "archive_only" ? " · 자료만 보존" : ""}</Text> : null}
           {/^https?:\/\//.test(item.source_url) ? (
             <Pressable
@@ -178,6 +187,7 @@ export default function EvidenceQueueScreen() {
 }
 
 const styles = StyleSheet.create({
+  sourceTitle: { color: Palette.ink, fontSize: 12, fontWeight: "700" },
   searchRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   grow: { minWidth: 0, flex: 1 },
   statusTabs: { flexDirection: "row", flexWrap: "wrap", gap: 6 },

@@ -1,6 +1,6 @@
 import { router } from "expo-router";
 import { useEffect } from "react";
-import { useResource } from "@/hooks/use-resource";
+import { useNotifications } from "@/hooks/use-notifications";
 import { useAction } from "@/hooks/use-action";
 import { LoadState } from "@/components/load-state";
 import { Pressable, StyleSheet, Text, View } from "react-native";
@@ -16,13 +16,12 @@ type Notification = {
   is_read?: boolean;
   target_route?: string;
   created_at?: string;
+  notification_type?: string;
 };
 export default function NotificationsScreen() {
   const { ready, isLoggedIn } = useAuth();
   const action = useAction();
-  const { data: items, loading, error, reload: load } = useResource<Notification[]>(
-    () => boardsApi.notifications().then(data => data as Notification[]), [], ready && isLoggedIn,
-  );
+  const { items, loading, error, reload: load } = useNotifications();
   useEffect(() => {
     if (!ready) return;
     if (!isLoggedIn) {

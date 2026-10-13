@@ -120,6 +120,16 @@
         state.currentMarker = null;
         const bounds = new kakao.maps.LatLngBounds();
         let boundsCount = 0;
+        const boundsAnchor = state.places.find(
+          (place) => String(place.id) === String(state.selectedId),
+        ) || state.places[0];
+        const isNearAnchor = (place) => {
+          if (!boundsAnchor) return false;
+          const latKm = (place.lat - boundsAnchor.lat) * 111;
+          const lngKm = (place.lng - boundsAnchor.lng) * 111 *
+            Math.cos(boundsAnchor.lat * Math.PI / 180);
+          return Math.hypot(latKm, lngKm) <= 12;
+        };
 
         if (state.currentLocation) {
           const currentPosition = new kakao.maps.LatLng(
@@ -133,7 +143,8 @@
             title: "현재 위치",
             zIndex: 20,
           });
-          if (state.viewportMode === "overview") {
+          // 검색 결과가 있으면 현재 위치 때문에 전국 지도로 축소하지 않는다.
+          if (state.viewportMode === "overview" && !state.places.length) {
             bounds.extend(currentPosition);
             boundsCount += 1;
           }
@@ -156,8 +167,11 @@
             });
           });
           state.markers.push(marker);
-          bounds.extend(position);
-          boundsCount += 1;
+          // 지명과 우연히 같은 이름인 먼 장소는 초기 지도 범위에서 제외한다.
+          if (isNearAnchor(place)) {
+            bounds.extend(position);
+            boundsCount += 1;
+          }
         });
 
         if (!fitViewport) return;
@@ -168,9 +182,9 @@
           state.map.setCenter(new kakao.maps.LatLng(selected.lat, selected.lng));
           state.map.setLevel(3);
         } else if (boundsCount > 1) state.map.setBounds(bounds, 48, 48, 48, 48);
-        else if (state.places.length === 1) {
+        else if (boundsAnchor) {
           state.map.setCenter(
-            new kakao.maps.LatLng(state.places[0].lat, state.places[0].lng),
+            new kakao.maps.LatLng(boundsAnchor.lat, boundsAnchor.lng),
           );
           state.map.setLevel(4);
         } else if (state.currentLocation) {

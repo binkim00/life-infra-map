@@ -1,4 +1,6 @@
+import { userErrorMessage, userText } from "../../../shared/user-message";
 import * as ImagePicker from "expo-image-picker";
+import { File } from "expo-file-system";
 import { router } from "expo-router";
 import { useState } from "react";
 import {
@@ -48,18 +50,22 @@ export default function SignupScreen() {
       return setError("아이디, 닉네임, 비밀번호를 입력해주세요.");
     if (form.password !== form.passwordConfirm)
       return setError("비밀번호가 일치하지 않습니다.");
-    const body = new FormData();
-    body.append("username", form.username);
-    body.append("nickname", form.nickname);
-    body.append("email", form.email);
-    body.append("password", form.password);
-    body.append("password_confirm", form.passwordConfirm);
-    if (image)
-      body.append("profile_image", {
-        uri: image.uri,
-        name: image.fileName || "profile.jpg",
-        type: image.mimeType || "image/jpeg",
-      } as unknown as Blob);
+    let body: FormData | Record<string, string> = {
+      username: form.username,
+      nickname: form.nickname,
+      email: form.email,
+      password: form.password,
+      password_confirm: form.passwordConfirm,
+    };
+    if (image) {
+      body = new FormData();
+      body.append("username", form.username);
+      body.append("nickname", form.nickname);
+      body.append("email", form.email);
+      body.append("password", form.password);
+      body.append("password_confirm", form.passwordConfirm);
+      body.append("profile_image", new File(image.uri), image.fileName || new File(image.uri).name);
+    }
     try {
       setLoading(true);
       setError("");
@@ -68,9 +74,9 @@ export default function SignupScreen() {
     } catch (cause) {
       if (cause instanceof ApiError && cause.data && typeof cause.data === "object") {
         const first = Object.values(cause.data as Record<string, unknown>)[0];
-        setError(Array.isArray(first) && first[0] ? String(first[0]) : cause.message);
+        setError(userText(Array.isArray(first) ? first[0] : "", "회원가입에 실패했습니다. 입력 내용을 확인해 주세요."));
       } else {
-        setError(cause instanceof Error ? cause.message : "회원가입에 실패했습니다. 입력 내용을 확인해 주세요.");
+        setError(userErrorMessage(cause, "회원가입에 실패했습니다. 입력 내용을 확인해 주세요."));
       }
     } finally {
       setLoading(false);
@@ -78,7 +84,7 @@ export default function SignupScreen() {
   };
 
   return (
-    <Screen title="회원가입" subtitle="생활 인프라 지도를 시작합니다." back>
+    <Screen title="회원가입" subtitle="여기일지도를 시작합니다." back>
       <View style={styles.form}>
         <Pressable onPress={pickImage} style={styles.picker}>
           {image ? (

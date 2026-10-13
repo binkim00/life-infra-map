@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { userErrorMessage, errorDiagnostic } from "../../../shared/user-message";
 
 export function useAction() {
   const active = useRef(false);
@@ -12,11 +13,8 @@ export function useAction() {
     try {
       await action();
     } catch (cause) {
-      setError(
-        cause instanceof Error
-          ? cause.message
-          : "처리하지 못했습니다. 다시 시도해 주세요.",
-      );
+      console.warn("User action failed", errorDiagnostic(cause));
+      setError(userErrorMessage(cause));
     } finally {
       active.current = false;
       setBusy(false);

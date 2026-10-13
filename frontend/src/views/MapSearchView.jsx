@@ -4,6 +4,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { searchMapPlaces } from '@/api/recommendation'
 import KakaoMap from '@/components/KakaoMap'
 import { useSavedPlaceActions } from '@/hooks/useSavedPlaceActions'
+import { placeCategoryLabel } from '@/utils/placeCategoryLabel'
 
 import styles from './MapSearchView.module.css'
 
@@ -66,7 +67,7 @@ const getTagName = (tag) => {
 
 const normalizeTags = (place = {}) => {
   const tags = []
-  const category = place.categoryLabel || place.category
+  const category = placeCategoryLabel(place)
   if (category) {
     tags.push({ name: category, source: 'category' })
   }
@@ -101,7 +102,7 @@ const normalizePlace = (place, index) => {
     source: place.source || resultSource,
     sourceName: place.source_name || '',
     name: place.name || '장소명 없음',
-    category: place.category_label || place.category || '',
+    category: placeCategoryLabel(place),
     categoryLabel: place.category_label || '',
     address: place.address || '',
     detailLocation: place.detail_location || '',

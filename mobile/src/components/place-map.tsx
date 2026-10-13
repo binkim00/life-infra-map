@@ -14,7 +14,7 @@ import { placeIdentity } from "@/utils/place-identity";
 const embedUrl =
   process.env.EXPO_PUBLIC_KAKAO_MAP_EMBED_URL ||
   "https://life-infra-map-db.taile29cc8.ts.net/kakao-map-embed.html";
-const versionedEmbedUrl = `${embedUrl}${embedUrl.includes("?") ? "&" : "?"}v=compact-map-6`;
+const versionedEmbedUrl = `${embedUrl}${embedUrl.includes("?") ? "&" : "?"}v=search-viewport-8`;
 
 const MAX_VISIBLE_MARKERS = 20;
 
@@ -36,6 +36,7 @@ export function PlaceMap({
   displayMode = "overview",
   focusSelected = false,
   expanded = false,
+  height,
   currentLocation = null,
   fitBoundsKey,
 }: {
@@ -48,6 +49,7 @@ export function PlaceMap({
   displayMode?: "overview" | "selected";
   focusSelected?: boolean;
   expanded?: boolean;
+  height?: number;
   currentLocation?: { lat: number; lng: number } | null;
   fitBoundsKey?: string | number;
 }) {
@@ -98,7 +100,7 @@ export function PlaceMap({
     const payload = {
       type: "life-infra-map:set-places",
       places: mapPlaces.map((item, mapIndex) => {
-        const resultIndex = validPlaces.findIndex(
+        const resultIndex = places.findIndex(
           (candidate) => placeIdentity(candidate) === placeIdentity(item),
         );
         return {
@@ -170,7 +172,7 @@ export function PlaceMap({
     onRequestCurrentLocation,
     focusSelected,
     place,
-    validPlaces,
+    places,
   ]);
 
   const receiveMessage = useCallback(
@@ -227,7 +229,7 @@ export function PlaceMap({
   }, [sendState]);
 
   return (
-    <View style={[styles.map, expanded && styles.expandedMap]}>
+    <View style={[styles.map, expanded && styles.expandedMap, height != null && { height }]}>
       <WebView
         key={reloadKey}
         ref={webViewRef}

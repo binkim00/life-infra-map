@@ -148,6 +148,30 @@ public class AdminUserController {
         return ResponseEntity.status(HttpStatus.CREATED).body(serializePenalty(penalty));
     }
 
+    public record ReleasePenaltyRequest(@NotBlank String reason) {}
+
+    @PostMapping("/{userId}/penalties/{penaltyId}/release")
+    @Transactional
+    public ResponseEntity<?> releasePenalty(@PathVariable Integer userId,
+                                            @PathVariable Long penaltyId,
+                                            @Valid @RequestBody ReleasePenaltyRequest request,
+                                            Authentication authentication) {
+        ResponseEntity<?> denied = requireStaff(authentication);
+        if (denied != null) return denied;
+        UserPenalty penalty = penaltyRepository.findById(penaltyId).orElse(null);
+        if (penalty == null || !penalty.getUser().getId().equals(userId)) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(Map.of("detail", "제재 내역을 찾을 수 없습니다."));
+        }
+        if (penalty.isActive()) {
+            penalty.release();
+            notificationRepository.save(Notification.create(penalty.getUser(),
+                    currentUser(authentication), "penalty_notice", "제재가 해제되었어요.",
+                    request.reason().trim(), null, null));
+        }
+        return ResponseEntity.ok(serializePenalty(penalty));
+    }
+
     private Integer defaultPenaltyDays(String penaltyType) {
         return switch (penaltyType) {
             case "warning" -> 0;

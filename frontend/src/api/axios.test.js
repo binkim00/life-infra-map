@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import axios from 'axios'
 
 import api, { setUnauthorizedHandler } from './axios'
 
@@ -115,6 +116,24 @@ describe('응답 인터셉터 - 401 처리', () => {
 
     expect(onUnauthorized).not.toHaveBeenCalled()
     expect(localStorage.getItem('authToken')).toBe('jwt-token')
+  })
+
+  it('만료된 액세스 토큰은 갱신 후 원래 요청을 한 번 다시 보냅니다', async () => {
+    localStorage.setItem('authToken', 'expired-token')
+    localStorage.setItem('refreshToken', 'current-refresh')
+    const refresh = vi.spyOn(axios, 'post').mockResolvedValue({ data: {
+      access_token: 'new-token', refresh_token: 'next-refresh', user: { id: 1 },
+    } })
+    const adapter = vi.fn(async (config) => ({ data: { ok: true }, status: 200, statusText: 'OK', headers: {}, config }))
+    const result = await runResponseErrorInterceptor({
+      response: { status: 401 },
+      config: { url: '/accounts/me/', method: 'get', headers: { Authorization: 'Bearer expired-token' }, adapter },
+    })
+    expect(result.data.ok).toBe(true)
+    expect(adapter).toHaveBeenCalledTimes(1)
+    expect(localStorage.getItem('authToken')).toBe('new-token')
+    expect(localStorage.getItem('refreshToken')).toBe('next-refresh')
+    refresh.mockRestore()
   })
 
   it('비로그인 상태의 401 은 무시합니다', async () => {

@@ -1,6 +1,8 @@
 import hashlib
 import logging
 import math
+import requests
+from statistics import median
 from django.conf import settings
 from django.core.cache import cache
 from django.db import IntegrityError, transaction
@@ -35,6 +37,7 @@ from .services.kakao_local import search_places_by_keyword
 from .services.naver_search_provider import get_naver_search_result
 from .services.map_search import (
     KAKAO_CATEGORY_GROUPS,
+    build_bounding_box,
     build_kakao_keyword_variants,
     category_only_fallback_keyword,
     get_matching_categories,
@@ -83,6 +86,7 @@ from .services.smoking_area_data import (
 )
 from .services.smoking_metadata import derive_smoking_metadata, matches_smoking_filters
 from .services.tag_utils import get_category_display_name, normalize_place_category
+from .services.canonical_tag_policy import canonical_tag_name
 from .services.user_preferences import (
     USER_SELECTED_SOURCE,
     create_or_update_user_selected_preference,
@@ -636,6 +640,10 @@ def attach_report_tags_to_place(report, place, *, create_missing_tags=False):
 
     for tag_label in unique_valid_labels(report.suggested_tags):
         tag = Tag.objects.filter(name=tag_label).first()
+        if not tag:
+            canonical_name = canonical_tag_name(tag_label)
+            if canonical_name:
+                tag = Tag.objects.filter(name=canonical_name).first()
         if not tag and create_missing_tags:
             tag = Tag.objects.create(name=tag_label, tag_type="recommendation")
         if not tag:
@@ -959,8 +967,21 @@ def serialize_kakao_map_place(place, *, lat=None, lng=None):
 
 def map_place_names_equivalent(first_name, second_name):
     """Treat a provider's optional branch suffix as the same nearby place."""
-    first = normalize_compact(first_name)
-    second = normalize_compact(second_name)
+    def canonical(name):
+        raw = str(name or "")
+        suffix = raw.split("(", 1)[1] if "(" in raw else ""
+        # English renderings are optional aliases; Korean branch names are not.
+        if suffix and any("a" <= char.lower() <= "z" for char in suffix):
+            raw = raw.split("(", 1)[0]
+        key = normalize_compact(raw.replace("(", "").replace(")", ""))
+        if key.endswith("mall점"):
+            return key[:-5] + "몰점"
+        if key.endswith("mall"):
+            return key[:-4] + "몰"
+        return key
+
+    first = canonical(first_name)
+    second = canonical(second_name)
     if not first or not second:
         return False
     if first == second:
@@ -970,6 +991,81 @@ def map_place_names_equivalent(first_name, second_name):
     if second.endswith("점") and len(second) >= 4 and second[:-1] == first:
         return True
     return False
+
+
+def map_place_address_core(address):
+    """Ignore unit/floor notes appended to the same road address."""
+    core = str(address or "").split("(", 1)[0].split("（", 1)[0].split(",", 1)[0].strip()
+    for full, short in (
+        ("서울특별시", "서울"), ("부산광역시", "부산"), ("대구광역시", "대구"),
+        ("인천광역시", "인천"), ("광주광역시", "광주"), ("대전광역시", "대전"),
+        ("울산광역시", "울산"), ("세종특별자치시", "세종"),
+        ("제주특별자치도", "제주"),
+    ):
+        if core.startswith(full + " "):
+            core = short + core[len(full):]
+            break
+    return normalize_compact(core)
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+@throttle_classes([ExternalSearchRateThrottle])
+def place_kakao_detail_link(request, place_id):
+    """Resolve a saved place to a Kakao detail only when identity is unambiguous."""
+    place = get_object_or_404(Place, pk=place_id)
+    stored_url = get_kakao_place_url(place)
+    if stored_url:
+        return Response({"url": stored_url, "status": "stored"})
+
+    cache_key = f"place-kakao-detail:{place.pk}:{place.updated_at.timestamp():.0f}"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return Response(cached)
+
+    try:
+        group_codes = KAKAO_CATEGORY_GROUPS.get(place.category, set())
+        result = search_places_by_keyword(
+            keyword=place.name,
+            lat=place.lat,
+            lng=place.lng,
+            radius=700,
+            size=15,
+            category_group_code=next(iter(group_codes)) if len(group_codes) == 1 else None,
+        )
+    except (requests.RequestException, ValueError):
+        logger.warning("Kakao place detail lookup failed for place %s", place.pk)
+        return Response({"url": "", "status": "unavailable"})
+
+    matches = []
+    for candidate in result.get("documents", []):
+        candidate_id = str(candidate.get("id") or "")
+        if not candidate_id.isdigit() or not map_place_names_equivalent(place.name, candidate.get("place_name")):
+            continue
+        candidate_group = candidate.get("category_group_code") or ""
+        if group_codes and candidate_group and candidate_group not in group_codes:
+            continue
+        try:
+            distance = calculate_distance_m(
+                place.lat, place.lng, float(candidate["y"]), float(candidate["x"]),
+            )
+        except (KeyError, TypeError, ValueError):
+            continue
+        candidate_address = candidate.get("road_address_name") or candidate.get("address_name") or ""
+        same_address = bool(
+            place.address and candidate_address
+            and map_place_address_core(place.address) == map_place_address_core(candidate_address)
+        )
+        if distance <= 60 or (distance <= 200 and same_address):
+            matches.append(candidate_id)
+
+    unique_ids = set(matches)
+    payload = (
+        {"url": f"https://place.map.kakao.com/{matches[0]}", "status": "matched"}
+        if len(unique_ids) == 1 else {"url": "", "status": "unmatched"}
+    )
+    cache.set(cache_key, payload, timeout=3600 if payload["url"] else 600)
+    return Response(payload)
 
 
 def merge_map_place_results(results, *, max_distance_m=40):
@@ -986,11 +1082,30 @@ def merge_map_place_results(results, *, max_distance_m=40):
                 existing_lng = parse_optional_float(existing.get("lng"))
                 if existing_lat is None or existing_lng is None:
                     continue
-                if not map_place_names_equivalent(existing.get("name"), candidate.get("name")):
-                    continue
-                if calculate_distance_m(
+                distance = calculate_distance_m(
                     existing_lat, existing_lng, candidate_lat, candidate_lng,
-                ) <= max_distance_m:
+                )
+                existing_address = map_place_address_core(existing.get("address"))
+                same_address = (
+                    len(existing_address) >= 8
+                    and existing_address == map_place_address_core(candidate.get("address"))
+                )
+                name_match = map_place_names_equivalent(existing.get("name"), candidate.get("name"))
+                if not name_match and same_address:
+                    first_key = normalize_compact(str(existing.get("name") or "").replace("(", "").replace(")", ""))
+                    second_key = normalize_compact(str(candidate.get("name") or "").replace("(", "").replace(")", ""))
+                    if first_key.startswith("이디야커피"):
+                        first_key = "이디야" + first_key[len("이디야커피"):]
+                    if second_key.startswith("이디야커피"):
+                        second_key = "이디야" + second_key[len("이디야커피"):]
+                    for city in ("서울", "부산", "대구", "인천", "광주", "대전", "울산", "서면"):
+                        first_key = first_key.replace(city, "", 1) if first_key.find(city) >= 3 else first_key
+                        second_key = second_key.replace(city, "", 1) if second_key.find(city) >= 3 else second_key
+                    name_match = first_key == second_key or (
+                        distance <= 25 and min(len(first_key), len(second_key)) >= 5
+                        and (first_key.startswith(second_key) or second_key.startswith(first_key))
+                    )
+                if name_match and (distance <= max_distance_m or (same_address and distance <= 200)):
                     duplicate_index = index
                     break
 
@@ -1080,6 +1195,23 @@ def kakao_place_name_match_rank(place, name_query):
     return 3
 
 
+def saved_landmark_center(name):
+    """Use clustered, independent saved records to locate a named transit hub."""
+    if not name.endswith(("역", "공항", "터미널")):
+        return None
+    rows = list(Place.objects.filter(name=name).values_list("lat", "lng", "source")[:21])
+    if not 2 <= len(rows) <= 20 or len({row[2] for row in rows}) < 2:
+        return None
+    center_lat = median(row[0] for row in rows)
+    center_lng = median(row[1] for row in rows)
+    if any(
+        calculate_distance_m(center_lat, center_lng, row[0], row[1]) > 2000
+        for row in rows
+    ):
+        return None
+    return center_lat, center_lng
+
+
 @api_view(["GET"])
 def map_place_search(request):
     keyword = request.GET.get("q", "").strip()
@@ -1137,15 +1269,33 @@ def map_place_search(request):
         name_query = name_query or keyword
     # 명시된 지점/지역은 후보 수집 전에 양쪽 공급자의 기준 위치로 확정한다.
     if is_separated_place_search and center_mode != "map" and not anchor_location and name_query:
-        from .services.area_gazetteer import resolve_area_coordinates_by_token
+        from .services.area_gazetteer import resolve_area_coordinates, resolve_area_coordinates_by_token
+        known_area = resolve_area_coordinates(name_query)
+        saved_center = None if known_area else saved_landmark_center(name_query)
+        if known_area or saved_center:
+            search_lat, search_lng = (known_area or saved_center)[:2]
+            anchor_location = name_query
+            resolved_anchor = {
+                "status": "resolved",
+                "lat": search_lat,
+                "lng": search_lng,
+                "label": name_query,
+                "source": "area_gazetteer" if known_area else "saved_landmark_consensus",
+            }
         branch = split_branch_qualified_query(keyword)
         region_hint = branch.get("branch_location", "")
         if not region_hint:
             tokens, _ = tokenize_query(keyword)
-            if len(tokens) > 1 and resolve_area_coordinates_by_token(" ".join(tokens[:-1])):
+            if len(tokens) > 1 and resolve_area_coordinates(tokens[-1]):
+                region_hint = tokens[-1]
+                name_query = " ".join(tokens[:-1])
+                provider_keyword = name_query
+            elif len(tokens) > 1 and resolve_area_coordinates_by_token(" ".join(tokens[:-1])):
                 region_hint = " ".join(tokens[:-1])
         if region_hint:
-            explicit_anchor = _resolve_anchor_location(region_hint, address_first=True)
+            explicit_anchor = _resolve_anchor_location(
+                region_hint, address_first=not bool(resolve_area_coordinates(region_hint))
+            )
             if explicit_anchor.get("status") == "resolved":
                 anchor_location = region_hint
                 resolved_anchor = explicit_anchor
@@ -1162,7 +1312,7 @@ def map_place_search(request):
     if (
         not search_radius
         and center_mode != "map"
-        and category_query
+        and (category_query or (anchor_location and name_query))
         and resolved_anchor.get("status") == "resolved"
     ):
         search_radius = 5000
@@ -1236,31 +1386,80 @@ def map_place_search(request):
             )
         ):
             db_queryset = Place.objects.filter(category__in=usable_db_categories)
+        elif is_category_only_query(keyword) and matched_basic_categories == ["cafe"]:
+            # A cafe name in a restaurant row is not evidence that its saved
+            # category is cafe. Keep category-only results in the requested type.
+            db_queryset = Place.objects.filter(category="cafe")
     # 업종 substring으로 고유명사를 완화하지 않고 저장 DB도 항상 병합한다.
     if is_separated_place_search and name_query:
-        db_queryset = Place.objects.annotate(
-            search_name=Replace("name", Value(" "), Value("")),
-            search_address=Replace("address", Value(" "), Value("")),
-        )
-        for token in tokenize_query(name_query)[0]:
-            compact_token = normalize_compact(token)
-            db_queryset = db_queryset.filter(
-                Q(search_name__icontains=compact_token) | Q(search_address__icontains=compact_token)
+        if name_query.endswith("역") and len(tokenize_query(name_query)[0]) == 1 and resolved_anchor.get("status") == "resolved":
+            # The provider supplies nearby businesses. Broad name/address
+            # substring matching scans hundreds of thousands of station shops.
+            db_queryset = Place.objects.filter(name=name_query)
+        else:
+            db_queryset = Place.objects.annotate(
+                search_name=Replace("name", Value(" "), Value("")),
+                search_address=Replace("address", Value(" "), Value("")),
             )
+            for token in tokenize_query(name_query)[0]:
+                compact_token = normalize_compact(token)
+                db_queryset = db_queryset.filter(
+                    Q(search_name__icontains=compact_token) | Q(search_address__icontains=compact_token)
+                )
         from .services.map_search import apply_keyword_filter
         db_queryset = apply_keyword_filter(db_queryset, [], tokenize_query(keyword)[1])
 
+    category_prefiltered = bool(
+        is_separated_place_search
+        and len(matched_basic_categories) == 1
+        and not name_query
+        and (
+            (anchor_location and category_query and resolved_anchor.get("status") == "resolved")
+            or (is_category_only_query(keyword) and db_queryset is not None)
+        )
+    )
+    if category_prefiltered:
+        # The parsed category is already a precise DB predicate. Repeating
+        # broad keyword/tag matching scans unrelated nearby places.
+        db_queryset = Place.objects.filter(category=matched_basic_categories[0])
+        if search_radius and search_lat is not None and search_lng is not None:
+            # Use the category/coordinate index before the exact PostGIS
+            # circle. Padding preserves places at the geodesic boundary.
+            db_queryset = db_queryset.filter(**build_bounding_box(
+                search_lat, search_lng, search_radius,
+            ))
+
     if source in {"all", "db"} and not basic_db_skipped:
+        name_tokens = tokenize_query(name_query)[0] if is_separated_place_search and name_query else []
+        prefix_token = normalize_compact(name_tokens[0]) if len(name_tokens) > 1 else ""
+        use_prefix = bool(
+            db_queryset is not None and len(prefix_token) >= 3
+            and not is_category_only_query(prefix_token)
+            and not prefix_token.endswith(("역", "동", "구", "시", "군", "읍", "면", "리"))
+        )
         db_results, db_total_count, query_info = search_saved_map_places(
             keyword=category_query or keyword,
             lat=search_lat,
             lng=search_lng,
             radius=search_radius,
             limit=limit,
-            queryset=db_queryset,
-            prefiltered=bool(is_separated_place_search and name_query),
+            queryset=db_queryset.filter(name__startswith=prefix_token) if use_prefix else db_queryset,
+            prefiltered=bool((is_separated_place_search and name_query) or category_prefiltered),
             nearest_first=is_separated_place_search,
         )
+        if use_prefix and len(db_results) < limit and not (
+            source == "all" and resolved_anchor.get("status") == "resolved" and db_results
+        ):
+            db_results, db_total_count, query_info = search_saved_map_places(
+                keyword=category_query or keyword,
+                lat=search_lat,
+                lng=search_lng,
+                radius=search_radius,
+                limit=limit,
+                queryset=db_queryset,
+                prefiltered=True,
+                nearest_first=True,
+            )
 
     complete_db_category = (
         is_separated_place_search
@@ -1304,6 +1503,40 @@ def map_place_search(request):
                 0 in nearby_name_ranks
                 or nearby_name_ranks.count(1) >= 2
             )
+            if (
+                name_query.endswith("역")
+                and not category_query
+                and not matched_basic_categories
+                and resolved_anchor.get("status") == "resolved"
+                and not any(
+                    kakao_place_name_match_rank(place, name_query) == 0
+                    and any(token in str(place.get("category_name", "")) for token in ("기차,철도", "지하철,전철"))
+                    for place in kakao_data.get("documents", [])
+                )
+            ):
+                # A busy station's nearby keyword page is often filled with
+                # shops. Ask for the rail facility before a nationwide page.
+                station_data = search_places_by_keyword(
+                    keyword=f"{name_query} 기차역",
+                    lat=search_lat,
+                    lng=search_lng,
+                    radius=search_radius or None,
+                    size=min(limit, 15),
+                )
+                if not station_data.get("documents"):
+                    station_data = search_places_by_keyword(
+                        keyword=name_query,
+                        lat=search_lat,
+                        lng=search_lng,
+                        radius=search_radius or None,
+                        size=min(limit, 15),
+                        category_group_code="SW8",
+                    )
+                kakao_data = merge_kakao_search_documents(kakao_data, station_data)
+                has_strong_nearby_match = any(
+                    kakao_place_name_match_rank(place, name_query) == 0
+                    for place in station_data.get("documents", [])
+                )
             if (
                 name_query
                 and search_lat is not None
@@ -1390,7 +1623,9 @@ def map_place_search(request):
                 if (
                     not is_separated_place_search
                     or matched_basic_categories
-                    or kakao_place_matches_keyword(place, keyword)
+                    or kakao_place_matches_keyword(
+                        place, name_query if anchor_location and resolved_anchor.get("status") == "resolved" else keyword
+                    )
                 )
                 if str(place.get("id")) not in db_external_ids
             ]
@@ -1490,6 +1725,19 @@ def map_place_search(request):
     if search_radius and search_lat is not None and search_lng is not None:
         combined_results = [p for p in combined_results if p.get("distance") is not None and p["distance"] <= search_radius]
     combined_results = merge_map_place_results(combined_results)
+    if name_query.endswith("역") and not category_query and not matched_basic_categories:
+        transport_tokens = ("기차,철도", "지하철,전철", "transport")
+        has_exact_station = any(
+            kakao_place_name_match_rank(p, name_query) == 0
+            and any(token in str(p.get("category", "")) for token in transport_tokens)
+            for p in combined_results
+        )
+        if has_exact_station:
+            combined_results = [
+                p for p in combined_results
+                if kakao_place_name_match_rank(p, name_query) != 0
+                or any(token in str(p.get("category", "")) for token in transport_tokens)
+            ]
     # 정확한 장소가 수집됐다면 이름에 검색어만 포함된 다른 업종은 후순위다.
     # 같은 상호와 지점은 같은 그룹에서 거리순으로 비교한다.
     exact_categories = {
@@ -1498,6 +1746,8 @@ def map_place_search(request):
     }
     if search_lat is not None and search_lng is not None:
         combined_results.sort(key=lambda p: (
+            bool(name_query.endswith("역") and not category_query and not matched_basic_categories)
+            and not any(token in str(p.get("category", "")) for token in ("기차,철도", "지하철,전철", "transport")),
             bool(exact_categories) and map_place_category_key(p) not in exact_categories
             and kakao_place_name_match_rank(p, name_query) != 0,
             p.get("distance") is None,

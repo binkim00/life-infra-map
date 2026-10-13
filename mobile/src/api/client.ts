@@ -1,5 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as SecureStore from "expo-secure-store";
+import { fetch as expoFetch } from "expo/fetch";
 import { Platform } from "react-native";
 
 import {
@@ -32,34 +33,35 @@ const SPRING_PREFIXES = [
 ];
 const AUTH_TOKEN_KEY = "authToken";
 const AUTH_USER_KEY = "authUser";
+const REFRESH_TOKEN_KEY = "refreshToken";
 
-const readAuthToken = async () => {
-  if (Platform.OS === "web") return AsyncStorage.getItem(AUTH_TOKEN_KEY);
+const readSecretToken = async (key: string) => {
+  if (Platform.OS === "web") return AsyncStorage.getItem(key);
 
-  const secureToken = await SecureStore.getItemAsync(AUTH_TOKEN_KEY);
+  const secureToken = await SecureStore.getItemAsync(key);
   if (secureToken) return secureToken;
 
   // 기존 개발 빌드의 AsyncStorage 토큰을 한 번만 안전 저장소로 옮깁니다.
-  const legacyToken = await AsyncStorage.getItem(AUTH_TOKEN_KEY);
+  const legacyToken = await AsyncStorage.getItem(key);
   if (legacyToken) {
-    await SecureStore.setItemAsync(AUTH_TOKEN_KEY, legacyToken);
-    await AsyncStorage.removeItem(AUTH_TOKEN_KEY);
+    await SecureStore.setItemAsync(key, legacyToken);
+    await AsyncStorage.removeItem(key);
   }
   return legacyToken;
 };
 
-const writeAuthToken = async (token: string) => {
+const writeSecretToken = async (key: string, token: string) => {
   if (Platform.OS === "web") {
-    await AsyncStorage.setItem(AUTH_TOKEN_KEY, token);
+    await AsyncStorage.setItem(key, token);
     return;
   }
-  await SecureStore.setItemAsync(AUTH_TOKEN_KEY, token);
-  await AsyncStorage.removeItem(AUTH_TOKEN_KEY);
+  await SecureStore.setItemAsync(key, token);
+  await AsyncStorage.removeItem(key);
 };
 
-const clearAuthToken = async () => {
-  await AsyncStorage.removeItem(AUTH_TOKEN_KEY);
-  if (Platform.OS !== "web") await SecureStore.deleteItemAsync(AUTH_TOKEN_KEY);
+const clearSecretToken = async (key: string) => {
+  await AsyncStorage.removeItem(key);
+  if (Platform.OS !== "web") await SecureStore.deleteItemAsync(key);
 };
 
 export class ApiError extends Error {
@@ -73,7 +75,7 @@ export class ApiError extends Error {
     message?: string,
     kind?: "connection" | "timeout" | "client" | "server",
   ) {
-    super(message || `요청에 실패했습니다. (${status})`);
+    super(message || httpErrorMessage(status, data));
     this.name = "ApiError";
     this.status = status;
     this.data = data;
@@ -89,10 +91,11 @@ export class ApiError extends Error {
   }
 }
 
-type StoredAuth = { token: string | null; user: any };
+type StoredAuth = { token: string | null; refreshToken: string | null; user: any };
 let authCache: StoredAuth | undefined;
 let authRead: Promise<StoredAuth> | undefined;
 let authRevision = 0;
+const authListeners = new Set<(value: StoredAuth) => void>();
 
 export const authStorage = {
   async read() {
@@ -100,17 +103,18 @@ export const authStorage = {
     if (!authRead) {
       const revision = authRevision;
       authRead = Promise.all([
-        readAuthToken(),
+        readSecretToken(AUTH_TOKEN_KEY),
+        readSecretToken(REFRESH_TOKEN_KEY),
         AsyncStorage.getItem(AUTH_USER_KEY),
       ])
-        .then(([token, rawUser]) => {
+        .then(([token, refreshToken, rawUser]) => {
           let user = null;
           try {
             user = rawUser ? JSON.parse(rawUser) : null;
           } catch {
             /* ignore invalid user cache */
           }
-          const value = { token, user };
+          const value = { token, refreshToken, user };
           if (revision === authRevision) authCache = value;
           return authCache || value;
         })
@@ -120,22 +124,71 @@ export const authStorage = {
     }
     return authRead;
   },
-  async write(token: string, user: unknown) {
+  subscribe(listener: (value: StoredAuth) => void) {
+    authListeners.add(listener);
+    return () => { authListeners.delete(listener); };
+  },
+  async write(token: string, user: unknown, refreshToken?: string | null) {
+    const current = await this.read();
+    const nextRefresh = refreshToken === undefined ? current.refreshToken : refreshToken;
     await Promise.all([
-      writeAuthToken(token),
+      writeSecretToken(AUTH_TOKEN_KEY, token),
+      nextRefresh ? writeSecretToken(REFRESH_TOKEN_KEY, nextRefresh) : clearSecretToken(REFRESH_TOKEN_KEY),
       AsyncStorage.setItem(AUTH_USER_KEY, JSON.stringify(user)),
     ]);
     authRevision += 1;
-    authCache = { token, user };
+    authCache = { token, refreshToken: nextRefresh, user };
+    authListeners.forEach((listener) => listener(authCache!));
   },
   async clear() {
     authRevision += 1;
-    authCache = { token: null, user: null };
+    authCache = { token: null, refreshToken: null, user: null };
     await Promise.all([
-      clearAuthToken(),
+      clearSecretToken(AUTH_TOKEN_KEY),
+      clearSecretToken(REFRESH_TOKEN_KEY),
       AsyncStorage.removeItem(AUTH_USER_KEY),
     ]);
+    authListeners.forEach((listener) => listener(authCache!));
   },
+};
+
+let refreshInFlight: Promise<boolean> | null = null;
+const renewAccess = async () => {
+  if (!refreshInFlight) {
+    refreshInFlight = (async () => {
+      const stored = await authStorage.read();
+      if (!stored.refreshToken) return false;
+      const controller = new AbortController();
+      let didTimeout = false;
+      const timeout = setTimeout(() => { didTimeout = true; controller.abort(); }, DEFAULT_TIMEOUT_MS);
+      let response: Response;
+      try {
+        response = await fetch(`${SPRING_API}/auth/refresh`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ refresh_token: stored.refreshToken }),
+          signal: controller.signal,
+        });
+      } catch (error) {
+        if (didTimeout) throw new ApiError(408, null, TIMEOUT_ERROR_MESSAGE, "timeout");
+        throw error;
+      } finally {
+        clearTimeout(timeout);
+      }
+      if (response.status >= 500)
+        throw new ApiError(response.status, null, httpErrorMessage(response.status, null), "server");
+      if (!response.ok) {
+        if (response.status === 401 && (await authStorage.read()).refreshToken === stored.refreshToken)
+          await authStorage.clear();
+        return false;
+      }
+      const data = await response.json();
+      if (!data.access_token || !data.refresh_token) return false;
+      if ((await authStorage.read()).refreshToken !== stored.refreshToken) return false;
+      await authStorage.write(data.access_token, data.user || stored.user, data.refresh_token);
+      return true;
+    })().finally(() => { refreshInFlight = null; });
+  }
+  return refreshInFlight;
 };
 
 const isSpringPath = (path: string) =>
@@ -150,6 +203,7 @@ type RequestOptions = Omit<RequestInit, "body" | "signal"> & {
   signal?: AbortSignal;
   timeoutMs?: number;
   onRetry?: (info: RequestRetryInfo) => void;
+  authRetried?: boolean;
 };
 
 // Funnel 경유 첫 요청이나 큰 검색 응답도 정상적으로 받을 수 있게 하되,
@@ -180,6 +234,7 @@ export async function apiRequest<T>(
     signal: externalSignal,
     timeoutMs = DEFAULT_TIMEOUT_MS,
     onRetry,
+    authRetried = false,
     ...requestOptions
   } = options;
   const spring = isSpringPath(path);
@@ -223,7 +278,8 @@ export async function apiRequest<T>(
           requestController.abort();
         }, timeoutMs);
         try {
-          return await fetch(url, {
+          const requestFetch = formData ? expoFetch : fetch;
+          return await requestFetch(url, {
             ...requestOptions,
             headers,
             signal: requestController.signal,
@@ -258,6 +314,17 @@ export async function apiRequest<T>(
         ? await response.json()
         : await response.text();
   if (!response.ok) {
+    if (response.status === 401 && auth && !authRetried && requestToken) {
+      const current = await authStorage.read();
+      try {
+        if ((current.token && current.token !== requestToken) || await renewAccess())
+          return apiRequest<T>(path, { ...options, authRetried: true });
+      } catch (error) {
+        // A network failure during renewal does not prove the session expired.
+        if (error instanceof ApiError) throw error;
+        throw new ApiError(0, null, CONNECTION_ERROR_MESSAGE, "connection");
+      }
+    }
     if (
       response.status === 401 &&
       auth &&

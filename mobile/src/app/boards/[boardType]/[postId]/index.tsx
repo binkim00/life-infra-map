@@ -3,6 +3,7 @@ import { useAction } from "@/hooks/use-action";
 import { LoadState } from "@/components/load-state";
 import { router, useLocalSearchParams } from "expo-router";
 import { useState } from "react";
+import { useFormDraft } from "@/hooks/use-form-draft";
 import {
   Alert,
   Image,
@@ -16,8 +17,9 @@ import {
 import { boardsApi } from "@/api/boards";
 import { useAuth } from "@/auth/auth-context";
 import { INPUT_PLACEHOLDER_COLOR, Screen, ui } from "@/components/screen";
+import { authorTierDisplay, type AuthorTierData } from "@/utils/tier-display";
 
-type Comment = {
+type Comment = AuthorTierData & {
   id: number;
   author?: number;
   author_nickname?: string;
@@ -27,7 +29,7 @@ type Comment = {
   dislikes_count?: number;
   replies?: Comment[];
 };
-type Post = {
+type Post = AuthorTierData & {
   id: number;
   author?: number;
   author_nickname?: string;
@@ -47,12 +49,14 @@ export default function BoardDetailScreen() {
     postId: string;
   }>();
   const { user, requireLogin } = useAuth();
-  const [comment, setComment] = useState("");
-  const [reportReason, setReportReason] = useState("");
-  const [commentReportDrafts, setCommentReportDrafts] = useState<Record<number, string>>({});
-  const [replyDrafts, setReplyDrafts] = useState<Record<number, string>>({});
-  const [editingId, setEditingId] = useState<number | null>(null);
-  const [editingText, setEditingText] = useState("");
+  const draft = useFormDraft(`post-interaction:${postId}`, { comment: "", reportReason: "", commentReportDrafts: {} as Record<number, string>, replyDrafts: {} as Record<number, string>, editingId: null as number | null, editingText: "" });
+  const { comment, reportReason, commentReportDrafts, replyDrafts, editingId, editingText } = draft.value;
+  const setComment = (value: typeof comment | ((current: typeof comment) => typeof comment)) => draft.update("comment", value);
+  const setReportReason = (value: typeof reportReason | ((current: typeof reportReason) => typeof reportReason)) => draft.update("reportReason", value);
+  const setCommentReportDrafts = (value: typeof commentReportDrafts | ((current: typeof commentReportDrafts) => typeof commentReportDrafts)) => draft.update("commentReportDrafts", value);
+  const setReplyDrafts = (value: typeof replyDrafts | ((current: typeof replyDrafts) => typeof replyDrafts)) => draft.update("replyDrafts", value);
+  const setEditingId = (value: typeof editingId | ((current: typeof editingId) => typeof editingId)) => draft.update("editingId", value);
+  const setEditingText = (value: typeof editingText | ((current: typeof editingText) => typeof editingText)) => draft.update("editingText", value);
   const [error, setError] = useState("");
   const deleteAction = useAction();
   const interaction = useAction();
@@ -81,9 +85,10 @@ export default function BoardDetailScreen() {
   return (
     <Screen
       title={post.title}
-      subtitle={`${post.author_nickname || post.author_username} · 조회 ${post.view_count || 0}`}
+      subtitle={<Text style={{ color: authorTierDisplay(post).color }}>{`${post.author_nickname || post.author_username} · ${authorTierDisplay(post).label} · 조회 ${post.view_count || 0}`}</Text>}
       back
     >
+      {draft.error ? <Text style={ui.error}>{draft.error}</Text> : null}
       {deleteAction.error ? <Text style={ui.error}>{deleteAction.error}</Text> : null}
       {interaction.error ? <Text style={ui.error}>{interaction.error}</Text> : null}
       <View style={ui.card}>
@@ -94,7 +99,7 @@ export default function BoardDetailScreen() {
       </View>
       <View style={ui.row}>
         <Pressable
-          disabled={interaction.busy}
+          disabled={!draft.ready || interaction.busy}
           onPress={() => interaction.run(async () => {
             if (!requireLogin()) return;
             await boardsApi.likePost(postId);
@@ -131,7 +136,7 @@ export default function BoardDetailScreen() {
           style={[ui.input, ui.grow]}
         />
         <Pressable
-          disabled={interaction.busy || !reportReason.trim()}
+          disabled={!draft.ready || interaction.busy || !reportReason.trim()}
           onPress={() => interaction.run(async () => {
             if (!requireLogin() || !reportReason.trim()) return;
             await boardsApi.reportPost(postId, { reason: reportReason.trim() });
@@ -157,15 +162,15 @@ export default function BoardDetailScreen() {
           placeholderTextColor={INPUT_PLACEHOLDER_COLOR}
           style={[ui.input, ui.grow]}
         />
-        <Pressable disabled={interaction.busy || !comment.trim()} onPress={addComment} style={[ui.button, !comment.trim() && styles.disabled]}>
+        <Pressable disabled={!draft.ready || interaction.busy || !comment.trim()} onPress={addComment} style={[ui.button, !comment.trim() && styles.disabled]}>
           <Text style={ui.buttonText}>등록</Text>
         </Pressable>
       </View>
       <View style={styles.comments}>
         {post.comments?.map((item) => (
           <View key={item.id} style={ui.card}>
-            <Text style={styles.author}>
-              {item.author_nickname || item.author_username}
+            <Text style={[styles.author, { color: authorTierDisplay(item).color }]}>
+              {item.author_nickname || item.author_username} · {authorTierDisplay(item).label}
             </Text>
             {editingId === item.id ? (
               <View style={ui.row}>
@@ -177,7 +182,7 @@ export default function BoardDetailScreen() {
                   style={[ui.input, ui.grow]}
                 />
                 <Pressable
-                  disabled={interaction.busy || !editingText.trim()}
+                  disabled={!draft.ready || interaction.busy || !editingText.trim()}
                   onPress={() => interaction.run(async () => {
                     await boardsApi.updateComment(item.id, { content: editingText.trim() });
                     setEditingId(null);
@@ -191,9 +196,9 @@ export default function BoardDetailScreen() {
             ) : (
               <Text style={styles.comment}>{item.content}</Text>
             )}
-            <View style={ui.row}>
+            <View style={[ui.row, styles.commentActions]}>
               <Pressable
-                disabled={interaction.busy}
+                disabled={!draft.ready || interaction.busy}
                 onPress={() => interaction.run(async () => {
                   if (!requireLogin()) return;
                   await boardsApi.likeComment(item.id);
@@ -205,7 +210,7 @@ export default function BoardDetailScreen() {
                 </Text>
               </Pressable>
               <Pressable
-                disabled={interaction.busy}
+                disabled={!draft.ready || interaction.busy}
                 onPress={() => interaction.run(async () => {
                   if (!requireLogin()) return;
                   await boardsApi.dislikeComment(item.id);
@@ -234,6 +239,8 @@ export default function BoardDetailScreen() {
                   </Pressable>
                 </>
               ) : null}
+            </View>
+            <View style={[ui.row, styles.commentReport]}>
               <TextInput
                 value={commentReportDrafts[item.id] || ""}
                 onChangeText={(value) => setCommentReportDrafts((current) => ({ ...current, [item.id]: value }))}
@@ -242,7 +249,7 @@ export default function BoardDetailScreen() {
                 style={[ui.input, styles.reportInput]}
               />
               <Pressable
-                disabled={interaction.busy || !commentReportDrafts[item.id]?.trim()}
+                disabled={!draft.ready || interaction.busy || !commentReportDrafts[item.id]?.trim()}
                 onPress={() => interaction.run(async () => {
                   const reason = commentReportDrafts[item.id]?.trim();
                   if (!requireLogin() || !reason) return;
@@ -266,7 +273,7 @@ export default function BoardDetailScreen() {
                 style={[ui.input, ui.grow]}
               />
               <Pressable
-                disabled={interaction.busy || !replyDrafts[item.id]?.trim()}
+                disabled={!draft.ready || interaction.busy || !replyDrafts[item.id]?.trim()}
                 onPress={() => interaction.run(async () => {
                   const content = replyDrafts[item.id]?.trim();
                   if (!requireLogin() || !content) return;
@@ -284,8 +291,8 @@ export default function BoardDetailScreen() {
             </View>
             {item.replies?.map((reply) => (
               <View key={reply.id} style={styles.reply}>
-                <Text style={styles.author}>
-                  {reply.author_nickname || reply.author_username}
+                <Text style={[styles.author, { color: authorTierDisplay(reply).color }]}>
+                  {reply.author_nickname || reply.author_username} · {authorTierDisplay(reply).label}
                 </Text>
                 <Text style={styles.comment}>{reply.content}</Text>
               </View>
@@ -314,6 +321,8 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   action: { color: "#0F766E", fontSize: 11, fontWeight: "800" },
+  commentActions: { flexWrap: "wrap" },
+  commentReport: { marginTop: 10 },
   replyBox: { marginTop: 10 },
   reply: {
     marginTop: 10,

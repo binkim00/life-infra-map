@@ -25,6 +25,9 @@ public class Inquiry {
     @Column(nullable = false, length = 200)
     private String title;
 
+    @Column(nullable = false, length = 20)
+    private String category = "general";
+
     @Column(nullable = false, columnDefinition = "text")
     private String content;
 
@@ -50,10 +53,11 @@ public class Inquiry {
     protected Inquiry() {
     }
 
-    public static Inquiry create(User author, String title, String content) {
+    public static Inquiry create(User author, String title, String content, String category) {
         Inquiry inquiry = new Inquiry();
         inquiry.author = author;
         inquiry.title = title;
+        inquiry.category = category;
         inquiry.content = content;
         inquiry.status = "pending";
         inquiry.adminReply = "";
@@ -76,6 +80,7 @@ public class Inquiry {
     public Long getId() { return id; }
     public User getAuthor() { return author; }
     public String getTitle() { return title; }
+    public String getCategory() { return category; }
     public String getContent() { return content; }
     public String getStatus() { return status; }
     public String getAdminReply() { return adminReply; }

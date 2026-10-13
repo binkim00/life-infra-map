@@ -135,9 +135,18 @@ class Command(BaseCommand):
             "judgments": judgments,
         }
         if options["apply"]:
-            ResearchAudit.objects.update_or_create(
-                run_key=path.name, defaults={"payload": report},
-            )
+            with transaction.atomic():
+                audit, _ = ResearchAudit.objects.select_for_update().get_or_create(
+                    run_key=path.name, defaults={"payload": {}},
+                )
+                progress = dict(audit.payload or {})
+                report.update({key: progress[key] for key in ("started_at", "stage_history") if key in progress})
+                report.update({
+                    "run_status": "completed", "stage": "verify",
+                    "finished_at": timezone.now().isoformat(),
+                })
+                audit.payload = report
+                audit.save(update_fields=["payload"])
         self.stdout.write(json.dumps(report, ensure_ascii=False, indent=2))
 
 

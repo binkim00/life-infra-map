@@ -38,9 +38,16 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
 
+        // OAuth redirects need a temporary session, but API authentication must come
+        // from the Bearer token even when an older OAuth security context exists.
+        String path = request.getRequestURI();
+        if (path.startsWith("/api/oauth2/") || path.startsWith("/api/login/oauth2/")) {
+            chain.doFilter(request, response);
+            return;
+        }
+        SecurityContextHolder.clearContext();
         String header = request.getHeader("Authorization");
-        if (header != null && header.startsWith(PREFIX)
-                && SecurityContextHolder.getContext().getAuthentication() == null) {
+        if (header != null && header.startsWith(PREFIX)) {
             try {
                 Claims claims = jwtService.parse(header.substring(PREFIX.length()).trim());
                 int userId = Integer.parseInt(claims.getSubject());

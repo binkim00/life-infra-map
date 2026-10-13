@@ -3,7 +3,7 @@ from datetime import timedelta
 from django.test import TestCase
 from django.utils import timezone
 
-from recommendations.models import Place, PlaceTagEvidence, Tag
+from recommendations.models import EvidenceReview, Place, PlaceTagEvidence, Tag
 from recommendations.services.search_hard_gate import apply_common_hard_gate
 
 
@@ -97,8 +97,8 @@ class CommonSearchHardGateTests(TestCase):
         self.assertEqual(kept, [])
         self.assertEqual(len(removed), 1)
 
-    def test_one_web_reference_cannot_satisfy_hard_gate_but_two_can(self):
-        PlaceTagEvidence.objects.create(
+    def test_unreviewed_web_references_require_approval_for_hard_gate(self):
+        evidence = PlaceTagEvidence.objects.create(
             place=self.cafe,
             tag=self.parking_tag,
             source="web_search",
@@ -126,8 +126,34 @@ class CommonSearchHardGateTests(TestCase):
         kept, removed, _ = apply_common_hard_gate(
             [self._candidate()], "주차 가능한 카페", {},
         )
+        self.assertEqual(kept, [])
+        self.assertEqual(len(removed), 1)
+
+        review = EvidenceReview.objects.create(evidence=evidence, status="approved", note="지점과 조건 확인")
+        kept, removed, _ = apply_common_hard_gate(
+            [self._candidate()], "주차 가능한 카페", {},
+        )
         self.assertEqual(len(kept), 1)
         self.assertEqual(removed, [])
+
+        for status in ("pending", "approved_limited", "rejected", "research"):
+            review.status = status
+            review.save(update_fields=["status"])
+            kept, removed, _ = apply_common_hard_gate(
+                [self._candidate()], "주차 가능한 카페", {},
+            )
+            self.assertEqual(kept, [], status)
+            self.assertEqual(len(removed), 1, status)
+
+    def test_unreviewed_structured_web_extraction_is_not_verified(self):
+        PlaceTagEvidence.objects.create(
+            place=self.cafe, tag=self.parking_tag, source="web_search",
+            source_reference="https://example.com/structured",
+            context={"extraction": {"method": "structured"}},
+        )
+        kept, removed, _ = apply_common_hard_gate([self._candidate()], "주차 가능한 카페", {})
+        self.assertEqual(kept, [])
+        self.assertEqual(len(removed), 1)
 
     def test_explicit_category_applies_to_every_candidate_source(self):
         for source in ("db", "kakao", "fallback", "semantic"):

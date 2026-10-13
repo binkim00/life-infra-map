@@ -33,6 +33,7 @@ public class CommentController {
     private final UserRepository userRepository;
     private final BoardResponseAssembler assembler;
     private final PenaltyService penaltyService;
+    private final org.springframework.jdbc.core.JdbcTemplate jdbc;
 
     public CommentController(
             CommentRepository commentRepository,
@@ -40,13 +41,15 @@ public class CommentController {
             NotificationRepository notificationRepository,
             UserRepository userRepository,
             BoardResponseAssembler assembler,
-            PenaltyService penaltyService) {
+            PenaltyService penaltyService,
+            org.springframework.jdbc.core.JdbcTemplate jdbc) {
         this.commentRepository = commentRepository;
         this.postRepository = postRepository;
         this.notificationRepository = notificationRepository;
         this.userRepository = userRepository;
         this.assembler = assembler;
         this.penaltyService = penaltyService;
+        this.jdbc = jdbc;
     }
 
 
@@ -120,6 +123,18 @@ public class CommentController {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(Map.of("detail", "본인이 작성한 댓글만 삭제할 수 있습니다."));
         }
+        Integer pendingReports = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM boards_report WHERE comment_id = ? AND status = 'pending'",
+                Integer.class, commentId);
+        if (pendingReports != null && pendingReports > 0) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(Map.of("detail", "검토 중인 신고가 있어 댓글을 삭제할 수 없습니다."));
+        }
+        jdbc.update("UPDATE boards_notification SET target_comment_id = NULL WHERE target_comment_id = ?", commentId);
+        jdbc.update("UPDATE boards_report SET comment_id = NULL WHERE comment_id = ?", commentId);
+        jdbc.update("DELETE FROM boards_commentlike WHERE comment_id = ?", commentId);
+        jdbc.update("DELETE FROM boards_commentdislike WHERE comment_id = ?", commentId);
+        jdbc.update("UPDATE boards_comment SET parent_id = NULL WHERE parent_id = ?", commentId);
         commentRepository.delete(comment);
         return ResponseEntity.noContent().build();
     }

@@ -11,7 +11,7 @@ from django.db.models import Q
 from django.db.models.expressions import RawSQL
 from django.db.models.fields.json import KeyTextTransform
 
-from recommendations.models import Place
+from recommendations.models import Place, PlaceTag
 from recommendations.services.ai_candidate_reranker import _hybrid_score, semantic_rerank_candidates
 from recommendations.services.ai_intent_planner import (
     build_ai_intent_plan,
@@ -505,6 +505,22 @@ def _resolve_anchor_location(anchor_location, *, lat=None, lng=None, address_fir
             "address": "",
         }
 
+    # Exact known areas should not be overridden by an ambiguous address API
+    # response. This is common for short names such as "서면".
+    area = resolve_area_coordinates(anchor_location)
+    if area:
+        area_lat, area_lng, area_label = area
+        return {
+            "status": "resolved",
+            "reason": "",
+            "lat": area_lat,
+            "lng": area_lng,
+            "label": area_label,
+            "source": "area_gazetteer",
+            "external_id": "",
+            "address": "",
+        }
+
     if address_first:
         try:
             addresses = search_address(anchor_location).get("documents", [])
@@ -521,21 +537,6 @@ def _resolve_anchor_location(anchor_location, *, lat=None, lng=None, address_fir
                 }
         elif len(addresses) > 1:
             return {"status": "unresolved", "reason": "ambiguous_address", "lat": None, "lng": None, "label": anchor_location}
-
-    # `서면`, `광안리` 같은 통칭 지명은 카카오 검색으로 풀리지 않으므로 사전에서 먼저 해결한다.
-    area = resolve_area_coordinates(anchor_location)
-    if area:
-        area_lat, area_lng, area_label = area
-        return {
-            "status": "resolved",
-            "reason": "",
-            "lat": area_lat,
-            "lng": area_lng,
-            "label": area_label,
-            "source": "area_gazetteer",
-            "external_id": "",
-            "address": "",
-        }
 
     coordinates = _coordinate_pair(anchor_location)
     if coordinates:
@@ -2683,6 +2684,38 @@ def _merge_expanded_candidates(nearby, expanded, *, original_radius, limit):
     return merged
 
 
+def _verified_required_place_ids(frame, category_codes, bounds, lat, lng, limit):
+    """Keep nearby confirmed answers beyond the nearest-place scan window."""
+    if not category_codes or not bounds or lat is None or lng is None:
+        return []
+    tag_names = {
+        canonical_tag_name(condition)
+        for condition in _required_evidence_conditions(frame)
+    } - {""}
+    if not tag_names:
+        return []
+    tagged_places = PlaceTag.objects.filter(
+        tag__name__in=tag_names,
+        place__category__in=category_codes,
+    ).filter(
+        Q(is_verified=True)
+        | Q(source__in=VERIFIED_TAG_SOURCES, status="confirmed")
+    ).values("place_id")
+    nearby = Place.objects.filter(
+        id__in=tagged_places,
+        lat__gte=bounds["lat_min"],
+        lat__lte=bounds["lat_max"],
+        lng__gte=bounds["lng_min"],
+        lng__lte=bounds["lng_max"],
+    )
+    count = max(_as_int(limit, 50), 10)
+    if supports_postgis():
+        return list(_order_by_distance(nearby, lat, lng).values_list("id", flat=True)[:count])
+    coordinate_rows = list(nearby.values_list("id", "lat", "lng"))
+    coordinate_rows.sort(key=lambda row: _distance(lat, lng, row[1], row[2]))
+    return [row[0] for row in coordinate_rows[:count]]
+
+
 def collect_db_candidates(
     frame,
     *,
@@ -2897,6 +2930,22 @@ def collect_db_candidates(
             detail_queryset(queryset), lat, lng
         )
         candidate_places = queryset[:candidate_limit]
+
+    verified_ids = _verified_required_place_ids(
+        frame, direct_category_codes, bounds, lat, lng, limit,
+    )
+    if verified_ids:
+        existing_ids = {place.id for place in candidate_places}
+        extra_ids = [place_id for place_id in verified_ids if place_id not in existing_ids]
+        if extra_ids:
+            extra_places = {
+                place.id: place
+                for place in detail_queryset(Place.objects.filter(id__in=extra_ids))
+            }
+            candidate_places = [
+                *candidate_places,
+                *(extra_places[place_id] for place_id in extra_ids if place_id in extra_places),
+            ]
 
     from recommendations.services.place_evidence_completeness import quality_profiles_for_places
 
@@ -4430,14 +4479,18 @@ def _allows_unverified_result_relaxation(query):
 
 
 def _enforce_required_result_policy(results, frame, query, *, allow_unverified=False):
-    """Never silently fill a mandatory-condition request with unknown candidates."""
+    """Show evidenced partial matches while labeling every unmet condition."""
     results = list(results or [])
     required = _required_evidence_conditions(frame)
     if not required or allow_unverified or _allows_unverified_result_relaxation(query):
         return results, required, False
     confirmed = [result for result in results if not (result.get("missing_conditions") or [])]
-    if confirmed:
-        return confirmed, required, False
+    partial = [
+        result for result in results
+        if result.get("missing_conditions") and result.get("matched_conditions")
+    ]
+    if confirmed or partial:
+        return [*confirmed, *partial], required, False
     return [], required, bool(results)
 
 
@@ -5424,6 +5477,46 @@ def run_ai_search_candidates(request_data, *, user=None):
     }
 
 
+FILTER_CATEGORY_LABELS = {
+    "cafe": "카페", "restaurant": "식당", "city_park": "공원",
+    "parking": "주차장", "toilet": "화장실", "shelter": "쉼터",
+}
+FILTER_REQUIREMENTS = {
+    "parking": "주차가능", "outlet": "콘센트있음", "quiet": "조용함",
+    "pet": "반려동물동반", "high_chair": "유아의자있음",
+}
+
+
+def apply_selected_filters(frame, selected):
+    """Apply only allowlisted choices; never let client JSON become a search plan."""
+    if not isinstance(selected, dict):
+        return frame
+    category = selected.get("category")
+    location = str(selected.get("location") or "").strip()
+    raw_required = selected.get("required")
+    if (category not in FILTER_CATEGORY_LABELS or not 1 <= len(location) <= 80
+            or not isinstance(raw_required, list) or len(raw_required) > 5
+            or any(key not in FILTER_REQUIREMENTS for key in raw_required)):
+        return frame
+    label = FILTER_CATEGORY_LABELS[category]
+    required = list(dict.fromkeys(FILTER_REQUIREMENTS[key] for key in raw_required))
+    return {
+        **frame,
+        "location_mode": "explicit", "anchor_location": location,
+        "target_objects": [label], "candidate_place_types": [label],
+        "candidate_category_codes": [category],
+        "result_match_terms": [label],
+        "primary_search_queries": [label],
+        "required_features": required,
+        "constraints": list(dict.fromkeys([*(frame.get("constraints") or []), *required])),
+        "structured_conditions": [
+            {"label": value, "type": "feature", "required": True, "source": "selected_filter"}
+            for value in required
+        ],
+        "fallback_enabled": False,
+    }
+
+
 def run_ai_search(request_data, *, user=None):
     total_started = time.perf_counter()
     timings = {
@@ -5495,6 +5588,12 @@ def run_ai_search(request_data, *, user=None):
     frame = _normalize_current_context_anchor_frame(
         intent_plan.get("frame") if isinstance(intent_plan.get("frame"), dict) else {}
     )
+    if isinstance(request_data.get("selected_filters"), dict):
+        selected_frame = apply_selected_filters(frame, request_data["selected_filters"])
+        if selected_frame is not frame:
+            frame = selected_frame
+            intent_plan = {**intent_plan, "action": "search", "decision_action": "search", "frame": frame}
+            action = "search"
     if force_map_center:
         frame = {
             **frame,

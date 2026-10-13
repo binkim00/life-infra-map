@@ -3,34 +3,44 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { Palette, Shadow } from "@/constants/theme";
 import { AppIcon } from "@/components/app-icon";
+import { useAuth } from "@/auth/auth-context";
 
 const ITEMS = [
   { label: "홈", ios: "house.fill", android: "home", path: "/" as const },
   { label: "검색", ios: "magnifyingglass", android: "search", path: "/explore" as const },
   { label: "추천", ios: "sparkles", android: "auto_awesome", path: "/recommend" as const },
-  { label: "저장", ios: "bookmark.fill", android: "bookmark", path: "/mypage/saved-places" as const },
+  { label: "저장", ios: "bookmark.fill", android: "bookmark", path: "/saved" as const },
   { label: "MY", ios: "person.fill", android: "person", path: "/mypage" as const },
 ] as const;
 
 export function BottomNav() {
   const pathname = usePathname();
+  const { isLoggedIn } = useAuth();
   return (
     <View style={styles.outer} pointerEvents="box-none">
       <View style={styles.nav}>
-        {ITEMS.map((item) => {
+        {ITEMS.filter((item) => item.path !== "/saved" || isLoggedIn).map((item) => {
           const active =
             item.path === "/"
               ? pathname === "/"
               : item.path === "/mypage"
                 ? pathname.startsWith("/mypage") && !pathname.startsWith("/mypage/saved-places")
-                : pathname.startsWith(item.path);
+                : item.path === "/saved"
+                  ? pathname === "/saved" || pathname.startsWith("/mypage/saved-places")
+                  : pathname.startsWith(item.path);
           return (
             <Pressable
               key={item.path}
               accessibilityRole="button"
               accessibilityState={{ selected: active }}
               accessibilityLabel={item.label}
-              onPress={() => router.push(item.path as never)}
+              onPress={() => {
+                if (item.path === "/mypage" && !isLoggedIn) {
+                  router.push("/login");
+                } else if (!active) {
+                  router.navigate(item.path as never);
+                }
+              }}
               style={({ pressed }) => [styles.item, pressed && styles.pressed]}
             >
               <AppIcon ios={item.ios} android={item.android} size={21} color={active ? Palette.accent : "#89918D"} />
@@ -47,12 +57,10 @@ export function BottomNav() {
 
 const styles = StyleSheet.create({
   outer: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 8,
+    height: 84,
     alignItems: "center",
     paddingHorizontal: 12,
+    paddingBottom: 8,
   },
   nav: {
     width: "100%",
