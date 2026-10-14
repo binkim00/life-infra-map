@@ -1,0 +1,31 @@
+import React from 'react';
+import {render,screen,waitFor,fireEvent,cleanup} from '@testing-library/react';
+import {beforeEach,it,expect,vi} from 'vitest';
+const m=vi.hoisted(()=>({owner:1,params:{boardType:'free',postId:'3101'},rows:new Map(),removed:vi.fn(),persist:vi.fn(),mutate:vi.fn()}));
+vi.mock('react-native',()=>({View:({children})=><div>{children}</div>,Text:({children})=><span>{children}</span>,Image:()=>null,TextInput:({value,onChangeText,placeholder,editable=true})=><input disabled={!editable} placeholder={placeholder} value={value||''} onChange={e=>onChangeText(e.target.value)}/>,Pressable:({children,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{children}</button>,StyleSheet:{create:x=>x},Platform:{OS:'android'},Alert:{alert:vi.fn()}}));
+vi.mock('expo-router',()=>({router:{replace:vi.fn(),push:vi.fn()},useLocalSearchParams:()=>m.params}));
+vi.mock('@react-native-async-storage/async-storage',()=>({default:{getItem:async k=>m.rows.get(k)||null,setItem:async(k,v)=>{m.rows.set(k,v)},removeItem:async k=>{m.rows.delete(k)}}}));
+vi.mock('@/auth/auth-context',()=>({useAuth:()=>({user:{id:m.owner,username:'QA_'+m.owner},ready:true,isLoggedIn:true,requireLogin:()=>true})}));
+vi.mock('@/components/screen',()=>({Screen:({children,footer})=><main>{children}{footer}</main>,ui:{},INPUT_PLACEHOLDER_COLOR:'#777'}));
+vi.mock('@/components/load-state',()=>({LoadState:()=>null}));
+vi.mock('@/constants/theme',()=>({Palette:{},Radius:{},Shadow:{},Spacing:{}}));
+vi.mock('@/hooks/use-resource',()=>({useResource:()=>({data:{id:3101,author:1,title:'QA_TITLE',content:'QA_CONTENT',comments:[{id:4101,author:1,content:'QA_ORIGINAL',replies:[]}]},loading:false,error:null,reload:vi.fn()})}));
+vi.mock('@/api/boards',()=>({boardsApi:{createComment:m.mutate,reportComment:m.mutate,reportPost:m.mutate,updateComment:m.mutate,post:vi.fn(),createPost:m.mutate,updatePost:m.mutate}}));
+vi.mock('expo-image-picker',()=>({requestMediaLibraryPermissionsAsync:async()=>({granted:true}),launchImageLibraryAsync:async()=>({canceled:false,assets:[{uri:'file:///QA_PICKER',fileName:'QA.png'}]})}));
+vi.mock('expo-file-system',()=>({File:class{constructor(uri){this.uri=uri}},Directory:class{},Paths:{document:'QA'}}));
+vi.mock('@/api/client',()=>({ApiError:class extends Error{}}));
+vi.mock('@/utils/place-report-draft',()=>({persistDraftImages:m.persist,removeDraftImages:m.removed,createReportRequestId:()=> 'QA_REQUEST'}));
+import Board from '../../src/app/boards/[boardType]/[postId]/index';
+import {PostEditor} from '../../src/components/post-editor';
+const settle=()=>new Promise(r=>setTimeout(r,10));
+beforeEach(()=>{cleanup();m.owner=1;m.rows.clear();vi.clearAllMocks();m.persist.mockResolvedValue([{uri:'file:///QA_MANAGED/QA.png',fileName:'QA.png'}])});
+it('all board interaction drafts restore after remount and stay hidden from another owner',async()=>{
+ let v=render(<Board/>);await waitFor(()=>expect(m.rows.size).toBe(0));await settle();
+ for(const [hint,value] of [['댓글을 입력하세요','QA_COMMENT'],['답글','QA_REPLY'],['댓글 신고 사유','QA_COMMENT_REPORT'],['신고 사유','QA_POST_REPORT']])fireEvent.change(screen.getByPlaceholderText(hint),{target:{value}});
+ fireEvent.click(screen.getAllByRole('button',{name:'수정',exact:true}).at(-1));fireEvent.change(screen.getByPlaceholderText('댓글 수정 내용'),{target:{value:'QA_EDIT'}});await settle();v.unmount();v=render(<Board/>);
+ for(const [hint,value] of [['댓글을 입력하세요','QA_COMMENT'],['답글','QA_REPLY'],['댓글 신고 사유','QA_COMMENT_REPORT'],['신고 사유','QA_POST_REPORT'],['댓글 수정 내용','QA_EDIT']])await waitFor(()=>expect(screen.getByPlaceholderText(hint).value).toBe(value));
+ m.owner=2;v.rerender(<Board/>);await waitFor(()=>expect(screen.getByPlaceholderText('댓글을 입력하세요').value).toBe(''));expect(screen.queryByDisplayValue('QA_EDIT')).toBeNull();m.owner=1;v.rerender(<Board/>);await waitFor(()=>expect(screen.getByPlaceholderText('댓글을 입력하세요').value).toBe('QA_COMMENT'));expect(m.mutate).not.toHaveBeenCalled();
+});
+it('post editor image removal removes its managed image file',async()=>{
+ render(<PostEditor boardType="free"/>);await settle();fireEvent.click(screen.getByRole('button',{name:/사진 첨부/}));await screen.findByRole('button',{name:'사진 제거'});fireEvent.click(screen.getByRole('button',{name:'사진 제거'}));await settle();expect(m.removed).toHaveBeenCalledWith([{uri:'file:///QA_MANAGED/QA.png',fileName:'QA.png'}]);expect(m.mutate).not.toHaveBeenCalled();
+});
