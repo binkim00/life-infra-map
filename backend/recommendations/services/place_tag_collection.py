@@ -13,6 +13,7 @@ from recommendations.services.naver_tag_evidence_provider import (
 )
 from recommendations.services.evidence_scoring import evidence_confidence, parse_observed_date
 from recommendations.services.tag_source_policy import NAVER_BLOG_SEARCH
+from recommendations.services.tag_freshness import evidence_is_expired
 from recommendations.services.provider_rate_limit import acquire_provider_slot
 from recommendations.services.adaptive_tag_collection import targeted_profiles
 
@@ -189,7 +190,7 @@ def collect_naver_place_evidence(
     requests_made = 0
     diagnostics = {
         "search_results": 0, "identity_matches": 0, "tag_expressions": 0,
-        "short_snippets": 0, "strengths": {},
+        "short_snippets": 0, "strengths": {}, "expired_results": 0,
     }
     search_attempts = []
     ai_calls = 0
@@ -274,8 +275,17 @@ def collect_naver_place_evidence(
             if not source_url.startswith(("http://", "https://")):
                 result_audit["rejection_reason"] = "SOURCE_REJECT"
                 continue
+            observed_at = parse_observed_date(item.get("postdate"))
+            current_tags = tuple(
+                tag for tag in tag_names
+                if not evidence_is_expired(tag, NAVER_BLOG_SEARCH, observed_at)
+            )
+            if not current_tags:
+                diagnostics["expired_results"] += 1
+                result_audit["rejection_reason"] = "EXPIRED_SOURCE"
+                continue
             snippet_evidences = 0
-            for tag_name in tag_names:
+            for tag_name in current_tags:
                 extraction = polarity_assessment(tag_name, combined, category=place.category)
                 polarity = extraction["polarity"]
                 result_audit["extractions"].append({
@@ -295,7 +305,6 @@ def collect_naver_place_evidence(
                 snippet_evidences += 1
                 result_audit["evidence_candidate"] = True
                 seen.add(key)
-                observed_at = parse_observed_date(item.get("postdate"))
                 confidence, confidence_factors = evidence_confidence(
                     source=NAVER_BLOG_SEARCH,
                     identity_score=identity["score"],
@@ -325,7 +334,7 @@ def collect_naver_place_evidence(
                     extract_canonical_tags_from_evidence_detailed,
                 )
                 ai_attempts += 1
-                extraction_result = extract_canonical_tags_from_evidence_detailed(combined, tag_names)
+                extraction_result = extract_canonical_tags_from_evidence_detailed(combined, current_tags)
                 metrics = extraction_result.get("metrics") or {}
                 ai_calls += int(metrics.get("attempted") or 0)
                 for key in (
@@ -339,6 +348,8 @@ def collect_naver_place_evidence(
                 if metrics.get("model"):
                     ai_metrics["model"] = metrics["model"]
                 for extracted in extraction_result.get("matches") or []:
+                    if extracted["tag_name"] not in current_tags:
+                        continue
                     key = (extracted["tag_name"], source_url, extracted["polarity"])
                     if key in seen:
                         continue

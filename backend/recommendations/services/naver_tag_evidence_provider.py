@@ -1,9 +1,9 @@
 import re
-from datetime import datetime
 
 from recommendations.services.naver_search_provider import _clean_html, _request_channel, _safe_text
 from recommendations.services.evidence_scoring import evidence_confidence, parse_observed_date
 from recommendations.services.tag_source_policy import NAVER_BLOG_SEARCH
+from recommendations.services.tag_freshness import evidence_is_expired
 
 
 TAG_TERMS = {
@@ -663,6 +663,9 @@ def collect_naver_tag_evidence(place, tag_name):
     evidences = []
     seen_urls = set()
     for item in (payload or {}).get('items') or []:
+        parsed_observed_at = parse_observed_date(item.get('postdate'))
+        if evidence_is_expired(tag_name, NAVER_BLOG_SEARCH, parsed_observed_at):
+            continue
         title = _clean_html(item.get('title'), 180)
         summary = _clean_html(item.get('description'), 500)
         combined = '{} {}'.format(title, summary)
@@ -679,11 +682,7 @@ def collect_naver_tag_evidence(place, tag_name):
         ):
             continue
         seen_urls.add(url)
-        postdate = str(item.get('postdate') or '')
-        observed_at = None
-        if re.fullmatch(r'\d{8}', postdate):
-            observed_at = datetime.strptime(postdate, '%Y%m%d').date().isoformat()
-        parsed_observed_at = parse_observed_date(postdate)
+        observed_at = parsed_observed_at.date().isoformat() if parsed_observed_at else None
         confidence, confidence_factors = evidence_confidence(
             source=NAVER_BLOG_SEARCH,
             identity_score=identity['score'],
