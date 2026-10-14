@@ -41,6 +41,12 @@ export function PostEditor({
         setContent(String(post.content || ""));
     }
   }, undefined, Boolean(postId) && draft.ready, postId || "new");
+  const removeImage = () => {
+    if (!image) return;
+    const removed = image;
+    setImage(null);
+    void removeDraftImages([removed]);
+  };
   const pick = async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
@@ -120,7 +126,7 @@ export function PostEditor({
         {image ? (
           <View style={styles.imageWrap}>
             <Image source={{ uri: image.uri }} style={styles.image} />
-            <Pressable accessibilityRole="button" onPress={() => setImage(null)} style={styles.removeImage}>
+            <Pressable accessibilityRole="button" onPress={removeImage} style={styles.removeImage}>
               <Text style={styles.removeImageText}>사진 제거</Text>
             </Pressable>
           </View>

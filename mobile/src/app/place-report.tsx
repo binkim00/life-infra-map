@@ -25,7 +25,8 @@ import {
 import {
   clearPlaceReportDraft,
   createReportRequestId,
-  loadPlaceReportDraft,
+  loadOwnedPlaceReportDraft,
+  ownedReportDraftKey,
   persistDraftImages,
   PlaceReportDraft,
   removeDraftImages,
@@ -84,10 +85,11 @@ function PlaceReportForm({ params }: { params: ReportParams }) {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [locating, setLocating] = useState(false);
-  const draftKey = useMemo(() => reportDraftKey(params.placeId,
+  const legacyDraftKey = useMemo(() => reportDraftKey(params.placeId,
     params.name ? JSON.stringify([params.name, params.address || "", params.lat || "", params.lng || ""]) : undefined),
     [params.placeId, params.name, params.address, params.lat, params.lng]);
   const ownerKey = user?.id ? `user:${user.id}` : user?.username ? `username:${user.username}` : "anonymous";
+  const draftKey = useMemo(() => ownedReportDraftKey(legacyDraftKey, ownerKey), [legacyDraftKey, ownerKey]);
   const pickedPlace = useMemo<Place | null>(() => {
     if (!lat.trim() || !lng.trim()) return null;
     const parsedLat = Number(lat);
@@ -110,7 +112,7 @@ function PlaceReportForm({ params }: { params: ReportParams }) {
   useEffect(() => {
     if (!ready) return;
     let active = true;
-    void loadPlaceReportDraft(draftKey).then((draft) => {
+    void loadOwnedPlaceReportDraft(draftKey, legacyDraftKey, ownerKey).then((draft) => {
       if (!active) return;
       if (draft && (draft.ownerKey === ownerKey || draft.ownerKey === "anonymous")) {
         setType(draft.type || (params.placeId ? "tag_suggestion" : "new_place"));
@@ -130,7 +132,7 @@ function PlaceReportForm({ params }: { params: ReportParams }) {
       if (active) setDraftReady(true);
     });
     return () => { active = false; };
-  }, [draftKey, ownerKey, params.placeId, params.name, params.address, params.lat, params.lng, ready]);
+  }, [draftKey, legacyDraftKey, ownerKey, params.placeId, params.name, params.address, params.lat, params.lng, ready]);
 
   useEffect(() => {
     if (!draftReady) return;

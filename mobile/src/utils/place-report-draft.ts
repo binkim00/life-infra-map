@@ -32,6 +32,9 @@ const DRAFT_IMAGE_DIRECTORY = "place-report-drafts";
 export const reportDraftKey = (placeId?: string, externalIdentity?: string) =>
   `${DRAFT_PREFIX}:${placeId || (externalIdentity ? `external:${encodeURIComponent(externalIdentity)}` : "new-place")}`;
 
+export const ownedReportDraftKey = (legacyKey: string, ownerKey: string) =>
+  `${legacyKey}:owner:${encodeURIComponent(ownerKey)}`;
+
 export const createReportRequestId = () =>
   "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (character) => {
     const random = Math.floor(Math.random() * 16);
@@ -49,6 +52,21 @@ export async function loadPlaceReportDraft(key: string) {
   } catch {
     return null;
   }
+}
+
+export async function loadOwnedPlaceReportDraft(key: string, legacyKey: string, ownerKey: string) {
+  const current = await loadPlaceReportDraft(key);
+  if (current) return current.ownerKey === ownerKey ? current : null;
+  const legacy = await loadPlaceReportDraft(legacyKey);
+  if (!legacy || (legacy.ownerKey !== ownerKey && legacy.ownerKey !== "anonymous")) return null;
+  const migrated = { ...legacy, ownerKey };
+  await savePlaceReportDraft(key, migrated);
+  // Move the row only; managed photos are still referenced by the new key.
+  const latest = await loadPlaceReportDraft(legacyKey);
+  if (latest?.requestId === legacy.requestId && latest.ownerKey === legacy.ownerKey) {
+    await AsyncStorage.removeItem(legacyKey);
+  }
+  return migrated;
 }
 
 export async function savePlaceReportDraft(key: string, draft: PlaceReportDraft) {
