@@ -1,0 +1,41 @@
+{
+  "name": "lifemap-observability",
+  "services": {
+    "loki": {
+      "image": "${LOKI_IMAGE:?Run prepare.py with pinned image digests}",
+      "container_name": "life-infra-map-loki",
+      "restart": "unless-stopped",
+      "user": "10001:10001",
+      "command": ["-config.file=/etc/loki/config.json"],
+      "mem_limit": "768m", "cpus": "0.5",
+      "volumes": ["./loki.json:/etc/loki/config.json:ro", "${OBS_DATA_DIR}/loki:/loki"],
+      "logging": {"driver": "json-file", "options": {"max-size": "10m", "max-file": "3"}}
+    },
+    "grafana": {
+      "image": "${GRAFANA_IMAGE:?Run prepare.py with pinned image digests}",
+      "container_name": "life-infra-map-grafana",
+      "restart": "unless-stopped",
+      "mem_limit": "256m", "cpus": "0.25",
+      "ports": ["${GRAFANA_BIND_IP:-127.0.0.1}:3300:3000"],
+      "environment": {
+        "GF_SECURITY_ADMIN_PASSWORD__FILE": "/run/secrets/grafana-admin",
+        "GF_AUTH_ANONYMOUS_ENABLED": "false", "GF_USERS_ALLOW_SIGN_UP": "false",
+        "GF_ANALYTICS_REPORTING_ENABLED": "false", "GF_ANALYTICS_CHECK_FOR_UPDATES": "false",
+        "GF_SECURITY_DISABLE_GRAVATAR": "true"
+      },
+      "volumes": ["${OBS_DATA_DIR}/grafana:/var/lib/grafana", "./provisioning:/etc/grafana/provisioning:ro", "./secrets/grafana-admin:/run/secrets/grafana-admin:ro"],
+      "depends_on": ["loki"],
+      "logging": {"driver": "json-file", "options": {"max-size": "10m", "max-file": "3"}}
+    },
+    "alloy": {
+      "image": "${ALLOY_IMAGE:?Run prepare.py with pinned image digests}",
+      "container_name": "life-infra-map-alloy", "restart": "unless-stopped",
+      "command": ["run", "--storage.path=/var/lib/alloy", "/etc/alloy/config.alloy"],
+      "mem_limit": "128m", "cpus": "0.25", "cap_drop": ["ALL"],
+      "volumes": ["./config.alloy:/etc/alloy/config.alloy:ro", "/var/lib/docker/containers:/docker-logs:ro", "${OBS_DATA_DIR}/alloy:/var/lib/alloy"],
+      "depends_on": ["loki"],
+      "logging": {"driver": "json-file", "options": {"max-size": "10m", "max-file": "3"}}
+    }
+  },
+  "networks": {"default": {"driver": "bridge"}}
+}

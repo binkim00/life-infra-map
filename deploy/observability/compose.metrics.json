@@ -1,0 +1,27 @@
+{
+  "services": {
+    "prometheus": {
+      "image": "${PROMETHEUS_IMAGE:?Run install_metrics.py}",
+      "container_name": "life-infra-map-prometheus",
+      "restart": "unless-stopped",
+      "user": "65534:65534",
+      "mem_limit": "192m", "cpus": "0.25",
+      "cap_drop": ["ALL"], "security_opt": ["no-new-privileges:true"],
+      "extra_hosts": ["host.docker.internal:host-gateway"],
+      "command": ["--config.file=/etc/prometheus/prometheus.json", "--storage.tsdb.path=/prometheus", "--storage.tsdb.retention.time=7d", "--storage.tsdb.retention.size=512MB", "--query.max-concurrency=2"],
+      "volumes": ["./prometheus.json:/etc/prometheus/prometheus.json:ro", "${OBS_DATA_DIR}/prometheus:/prometheus"],
+      "logging": {"driver": "json-file", "options": {"max-size": "10m", "max-file": "3"}}
+    },
+    "node-exporter": {
+      "image": "${NODE_EXPORTER_IMAGE:?Run install_metrics.py}",
+      "container_name": "life-infra-map-node-exporter",
+      "restart": "unless-stopped",
+      "network_mode": "host", "pid": "host", "user": "65534:65534",
+      "mem_limit": "64m", "cpus": "0.15", "read_only": true,
+      "cap_drop": ["ALL"], "security_opt": ["no-new-privileges:true"],
+      "volumes": ["/:/host:ro,rslave"],
+      "command": ["--web.listen-address=172.17.0.1:19100", "--path.rootfs=/host", "--path.procfs=/host/proc", "--path.sysfs=/host/sys", "--collector.disable-defaults", "--collector.cpu", "--collector.meminfo", "--collector.filesystem", "--collector.netdev", "--collector.loadavg", "--collector.stat", "--collector.time", "--collector.uname", "--collector.filesystem.mount-points-exclude=^/(dev|proc|sys|run|var/lib/docker|var/lib/containerd)($$|/)"],
+      "logging": {"driver": "json-file", "options": {"max-size": "10m", "max-file": "3"}}
+    }
+  }
+}

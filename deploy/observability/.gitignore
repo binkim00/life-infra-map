@@ -1,0 +1,7 @@
+.env
+.env.metrics
+prometheus.json
+config.alloy
+secrets/
+provisioning/
+__pycache__/
