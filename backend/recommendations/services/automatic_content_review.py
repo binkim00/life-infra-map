@@ -8,8 +8,12 @@ from django.utils import timezone
 from recommendations.models import EvidenceReview, PlaceTagEvidence
 from .naver_tag_evidence_provider import identity_assessment, polarity_assessment
 from .tag_source_policy import WEB_EVIDENCE_SOURCES
+from .address_identity import (
+    compact, matching_address, unambiguous_full_name, title_building_matches,
+    _address_text, _registered_address_units, _ordinal_branch_conflict,
+)
 
-POLICY_VERSION = "content-v4-20260928"
+POLICY_VERSION = "content-structured-v1-20261023"
 
 # These describe observable facilities or supported actions. Subjective
 # experiences and negative claims need article-level context before approval.
@@ -25,10 +29,6 @@ BRANCH_SENSITIVE_BRANDS = (
     "블루샥", "롯데리아", "맥도날드", "버거킹", "맘스터치", "서브웨이",
     "kfc", "설빙", "텐퍼센트", "채선당", "배스킨라빈스", "파리바게뜨",
 )
-
-
-def compact(value):
-    return re.sub(r"[^a-z0-9가-힣]", "", str(value).lower())
 
 
 def roads(text):
@@ -124,17 +124,18 @@ def assess_content(row):
         return "reject", "insufficient_content_or_source"
     if explicit_opposite_statement(row, text):
         return "reject", "explicit_opposite_statement"
-    address_roads, quote_roads = roads(row.place.address), roads(prose)
-    # Blog snippets often insert spaces inside a road name. Compare its full
-    # road and building number after removing spaces, with a digit boundary.
-    same_road = any(
-        len(road) >= 6 and re.search(re.escape(compact(road)) + r"(?!\d)", body)
-        for road in address_roads
-    )
-    if not same_road:
+    same_address = matching_address(row.place.address, prose, place_name=row.place.name)
+    if not same_address:
         return "hold", "different_address_needs_branch_or_move_check"
-    if len(name) < 5 or name not in compact(title) or name not in body:
+    registered_units = _registered_address_units(row.place, prose)
+    if registered_units is None:
+        return "hold", "registered_address_details_unparsed"
+    if len(name) < 5 or not all(
+        unambiguous_full_name(row.place.name, text, allowed_units=registered_units) for text in (title, prose)
+    ):
         return "hold", "place_identity_not_explicit_in_title_and_quote"
+    if any(_ordinal_branch_conflict(row.place.name, value) for value in (title, prose)):
+        return "hold", "mixed_branch_qualifiers"
     if re.search(r"top\s*\d|best\s*\d|총정리|리스트|모음|\d+\s*곳|vs\b", title, re.I):
         return "hold", "multiple_place_scope"
     if re.search(r"(?:다른|옆집|맞은편).{0,10}(?:가게|카페|식당|맛집)", prose):
@@ -161,9 +162,9 @@ def assess_content(row):
     if identity.get("signals", {}).get("explicit_region_mismatch"):
         return "reject", "region_mismatch"
     # A distinctive full name in the quote is sufficient even if omitted in
-    # the title. For a branch-name omission require the exact road number.
+    # the title. For a branch-name omission require the exact address.
     name_terms = [compact(x) for x in re.findall(r"[a-zA-Z0-9가-힣]+", row.place.name) if len(compact(x)) >= 2]
-    name_matches = (len(name) >= 4 and name in compact(text)) or (same_road and any(x in compact(text) for x in name_terms))
+    name_matches = (len(name) >= 4 and name in compact(text)) or (same_address and any(x in compact(text) for x in name_terms))
     if not (name_matches or identity.get("matched")):
         if branch_sensitive_place(row.place) and not full_name_mentioned(row, text):
             return "hold", "place_identity_uncertain_for_branch"
@@ -174,10 +175,12 @@ def assess_content(row):
     # Explicit city conflict is not excused by a matching chain name.
     cities = "서울 부산 대구 인천 광주 대전 울산 세종 창원 양산 김해 진주 수원 성남 고양 용인 화성 전주 군산 익산 청주 천안 안산 제주 서귀포".split()
     expected = {x for x in cities if x in row.place.address}
-    title_cities = {x for x in cities if re.search(r"(?:^|\s|[\[|(])" + x + r"(?:시|\s|맛집|카페|[|/\]])", title)}
+    title_cities = {x for x in cities if re.search(r"(?:^|\s|[\[|(])" + x + r"(?:시|\s|맛집|카페|[|/\]])", _address_text(title))}
     if expected and title_cities and not expected.intersection(title_cities):
         return "reject", "title_city_mismatch"
-    mentioned = {x for x in cities if re.search(r"(?:^|\s|[\[|(])" + x + r"(?:시|\s|맛집|카페|[|/\]])", text)}
+    if not title_building_matches(row.place, title, registered_units=registered_units, prose=prose):
+        return "hold", "title_building_identity_conflict"
+    mentioned = {x for x in cities if re.search(r"(?:^|\s|[\[|(])" + x + r"(?:시|\s|맛집|카페|[|/\]])", _address_text(text))}
     if expected and mentioned and not expected.intersection(mentioned):
         return "reject", "city_mismatch"
     district_pattern = r"([가-힣0-9]{2,}(?:동|읍|면))(?=맛집|카페|\s|[)\],]|$)"
