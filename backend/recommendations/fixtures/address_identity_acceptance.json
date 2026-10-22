@@ -1,3 +1,2854 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:2fc7df5afab561d35fdcefeac86263dc029c44b55743e078834635314418522a
-size 147759
+{
+  "version": 1,
+  "description": "Frozen before structured parser refactor; synthetic final-assessment cases only.",
+  "cases": [
+    {
+      "case": "address-matching-v14-review-20261022/extended_name_1층점",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 테스트커피 서면점1층점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점1층점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v14-review-20261022/extended_name_1층분점",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 테스트커피 서면점1층분점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점1층분점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v14-review-20261022/extended_name_101호실점",
+      "address": "부산 중구 중앙대로 100 101호",
+      "quote": "부산 중구 중앙대로 100 테스트커피 서면점101호실점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점101호실점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v14-review-20261022/valid_attached_1층",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 테스트커피 서면점1층에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점1층 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v14-review-20261022/valid_attached_101호실",
+      "address": "부산 중구 중앙대로 100 101호",
+      "quote": "부산 중구 중앙대로 100 테스트커피 서면점101호실에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점101호실 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v14-review-20261022/unknown_room_attached_미상",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 호수는미상 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v14-review-20261022/unknown_room_spaced_미상",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 호수는 미상 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v14-review-20261022/unknown_room_attached_미기재",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 호수는미기재 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v14-review-20261022/unknown_room_spaced_미기재",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 호수는 미기재 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v14-review-20261022/unknown_room_attached_부정확",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 호수는부정확 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v14-review-20261022/unknown_room_spaced_부정확",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 호수는 부정확 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v14-review-20261022/unknown_room_attached_없음",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 호수는없음 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v14-review-20261022/unknown_room_spaced_없음",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 호수는 없음 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v14-review-20261022/unknown_floor_attached",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 층수는부정확 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v14-review-20261022/unknown_floor_spaced",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 층수는 부정확 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v14-review-20261022/range_title_미상",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 화장실은2층부터미상 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v14-review-20261022/range_title_미기재",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 화장실은2층부터미기재 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v14-review-20261022/range_title_부정확",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 화장실은2층부터부정확 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v14-review-20261022/range_body_unknown",
+      "address": "부산 중구 중앙대로 100 2층",
+      "quote": "부산 중구 중앙대로 100 2층내지미상 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 방문 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v14-review-20261022/range_body_control",
+      "address": "부산 중구 중앙대로 100 2층",
+      "quote": "부산 중구 중앙대로 100 2층내지미확인 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 방문 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v14-review-20261022/range_title_control",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 화장실은2층부터미확인 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v14-review-20261022/same_branch_title_2호점",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 테스트커피 2호점에는 콘센트가 있어요.",
+      "title": "테스트커피 2호점 안내 (2호점) 후기",
+      "registered_name": "테스트커피 2호점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v14-review-20261022/same_branch_body_2호점",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 2호점 테스트커피 2호점에는 콘센트가 있어요.",
+      "title": "테스트커피 2호점 방문 후기",
+      "registered_name": "테스트커피 2호점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v14-review-20261022/same_branch_title_제02호점",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 테스트커피 2호점에는 콘센트가 있어요.",
+      "title": "테스트커피 2호점 안내 (제02호점) 후기",
+      "registered_name": "테스트커피 2호점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v14-review-20261022/same_branch_body_제02호점",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 제02호점 테스트커피 2호점에는 콘센트가 있어요.",
+      "title": "테스트커피 2호점 방문 후기",
+      "registered_name": "테스트커피 2호점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v14-review-20261022/other_branch_title",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 테스트커피 2호점에는 콘센트가 있어요.",
+      "title": "테스트커피 2호점 안내 (1호점) 후기",
+      "registered_name": "테스트커피 2호점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v14-review-20261022/other_branch_body",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 및 1호점 테스트커피 2호점에는 콘센트가 있어요.",
+      "title": "테스트커피 2호점 방문 후기",
+      "registered_name": "테스트커피 2호점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v14-review-20261022/control_본관1층",
+      "address": "부산 중구 중앙대로 100 본관 1층",
+      "quote": "부산 중구 중앙대로 100 본관 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 본관1층 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v14-review-20261022/control_A동은1층",
+      "address": "부산 중구 중앙대로 100 A동 1층",
+      "quote": "부산 중구 중앙대로 100 A동 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 A동은1층 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v14-review-20261022/control_B동은1층",
+      "address": "부산 중구 중앙대로 100 A동 1층",
+      "quote": "부산 중구 중앙대로 100 A동 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 B동은1층 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v14-review-20261022/control_A동2층 화장실",
+      "address": "부산 중구 중앙대로 100 A동 1층",
+      "quote": "부산 중구 중앙대로 100 A동 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 A동2층 화장실 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v14-review-20261022/control_호수는 아름다운 풍경",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 호수는 아름다운 풍경 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v14-review-20261022/control_호수는미확인",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 호수는미확인 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v14-review-20261022/control_1~2층 화장실",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 1~2층 화장실 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v14-review-20261022/control_화장실은2층부터",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 화장실은2층부터 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v14-review-20261022/control_1호선 역세권",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 1호선 역세권 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v14-review-20261022/missing_floor",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 방문 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v14-review-20261022/missing_room",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 방문 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v14-review-20261022/unicode_city",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 （서울 중구 중앙대로 100） 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "reject"
+    },
+    {
+      "case": "address-matching-v14-review-20261022/ambiguous_dong",
+      "address": "부산 중구 중앙동 중앙대로 100 중앙동 101호",
+      "quote": "부산 중구 중앙동 중앙대로 100 중앙동 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 （중앙동의） 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v13-review-20261022/unparsed_restroom_화장실은2층부터",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 화장실은2층부터 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v13-review-20261022/unparsed_restroom_화장실은 2층 내지",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 화장실은 2층 내지 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v13-review-20261022/unparsed_restroom_화장실은2층부터미확인",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 화장실은2층부터미확인 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v13-review-20261022/unparsed_restroom_화장실은1~2층부터",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 화장실은1~2층부터 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v13-review-20261022/other_branch_및",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 및 1호점 테스트커피 2호점에는 콘센트가 있어요.",
+      "title": "테스트커피 2호점 방문 후기",
+      "registered_name": "테스트커피 2호점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v13-review-20261022/rail_pair_및",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 및 1호선 역세권인 테스트커피 2호점에는 콘센트가 있어요.",
+      "title": "테스트커피 2호점 방문 후기",
+      "registered_name": "테스트커피 2호점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v13-review-20261022/other_branch_그리고",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 그리고 1호점 테스트커피 2호점에는 콘센트가 있어요.",
+      "title": "테스트커피 2호점 방문 후기",
+      "registered_name": "테스트커피 2호점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v13-review-20261022/rail_pair_그리고",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 그리고 1호선 역세권인 테스트커피 2호점에는 콘센트가 있어요.",
+      "title": "테스트커피 2호점 방문 후기",
+      "registered_name": "테스트커피 2호점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v13-review-20261022/name_before_floor_매장이야기 서면점",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 매장이야기 서면점 1층 매장이야기 서면점에는 콘센트가 있어요.",
+      "title": "매장이야기 서면점 방문 후기",
+      "registered_name": "매장이야기 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v13-review-20261022/name_before_floor_가게이야기 서면점",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 가게이야기 서면점 1층 가게이야기 서면점에는 콘센트가 있어요.",
+      "title": "가게이야기 서면점 방문 후기",
+      "registered_name": "가게이야기 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v13-review-20261022/name_before_floor_점포가든 서면점",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 점포가든 서면점 1층 점포가든 서면점에는 콘센트가 있어요.",
+      "title": "점포가든 서면점 방문 후기",
+      "registered_name": "점포가든 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v13-review-20261022/normal_name_before_floor",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 테스트커피 서면점 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 방문 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v13-review-20261022/compact_wing_본관1층",
+      "address": "부산 중구 중앙대로 100 본관 1층",
+      "quote": "부산 중구 중앙대로 100 본관 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 본관1층 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v13-review-20261022/compact_wing_본 관1층",
+      "address": "부산 중구 중앙대로 100 본관 1층",
+      "quote": "부산 중구 중앙대로 100 본관 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 본 관1층 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v13-review-20261022/spaced_wing_본관 1층",
+      "address": "부산 중구 중앙대로 100 본관 1층",
+      "quote": "부산 중구 중앙대로 100 본관 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 본관 1층 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v13-review-20261022/spaced_wing_본 관 1층",
+      "address": "부산 중구 중앙대로 100 본관 1층",
+      "quote": "부산 중구 중앙대로 100 본관 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 본 관 1층 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v13-review-20261022/compact_block_A동은1층",
+      "address": "부산 중구 중앙대로 100 A동 1층",
+      "quote": "부산 중구 중앙대로 100 A동 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 A동은1층 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v13-review-20261022/compact_block_A동의1층",
+      "address": "부산 중구 중앙대로 100 A동 1층",
+      "quote": "부산 중구 중앙대로 100 A동 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 A동의1층 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v13-review-20261022/spaced_block_A동은 1층",
+      "address": "부산 중구 중앙대로 100 A동 1층",
+      "quote": "부산 중구 중앙대로 100 A동 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 A동은 1층 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v13-review-20261022/spaced_block_A동의 1층",
+      "address": "부산 중구 중앙대로 100 A동 1층",
+      "quote": "부산 중구 중앙대로 100 A동 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 A동의 1층 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v13-review-20261022/attached_restroom_A동",
+      "address": "부산 중구 중앙대로 100 A동 1층 101호",
+      "quote": "부산 중구 중앙대로 100 A동 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 A동2층 화장실 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v13-review-20261022/spaced_restroom_A동",
+      "address": "부산 중구 중앙대로 100 A동 1층 101호",
+      "quote": "부산 중구 중앙대로 100 A동 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 A동 2층 화장실 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v13-review-20261022/attached_restroom_교육동",
+      "address": "부산 중구 중앙대로 100 교육동 1층 101호",
+      "quote": "부산 중구 중앙대로 100 교육동 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 교육동2층 화장실 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v13-review-20261022/spaced_restroom_교육동",
+      "address": "부산 중구 중앙대로 100 교육동 1층 101호",
+      "quote": "부산 중구 중앙대로 100 교육동 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 교육동 2층 화장실 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v13-review-20261022/lake_word",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 호수는 아름다운 풍경 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v13-review-20261022/control_호수는미확인",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 호수는미확인 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v13-review-20261022/control_호수는101호",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 호수는101호 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v13-review-20261022/control_호수는102호",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 호수는102호 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v13-review-20261022/control_화장실은 2층~",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 화장실은 2층~ 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v13-review-20261022/control_화장실은 2층부터 3층까지",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 화장실은 2층부터 3층까지 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v13-review-20261022/control_1~2층 화장실",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 1~2층 화장실 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v13-review-20261022/control_옥탑층에서",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 옥탑층에서 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v13-review-20261022/control_매장은3층",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 매장은3층 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v13-review-20261022/control_매장은1층",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 매장은1층 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v13-review-20261022/control_1호선 역세권",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 1호선 역세권 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v13-review-20261022/unicode_other_city_（",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 （서울 중구 중앙대로 100） 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "reject"
+    },
+    {
+      "case": "address-matching-v13-review-20261022/unicode_same_city_（",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 （부산 중구 중앙대로 100） 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v13-review-20261022/unicode_other_city_【",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 【서울 중구 중앙대로 100】 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "reject"
+    },
+    {
+      "case": "address-matching-v13-review-20261022/unicode_same_city_【",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 【부산 중구 중앙대로 100】 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v13-review-20261022/ambiguous_dong_(중앙동의)",
+      "address": "부산 중구 중앙동 중앙대로 100 중앙동 101호",
+      "quote": "부산 중구 중앙동 중앙대로 100 중앙동 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 (중앙동의) 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v13-review-20261022/ambiguous_dong_（중앙동에서）",
+      "address": "부산 중구 중앙동 중앙대로 100 중앙동 101호",
+      "quote": "부산 중구 중앙동 중앙대로 100 중앙동 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 （중앙동에서） 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v13-review-20261022/typed_admin",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙동 중앙대로 100 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 부산 중구 중앙동 중앙대로 100 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v13-review-20261022/missing_floor",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 방문 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v13-review-20261022/missing_room",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 방문 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v12-review-20261022/unknown_particle_옥탑층이에요",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 옥탑층이에요 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v12-review-20261022/unknown_particle_옥탑층에서",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 옥탑층에서 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v12-review-20261022/unknown_particle_미확인층에",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 미확인층에 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v12-review-20261022/unknown_particle_중1층입니다",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 중1층입니다 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v12-review-20261022/unknown_particle_층수는 미확인",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 층수는 미확인 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v12-review-20261022/compact_store_floor",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 매장은3층 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v12-review-20261022/ambiguous_particle_(중앙동의)",
+      "address": "부산 중구 중앙동 중앙대로 100 중앙동 101호",
+      "quote": "부산 중구 중앙동 중앙대로 100 중앙동 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 (중앙동의) 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v12-review-20261022/ambiguous_particle_(중앙동에서)",
+      "address": "부산 중구 중앙동 중앙대로 100 중앙동 101호",
+      "quote": "부산 중구 중앙동 중앙대로 100 중앙동 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 (중앙동에서) 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v12-review-20261022/ambiguous_particle_[중앙동의]",
+      "address": "부산 중구 중앙동 중앙대로 100 중앙동 101호",
+      "quote": "부산 중구 중앙동 중앙대로 100 중앙동 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 [중앙동의] 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v12-review-20261022/unicode_city_（서울 중구 중앙대로 100）",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "（서울 중구 중앙대로 100） 테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "reject"
+    },
+    {
+      "case": "address-matching-v12-review-20261022/unicode_city_【서울 중구 중앙대로 100】",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "【서울 중구 중앙대로 100】 테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "reject"
+    },
+    {
+      "case": "address-matching-v12-review-20261022/unicode_city_body",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "（서울 중구 중앙대로 100） 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점  후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v12-review-20261022/extra_administrative_prefix",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙동 중앙대로 100 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "부산 중구 중앙동 중앙대로 100 테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v12-review-20261022/equivalent_restroom_2층의 화장실",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 2층의 화장실 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v12-review-20261022/equivalent_restroom_화장실 위치: 2층",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 화장실 위치: 2층 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v12-review-20261022/equivalent_restroom_1~2층 화장실",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 1~2층 화장실 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v12-review-20261022/equivalent_restroom_1층~2층 화장실",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 1층~2층 화장실 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v12-review-20261022/rail_title_101호 및 1호선 역세권",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 101호 및 1호선 역세권 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v12-review-20261022/rail_title_101호 그리고 1호선 역세권",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 101호 그리고 1호선 역세권 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v12-review-20261022/rail_body_및",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 및 1호선 역세권인 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점  후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v12-review-20261022/rail_body_그리고",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 그리고 1호선 역세권인 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점  후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v12-review-20261022/unparsed_control_옥탑층",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 옥탑층 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v12-review-20261022/unparsed_control_층수: 미확인",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 층수: 미확인 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v12-review-20261022/unparsed_control_미확인층 화장실",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 미확인층 화장실 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v12-review-20261022/unparsed_control_B1~B2 화장실",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 B1~B2 화장실 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v12-review-20261022/unparsed_control_1층부터 2층까지",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 1층부터 2층까지 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v12-review-20261022/normal_control_2층 화장실",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 2층 화장실 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v12-review-20261022/normal_control_화장실은 2층",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 화장실은 2층 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v12-review-20261022/normal_control_화장실은 2층입니다",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 화장실은 2층입니다 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v12-review-20261022/normal_control_화장실 B1",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 화장실 B1 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v12-review-20261022/normal_control_101호, 1호선 역세권",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 101호, 1호선 역세권 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v12-review-20261022/conflict_control_101호 및 102호",
+      "address": "부산 중구 중앙대로 100 A동 1층 101호",
+      "quote": "부산 중구 중앙대로 100 A동 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 101호 및 102호 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v12-review-20261022/conflict_control_화장실은 2층, 매장은 3층",
+      "address": "부산 중구 중앙대로 100 A동 1층 101호",
+      "quote": "부산 중구 중앙대로 100 A동 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 화장실은 2층, 매장은 3층 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v12-review-20261022/conflict_control_별관에서",
+      "address": "부산 중구 중앙대로 100 A동 1층 101호",
+      "quote": "부산 중구 중앙대로 100 A동 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 별관에서 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v12-review-20261022/conflict_control_B동의",
+      "address": "부산 중구 중앙대로 100 A동 1층 101호",
+      "quote": "부산 중구 중앙대로 100 A동 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 B동의 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v12-review-20261022/conflict_control_중앙대로 101",
+      "address": "부산 중구 중앙대로 100 A동 1층 101호",
+      "quote": "부산 중구 중앙대로 100 A동 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 중앙대로 101 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v12-review-20261022/ascii_city_control",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "(서울 중구 중앙대로 100) 테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "reject"
+    },
+    {
+      "case": "address-matching-v12-review-20261022/same_city_unicode",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "（부산 중구 중앙대로 100） 테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v12-review-20261022/missing_floor",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점  후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v12-review-20261022/missing_room",
+      "address": "부산 중구 중앙대로 100 101호",
+      "quote": "부산 중구 중앙대로 100 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점  후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v12-review-20261022/ambiguous_round_control",
+      "address": "부산 중구 중앙동 중앙대로 100 중앙동 101호",
+      "quote": "부산 중구 중앙동 중앙대로 100 중앙동 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 (중앙동) 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v12-review-20261022/typed_building_control",
+      "address": "부산 중구 중앙대로 100 교육동 101호",
+      "quote": "부산 중구 중앙대로 100 [교육동] 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점  후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v12-review-20261022/korean_block_control",
+      "address": "부산 중구 중앙대로 100 가동 1층",
+      "quote": "부산 중구 중앙대로 100 가동 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 가동의 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v12-review-20261022/same_wing_control",
+      "address": "부산 중구 중앙대로 100 본관 1층",
+      "quote": "부산 중구 중앙대로 100 본관 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 본 관에는 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v11-review-20261022/title_particle_별관에서",
+      "address": "부산 중구 중앙대로 100 본관 1층",
+      "quote": "부산 중구 중앙대로 100 본관 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "별관에서 테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v11-review-20261022/title_particle_B동의",
+      "address": "부산 중구 중앙대로 100 A동 101호",
+      "quote": "부산 중구 중앙대로 100 A동 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "B동의 테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v11-review-20261022/title_particle_베타빌딩에서",
+      "address": "부산 중구 중앙대로 100 알파빌딩 1층",
+      "quote": "부산 중구 중앙대로 100 알파빌딩 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "베타빌딩에서 테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v11-review-20261022/title_unparsed_옥탑층",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 옥탑층 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v11-review-20261022/title_unparsed_미확인층",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 미확인층 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v11-review-20261022/title_unparsed_중1층",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 중1층 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v11-review-20261022/title_road_conflict",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "부산 중구 중앙대로 101 테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v11-review-20261022/title_region_conflict",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "서울 중구 중앙대로 100 테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "reject"
+    },
+    {
+      "case": "address-matching-v11-review-20261022/ambiguous_title_[중앙동]",
+      "address": "부산 중구 중앙동 중앙대로 100 중앙동 101호",
+      "quote": "부산 중구 중앙동 중앙대로 100 중앙동 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기 [중앙동]",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v11-review-20261022/ambiguous_title_{중앙동}",
+      "address": "부산 중구 중앙동 중앙대로 100 중앙동 101호",
+      "quote": "부산 중구 중앙동 중앙대로 100 중앙동 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기 {중앙동}",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v11-review-20261022/ambiguous_quote_nested",
+      "address": "부산 중구 중앙동 중앙대로 100 중앙동 101호",
+      "quote": "부산 중구 중앙동 중앙대로 100 ((중앙동)) 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v11-review-20261022/normal_facility_title",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 2층 화장실 이용 안내",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v11-review-20261022/normal_transit_title",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 1호선 역세권 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v11-review-20261022/normal_room_attached_title",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 101호실 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v11-review-20261022/other_room_attached_title",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 102호실 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v11-review-20261022/other_body_별관 1층",
+      "address": "부산 중구 중앙대로 100 본관 1층",
+      "quote": "부산 중구 중앙대로 100 별관 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v11-review-20261022/other_body_나동 101호",
+      "address": "부산 중구 중앙대로 100 가동 101호",
+      "quote": "부산 중구 중앙대로 100 나동 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v11-review-20261022/same_wing_본관",
+      "address": "부산 중구 중앙대로 100 본관 1층",
+      "quote": "부산 중구 중앙대로 100 본관 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기 (본관)",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v11-review-20261022/same_wing_본 관",
+      "address": "부산 중구 중앙대로 100 본관 1층",
+      "quote": "부산 중구 중앙대로 100 본관 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기 (본 관)",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v11-review-20261022/same_wing_교육관",
+      "address": "부산 중구 중앙대로 100 교육관 1층",
+      "quote": "부산 중구 중앙대로 100 교육관 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기 (교육관)",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v11-review-20261022/same_wing_교육 관",
+      "address": "부산 중구 중앙대로 100 교육관 1층",
+      "quote": "부산 중구 중앙대로 100 교육관 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기 (교육 관)",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v11-review-20261022/normal_facility_body",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 테스트커피 서면점에는 콘센트가 있어요. 화장실은 2층에 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v11-review-20261022/missing_floor",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v11-review-20261022/missing_room",
+      "address": "부산 중구 중앙대로 100 101호",
+      "quote": "부산 중구 중앙대로 100 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v11-review-20261022/unparsed_range",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 1층부터 2층까지 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v11-review-20261022/ambiguous_without_context",
+      "address": "부산 중구 중앙대로 100 (중앙동) 1층",
+      "quote": "부산 중구 중앙대로 100 (중앙동) 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v11-review-20261022/both_types_round_title",
+      "address": "부산 중구 중앙동 중앙대로 100 중앙동 101호",
+      "quote": "부산 중구 중앙동 중앙대로 100 중앙동 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기 (중앙동)",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v11-review-20261022/typed_administrative",
+      "address": "부산 중구 중앙동 중앙대로 100 (중앙동) 1층",
+      "quote": "부산 중구 중앙동 중앙대로 100 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v11-review-20261022/typed_building",
+      "address": "부산 중구 중앙대로 100 교육동 101호",
+      "quote": "부산 중구 중앙대로 100 (교육동) 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v11-review-20261022/correct_full_title",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "부산 중구 중앙대로 100 테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v11-review-20261022/korean_title_가동",
+      "address": "부산 중구 중앙대로 100 가동 101호",
+      "quote": "부산 중구 중앙대로 100 가동 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 가동 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v11-review-20261022/korean_title_나동",
+      "address": "부산 중구 중앙대로 100 가동 101호",
+      "quote": "부산 중구 중앙대로 100 가동 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 나동 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v11-review-20261022/korean_title_감동",
+      "address": "부산 중구 중앙대로 100 가동 101호",
+      "quote": "부산 중구 중앙대로 100 가동 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 감동 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v10-review-20261022/missing_floor_control",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v10-review-20261022/missing_room_control",
+      "address": "부산 중구 중앙대로 100 101호",
+      "quote": "부산 중구 중앙대로 100 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v10-review-20261022/unparsed_range_control",
+      "address": "부산 중구 중앙대로 100 B1",
+      "quote": "부산 중구 중앙대로 100 B1~B2 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v10-review-20261022/name_punctuation_control",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 테스트커피·서면점은 1층에 있고 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v10-review-20261022/full_building_name_control",
+      "address": "부산 중구 중앙대로 100 강동타워 1층",
+      "quote": "부산 중구 중앙대로 100 강동타워 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v10-review-20261022/postal_neighborhood_control",
+      "address": "부산 중구 중앙대로 100 (중앙동) 1층",
+      "quote": "부산 중구 중앙동 중앙대로 100 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v10-review-20261022/matching_block_title_control",
+      "address": "부산 중구 중앙대로 100 A동 101호",
+      "quote": "부산 중구 중앙대로 100 A동 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 A동 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v10-review-20261022/different_block_title_control",
+      "address": "부산 중구 중앙대로 100 A동 101호",
+      "quote": "부산 중구 중앙대로 100 A동 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 B동 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v10-review-20261022/known_title_missing_floor_control",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 층수: 미확인 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v10-review-20261022/parenthesized_block_conflict_(교육동) 101호",
+      "address": "부산 중구 중앙대로 100 (교육동) 101호",
+      "quote": "부산 중구 중앙대로 100 판매동 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v10-review-20261022/parenthesized_block_conflict_(상가동) 1층",
+      "address": "부산 중구 중앙대로 100 (상가동) 1층",
+      "quote": "부산 중구 중앙대로 100 업무동 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v10-review-20261022/same_block_parentheses_교육동 101호",
+      "address": "부산 중구 중앙대로 100 교육동 101호",
+      "quote": "부산 중구 중앙대로 100 (교육동) 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v10-review-20261022/same_block_parentheses_상가동 1층",
+      "address": "부산 중구 중앙대로 100 상가동 1층",
+      "quote": "부산 중구 중앙대로 100 (상가동) 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v10-review-20261022/title_unparsed_1층~",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 1층~ 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v10-review-20261022/title_unparsed_B1~B2",
+      "address": "부산 중구 중앙대로 100 B1",
+      "quote": "부산 중구 중앙대로 100 B1 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 B1~B2 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v10-review-20261022/title_unparsed_1층 및 2층",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 1층 및 2층 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v10-review-20261022/title_position_B동 테스트커피 서면점 후기",
+      "address": "부산 중구 중앙대로 100 A동 101호",
+      "quote": "부산 중구 중앙대로 100 A동 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "B동 테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v10-review-20261022/title_position_베타빌딩 테스트커피 서면점 후기",
+      "address": "부산 중구 중앙대로 100 알파빌딩 1층",
+      "quote": "부산 중구 중앙대로 100 알파빌딩 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "베타빌딩 테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v10-review-20261022/title_position_테스트커피 서면점 후기 (B동)",
+      "address": "부산 중구 중앙대로 100 A동 101호",
+      "quote": "부산 중구 중앙대로 100 A동 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기 (B동)",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v10-review-20261022/korean_block_title_skipped",
+      "address": "부산 중구 중앙대로 100 A동 101호",
+      "quote": "부산 중구 중앙대로 100 A동 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 가동 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v10-review-20261022/ordinary_emotion_with_korean_block",
+      "address": "부산 중구 중앙대로 100 가동 101호",
+      "quote": "부산 중구 중앙대로 100 가동 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 감동 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v10-review-20261022/korean_range_quote_from_until",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 1층부터 2층까지 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v10-review-20261022/korean_range_registered_compact",
+      "address": "부산 중구 중앙대로 100 1층부터2층까지",
+      "quote": "부산 중구 중앙대로 100 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v10-review-20261022/korean_range_quote_or",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 1층 내지 2층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v10-review-20261022/wing_spacing_본관 1층",
+      "address": "부산 중구 중앙대로 100 본관 1층",
+      "quote": "부산 중구 중앙대로 100 본 관 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v10-review-20261022/wing_spacing_별관 1층",
+      "address": "부산 중구 중앙대로 100 별관 1층",
+      "quote": "부산 중구 중앙대로 100 별 관 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v10-review-20261022/registered_wing_matching_title",
+      "address": "부산 중구 중앙대로 100 본관 1층",
+      "quote": "부산 중구 중앙대로 100 본관 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 본관 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v9-review-20261022/missing_floor_control",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v9-review-20261022/missing_room_control",
+      "address": "부산 중구 중앙대로 100 101호",
+      "quote": "부산 중구 중앙대로 100 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v9-review-20261022/particle_floor_control",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 테스트커피 서면점은 1층에 있고 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v9-review-20261022/verified_partial_range_control",
+      "address": "부산 중구 중앙대로 100 1~2층",
+      "quote": "부산 중구 중앙대로 100 1~2층 테스트커피 서면점에는 콘센트가 있어요. 주소: 부산 중구 중앙대로 100 1층",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v9-review-20261022/unverified_partial_range_control",
+      "address": "부산 중구 중앙대로 100 1~2층",
+      "quote": "부산 중구 중앙대로 100 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v9-review-20261022/equivalent_range_control",
+      "address": "부산 중구 중앙대로 100 1층~2층",
+      "quote": "부산 중구 중앙대로 100 1~2층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v9-review-20261022/range_outside_control",
+      "address": "부산 중구 중앙대로 100 1~2층",
+      "quote": "부산 중구 중앙대로 100 1~2층 테스트커피 서면점에는 콘센트가 있어요. 주소: 부산 중구 중앙대로 100 3층",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v9-review-20261022/registered_basement_bare_range",
+      "address": "부산 중구 중앙대로 100 B1~B2",
+      "quote": "부산 중구 중앙대로 100 B1 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v9-review-20261022/quote_basement_bare_range",
+      "address": "부산 중구 중앙대로 100 B1",
+      "quote": "부산 중구 중앙대로 100 B1~B2 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v9-review-20261022/quote_room_range_without_repeated_unit",
+      "address": "부산 중구 중앙대로 100 101호",
+      "quote": "부산 중구 중앙대로 100 101호~103 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v9-review-20261022/quote_additional_floor_after_conjunction",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 1층 및 2층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v9-review-20261022/building_number_is_detail_100층입니다.",
+      "address": "부산 중구 중앙대로 100",
+      "quote": "부산 중구 중앙대로 100층입니다. 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v9-review-20261022/building_number_is_detail_100층인",
+      "address": "부산 중구 중앙대로 100",
+      "quote": "부산 중구 중앙대로 100층인 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v9-review-20261022/building_number_is_detail_100호실",
+      "address": "부산 중구 중앙대로 100",
+      "quote": "부산 중구 중앙대로 100호실 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v9-review-20261022/building_with_embedded_suffix_신동아빌딩",
+      "address": "부산 중구 중앙대로 100 신동아빌딩 1층",
+      "quote": "부산 중구 중앙대로 100 신동아빌딩 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v9-review-20261022/building_with_embedded_suffix_강동타워",
+      "address": "부산 중구 중앙대로 100 강동타워 1층",
+      "quote": "부산 중구 중앙대로 100 강동타워 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v9-review-20261022/building_with_embedded_suffix_중앙상가빌딩",
+      "address": "부산 중구 중앙대로 100 중앙상가빌딩 1층",
+      "quote": "부산 중구 중앙대로 100 중앙상가빌딩 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v9-review-20261022/neighborhood_suffix_to_prefix",
+      "address": "부산 중구 중앙대로 100 (중앙동) 1층",
+      "quote": "부산 중구 중앙동 중앙대로 100 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v9-review-20261022/neighborhood_suffix_omitted",
+      "address": "부산 중구 중앙대로 100 (중앙동) 1층",
+      "quote": "부산 중구 중앙대로 100 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v9-review-20261022/neighborhood_prefix_to_suffix_control",
+      "address": "부산 중구 중앙동 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 (중앙동) 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v9-review-20261022/other_block_title",
+      "address": "부산 중구 중앙대로 100 A동 101호",
+      "quote": "부산 중구 중앙대로 100 A동 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 B동 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v9-review-20261022/other_building_title",
+      "address": "부산 중구 중앙대로 100 알파빌딩 1층",
+      "quote": "부산 중구 중앙대로 100 알파빌딩 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 베타빌딩 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v9-review-20261022/other_wing_title_control",
+      "address": "부산 중구 중앙대로 100 본관 1층",
+      "quote": "부산 중구 중앙대로 100 본관 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 별관 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v9-review-20261022/punctuated_name_matching_dot",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 테스트커피·서면점은 1층에 있고 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v9-review-20261022/punctuated_name_conflict_dot",
+      "address": "부산 중구 중앙대로 100 2층",
+      "quote": "부산 중구 중앙대로 100 2층 테스트커피 서면점에는 콘센트가 있어요. 주소: 부산 중구 중앙대로 100 테스트커피·서면점은 1층에 있습니다.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v9-review-20261022/punctuated_name_matching_quoted",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 '테스트커피 서면점'은 1층에 있고 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v9-review-20261022/punctuated_name_conflict_quoted",
+      "address": "부산 중구 중앙대로 100 2층",
+      "quote": "부산 중구 중앙대로 100 2층 테스트커피 서면점에는 콘센트가 있어요. 주소: 부산 중구 중앙대로 100 '테스트커피 서면점'은 1층에 있습니다.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v9-review-20261022/facility_floor_remains_separate",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 1층 테스트커피 서면점에는 콘센트가 있어요. 주소: 부산 중구 중앙대로 100 테스트커피 서면점은 화장실이 2층에 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v8-review-20261022/known_floor_control",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v8-review-20261022/missing_floor_policy",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v8-review-20261022/missing_room_policy",
+      "address": "부산 중구 중앙대로 100 101호",
+      "quote": "부산 중구 중앙대로 100 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v8-review-20261022/verified_then_bare",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 1층 테스트커피 서면점에는 콘센트가 있어요. 주소: 부산 중구 중앙대로 100",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v8-review-20261022/bare_then_verified",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "주소: 부산 중구 중앙대로 100. 부산 중구 중앙대로 100 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v8-review-20261022/verified_then_partial_fields",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 테스트커피 서면점에는 콘센트가 있어요. 주소: 부산 중구 중앙대로 100 1층",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v8-review-20261022/verified_then_unknown_label",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 1층 테스트커피 서면점에는 콘센트가 있어요. 주소: 부산 중구 중앙대로 100 층수: 미확인",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v8-review-20261022/explicit_other_floor_control",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 1층 테스트커피 서면점에는 콘센트가 있어요. 주소: 부산 중구 중앙대로 100 2층",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v8-review-20261022/unparsed_mezzanine_floor",
+      "address": "부산 중구 중앙대로 100 중1층",
+      "quote": "부산 중구 중앙대로 100 2층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v8-review-20261022/unparsed_attic_floor",
+      "address": "부산 중구 중앙대로 100 옥탑층",
+      "quote": "부산 중구 중앙대로 100 2층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v8-review-20261022/unknown_named_block",
+      "address": "부산 중구 중앙대로 100 교육동 101호",
+      "quote": "부산 중구 중앙대로 100 판매동 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v8-review-20261022/unknown_named_annex",
+      "address": "부산 중구 중앙대로 100 별동 1층",
+      "quote": "부산 중구 중앙대로 100 본동 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v8-review-20261022/different_named_building",
+      "address": "부산 중구 중앙대로 100 알파빌딩 1층",
+      "quote": "부산 중구 중앙대로 100 베타빌딩 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v8-review-20261022/verified_then_particle_floor_conflict",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 1층 테스트커피 서면점에는 콘센트가 있어요. 주소: 부산 중구 중앙대로 100 테스트커피 서면점은 2층에 있습니다.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v8-review-20261022/matching_floor_after_particle",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 테스트커피 서면점은 1층에 있고 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v8-review-20261022/verified_then_particle_room_conflict",
+      "address": "부산 중구 중앙대로 100 101호",
+      "quote": "부산 중구 중앙대로 100 101호 테스트커피 서면점에는 콘센트가 있어요. 주소: 부산 중구 중앙대로 100 테스트커피 서면점은 102호에 있습니다.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v8-review-20261022/range_verified_then_one_floor",
+      "address": "부산 중구 중앙대로 100 1~2층",
+      "quote": "부산 중구 중앙대로 100 1~2층 테스트커피 서면점에는 콘센트가 있어요. 주소: 부산 중구 중앙대로 100 1층",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v8-review-20261022/range_verified_then_one_room",
+      "address": "부산 중구 중앙대로 100 101~102호",
+      "quote": "부산 중구 중앙대로 100 101~102호 테스트커피 서면점에는 콘센트가 있어요. 주소: 부산 중구 중앙대로 100 101호",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v8-review-20261022/range_verified_then_outside_floor",
+      "address": "부산 중구 중앙대로 100 1~2층",
+      "quote": "부산 중구 중앙대로 100 1~2층 테스트커피 서면점에는 콘센트가 있어요. 주소: 부산 중구 중앙대로 100 3층",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v8-review-20261022/range_unit_on_both_ends",
+      "address": "부산 중구 중앙대로 100 1층~2층",
+      "quote": "부산 중구 중앙대로 100 1~2층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v8-review-20261022/quote_range_unit_on_both_ends",
+      "address": "부산 중구 중앙대로 100 1~2층",
+      "quote": "부산 중구 중앙대로 100 1층~2층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v8-review-20261022/matching_prefixed_room",
+      "address": "부산 중구 중앙대로 100 제101호",
+      "quote": "부산 중구 중앙대로 100 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v8-review-20261022/matching_phone_before_floor",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 0507-1234-5678 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v8-review-20261022/matching_basement_alias",
+      "address": "부산 중구 중앙대로 100 본관지하1층",
+      "quote": "부산 중구 중앙대로 100 본관 B1F 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v8-review-20261022/restroom_is_not_store_floor",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 테스트커피 서면점의 화장실은 1층에 있고 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v8-review-20261022/branch_suffix_구관",
+      "address": "부산 중구 중앙대로 100",
+      "quote": "부산 중구 중앙대로 100 테스트커피 서면점 구관에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 구관 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v8-review-20261022/branch_suffix_동관",
+      "address": "부산 중구 중앙대로 100",
+      "quote": "부산 중구 중앙대로 100 테스트커피 서면점 동관에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 동관 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v8-review-20261022/branch_suffix_제2호점",
+      "address": "부산 중구 중앙대로 100",
+      "quote": "부산 중구 중앙대로 100 테스트커피 서면점 제2호점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 제2호점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v8-review-20261022/old_wing_title_only",
+      "address": "부산 중구 중앙대로 100",
+      "quote": "부산 중구 중앙대로 100 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 구관 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v8-review-20261022/east_wing_title_only",
+      "address": "부산 중구 중앙대로 100",
+      "quote": "부산 중구 중앙대로 100 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 동관 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v8-review-20261022/old_wing_after_prose",
+      "address": "부산 중구 중앙대로 100",
+      "quote": "부산 중구 중앙대로 100 매장 안내입니다. 테스트커피 서면점 구관에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 구관 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v8-review-20261022/new_wing_title_control",
+      "address": "부산 중구 중앙대로 100",
+      "quote": "부산 중구 중앙대로 100 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 신관 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v8-review-20261022/range_not_fully_verified_control",
+      "address": "부산 중구 중앙대로 100 1~2층",
+      "quote": "부산 중구 중앙대로 100 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v8-review-20261022/room_range_not_fully_verified_control",
+      "address": "부산 중구 중앙대로 100 101~102호",
+      "quote": "부산 중구 중앙대로 100 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v7-review-20261022/matching_floor_control",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v7-review-20261022/missing_floor_policy",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v7-review-20261022/registered_floor_range_conflict",
+      "address": "부산 중구 중앙대로 100 1~2층",
+      "quote": "부산 중구 중앙대로 100 3층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v7-review-20261022/registered_room_prefix_conflict",
+      "address": "부산 중구 중앙대로 100 제101호",
+      "quote": "부산 중구 중앙대로 100 102호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v7-review-20261022/registered_annex_prefix_conflict",
+      "address": "부산 중구 중앙대로 100 본관지하1층",
+      "quote": "부산 중구 중앙대로 100 2층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v7-review-20261022/matching_room_prefix",
+      "address": "부산 중구 중앙대로 100 101호",
+      "quote": "부산 중구 중앙대로 100 제101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v7-review-20261022/matching_floor_after_phone",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 0507-1234-5678 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v7-review-20261022/matching_floor_after_name",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 테스트커피 서면점 1층에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v7-review-20261022/verified_then_abbreviated",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 1층 테스트커피 서면점에는 콘센트가 있어요. 주소: 부산 중구 중앙대로 100",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v7-review-20261022/abbreviated_then_verified",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "주소: 부산 중구 중앙대로 100. 부산 중구 중앙대로 100 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-v7-review-20261022/explicit_floor_conflict_control",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 1층 테스트커피 서면점에는 콘센트가 있어요. 이전 주소: 부산 중구 중앙대로 100 2층",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v7-review-20261022/different_block_letter",
+      "address": "부산 중구 중앙대로 100 A동 101호",
+      "quote": "부산 중구 중앙대로 100 B동 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v7-review-20261022/different_block_number",
+      "address": "부산 중구 중앙대로 100 101동 201호",
+      "quote": "부산 중구 중앙대로 100 102동 201호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v7-review-20261022/different_building_annex",
+      "address": "부산 중구 중앙대로 100 본관 1층",
+      "quote": "부산 중구 중앙대로 100 별관 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v7-review-20261022/ordinal_branch_suffix",
+      "address": "부산 중구 중앙대로 100",
+      "quote": "부산 중구 중앙대로 100 테스트커피 서면점 제2호점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 제2호점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-v7-review-20261022/quantity_visit_count",
+      "address": "부산 중구 중앙대로 100",
+      "quote": "부산 중구 중앙대로 100 테스트커피 서면점에는 콘센트가 있어요. 추가로 2번 방문했어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-final-review-20261022/valid_control",
+      "address": "부산 중구 중앙대로 100",
+      "quote": "부산 중구 중앙대로 100 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-final-review-20261022/move_road_to_lot",
+      "address": "부산 중구 중앙대로 2",
+      "quote": "테스트커피 서면점은 부산 중구 중앙대로 2에서 부산 해운대구 우동 1234로 이전했습니다. 새 매장에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-final-review-20261022/move_lot_to_road",
+      "address": "서울 서초구 양재동 237",
+      "quote": "테스트커피 서면점은 서울 서초구 양재동 237에서 서울 서초구 서초대로 100으로 이전했습니다. 새 매장에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-final-review-20261022/branch_parenthesis",
+      "address": "부산 중구 중앙대로 100",
+      "quote": "부산 중구 중앙대로 100 테스트커피 서면점(2호점)에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점(2호점) 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-final-review-20261022/branch_hyphen",
+      "address": "부산 중구 중앙대로 100",
+      "quote": "부산 중구 중앙대로 100 테스트커피 서면점-2호점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점-2호점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-final-review-20261022/branch_annex_parenthesis",
+      "address": "부산 중구 중앙대로 100",
+      "quote": "부산 중구 중앙대로 100 테스트커피 서면점(별관)에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점(별관) 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-final-review-20261022/ordinary_road_word",
+      "address": "부산 중구 중앙대로 100",
+      "quote": "부산 중구 중앙대로 100 테스트커피 서면점에는 콘센트가 있어요. 추가로 2잔 주문했어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-final-review-20261022/ordinary_lot_word",
+      "address": "서울 서초구 양재동 237",
+      "quote": "서울 서초구 양재동 237 테스트커피 서면점에는 콘센트가 있어요. 우리가 2명 방문했어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-final-review-20261022/name_copula",
+      "address": "부산 중구 중앙대로 100",
+      "quote": "부산 중구 중앙대로 100 여기는 테스트커피 서면점입니다. 좌석마다 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-final-review-20261022/name_compound_particle",
+      "address": "부산 중구 중앙대로 100",
+      "quote": "부산 중구 중앙대로 100 테스트커피 서면점에서도 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-final-review-20261022/unrelated_restroom_floor",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 1층 테스트커피 서면점에는 콘센트가 있고 화장실은 2층에 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-final-review-20261022/region_address_label",
+      "address": "부산 중구 중앙대로 2",
+      "quote": "대구 중구 주소: 중앙대로 2 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "부산 테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-final-review-20261022/unit_field_label",
+      "address": "부산 중구 중앙대로 2 1층",
+      "quote": "부산 중구 중앙대로 2. 층수: 2층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-final-review-20261022/paired_control_13",
+      "address": "서울 서초구 양재동 237",
+      "quote": "서울 서초구 양재동 237 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": null,
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-final-review-20261022/paired_control_14",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": null,
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "address-matching-final-review-20261022/paired_control_15",
+      "address": "부산 중구 중앙대로 2",
+      "quote": "대구 중구 중앙대로 2 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": null,
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-final-review-20261022/paired_control_16",
+      "address": "부산 중구 중앙대로 2 1층",
+      "quote": "부산 중구 중앙대로 2\n2층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": null,
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-review-20261022/region_comma",
+      "address": "부산 중구 중앙대로 2",
+      "quote": "대구 중구, 중앙대로 2 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "부산 테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-review-20261022/region_newline",
+      "address": "부산 중구 중앙대로 2",
+      "quote": "대구 중구\n중앙대로 2 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "부산 테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-review-20261022/region_parenthesis",
+      "address": "부산 부산진구 중앙대로 2",
+      "quote": "부산 중구(중앙동) 중앙대로 2 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "부산 테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-review-20261022/floor_newline_long",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100\n2층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-review-20261022/room_newline_long",
+      "address": "부산 중구 중앙대로 100 101호",
+      "quote": "부산 중구 중앙대로 100\n102호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-review-20261022/floor_label",
+      "address": "부산 중구 중앙대로 2 1층",
+      "quote": "부산 중구 중앙대로 2 B1 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-review-20261022/move_other_road",
+      "address": "부산 중구 중앙대로 2",
+      "quote": "테스트커피 서면점은 부산 중구 중앙대로 2에서 부산 중구 광복로 10으로 이전했습니다. 새 매장에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-review-20261022/branch_name_suffix",
+      "address": "부산 중구 중앙대로 2",
+      "quote": "부산 중구 중앙대로 2 테스트커피 서면점2호점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점2호점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-review-20261022/existing_region_comma_long",
+      "address": "부산 중구 중앙대로 100",
+      "quote": "대구 중구, 중앙대로 100 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "부산 테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-review-20261022/existing_move_other_road_long",
+      "address": "부산 중구 중앙대로 100",
+      "quote": "테스트커피 서면점은 부산 중구 중앙대로 100에서 부산 중구 광복로 10으로 이전했습니다. 새 매장에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "address-matching-review-20261022/existing_branch_suffix_long",
+      "address": "부산 중구 중앙대로 100",
+      "quote": "부산 중구 중앙대로 100 테스트커피 서면점2호점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점2호점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "name_0_True",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점1층지하점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "name_0_False",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 테스트커피 서면점1층지하점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "name_1_True",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점1층제2지점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "name_1_False",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 테스트커피 서면점1층제2지점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "name_2_True",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점1층점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "name_2_False",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 테스트커피 서면점1층점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "name_3_True",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점1층 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "name_3_False",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 테스트커피 서면점1층에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "name_4_True",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 1층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점1F 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "name_4_False",
+      "address": "부산 중구 중앙대로 100 1층",
+      "quote": "부산 중구 중앙대로 100 테스트커피 서면점1F에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "field_0_True",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 층수는미확정 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "field_0_False",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 층수는미확정 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "field_1_True",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 층수는확인불가 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "field_1_False",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 층수는확인불가 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "field_2_True",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 층수는 미확정 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "field_2_False",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 층수는 미확정 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "field_3_True",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 층수는 확인불가 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "field_3_False",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 층수는 확인불가 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "field_4_True",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 호수는미상 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "field_4_False",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 호수는미상 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "field_5_True",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 호수는미기재 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "field_5_False",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 호수는미기재 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "field_6_True",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 호수는없음 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "field_6_False",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 호수는없음 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "field_7_True",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 호수는아름다운 풍경 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "field_7_False",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 호수는아름다운 풍경 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "range_title_0",
+      "address": "부산 중구 중앙대로 100 2층",
+      "quote": "부산 중구 중앙대로 100 2층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 화장실은2층-미상 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "range_quote_0",
+      "address": "부산 중구 중앙대로 100 2층",
+      "quote": "부산 중구 중앙대로 100 2층-미상 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "range_title_1",
+      "address": "부산 중구 중앙대로 100 2층",
+      "quote": "부산 중구 중앙대로 100 2층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 화장실은2층-미기재 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "range_quote_1",
+      "address": "부산 중구 중앙대로 100 2층",
+      "quote": "부산 중구 중앙대로 100 2층-미기재 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "range_title_2",
+      "address": "부산 중구 중앙대로 100 2층",
+      "quote": "부산 중구 중앙대로 100 2층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 화장실은2층-부정확 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "range_quote_2",
+      "address": "부산 중구 중앙대로 100 2층",
+      "quote": "부산 중구 중앙대로 100 2층-부정확 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "range_title_3",
+      "address": "부산 중구 중앙대로 100 2층",
+      "quote": "부산 중구 중앙대로 100 2층 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 화장실은2층-미확인 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "range_quote_3",
+      "address": "부산 중구 중앙대로 100 2층",
+      "quote": "부산 중구 중앙대로 100 2층-미확인 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "unit_0_True",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 1층 101호실과102호실 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "unit_0_False",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호실과102호실 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "unit_1_True",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 1층 101호실과 102호실 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "unit_1_False",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호실과 102호실 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "unit_2_True",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 1층101호실과102호실 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "unit_2_False",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층101호실과102호실 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "unit_3_True",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 1층101호실 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "unit_3_False",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층101호실 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "unit_4_True",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 1층의101호실 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "unit_4_False",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층의101호실 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "unit_5_True",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 1층의102호실 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "unit_5_False",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층의102호실 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "unit_6_True",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 1층의 101호실 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "unit_6_False",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층의 101호실 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "ordinal_0_True",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 테스트커피 2호점에는 콘센트가 있어요.",
+      "title": "테스트커피 2호점 2호점 후기",
+      "registered_name": "테스트커피 2호점",
+      "expected": "approve"
+    },
+    {
+      "case": "ordinal_0_False",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 2호점 테스트커피 2호점에는 콘센트가 있어요.",
+      "title": "테스트커피 2호점 후기",
+      "registered_name": "테스트커피 2호점",
+      "expected": "approve"
+    },
+    {
+      "case": "ordinal_1_True",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 테스트커피 2호점에는 콘센트가 있어요.",
+      "title": "테스트커피 2호점 제02호점 후기",
+      "registered_name": "테스트커피 2호점",
+      "expected": "approve"
+    },
+    {
+      "case": "ordinal_1_False",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 제02호점 테스트커피 2호점에는 콘센트가 있어요.",
+      "title": "테스트커피 2호점 후기",
+      "registered_name": "테스트커피 2호점",
+      "expected": "approve"
+    },
+    {
+      "case": "ordinal_2_True",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 테스트커피 2호점에는 콘센트가 있어요.",
+      "title": "테스트커피 2호점 1호점 후기",
+      "registered_name": "테스트커피 2호점",
+      "expected": "hold"
+    },
+    {
+      "case": "ordinal_2_False",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 1호점 테스트커피 2호점에는 콘센트가 있어요.",
+      "title": "테스트커피 2호점 후기",
+      "registered_name": "테스트커피 2호점",
+      "expected": "hold"
+    },
+    {
+      "case": "ordinal_3_True",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 테스트커피 2호점에는 콘센트가 있어요.",
+      "title": "테스트커피 2호점 1호선 후기",
+      "registered_name": "테스트커피 2호점",
+      "expected": "approve"
+    },
+    {
+      "case": "ordinal_3_False",
+      "address": "부산 중구 중앙대로 100 1층 101호",
+      "quote": "부산 중구 중앙대로 100 1층 101호 1호선 테스트커피 2호점에는 콘센트가 있어요.",
+      "title": "테스트커피 2호점 후기",
+      "registered_name": "테스트커피 2호점",
+      "expected": "approve"
+    },
+    {
+      "case": "building_0",
+      "address": "부산 중구 중앙대로 100 A동 1층 101호",
+      "quote": "부산 중구 중앙대로 100 A동 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 A동은1층 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "building_1",
+      "address": "부산 중구 중앙대로 100 A동 1층 101호",
+      "quote": "부산 중구 중앙대로 100 A동 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 A동의1층 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "building_2",
+      "address": "부산 중구 중앙대로 100 A동 1층 101호",
+      "quote": "부산 중구 중앙대로 100 A동 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 B동은1층 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "building_3",
+      "address": "부산 중구 중앙대로 100 A동 1층 101호",
+      "quote": "부산 중구 중앙대로 100 A동 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 A동은3층 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    },
+    {
+      "case": "building_4",
+      "address": "부산 중구 중앙대로 100 A동 1층 101호",
+      "quote": "부산 중구 중앙대로 100 A동 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 A동1층 101호실 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "approve"
+    },
+    {
+      "case": "building_5",
+      "address": "부산 중구 중앙대로 100 A동 1층 101호",
+      "quote": "부산 중구 중앙대로 100 A동 1층 101호 테스트커피 서면점에는 콘센트가 있어요.",
+      "title": "테스트커피 서면점 A동1층 102호실 후기",
+      "registered_name": "테스트커피 서면점",
+      "expected": "hold"
+    }
+  ]
+}
