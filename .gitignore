@@ -126,3 +126,5 @@ spring-api/build/
 spring-api/.gradle/
 spring-api/bin/
 *.class
+/qa14/
+/.cxx-build/
