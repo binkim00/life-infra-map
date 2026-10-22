@@ -2,8 +2,8 @@
   "expo": {
     "name": "여기일지도",
     "slug": "life-infra-map",
-    "version": "1.0.2",
-    "orientation": "portrait",
+    "version": "1.0.4",
+    "orientation": "default",
     "icon": "./assets/images/icon.png",
     "scheme": "lifeinframap",
     "userInterfaceStyle": "automatic",
@@ -12,7 +12,7 @@
       "bundleIdentifier": "com.binkim00.lifeinframap"
     },
     "android": {
-      "versionCode": 4,
+      "versionCode": 8,
       "adaptiveIcon": {
         "backgroundColor": "#0F857A",
         "foregroundImage": "./assets/images/icon.png"

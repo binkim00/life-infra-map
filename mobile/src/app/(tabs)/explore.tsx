@@ -12,8 +12,10 @@ import {
   Text,
   TextInput,
   View,
+  useWindowDimensions,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SearchResultsPanel } from "@/components/search-results-panel";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { recommendationApi, searchMapPlaces } from "@/api/recommendations";
 import { useAuth } from "@/auth/auth-context";
@@ -100,6 +102,11 @@ const formatDistance = (distance?: number) =>
       : `${(distance / 1000).toFixed(1)}km`;
 
 export default function ExploreScreen() {
+  const { width, height } = useWindowDimensions();
+  const isLandscape = width > height;
+  const insets = useSafeAreaInsets();
+  const [canvasHeight, setCanvasHeight] = useState(height);
+  const [controlsHeight, setControlsHeight] = useState(180);
   const { requireLogin, isLoggedIn } = useAuth();
   const params = useLocalSearchParams<{
     q?: string;
@@ -124,7 +131,10 @@ export default function ExploreScreen() {
   } | null>(null);
   const [places, setPlaces] = useState<Place[]>([]);
   const [panelLevel, setPanelLevel] = useState<"collapsed" | "peek" | "expanded">("peek");
-  const listVisible = panelLevel === "expanded";
+  const scrollOffset = useRef(0);
+  useEffect(() => {
+    if (panelLevel !== "collapsed") requestAnimationFrame(() => resultListRef.current?.scrollTo({ y: scrollOffset.current, animated: false }));
+  }, [panelLevel]);
   const resultListRef = useRef<ScrollView>(null);
   const cardPositions = useRef<Record<string, number>>({});
   const pendingScrollKey = useRef("");
@@ -242,6 +252,10 @@ export default function ExploreScreen() {
         setMessage("검색어를 입력하거나 시설 종류를 선택하세요.");
         return;
       }
+      Keyboard.dismiss();
+      setPanelLevel("peek");
+      scrollOffset.current = 0;
+      resultListRef.current?.scrollTo({ y: 0, animated: false });
       setQuery(trimmed);
       setStatus("loading");
       setMessage("");
@@ -436,14 +450,18 @@ export default function ExploreScreen() {
     !submittedQuery || isNearbyCategoryQuery(submittedQuery);
   const selectFromMap = (place: Place) => {
     setSelectedPlace(place);
-    setPanelLevel("expanded");
+    setPanelLevel("peek");
     pendingScrollKey.current = placeIdentity(place);
     const y = cardPositions.current[pendingScrollKey.current];
-    if (y !== undefined) requestAnimationFrame(() => resultListRef.current?.scrollTo({ y, animated: true }));
+    if (y !== undefined) {
+      scrollOffset.current = y;
+      pendingScrollKey.current = "";
+      requestAnimationFrame(() => resultListRef.current?.scrollTo({ y, animated: true }));
+    }
   };
 
   return (
-    <View style={styles.screen}>
+    <View style={styles.screen} onLayout={({ nativeEvent }) => setCanvasHeight(nativeEvent.layout.height)}>
       <View style={styles.mapCanvas}>
         <PlaceMap
           expanded
@@ -464,7 +482,7 @@ export default function ExploreScreen() {
         style={styles.mapOverlay}
         edges={["top", "left", "right"]}
       >
-        <View style={styles.searchControls}>
+        <View onLayout={({ nativeEvent }) => setControlsHeight(nativeEvent.layout.height)} style={[styles.searchControls, isLandscape && styles.landscapeControls]}>
           <View style={styles.searchBox}>
             <TextInput
               value={query}
@@ -570,55 +588,15 @@ export default function ExploreScreen() {
         </View>
       </SafeAreaView>
 
-      <View style={[styles.resultSheet, listVisible && styles.listSheet]}>
-        <View style={styles.sheetHandle} />
-        {selectedPlace && panelLevel !== "collapsed" ? (
-          <View style={styles.selectedSummary}>
-            <View style={styles.selectedNumber}>
-              <Text style={styles.selectedNumberText}>
-                {places.findIndex(
-                  (item) => placeIdentity(item) === placeIdentity(selectedPlace),
-                ) + 1}
-              </Text>
-            </View>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={`${selectedPlace.name} 상세정보`}
-              onPress={() => openPlaceDetails(selectedPlace)}
-              style={styles.selectedCopy}
-            >
-              <Text numberOfLines={1} style={styles.selectedName}>
-                {selectedPlace.name}
-              </Text>
-              <Text numberOfLines={1} style={styles.selectedAddress}>
-                {selectedPlace.address || selectedPlace.category_label}
-              </Text>
-            </Pressable>
-            <Pressable
-              onPress={() => openPlaceDetails(selectedPlace)}
-              style={styles.routeButton}
-            >
-              <Text style={styles.routeButtonLabel}>상세보기</Text>
-            </Pressable>
-          </View>
-        ) : null}
-
-        <View style={styles.resultHeader}>
-          <Text style={styles.resultTitle}>
-            {submittedQuery ? `'${submittedQuery}' 결과` : "주변 장소 검색"}
-          </Text>
-          <Text style={styles.resultCount}>
-            {places.length ? `${places.length}곳` : ""}
-          </Text>
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => setPanelLevel((value) => value === "collapsed" ? "peek" : value === "peek" ? "expanded" : "collapsed")}
-          >
-            <Text style={styles.routeButtonLabel}>
-              {panelLevel === "collapsed" ? "카드 보기" : panelLevel === "peek" ? "전체 보기" : "접기"}
-            </Text>
-          </Pressable>
-        </View>
+      <SearchResultsPanel
+        level={panelLevel}
+        onLevelChange={setPanelLevel}
+        availableHeight={canvasHeight}
+        expandedHeight={isLandscape ? canvasHeight - 24 : canvasHeight - insets.top - controlsHeight - 24}
+        landscape={isLandscape}
+        title={submittedQuery ? `'${submittedQuery}' 결과` : "주변 장소 검색"}
+        count={places.length}
+      >
         {panelLevel !== "collapsed" ? <Text style={styles.sortCaption}>
           {center.lat !== null
             ? searchCenterOverride
@@ -628,7 +606,7 @@ export default function ExploreScreen() {
         </Text> : null}
 
         {places.length && searchFailed ? <View style={[styles.compactStateBox, styles.errorStateBox]}><Text style={styles.stateText}>{message}</Text><Pressable onPress={retryLastSearch} style={styles.retryButton}><Text style={styles.retryButtonText}>다시 시도</Text></Pressable></View> : null}
-        {panelLevel === "collapsed" ? null : status === "loading" && !places.length ? (
+        {status === "loading" && !places.length ? (
           <View style={styles.compactStateBox}>
             <ActivityIndicator color={Palette.accent} />
             <Text style={styles.stateText}>
@@ -661,16 +639,14 @@ export default function ExploreScreen() {
         ) : (
           <ScrollView
             ref={resultListRef}
-            key={listVisible ? "list" : "map"}
-            horizontal={!listVisible}
+            onScroll={({ nativeEvent }) => { if (panelLevel !== "collapsed") scrollOffset.current = nativeEvent.contentOffset.y; }}
+            scrollEventThrottle={16}
             keyboardShouldPersistTaps="handled"
             showsHorizontalScrollIndicator={false}
-            style={listVisible ? styles.verticalScroll : undefined}
-            contentContainerStyle={
-              listVisible ? styles.verticalResults : styles.horizontalResults
-            }
+            style={styles.verticalScroll}
+            contentContainerStyle={styles.verticalResults}
           >
-            {(panelLevel === "peek" ? (selectedPlace ? [selectedPlace] : places.slice(0, 1)) : places).map((place) => {
+            {places.map((place) => {
               const index = places.findIndex((item) => placeIdentity(item) === placeIdentity(place));
               const selected = selectedPlace ? placeIdentity(selectedPlace) === placeIdentity(place) : false;
               return (
@@ -679,6 +655,7 @@ export default function ExploreScreen() {
                   onLayout={(event) => {
                     cardPositions.current[placeIdentity(place)] = event.nativeEvent.layout.y;
                     if (pendingScrollKey.current === placeIdentity(place)) {
+                      scrollOffset.current = event.nativeEvent.layout.y;
                       resultListRef.current?.scrollTo({ y: event.nativeEvent.layout.y, animated: true });
                       pendingScrollKey.current = "";
                     }
@@ -688,7 +665,7 @@ export default function ExploreScreen() {
                   onPress={() => openPlaceDetails(place)}
                   style={[
                     styles.resultCard,
-                    listVisible && styles.listCard,
+                    styles.listCard,
                     selected && styles.resultCardSelected,
                   ]}
                 >
@@ -735,18 +712,16 @@ export default function ExploreScreen() {
                           ? "카카오 장소"
                           : "여기일지도에 저장된 장소")}
                     </Text>
-                    {listVisible ? (
-                      <Text numberOfLines={2} style={styles.resultMeta}>
-                        {place.address || "주소 정보 없음"}
-                      </Text>
-                    ) : null}
+                    <Text numberOfLines={2} style={styles.resultMeta}>
+                      {place.address || "주소 정보 없음"}
+                    </Text>
                   </View>
                 </Pressable>
               );
             })}
           </ScrollView>
         )}
-      </View>
+      </SearchResultsPanel>
       <PlaceDetailSheet
         place={detailPlace}
         visible={detailVisible}
@@ -771,6 +746,8 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   filterRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  landscapeControls: { width: "48%", alignSelf: "flex-start" },
+  landscapeSheet: { left: "52%", maxWidth: undefined, maxHeight: "92%" },
   filterScroller: { minWidth: 0, flex: 1 },
   radiusBar: {
     alignSelf: "flex-start",
