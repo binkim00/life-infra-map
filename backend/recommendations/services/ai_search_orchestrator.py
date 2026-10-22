@@ -2244,13 +2244,14 @@ def _tag_strength(place_tag):
 
 
 def _db_tag_lists(place):
+    from .confirmation_evidence import effective_place_tags
     from .historical_evidence import is_historical_tag
     historical = []
     verified = []
     suggested = []
     candidate = []
     warnings = []
-    for place_tag in getattr(place, "place_tags", []).all():
+    for place_tag in effective_place_tags(place):
         if is_historical_tag(place_tag):
             historical.append(place_tag.tag.name)
             continue
@@ -2859,6 +2860,9 @@ def collect_db_candidates(
     is_smoking_search = "smoking_area" in direct_category_codes
 
     def detail_queryset(queryset):
+        from django.db.models import Prefetch
+        from .confirmation_evidence import confirmation_aware_place_tags
+
         detailed = queryset.annotate(
             collect_business_type=KeyTextTransform("business_type", "raw"),
             collect_source_dataset=KeyTextTransform("dataset", "raw"),
@@ -2869,7 +2873,9 @@ def collect_db_candidates(
         )
         if not is_smoking_search:
             detailed = detailed.defer("raw")
-        relations = ["place_tags__tag"]
+        relations = [Prefetch(
+            "place_tags", queryset=confirmation_aware_place_tags(),
+        )]
         if is_smoking_search:
             relations.append("tag_evidence")
         return detailed.prefetch_related(*relations)
