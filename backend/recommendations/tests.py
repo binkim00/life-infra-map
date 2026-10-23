@@ -105,6 +105,10 @@ class RecommendationSearchTests(TestCase):
             confidence=90,
             is_verified=True,
         )
+        PlaceTagEvidence.objects.create(
+            place=self.place, tag=tag, source="admin_review", polarity="positive",
+            evidence="현재 확인된 테스트 관측", observed_at=timezone.now(),
+        )
 
     def tearDown(self):
         self._media_override.disable()
@@ -172,7 +176,7 @@ class RecommendationSearchTests(TestCase):
             raw=raw or {},
         )
 
-    def _add_tag(self, place, name, is_verified=True, status="confirmed"):
+    def _add_tag(self, place, name, is_verified=True, status="confirmed", current_evidence=False):
         tag, _ = Tag.objects.get_or_create(
             name=name,
             defaults={"tag_type": "recommendation"},
@@ -185,6 +189,11 @@ class RecommendationSearchTests(TestCase):
             confidence=90 if is_verified else 60,
             is_verified=is_verified,
         )
+        if current_evidence:
+            PlaceTagEvidence.objects.create(
+                place=place, tag=tag, source="admin_review", polarity="positive",
+                evidence="현재 확인된 테스트 관측", observed_at=timezone.now(),
+            )
         return tag
 
     def _frame_search_payload(self, frame, query="하단역인데 화장실 급해"):
@@ -3556,7 +3565,7 @@ class RecommendationSearchTests(TestCase):
             lat=35.1597,
             lng=129.0592,
         )
-        self._add_tag(confirmed, "조용함")
+        self._add_tag(confirmed, "조용함", current_evidence=True)
 
         candidates = collect_db_candidates(
             {
@@ -10835,7 +10844,7 @@ class RecommendationSearchTests(TestCase):
 
     def test_work_cafe_keeps_cafe_with_notebook_tag(self):
         tagged_cafe = self._create_place("노트북 작업 카페", "cafe", "work-notebook-cafe")
-        self._add_tag(tagged_cafe, "노트북작업")
+        self._add_tag(tagged_cafe, "노트북작업", current_evidence=True)
 
         result = search_db_recommendations(
             scenario="work_cafe",
@@ -10912,7 +10921,7 @@ class RecommendationSearchTests(TestCase):
     def test_walk_healing_disables_category_fallback_when_required_tags_are_missing(self):
         tagged_place = self._create_place("에덴공원 산책로", "city_park", "walk-eden")
         category_only_place = self._create_place("태그 없는 근린공원", "city_park", "walk-no-tag")
-        self._add_tag(tagged_place, "산책좋음")
+        self._add_tag(tagged_place, "산책좋음", current_evidence=True)
 
         result = search_db_recommendations(
             scenario="walk_healing",
@@ -10967,7 +10976,7 @@ class RecommendationSearchTests(TestCase):
     def test_walk_healing_keeps_tagged_park_and_galmaetgil_candidates(self):
         eden = self._create_place("에덴공원", "city_park", "walk-tagged-eden")
         galmaetgil = self._create_place("부산 갈맷길 산책 코스", "tourism", "walk-galmaetgil")
-        self._add_tag(eden, "산책좋음")
+        self._add_tag(eden, "산책좋음", current_evidence=True)
 
         result = search_db_recommendations(
             scenario="walk_healing",

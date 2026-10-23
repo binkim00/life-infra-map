@@ -1,6 +1,12 @@
 import math
 
+from django.db.models import Prefetch
+
 from recommendations.models import Place
+from recommendations.services.confirmation_evidence import (
+    confirmation_aware_place_tags,
+    effective_place_tags,
+)
 from recommendations.services.recommendation_condition import (
     build_recommendation_condition,
     get_default_radius,
@@ -1275,7 +1281,7 @@ def get_place_tag_data(place):
     raw_warning_tags = raw.get("warning_tags", [])
     raw_scores = raw.get("scores", {})
 
-    for place_tag in place.place_tags.all():
+    for place_tag in effective_place_tags(place):
         tag = place_tag.tag
         if is_historical_tag(place_tag):
             historical_tags.append(tag.name)
@@ -2095,7 +2101,9 @@ def search_db_recommendations(
     places = (
         Place.objects
         .filter(id__in=candidate_ids)
-        .prefetch_related("place_tags__tag")
+        .prefetch_related(Prefetch(
+            "place_tags", queryset=confirmation_aware_place_tags(),
+        ))
     )
     places_by_id = {place.id: place for place in places}
 
